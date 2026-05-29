@@ -1,0 +1,22 @@
+name: CI — Landing
+
+on:
+  push:
+    paths: ['classlite-landing/**']
+  pull_request:
+    paths: ['classlite-landing/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: cd classlite-landing && npm ci
+      - name: Lint
+        run: cd classlite-landing && npx astro check
+      - name: Build
+        run: cd classlite-landing && npm run build

@@ -1,0 +1,75 @@
+:root {
+  /* Surfaces */
+  --cl-paper: #f5f1ea;
+  --cl-paper-2: #efe9df;
+  --cl-surface: #ffffff;
+  --cl-surface-warm: #fcfaf6;
+  --cl-surface-compose: #fdf9ef;
+
+  /* Text */
+  --cl-ink: #1a1f2e;
+  --cl-ink-soft: #2c3242;
+  --cl-muted: #595c66;
+
+  /* Accents */
+  --cl-accent: #1e3a8a;
+  --cl-accent-2: #d97706;
+  --cl-accent-2-text: #7c4309;
+  --cl-accent-2-btn: #92500a;
+
+  /* Borders */
+  --cl-line: #d9d2c4;
+  --cl-line-soft: #e6e1d5;
+  --cl-line-interactive: #a8a095;
+
+  /* Status */
+  --cl-green: #166534;
+  --cl-red: #991b1b;
+  --cl-amber: #b45309;
+
+  /* Status tints */
+  --cl-tint-blue: #eef0fb;
+  --cl-tint-gold: #fdf6e3;
+  --cl-tint-green: #ecf4ec;
+  --cl-tint-red: #fbeaea;
+
+  /* Chip */
+  --cl-chip-bg: #ebe5d6;
+
+  /* Typography */
+  --cl-font-display: 'Fraunces', 'Times New Roman', serif;
+  --cl-font-body: 'Geist', system-ui, sans-serif;
+  --cl-font-mono: 'Geist Mono', monospace;
+
+  /* Radius */
+  --cl-radius-xs: 4px;
+  --cl-radius-sm: 6px;
+  --cl-radius-md: 8px;
+  --cl-radius-lg: 10px;
+  --cl-radius-xl: 12px;
+  --cl-radius-2xl: 14px;
+  --cl-radius-full: 999px;
+
+  /* Shadows */
+  --cl-shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --cl-shadow-card: 0 8px 24px -12px rgba(26, 31, 46, 0.08);
+  --cl-shadow-dropdown: 0 6px 20px -6px rgba(26, 31, 46, 0.4);
+  --cl-shadow-modal: 0 30px 60px -20px rgba(26, 31, 46, 0.5);
+  --cl-shadow-amber: 0 4px 14px -6px rgba(217, 119, 6, 0.4);
+  --cl-scrim: rgba(26, 31, 46, 0.32);
+
+  /* Sidebar */
+  --cl-sidebar-bg: #1a1f2e;
+  --cl-sidebar-text: #cfd1d8;
+  --cl-sidebar-hover: #252a39;
+  --cl-sidebar-active-bg: #ffffff;
+  --cl-sidebar-active-text: #1a1f2e;
+  --cl-sidebar-width: 220px;
+
+  /* Layout */
+  --cl-topbar-height: 56px;
+  --cl-page-max-width: 1320px;
+  --cl-modal-width: 460px;
+  --cl-side-panel: 300px;
+  --cl-detail-panel: 320px;
+}

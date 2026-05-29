@@ -1,0 +1,27 @@
+openapi: "3.1.0"
+info:
+  title: ClassLite API
+  version: "0.1.0"
+  description: Multi-tenant education management platform API
+servers:
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns the current health status of the API
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                required:
+                  - status

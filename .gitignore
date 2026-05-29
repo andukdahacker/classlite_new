@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+classlite-api/classlite-api
+classlite-api/api
+
+# Go test
+*.test
+*.out
+cover.out
+coverage.out
+
+# Generated files (sqlc, openapi)
+classlite-api/internal/store/generated/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Astro
+.astro/
+
+# BMad framework
+_bmad/
+_bmad-output/
+
+# Claude
+.claude/

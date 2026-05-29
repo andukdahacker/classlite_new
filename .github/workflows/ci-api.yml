@@ -1,0 +1,51 @@
+name: CI — API
+
+on:
+  push:
+    paths: ['classlite-api/**']
+  pull_request:
+    paths: ['classlite-api/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: classlite_test
+          POSTGRES_USER: classlite
+          POSTGRES_PASSWORD: test
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Vet
+        run: cd classlite-api && go vet ./...
+      - name: Staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          cd classlite-api && staticcheck ./...
+      - name: sqlc vet
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+          cd classlite-api
+          if find internal/store/queries -name '*.sql' 2>/dev/null | head -1 | grep -q .; then
+            sqlc vet
+          else
+            echo "No query files yet, skipping sqlc vet"
+          fi
+      - name: Test
+        run: cd classlite-api && go test ./... -race -v
+        env:
+          DATABASE_URL: postgres://classlite:test@localhost:5432/classlite_test?sslmode=disable
+      - name: Build
+        run: cd classlite-api && go build ./cmd/api/...
