@@ -1,353 +1,226 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-lastStep: 14
-status: 'complete'
-completedAt: '2026-05-28'
 status: 'in-progress'
+scope: 'full-product'
+redoneAt: '2026-05-31'
+supersedes: 'landing+auth-only specification (2026-05-28)'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prds/prd-classlite_new-2026-05-26/prd.md'
-  - 'docs/classlite-entry/classlite-ia.md'
   - '_bmad-output/planning-artifacts/architecture.md'
+  - '_bmad-output/planning-artifacts/epics/index.md'
+  - 'docs/classlite-entry/classlite-ia.md'
+  - 'docs/classlite-entry/01-owner-onboarding.html'
+  - 'docs/classlite-entry/02a-teacher-dashboard-classes.html'
+  - 'docs/classlite-entry/02b-teacher-time.html'
+  - 'docs/classlite-entry/02c-teacher-content-grading.html'
+  - 'docs/classlite-entry/02d-teacher-resources.html'
+  - 'docs/classlite-entry/03-student.html'
+  - 'docs/classlite-entry/04-owner-admin.html'
+  - 'docs/classlite-entry/05-cross-role.html'
+  - 'docs/classlite-entry/06a-inbox.html'
+  - 'docs/classlite-entry/06b-empty-states.html'
+  - 'docs/classlite-entry/06c-error-states.html'
+  - 'docs/classlite-entry/07-billing.html'
+  - 'docs/classlite-entry/08-mobile.html'
 workflowType: 'ux-design'
 project_name: 'classlite_new'
 user_name: 'Ducdo'
-date: '2026-05-27'
+date: '2026-05-31'
 ---
 
-# UX Design Specification ClassLite v2
+# UX Design Specification — ClassLite v2 (Full Product)
 
 **Author:** Ducdo
-**Date:** 2026-05-27
+**Date:** 2026-05-31 (redone from full-product scope; supersedes the 2026-05-28 landing+auth-only specification)
 
 ---
 
-<!-- UX design content will be appended sequentially through collaborative workflow steps -->
+## 1. Scope & Purpose
 
-## Executive Summary
+This specification defines the UX design directions for the **entire ClassLite v2 product** — every role, every surface, from the public landing page through authentication and across the full authenticated application.
 
-### Project Vision
+It supersedes the earlier specification, which deliberately covered only the two pre-auth gaps (landing page + auth flows) because the authenticated product was already drawn as a 93-screen mockup set. This redo elevates that work into a single, product-wide design contract: the landing + auth material is preserved and integrated as one part of a larger whole (§10), and the authenticated experience — onboarding, dashboards, classes, scheduling, exercise authoring, AI-assisted grading, the student experience, people management, analytics, knowledge hub, inbox, and billing — is now specified at the same altitude.
 
-ClassLite v2 is a purpose-built SaaS for IELTS tutoring centers and freelance teachers in Vietnam, replacing the patchwork of WhatsApp, Google Sheets, and paper gradebooks. The core differentiator is AI-assisted grading — cutting Writing essay marking from ~12 minutes to ~3 minutes while keeping the teacher in control.
+**What this document is.** A design-directions contract. It captures the *patterns, principles, and visual/behavioral decisions* that every screen inherits, traced to the requirements (FR-1–FR-81, UX-DR1–UX-DR25) and to the screen IDs (`s00`–`s87`, `LP-01`, `AUTH-01`–`AUTH-08`) where they are realized.
 
-The existing mockup set covers 93 screens across the authenticated product experience. This UX specification addresses two critical gaps: the **landing page** (`classlite.app`, Astro static site) and the **authentication flows** (`my.classlite.app`, React SPA). Every user passes through these before touching the product.
+**What this document is not.** It is not a screen-by-screen redraw. The screen-level reference of record remains:
+- **`docs/classlite-entry/classlite-ia.md`** — the full 93-screen inventory, routes, role model, and visibility matrix.
+- **`docs/classlite-entry/*.html`** — the 13 mockup showcases that encode the realized visual language.
+- **`_bmad-output/planning-artifacts/ux-design-directions.html`** — the 9-screen landing + auth showcase.
 
-### Target Users
+**Source of truth on conflict.** The existing mockup set and token system are honored as the established visual identity. Where this spec and a mockup disagree on a *principle*, this spec wins; where they disagree on a *screen detail*, the mockup wins and this spec is updated to match. The token file (`tokens.css`, §5) is the single source of truth for all visual values across both codebases.
 
-**Center Owners (Operator/Founder)** — 2–15 teachers, 50–300 students. Former teachers turned business operators. Evaluate tools on desktop. Primary conversion target. Key anxiety: "Will this actually work for a center like mine, or is it another startup toy that disappears in six months?"
+---
 
-**Freelance Teachers (Solo)** — 1–5 classes, no center overhead. Live in Google Workspace. Value speed and simplicity. Most likely to enter via Google OAuth.
+## 2. Executive Summary
 
-**Students (age 16–30)** — Mobile-first. Highest volume, lowest revenue. Enter via invite links from their teacher/center. Auth must be zero-abandonment, not delightful — students don't convert to paying customers; their owners do.
+### 2.1 Project Vision
 
-### Key Design Challenges
+ClassLite v2 is a purpose-built SaaS for IELTS tutoring centers and freelance teachers in Vietnam, replacing the patchwork of WhatsApp/Zalo groups, Google Sheets, and paper gradebooks. The core differentiator is **AI-assisted grading** — cutting Writing essay marking from ~12 minutes to ~3 minutes while keeping the teacher fully in control of every score and comment.
 
-1. **Trust construction, not friction reduction.** The Vietnamese tutoring center market is largely undigitized. Competitors aren't other SaaS products — they're WhatsApp groups and shared Google Sheets. The landing page must solve a category education problem: convincing a skeptical center owner that software is worth paying for at all. Trust signals must be local and specific — named center archetypes, outcome data ("giảm 9 phút chấm bài"), visible pricing in VND — not generic startup polish.
+The product is a single role-gated application serving four roles (Owner, Admin, Teacher, Student) across one center (no branch switcher, no multi-workspace top bar). Two public/edge surfaces front it: a static **landing page** (`classlite.app`, Astro) and the **auth flows** (`my.classlite.app`, React SPA). The authenticated dashboard (`my.classlite.app`) is also React. All three are visually indistinguishable via a shared design-token system.
 
-2. **User intent routing.** Three very different people land on classlite.app for very different reasons: an owner researching tools, a teacher clicking an invite link, a student tapping a class join link. The landing page and auth flows need to route by intent, not funnel everyone through the same hero section.
+### 2.2 Target Users
 
-3. **Auth flow branching with failure state design.** Seven FRs (FR-75–FR-81) create multiple branching paths: email registration → verification gate, Google OAuth → account linking, invite acceptance → expired token handling, password reset → session invalidation. The failure states (expired invite, lockout, verification pending, silent refresh bounce) need equal design care to the happy paths — these are where users are permanently lost.
-
-4. **Email verification gating decision.** A fork-in-the-road that must be resolved before screen design begins: do we gate dashboard access behind email verification (requires a "verification pending" holding screen), or allow access with a persistent banner (requires degraded-permission states throughout the dashboard)? This changes the shape of the onboarding flow materially.
-
-5. **Three-domain OAuth redirect.** Google OAuth routes through three domains: `my.classlite.app → accounts.google.com → api.classlite.app/callback → my.classlite.app/dashboard`. No custom loading state is possible during the Google leg. Design the "before" (login page) and "after" (dashboard landing) states only.
-
-6. **15-minute token expiry UX.** Short-lived access tokens mean a teacher who steps away for 20 minutes hits a failed request → silent refresh → if refresh fails, login bounce. The bounce must preserve in-progress state (a teacher mid-lesson-plan losing work is a support ticket).
-
-### Design Opportunities
-
-1. **Google OAuth as the happy path.** Gmail dominates in Vietnam. Teachers already live in Google Workspace. Making "Continue with Google" the visually primary action dramatically shortens time-to-dashboard and skips email verification entirely. This is a jobs-to-be-done win, not just a convenience feature.
-
-2. **Invite acceptance as the highest-value conversion path.** An owner who invites 8 teachers has already committed. Each invite accepted is a social proof node and switching-cost multiplier. The invite acceptance screen is that teacher's first contact with ClassLite — show the center name, the inviter, the role. Make them feel expected, not processed. Design the expired-invite recovery path with equal care.
-
-3. **Free tier activation quality over conversion volume.** SM-6 (>15% free-to-pro within 60 days) requires that free-tier users experience AI grading in their first session. The landing page should sell the 12→3 minute claim, and onboarding should deliver on it immediately. The differentiator must be felt, not described.
-
-4. **Landing page as local credibility builder.** Social proof in the Vietnamese register: named center archetypes ("Trung tâm IELTS, Hà Nội, 12 giáo viên"), outcome specificity, and pricing transparency. The free tier must be visible as an entry point. The Studio tier must signal that the product scales — don't optimize only for free-tier acquisition.
-
-5. **Domain transition is technically seamless.** Auth cookies on `.classlite.app` with `SameSite=Lax` mean the browser handles the session automatically across subdomains. No redirect dance needed. The landing page can detect logged-in users for redirect (FR-73) via a fetch to the API. Visual consistency between Astro and React is the real design task — shared brand, shared Tailwind config, same language state.
-
-## Core User Experience
-
-### Defining Experience
-
-The landing page and auth flows serve one purpose: **convert a skeptical Vietnamese center owner or freelance teacher into an active ClassLite user who experiences AI grading in their first session.**
-
-Getting users *in* is necessary but insufficient. The business metrics (SM-6: >15% free-to-pro within 60 days) require getting users *to value*. The core experience breaks into four sequential moments:
-
-1. **Landing page → Understanding the cost of the status quo** (classlite.app). The visitor — a center owner or freelance teacher — isn't evaluating ClassLite against competitors. They're evaluating it against doing nothing. The landing page must first articulate the pain as a quantified cost (time per essay × teachers × weeks = hours lost), then show ClassLite as the resolution. Category education before conversion. Trust before CTA.
-
-2. **Auth → Account creation** (my.classlite.app). Two paths, one happy: Google OAuth is the primary action (target: 10 seconds P50 to onboarding for Google users). Email/password is the secondary path. Email registration gates access behind verification — the user must verify before entering the product. Google OAuth users bypass verification entirely (Google has already verified their email).
-
-3. **Invite acceptance → Joining a center** (my.classlite.app/invite). A staff member or student receives an invite link. This is their first contact with ClassLite. The screen shows who invited them, which center, and what role — making them feel expected. The business outcome: teacher activates and grades within 48 hours of invite, generating data that proves ROI to the center owner.
-
-4. **First AI grade → Experiencing the differentiator** (post-auth). The first session must route the user to a pre-loaded sample essay with a single CTA to run the AI grader. No class setup, no configuration — those come after the user has felt the 12→3 minute promise. This is the moment where the landing page's claim becomes real. Everything before this is setup; this is the conversion trigger. **For owners:** the first-run experience shows a pre-graded sample dashboard — what their center analytics will look like once teachers are active. The owner sees the value their teachers will generate, not just configuration forms.
-
-### Platform Strategy
-
-**Two platforms, one brand:**
-- **Landing page** (`classlite.app`): Astro static site on Cloudflare Pages. Desktop-optimized for the primary audience (owners and teachers researching tools), fully responsive for mobile. SEO-first — server-rendered HTML, meta tags, Open Graph. Bilingual with `/vi` and `/en` route prefixes.
-- **Auth screens** (`my.classlite.app`): React SPA. Must match the landing page's visual identity exactly. Auth screens are mobile-first since students (highest volume) arrive on phones via invite links.
-
-**Visual consistency strategy:** Astro uses `.astro` components, React uses `.tsx` — they cannot share components directly. To prevent drift:
-- **Shared design token package** (`@classlite/tokens`): CSS variables for colors, typography, spacing, radii. Both codebases consume tokens. No shared components — low coupling, no framework lock-in.
-- **Visual regression tests** (Chromatic or Percy) diffing equivalent screens across landing and dashboard to catch drift early.
-
-**Platform constraints:**
-- No offline mode — internet required for all flows.
-- Google OAuth callback traverses three domains (`my.classlite.app → accounts.google.com → api.classlite.app/callback → my.classlite.app`). No custom loading state is possible during the Google leg. Design the "before" (login page) and "after" (dashboard landing) states only.
-- Auth cookies on `.classlite.app` domain with `SameSite=Lax` — session is seamless across subdomains. `SameSite=Strict` would silently break the OAuth redirect flow.
-- FR-73 (logged-in redirect from landing page): Astro cannot read `httpOnly` cookies. Implementation uses a non-httpOnly `logged_in=1` hint cookie readable by client-side JS. The JWT remains `httpOnly`. Stale hint cookie must be handled: if redirect to `my.classlite.app` results in a failed silent refresh, redirect back to landing with `?session_expired=true` to break the loop.
-
-### Effortless Interactions
-
-**Google OAuth — 10 seconds P50 to onboarding.** A teacher clicks "Continue with Google" → Google account picker → lands on onboarding or dashboard. No email verification step. No password creation. This is the path we optimize for — visually primary, fewest steps, fastest time-to-value. P95 will be higher due to Google consent screen variability and React cold-start bundle; the 10-second target is for the median case.
-
-**Invite acceptance — 30 seconds for authenticated users.** A user who is already logged in taps an invite link → sees who invited them and which center → confirms → lands in their class. For unauthenticated users (cold path), the target is under 50 seconds total (aspirational — validate with real device + network testing before committing as SLA). The invite link should pre-fill context so the user never re-enters information.
-
-**Logged-in redirect — near-instant.** A returning user who hits `classlite.app` is detected via hint cookie and redirected to their dashboard. The landing page is invisible to active users.
-
-**Language continuity.** If a user selects Vietnamese on the landing page, that preference is stored and carries through to the auth screens and into the product via a shared cookie or query parameter. No re-selection at any transition point.
-
-**First AI grade — zero configuration.** Post-signup, the onboarding routes the user to a pre-loaded sample IELTS essay. One button: "Run AI grading." The user sees band scores, inline comments, and the 3-minute experience before any center setup, class creation, or teacher invitation. Value first, configuration second. For owners, a pre-graded sample dashboard shows center-level analytics (band trends, teacher workload, at-risk flags) — the value they'll get once their team is onboarded.
-
-### Critical Success Moments
-
-1. **"This costs me more than I thought"** — First 10 seconds on the landing page. Before the visitor asks "is this for me?", the page quantifies their current pain: "Your teachers spend X hours/week grading essays by hand. That's Y hours/month you're paying for." This reframes the decision from "should I try new software?" to "can I afford not to?" The pain articulation layer precedes the feature showcase and pricing.
-
-2. **"This is for centers like mine"** — Within 15 seconds. After the pain hook, the visitor sees their world reflected: center sizes they recognize (2–15 teachers), pricing in VND, Vietnamese-language social proof with named center archetypes and outcome specificity ("giảm 9 phút chấm bài"). The free tier is visible as an honest entry point. The Studio tier signals the product scales.
-
-3. **"They were expecting me"** — Invite acceptance screen showing the center name, inviter's name, and assigned role. The user feels like they're joining something, not filling out a form. For teachers, this includes a clear answer to "what do I actually do right now?" — not a product tour, but a single actionable next step. The business outcome: teacher grades their first assignment within 48 hours, generating analytics visible to the center owner.
-
-4. **"I just saved time"** — The instant after the first AI grade. The user submitted a sample essay (or their own), the AI returned band scores and inline comments in under 30 seconds, and the teacher realizes the 12→3 minute promise is real. This is the highest-leverage conversion trigger in the entire funnel. Every UX decision in the landing page and auth flows exists to get the user to this moment as fast as possible. For owners, the equivalent moment is seeing a pre-graded sample dashboard that shows what their center analytics will look like — proof of operational visibility without micromanaging.
-
-5. **"I verified, now let me in"** — The email verification gate (email/password users only). User registers, gets the verification email, clicks the link, and immediately enters onboarding. The hold screen feels like a brief pause, not a wall: "Check your email — we sent a link to [email]. Click it and you're in." Resend available after 60 seconds. If the email doesn't arrive promptly, trust evaporates. Google OAuth users never see this screen.
-
-### Failure State Catalog
-
-Every failure state gets an explicit recovery path. These are not edge cases — they are the moments where users are permanently lost.
-
-| Failure State | Trigger | Recovery Path |
-|---|---|---|
-| **Expired invite** | Staff/student clicks invite link after 7 days | Clear message with center name: "This invitation has expired." CTA: "Ask [inviter name] to send a new one" with a mailto or copy-to-clipboard link. Not a generic error. |
-| **Already-accepted invite** | User clicks the same invite link twice | Redirect to login if unauthenticated, or to dashboard if authenticated. Message: "You've already joined [center name]." |
-| **Invite email already has account** | Existing user receives invite to a new center | Show: "You already have a ClassLite account. Join [center name] as [role]?" One-click merge, no re-registration. |
-| **Google Workspace blocks OAuth** | Institutional Google account blocks third-party apps | Fallback messaging on the OAuth error return: "Your Google account doesn't allow sign-in to ClassLite. Try a personal Gmail account, or sign up with email instead." Both alternatives are one click away. |
-| **Email verification not received** | User waits >60 seconds, no email | "Didn't get it?" link with troubleshooting: check spam, verify email spelling, resend (rate-limited). After 2 resends, offer: "Try signing up with Google instead." |
-| **Account lockout** | 5 failed login attempts in 10 minutes | 15-minute lockout with countdown timer visible. Message explains when they can retry. "Forgot password?" link remains active during lockout. |
-| **Password reset link expired** | User clicks reset link after 1 hour | "This link has expired." CTA: "Request a new one" — single click, pre-fills email. |
-| **Silent refresh failure** | Access token expired + refresh token expired/revoked | Redirect to login with message: "Your session expired — please log in again." Must preserve the URL the user was trying to reach so they return to it post-login. In-progress work (e.g., teacher mid-lesson-plan) must be preserved via autosave — the refresh bounce must never lose state. |
-| **Stale hint cookie redirect loop** | `logged_in=1` cookie exists but session is actually expired | `my.classlite.app` detects failed silent refresh, clears hint cookie, redirects to `classlite.app?session_expired=true`. Landing page shows a subtle "Session expired — please log in again" banner. Loop broken in one redirect. |
-| **Bad AI grade output** | Teacher runs AI grading on sample essay and the result seems wrong or low-quality | "This doesn't look right?" link visible alongside AI results. Opens a one-click re-run option with a different prompt framing. Disclaimer always visible: "AI suggestions are starting points — you have full control." For first-run, the sample essay is curated to produce reliably strong AI output, minimizing this risk. If AI service is temporarily degraded, show: "AI grading is temporarily slow — your essay is queued" rather than a broken result. |
-
-### Experience Principles
-
-1. **Value before configuration.** The first post-auth action is experiencing AI grading on a sample essay — not setting up a center, not creating classes, not inviting teachers. Configuration is important but it's not the conversion trigger. Get the user to "I just saved time" before asking them to build anything. For owners, value means seeing what their center dashboard will look like, not filling out forms.
-
-2. **Trust before conversion.** Every element on the landing page earns credibility before asking for action. Pain is quantified. Pricing is visible in VND. Social proof is local and specific. The free tier is an honest offer. Vietnamese center owners have been burned by overpromising software — we understate and overdeliver.
-
-3. **Route by intent, don't funnel.** An owner researching tools, a teacher clicking an invite, and a student joining a class are three different journeys. Each gets the shortest path to their goal. The landing page serves researchers; invite links bypass it entirely. Post-auth onboarding branches by role — teachers get a "grade your first essay" flow, owners get a center setup flow preceded by a sample dashboard preview.
-
-4. **Google first, email second.** Google OAuth is the visually dominant action on every auth screen. Email/password is always available but positioned as the alternative. Fallback for blocked Google Workspace accounts is explicit and one click away. The verification gate only applies to email/password users — Google users are pre-verified.
-
-5. **Design the failure state first.** Expired invites, undelivered verification emails, lockout, blocked Google accounts, silent refresh bounces, stale cookie loops, bad AI output — each has an explicit recovery path with clear messaging and a single next action. Generic error pages are forbidden. Every failure state names what happened and offers a way forward.
-
-6. **One brand, two codebases, shared tokens.** The Astro landing site and React dashboard are visually indistinguishable via shared design tokens (CSS variables). No shared components — accept that `.astro` and `.tsx` are different worlds. Visual regression tests catch drift. A user crossing from `classlite.app` to `my.classlite.app` should not notice the transition.
-
-## Desired Emotional Response
-
-### Primary Emotional Goals
-
-| User | Primary Emotion | Expression |
-|---|---|---|
-| **Center Owner** | Recognition → Relief | "They understand my world" → "Someone finally built this" |
-| **Teacher** | Momentum | "This is moving fast, I'm already in" |
-| **Teacher (invited)** | Belonging | "My center is already here, they saved me a spot" |
-| **Student** | Simplicity | "I know exactly what to do" |
-| **All (failure states)** | Confident recovery | "This broke, but I can see the next step" |
-| **All (first AI grade)** | Quiet competence | "This thing actually works" |
-
-### Emotional Journey Mapping
-
-| Stage | Owner | Teacher | Student |
+| User | Context | Primary surface | Design priority |
 |---|---|---|---|
-| **Landing page (first 5s)** | Recognition — "this is my world" | N/A (arrives via invite, bypasses landing) | N/A (arrives via invite) |
-| **Landing page (15s)** | Relief — "the cost of doing nothing is real" | N/A | N/A |
-| **Landing page CTA** | Cautious optimism — "the free tier is honest" | N/A | N/A |
-| **Auth screen** | Efficiency — "Google, one click, done" | Momentum — "I'm already moving" | Simplicity — "one tap" |
-| **Email verification gate** | Patience — "brief pause, not a wall" | Patience | Patience |
-| **Invite acceptance** | N/A (owner initiates invites) | Belonging — "they expected me" | Belonging — "my teacher set this up for me" |
-| **First-run / onboarding** | Anticipation — "I can see what this will become" (sample dashboard) | Curiosity — "let me try this grading thing" | Clarity — "here's my class, here's my work" |
-| **First AI grade** | Operational confidence — "I can see my center's data" | Quiet competence — "this actually works, next essay" | N/A (students don't grade) |
-| **Failure state** | Confidence — "I know what to do next" | Confidence — "clear path to recovery" | Confidence — "not stuck" |
-| **Return visit** | Control — "my center data is here, current, useful" | Flow — "pick up where I left off" | Ease — "check feedback, move on" |
+| **Center Owner** (Founder persona) | Owns + teaches; 2–15 teachers, 50–300 students. Former teacher turned operator. | Desktop. Center-pulse dashboard, people, billing. | Trust + operational visibility |
+| **Operator/Admin** (Operator persona) | Runs the center, does not teach. | Desktop. Same surfaces as Owner minus billing + role-editing. | Efficiency, oversight without micromanagement |
+| **Freelance Teacher** (Solo persona) | 1–5 classes, no center overhead. Lives in Google Workspace. | Desktop for authoring/grading; mobile for triage. | Speed, the grading differentiator |
+| **Student** (age 16–30) | Highest volume, lowest revenue. Enters via invite link. | Mobile-first. | Zero-friction, clarity, encouragement |
 
-### Micro-Emotions
+Persona → role mapping (onboarding only): **Operator → Admin**, **Founder → Owner**, **Solo teacher → Teacher** (single-user workspace). Onboarding uses persona labels (how users identify); the rest of the product uses role labels (permissions).
 
-**Critical to cultivate:**
-- **Trust over excitement.** Vietnamese center owners have been sold to before. The landing page should feel steady and credible, not hype-driven. Muted confidence over startup energy.
-- **Competence over delight.** Teachers don't want to be delighted by a grading tool. They want to feel competent and fast. The AI grading result should feel like a reliable assistant, not a magic trick.
-- **Belonging over onboarding.** Invited users should feel they're joining an existing community, not starting a new account. The invite screen centers the center's identity, not ClassLite's.
-- **Calm over urgency.** Even on the landing page, avoid countdown timers, "limited time" pressure, or aggressive CTAs. The free tier is always available. Calm confidence converts better in this market than manufactured urgency.
+### 2.3 Key Design Challenges (full product)
 
-**Critical to avoid:**
-- **Suspicion** — "this looks too good / too polished to be real." Ground every claim. Show pricing. Name real center archetypes.
-- **Abandonment** — "it's broken and no one is helping me." Every failure state names what happened and offers one clear next action. No dead ends, no generic errors.
-- **Overwhelm** — "there's too much to set up before I can use this." Value before configuration. One sample essay, one button. Setup comes after the user has felt the product work.
-- **Impatience** — "why do I need to verify my email to use this?" The verification gate must feel like a 30-second pause, not a bureaucratic wall. Copy matters: "Almost there — check your inbox" not "You must verify your email before proceeding."
+1. **Trust construction over a skeptical, largely-undigitized market.** Competitors are WhatsApp groups and shared spreadsheets, not other SaaS. Every surface must read as steady, local, and credible — Vietnamese-first, IELTS terms in English, pricing in VND, understated rather than hype-driven.
+2. **Teacher-in-control AI.** The differentiator is AI grading, but the design must never let AI feel like it's grading *for* the teacher. Every AI output is a labeled, confidence-rated, dismissible suggestion the teacher accepts, edits, or rejects. This pattern must be unmistakable and identical everywhere AI appears (authoring, Writing/Speaking grading, analytics recommendations).
+3. **One product, four roles, strict isolation.** A single app shell renders four navigation spines and role-scoped data. Role-gating must be visible-but-graceful (dimming + tag, not silent removal where context helps), and absolutely safe (a student must never see another student's data, a teacher must never see center-wide billing).
+4. **Density without overwhelm.** Owners and teachers work in data-dense tables, heatmaps, and queues; students need calm, one-thing-at-a-time clarity. The same token system must serve both registers.
+5. **Calm recovery as a product value.** Empty states teach the IA; error/penalty/lock/denial states show their math, preserve the user's work, and route the next step through a human (teacher/owner inbox). No dead ends, no blame.
+6. **Honest mobile.** The product ships only the surfaces a phone genuinely fits (student consumption, teacher triage, owner approvals) and labels the rest as deliberately desktop-only — it does not fake parity.
+7. **Pre-auth → auth → product continuity.** A user crossing `classlite.app` → `my.classlite.app` → dashboard must not perceive a seam: same paper background, dot grid, Fraunces headings, button styles, and language state. (Detailed in §10.)
 
-### Design Implications
+### 2.4 Design Opportunities
 
-| Emotional Goal | UX Design Approach |
-|---|---|
-| **Recognition** (owner, landing) | Use Vietnamese-register social proof: named center archetypes, specific outcomes in VND and minutes saved. Mirror the visitor's reality before pitching the product. |
-| **Relief** (owner, landing) | Pain articulation layer with quantified cost. Calculator-style framing: "5 teachers × 3 hours/week × 48 weeks = 720 hours/year on manual grading." Make the status quo feel expensive. |
-| **Momentum** (teacher, auth) | Google OAuth as the largest button on the page. Minimal form fields. Progress indicators that move fast. No unnecessary screens between click and dashboard. |
-| **Belonging** (invited users) | Invite screen leads with the center's name and inviter's identity, not ClassLite branding. "Linh invited you to join IELTS Academy as a Teacher." The product is the backdrop; the center is the foreground. |
-| **Simplicity** (student, mobile) | Auth screens at mobile breakpoint: one action per screen, full-width buttons, no sidebar, no navigation chrome. The student path is a straight line — no branches, no choices beyond "Continue with Google" or "Create account." |
-| **Quiet competence** (first AI grade) | No celebratory animations or "congratulations" modals after the first AI grade. The result simply appears — band scores, inline comments, clear and usable. The teacher's reaction should be "huh, that was fast" not "wow, cool animation." Understatement signals reliability. |
-| **Confident recovery** (failure states) | Every error screen uses a three-part structure: (1) what happened, in plain language, (2) why it happened, in one sentence, (3) what to do next, as a single button. No jargon, no error codes, no dead ends. |
-| **Calm** (landing page tone) | No countdown timers, no "limited spots", no aggressive red CTAs. The primary button is a calm, confident color. The free tier is permanent and visible. Annual pricing toggle shows savings without pressure language. |
-| **Patience** (verification gate) | The verification pending screen uses a friendly illustration, a clear "check your inbox" message, and a visible countdown to when "Resend" becomes available. The page auto-detects verification (polls or listens) and redirects without requiring the user to click anything after verifying. |
+1. **Google OAuth as the universal happy path and escape hatch** — Gmail dominates in Vietnam; "Continue with Google" is the visually primary action on every auth screen and the fallback offered at every point of friction.
+2. **Invite acceptance as the highest-value conversion node** — each accepted invite is a switching-cost multiplier; the invite screen foregrounds the *center's* identity, not ClassLite's.
+3. **Value before configuration** — the first post-auth action is experiencing AI grading on a pre-loaded sample, not setting up a center.
+4. **The grading queue as a flow state** — Prev/Next navigation, keyboard shortcuts, and AI pre-fill turn a chore into a fast, satisfying loop (UX-DR23).
+5. **Reuse loops everywhere** — save-as-template, archive duplicate / edit-a-copy, and recurrence scoping let centers compound their setup work.
 
-### Emotional Design Principles
+---
 
-1. **Credibility is the emotion.** In a market where software distrust is the default, the highest-value emotional state is "I believe this will work." Every design choice — copy, layout, imagery, pricing display — is in service of credibility. Delight is a luxury; trust is the requirement.
+## 3. Product Experience Pillars
 
-2. **Understatement signals reliability.** The product that works doesn't need to shout. AI grading results appear cleanly. Pricing is stated plainly. Error messages are calm and helpful. The tone is a confident professional, not an excited salesperson.
+These nine through-lines govern every surface. They consolidate the experience principles, emotional design principles, and flow-optimization principles into one canonical set.
 
-3. **Speed is an emotion.** When auth takes 10 seconds and the first AI grade takes 30 seconds, the user *feels* that the product respects their time. Speed isn't a technical metric — it's the primary emotional signal that this product is different from the tools that wasted their time before.
+1. **Value before configuration.** Get the user to "I just saved time" (the first AI grade) before asking them to build anything. Owners see a pre-graded sample *dashboard*; teachers grade a sample essay. Configuration follows proof. *(FR-5, UX-DR21)*
 
-4. **Belonging before branding.** On invite flows, the center's identity comes first, ClassLite's branding comes second. The product is the infrastructure; the user's center is the experience. This applies to invite emails, acceptance screens, and the first dashboard view.
+2. **Trust before conversion.** Credibility is earned before any ask. Pain quantified, pricing visible in VND, social proof local and specific, free tier honest. Understatement signals reliability; calm converts better than urgency in this market.
 
-5. **Recovery is care.** How a product handles failure is how it shows it cares. A thoughtful error message with a clear next step communicates more empathy than any onboarding animation. Design failure states with the same care as happy paths.
+3. **Teacher-in-control AI.** AI is pervasive but always subordinate. It is visually marked (gradient "AI" chip), confidence-rated (to teachers, never students), previewed before insert, and accepted/edited/dismissed per item — never auto-committed. It draws only on existing content and never overrides the teacher's final decision. *(FR-24–26, FR-34, FR-36, UX-DR22)*
 
-## UX Pattern Analysis & Inspiration
+4. **Route by intent, don't funnel.** Owner researching, teacher accepting an invite, student joining a class are three journeys with three shortest paths. Post-auth onboarding branches by persona; the app branches by role.
 
-### Inspiring Products Analysis
+5. **Google first, email second.** Google OAuth is the dominant action on every auth screen; email/password is always available as the alternative; verification gates only email users.
 
-#### Duolingo — "Play first, profile second"
+6. **Anchored feedback is the communication spine.** There is no messaging product. Teacher↔student communication happens only through anchored comments on submitted work (highlight → pin → typed comment: Error/Praise/Suggestion) and anchored Q&A (highlight → ask, item-scoped or whole-exercise). The same Docs-style sticky-rail mechanic serves both. *(FR-33, FR-38–40)*
 
-Duolingo's core UX insight is radical: **let the user experience value before asking them to create an account.** A visitor starts a language exercise within seconds of landing — no signup, no email, no profile. Account creation is deferred until the user has already invested effort and wants to save progress. By the time the signup modal appears, the user has felt the product work and has a reason to stay.
+7. **Calm, blame-free recovery.** Empty ≠ broken (empties teach the IA); error ≠ blame (errors show their math, preserve work, name the rule and the human who can help). Every failure state has one clear next action. *(FR-69, FR-70, UX-DR16)*
 
-**What ClassLite can learn:**
-- **Value before identity.** Duolingo proves that deferring signup increases activation. ClassLite's "first AI grade on a sample essay" principle is the equivalent — but we require signup first (because AI grading consumes credits and needs a center context). The takeaway: make the path from signup to first AI grade as short as Duolingo makes the path from landing to first exercise.
-- **One action per screen.** Duolingo's onboarding never shows two choices when one will do. Each screen has one primary action. ClassLite's auth screens should follow this — especially the mobile student path.
-- **Friendly, non-intimidating tone.** Duolingo's copy is warm and encouraging, never corporate. ClassLite's landing page and auth screens should use a similar register — professional but approachable. "Almost there — check your inbox" not "Email verification required."
-- **Personalization at signup.** Duolingo asks 3-4 questions (language, goal, level) to personalize the experience immediately. ClassLite's persona selection (Operator/Founder/Solo Teacher) serves the same function — but should feel equally lightweight and purposeful.
-- **Contextual education over upfront tutorials.** Duolingo teaches by doing, not by explaining. ClassLite's first-run AI grading experience should work the same way — the user learns what AI grading does by doing it, not by reading about it.
+8. **Honest, purpose-built responsiveness.** Mobile screens are designed for the thumb and the moment (consumption, triage, approval), not squished desktops. Surfaces that don't fit a phone say so. *(FR-74, UX-DR15)*
 
-#### YouPass — Vietnamese IELTS credibility benchmark
+9. **One brand, two codebases, shared tokens.** Astro landing and React app are visually identical via a committed `tokens.css` and a no-raw-hex lint rule; visual regression tests catch drift. *(UX-DR1, NFR-1)*
 
-YouPass (by IELTS 1984) is the closest product to ClassLite's market. It's a self-study IELTS platform, free, built by a recognized Ho Chi Minh City prep center. Teachers and students already use it — it's the default reference point for "IELTS tool in Vietnam."
+---
 
-**What ClassLite can learn:**
-- **Immediate skill-based entry.** YouPass's landing page shows four skill cards (Reading, Listening, Writing, Speaking) with "Practice Now" buttons. Zero friction to start. ClassLite's landing page is B2B (selling to center owners), so it can't do the same — but the principle of "show what you can do, not what you are" applies. Feature screenshots showing AI grading in action > abstract benefit statements.
-- **Vietnamese-first with IELTS English.** YouPass is fully Vietnamese with IELTS terminology in English (band score, Reading, Listening, etc.). This is the correct bilingual register for the Vietnamese IELTS market. ClassLite should follow the same pattern — Vietnamese primary, IELTS terms in English, not translated.
-- **Clean, card-based visual hierarchy.** Red/coral accent on white, Nunito typography, SVG illustrations. Student-friendly and approachable. ClassLite needs to feel more *professional* than YouPass (B2B vs B2C), but the clean card-based approach and warm color palette are worth noting.
-- **Zalo support widget.** YouPass has floating Zalo chat. Vietnamese users expect Zalo as a support channel. ClassLite should consider this for the landing page — it's a trust signal in this market.
-- **Institutional credibility.** YouPass leads with "from IELTS 1984" — a recognized center. ClassLite doesn't have institutional backing, so it must build credibility through other means: named center archetypes, outcome data, transparent pricing.
+## 4. Information Architecture & Navigation
 
-**Key difference:** YouPass is a B2C self-study tool (free, student-facing). ClassLite is a B2B center management platform (paid, owner/teacher-facing). YouPass's UX can be frictionless because there's nothing to configure. ClassLite must balance "try it fast" with "set up your center." The first AI grade experience bridges this gap — it's the ClassLite equivalent of YouPass's instant "Practice Now."
+### 4.1 Role Model
 
-### Transferable UX Patterns
+| Role | Ladder | Navigation spine (sidebar) | Bottom pill |
+|---|---|---|---|
+| **Owner** | top | Dashboard · People · Classes · Schedule · Analytics · Inbox · Knowledge hub · Archive · Settings | "Owner" |
+| **Admin** | mid | Same as Owner, minus Owner-only affordances (no Owner-role invite on `s41`, no Roles & permissions `s44`, no Billing) | "Admin" |
+| **Teacher** | bottom | Dashboard · Classes · Schedule · Exercises · Questions · Students · Analytics · Inbox · Knowledge hub · Archive | "Teacher" |
+| **Student** | consumer (off-ladder) | Dashboard · My classes · Assignments · My schedule · Questions · My performance · Inbox | "Student" |
 
-**Navigation Patterns:**
-- **Skill-based entry cards** (YouPass) → Adapt for landing page feature showcase. Instead of "Practice Now," show "See AI Grading," "See Class Management," "See Analytics" with visual previews.
-- **One action per screen** (Duolingo) → Apply to all auth screens, especially mobile. Login: one form. Register: one form. Verify: one message + one button. Never two competing CTAs.
+**Ladder:** Teacher < Admin < Owner (fixed). Student is a separate consumer role outside the ladder. **Scope:** center-wide only — no branch switcher, no workspace switcher; one app for all roles, role-gated.
 
-**Interaction Patterns:**
-- **Value before signup** (Duolingo) → Express as "first AI grade before configuration." The sample essay grading experience is ClassLite's equivalent of Duolingo's first translation exercise.
-- **Personalization at entry** (Duolingo) → The persona selection (Operator/Founder/Solo Teacher) is ClassLite's personalization moment. Make it feel like Duolingo's language picker — visual, quick, with clear "this changes what you see next" signaling.
-- **Contextual learning** (Duolingo) → Don't explain AI grading before the user tries it. Let them run the grader on a sample essay, then explain the result. Learning by doing.
+### 4.2 App Shell
 
-**Visual Patterns:**
-- **Clean card-based layout on white** (YouPass) → Landing page pricing section and feature blocks as cards with clear visual hierarchy.
-- **Warm, approachable color palette** (both) → ClassLite's amber accent is already in this space. Avoid cold corporate blues for the landing page. Warm signals trust in the Vietnamese market.
-- **Vietnamese-first with English IELTS terms** (YouPass) → Landing page default language is Vietnamese. IELTS terminology stays in English. Language toggle is visible but not the first thing users see.
+| Element | Position | Notes |
+|---|---|---|
+| **Sidebar — brand** | top-left | "ClassLite" wordmark (Fraunces, italic) with amber dot accent. Dark navy sidebar (`--cl-sidebar-bg` `#1a1f2e`), white active state. |
+| **Sidebar — workspace nav** | left | Role-specific (see §4.1). Grouped: Workspace / Resources (Knowledge hub, Archive) / Settings (Owner only). |
+| **Sidebar — Inbox item** | left | Carries an unread badge (`--cl-accent-2`). |
+| **Sidebar — user pill** | bottom-left | 28px avatar (gradient) + name + role label. |
+| **Topbar — breadcrumbs** | top-left | Workspace / section / *current*. |
+| **Topbar — search** | top-right | "Search" with ⌘K shortcut → global search across classes, students, exercises, assignments, Knowledge hub (FR-67). 56px topbar height. |
+| **Topbar — primary CTA** | top-right | Section-dependent: "+ New class", "+ New assignment", "Invite staff", "Use in exercise", etc. |
 
-### Anti-Patterns to Avoid
+Background carries the subtle dot-grid pattern throughout. Page content max-width `1320px`; common right-rail detail panels at `300–320px`.
 
-- **Generic SaaS landing page template.** Stock photos, vague "streamline your workflow" copy, English-first with Vietnamese as afterthought. This signals "foreign startup" and kills trust in the Vietnamese market. ClassLite must feel local.
-- **Feature-first landing page.** Listing 20 features above the fold. YouPass works because it shows what you can *do*, not what the product *has*. Lead with the pain articulation and outcome, not a feature grid.
-- **Signup wall before any value.** Duolingo proves this kills activation. ClassLite can't fully defer signup (AI grading needs auth), but the path from signup to first value must be measured in seconds, not minutes.
-- **"Schedule a demo" as primary CTA.** This is enterprise SaaS pattern. Vietnamese center owners (2-15 teachers) want to try it themselves, not book a call. The free tier is the demo. "Start free" is the only CTA that works.
-- **Translated-from-English copy.** Writing landing page copy in English and translating to Vietnamese produces awkward, unnatural text. Vietnamese copy should be written natively, not translated. IELTS terms remain in English.
-- **Heavy JavaScript landing page.** YouPass loads fast on Vietnamese mobile networks. Astro's static output is the right call — the landing page should feel as instant as YouPass, not like a React SPA cold-starting.
+### 4.3 Navigation & Routing Principles
 
-### Design Inspiration Strategy
+- **Role-level protection at the router.** A student cannot navigate to `/billing` or `/settings`; a teacher deep-linking to Center settings hits a *permission-denied orientation screen* (`s67`), not a blank 403 (§6.4).
+- **Role-specific dashboards are separate components** (`OwnerDashboard` `s48` / `TeacherDashboard` `s06` / `StudentDashboard` `s29`), never one mega-component with role branches *(UX-3 in project rules)*.
+- **Role-gating is shown, not silently removed, where context aids understanding.** Owner-only analytics cards render dimmed with an "ADMIN/OWNER" tag on shared screens (`s45`); the permission matrix (`s44`) shows the full ladder with locked rows. Hard data isolation (other students' results, billing) is absent from the DOM entirely.
+- **Tabbed shells over screen sprawl.** Class detail (`s08`/`s09`), staff detail (`s40`), student performance (`s47`), billing (`s69`), and settings (`s49`) use a single shell with tab-switched content — same head + stat strip, swapped body.
+- **One screen, role-scoped data.** Several screens serve multiple roles with scoped data: analytics (`s45`–`s47`), student detail (`s10` reused by teacher's `s10a` and owner's `s42`), inbox (`s50`–`s52`).
 
-**Adopt directly:**
-- One action per screen on auth flows (Duolingo)
-- Vietnamese-first with English IELTS terms (YouPass)
-- Card-based visual hierarchy for pricing and features (YouPass)
-- Warm, approachable color palette — amber/coral over corporate blue (both)
-- Fast static page load for landing (YouPass + Astro architecture)
+### 4.4 Screen Inventory (full product)
 
-**Adapt for ClassLite's B2B context:**
-- Duolingo's "play first" → "grade first" (sample essay before configuration)
-- Duolingo's persona questions → ClassLite's Operator/Founder/Solo picker (make it feel equally lightweight)
-- YouPass's "Practice Now" instant entry → Feature preview cards with screenshots/demos showing AI grading in action
-- YouPass's Zalo support widget → Consider for landing page as a Vietnamese-market trust signal
+| Chapter | Screens | Range | Primary role |
+|---|---|---|---|
+| Landing + Auth | 9 | `LP-01`, `AUTH-01–08` | Public / all |
+| 1 — Onboarding (persona-forked) | 10 | `s00–s09` | All |
+| 2a — Teacher: dashboard, classes, students | 6 | `s06–s10`, `s10a` | Teacher |
+| 2b — Teacher: time & schedule | 4 | `s11–s14` | Teacher |
+| 2c — Teacher: content & grading | 11 | `s15–s25` | Teacher |
+| 2d — Teacher: resources | 3 | `s26–s28` | Teacher |
+| 3 — Student | 10 | `s29–s38` | Student |
+| 4 — Admin & Owner | 6 | `s39–s44` | Admin/Owner |
+| 5 — Across roles | 5 | `s45–s49` | All (scoped) |
+| 6a — Inbox | 3 | `s50–s52` | All |
+| 6b — Empty states | 10 | `s53–s62` | All |
+| 6c — Error states | 5 | `s63–s67` | All |
+| 7 — Billing & limits | 6 | `s68–s73` | Owner |
+| 8 — Mobile | 14 | `s74–s87` | All |
+| **Total** | **102** | | |
 
-**Avoid:**
-- Generic English-first SaaS templates (kills local trust)
-- Feature-list landing pages (lead with pain + outcome, not capabilities)
-- "Schedule a demo" CTAs (free tier is the demo)
-- Heavy JS landing pages (Astro static is correct — match YouPass's speed)
-- Translated-from-English copy (write Vietnamese natively)
+The per-role visibility matrix (which screen each role sees, and whether data is full/scoped/hidden) is maintained verbatim in `classlite-ia.md` and is the authority for access design; §4.3 governs how that access is *expressed* in the UI.
 
-## Design System Foundation
+---
 
-### Design System Choice
+## 5. Design System Foundation
 
-**Tailwind CSS + shadcn/ui**, themed to match ClassLite's existing mockup design language — a warm, paper-toned aesthetic with serif display typography and navy/amber accent system.
+### 5.1 Design System Choice
 
-- **Dashboard auth screens** (`my.classlite.app`): shadcn/ui components themed with ClassLite's design tokens. Radix UI primitives provide WCAG 2.1 AA accessibility.
-- **Landing page** (`classlite.app`): Tailwind CSS consuming the same tokens. Astro components are hand-built but visually identical.
-- **Shared design tokens** (`@classlite/tokens`): CSS custom properties — single source of truth.
+**Tailwind CSS + shadcn/ui**, themed to ClassLite's established design language — a warm, paper-toned aesthetic with serif display typography and a navy/amber accent system. This is not a generic SaaS look; it is preserved exactly across all surfaces.
 
-### Rationale for Selection
+- **Dashboard + auth (`my.classlite.app`):** shadcn/ui components (Radix primitives → WCAG 2.1 AA focus/keyboard/ARIA) themed with ClassLite tokens.
+- **Landing (`classlite.app`):** Astro components, hand-built, visually identical, consuming the same tokens.
+- **Shared tokens (`tokens.css`):** CSS custom properties — the single source of truth, committed to both `classlite-web/src/` and `classlite-landing/src/styles/`. A lint rule forbids raw hex (all colors reference `var(--cl-*)`); visual regression tests catch drift. *(UX-DR1)*
 
-1. **Strong existing visual identity.** The mockups define a distinctive warm, paper-toned design language with serif display type. This is not a generic SaaS look — it must be preserved exactly.
-2. **shadcn/ui is fully customizable.** Components are copied into the project and themed via CSS variables. The paper/ink palette maps directly to token overrides.
-3. **Tailwind bridges both codebases.** Both Astro and React consume the same custom properties.
-4. **Accessibility built-in.** Radix primitives handle focus management, keyboard navigation, and ARIA for auth forms.
-
-### Implementation Approach
-
-**Design tokens (`@classlite/tokens`) — extracted from mockups:**
+### 5.2 Design Tokens (`tokens.css`) — extracted from the 93-screen mockup set
 
 ```css
 :root {
   /* Surfaces */
   --cl-paper:          #f5f1ea;   /* Primary background (warm off-white) */
-  --cl-paper-2:        #efe9df;   /* Secondary background */
+  --cl-paper-2:        #efe9df;   /* Secondary background / alternating sections */
   --cl-surface:        #ffffff;   /* Card/panel background */
-  --cl-surface-warm:   #fcfaf6;   /* Side panels, modal footers */
+  --cl-surface-warm:   #fcfaf6;   /* Side panels, modal footers, Q&A rails */
   --cl-surface-compose:#fdf9ef;   /* Compose/editor bg */
 
   /* Text */
-  --cl-ink:            #1a1f2e;   /* Primary text / dark UI */
+  --cl-ink:            #1a1f2e;   /* Primary text / dark UI / primary button */
   --cl-ink-soft:       #2c3242;   /* Secondary text */
-  --cl-muted:          #6b6f7a;   /* Tertiary text / labels / placeholders */
+  --cl-muted:          #595c66;   /* Tertiary text / labels / placeholders (a11y-darkened, see 5.5) */
 
   /* Accents */
-  --cl-accent:         #1e3a8a;   /* Primary accent (deep blue) */
-  --cl-accent-2:       #d97706;   /* Secondary accent (amber/gold) */
+  --cl-accent:         #1e3a8a;   /* Primary accent (deep blue) — links, focus, button hover */
+  --cl-accent-2:       #d97706;   /* Secondary accent (amber/gold) — DECORATIVE use only */
+  --cl-accent-2-text:  #7c4309;   /* Text-safe amber (5.0:1 on white) */
+  --cl-accent-2-btn:   #92500a;   /* Button-safe amber (white text 4.6:1) */
 
   /* Borders */
-  --cl-line:           #d9d2c4;   /* Border / divider (warm gray) */
-  --cl-line-soft:      #e6e1d5;   /* Subtle border */
+  --cl-line:             #d9d2c4;   /* Border / divider (warm gray) */
+  --cl-line-soft:        #e6e1d5;   /* Subtle border */
+  --cl-line-interactive: #a8a095;   /* Interactive-control borders (3.0:1, WCAG 1.4.11) */
 
-  /* Status */
-  --cl-green:          #166534;   /* Success / active */
-  --cl-red:            #991b1b;   /* Error / danger */
-  --cl-amber:          #b45309;   /* Warning / late */
+  /* Status (foreground) */
+  --cl-green:          #166534;   /* Success / active / granted / on-time / improvement */
+  --cl-red:            #991b1b;   /* Error / danger / blocked / at-risk / hard limit */
+  --cl-amber:          #b45309;   /* Warning / late / nearing-limit / needs-attention */
 
   /* Status tints (backgrounds) */
-  --cl-tint-blue:      #eef0fb;   /* Accent/upcoming */
-  --cl-tint-gold:      #fdf6e3;   /* Writing/amber */
-  --cl-tint-green:     #ecf4ec;   /* Reading/success/active */
-  --cl-tint-red:       #fbeaea;   /* Speaking/error/ended */
+  --cl-tint-blue:      #eef0fb;   /* Accent / upcoming / info */
+  --cl-tint-gold:      #fdf6e3;   /* Writing / amber / editable-row / warning */
+  --cl-tint-green:     #ecf4ec;   /* Reading / success / active / on-time */
+  --cl-tint-red:       #fbeaea;   /* Speaking / error / ended / blocked */
 
   /* Chip */
   --cl-chip-bg:        #ebe5d6;
@@ -358,13 +231,9 @@ YouPass (by IELTS 1984) is the closest product to ClassLite's market. It's a sel
   --cl-font-mono:      'Geist Mono', monospace;
 
   /* Radius */
-  --cl-radius-xs:      4px;    /* Tags, badges, pills (inner) */
-  --cl-radius-sm:      6px;    /* Buttons, inputs, nav items, tabs */
-  --cl-radius-md:      8px;    /* Link cards, compose areas */
-  --cl-radius-lg:      10px;   /* Section blocks, action cards, hub tiles */
-  --cl-radius-xl:      12px;   /* Dashboard stats, setup cards, schedule cards */
-  --cl-radius-2xl:     14px;   /* Modals, browser frames */
-  --cl-radius-full:    999px;  /* Pills, chips, switches, progress bars */
+  --cl-radius-xs:   4px;   --cl-radius-sm:  6px;   --cl-radius-md:  8px;
+  --cl-radius-lg:   10px;  --cl-radius-xl:  12px;  --cl-radius-2xl: 14px;
+  --cl-radius-full: 999px;
 
   /* Shadows */
   --cl-shadow-subtle:  0 1px 3px rgba(0,0,0,0.06);
@@ -377,1005 +246,459 @@ YouPass (by IELTS 1984) is the closest product to ClassLite's market. It's a sel
   --cl-scrim:          rgba(26,31,46,0.32);
 
   /* Sidebar */
-  --cl-sidebar-bg:     #1a1f2e;
-  --cl-sidebar-text:   #cfd1d8;
-  --cl-sidebar-hover:  #252a39;
-  --cl-sidebar-active-bg: #ffffff;
-  --cl-sidebar-active-text: #1a1f2e;
-  --cl-sidebar-width:  220px;
+  --cl-sidebar-bg:        #1a1f2e;  --cl-sidebar-text:   #cfd1d8;
+  --cl-sidebar-hover:     #252a39;  --cl-sidebar-active-bg: #ffffff;
+  --cl-sidebar-active-text: #1a1f2e; --cl-sidebar-width:  220px;
 
   /* Layout */
-  --cl-topbar-height:  56px;
-  --cl-page-max-width: 1320px;
-  --cl-modal-width:    460px;
-  --cl-side-panel:     300px;
-  --cl-detail-panel:   320px;
+  --cl-topbar-height:  56px;   --cl-page-max-width: 1320px;
+  --cl-modal-width:    460px;  --cl-side-panel:     300px;  --cl-detail-panel: 320px;
 }
 ```
 
-**Typography scale (from mockups):**
+**Dot-grid background pattern:** `radial-gradient(circle at 1px 1px, rgba(26,31,46,0.04) 1px, transparent 0)`, size `24px 24px` — body, onboarding shell, landing, auth.
 
-| Role | Font | Size | Weight | Letter-spacing |
+### 5.3 Typography Scale
+
+| Role | Font | Size | Weight | Tracking |
 |---|---|---|---|---|
 | Hero h1 | Fraunces | 44px | 400 | -0.02em |
 | Page h1 | Fraunces | 36px | 400 | -0.02em |
 | Section h2 | Fraunces | 28px | 400 | -0.01em |
 | Section h3 | Fraunces | 18px | 500 | -0.005em |
 | Modal title | Fraunces | 19px | 400 | -0.02em |
+| **Overall band (display)** | Fraunces | 32px | 400 | -0.02em |
 | Body | Geist | 15px | 400 | 0 |
 | Body small | Geist | 13px | 400 | 0 |
 | Buttons | Geist | 12.5px | 500 | 0 |
-| Labels/mono | Geist Mono | 10px | 500 | 0.14em |
+| **Stat/score number** | Geist Mono | 28px | 500 | 0 |
+| Labels / table headers | Geist Mono | 10px | 500 | 0.14em |
 | Nav group | Geist Mono | 9.5px | 500 | 0.18em |
 | Eyebrow | Geist Mono | 11px | 500 | 0.14em |
 
-**Component specs (from mockups):**
+Convention: **Fraunces** for display headings and the single oversized overall-band number; **Geist** for all body and UI; **Geist Mono** for labels, counts, timestamps, per-criterion scores, and prices. Vietnamese subset loaded for Fraunces + Geist; IELTS terms wrapped `<span lang="en">`.
+
+### 5.4 Core Component Specs
 
 | Component | Spec |
 |---|---|
-| **Button (default)** | bg: `#fff`, border: `1px solid var(--cl-line)`, radius: `6px`, padding: `7px 14px`, font: Geist 12.5px/500 |
-| **Button (primary)** | bg: `var(--cl-ink)`, color: `#fff`, hover: bg `var(--cl-accent)` |
-| **Input** | border: `1px solid var(--cl-line)`, radius: `6px`, padding: `9px 11px`, font: Geist 13px |
-| **Card** | bg: `#fff`, border: `1px solid var(--cl-line-soft)`, radius: `10px` |
-| **Modal** | width: `460px`, radius: `14px`, shadow: `--cl-shadow-modal`, scrim: `--cl-scrim`, footer bg: `#fcfaf6` |
-| **Status pill** | radius: `999px`, padding: `4px 10px`, font: 11.5px/500 |
-| **Badge (nav)** | bg: `var(--cl-accent-2)`, color: `#fff`, font: 10px/600, radius: `999px` |
-| **Table header** | font: Geist Mono 10px/500, letter-spacing: 0.14em, padding: `14px 16px` |
-| **Avatar** | 28px circle, gradient: `135deg var(--cl-accent) → var(--cl-accent-2)` |
-| **Switch** | track: 34×19px, knob: 15px circle, on: `var(--cl-accent)` |
-| **Progress bar** | height: 6px, track: `var(--cl-line-soft)`, fill: `var(--cl-accent)`, radius: `999px` |
-
-**Background pattern (dot grid):**
-`radial-gradient(circle at 1px 1px, rgba(26,31,46,0.04) 1px, transparent 0)`, size: `24px 24px` — used on body and onboarding shell.
-
-### Customization Strategy
-
-**What the tokens mean for landing page + auth:**
-
-- **Paper background, not white.** The mockups use `#f5f1ea` (warm parchment), not pure white. The landing page and auth screens must match this warmth.
-- **Deep navy as primary, not amber.** The primary action color is `--cl-ink` (`#1a1f2e`) with blue hover (`--cl-accent` `#1e3a8a`). Amber (`--cl-accent-2`) is secondary — used for badges, highlights, and accents.
-- **Fraunces serif for headings.** The landing page hero, pricing section headers, and auth screen titles use Fraunces — a warm, distinctive serif. Body text uses Geist sans-serif. This serif/sans pairing gives ClassLite a more refined feel than typical SaaS.
-- **Dot grid background pattern.** The subtle dot grid is used throughout the mockups. The landing page and auth screens should carry this pattern for visual continuity.
-- **Sidebar is dark navy.** The authenticated app uses a `#1a1f2e` sidebar with white active states. Auth screens (pre-sidebar) should reference this navy — in the footer and as a design accent.
-
-**Auth-specific application:**
-- Google OAuth button: large, uses `--cl-ink` bg with white text (matches primary button style), Google logo inline. Visually dominant per "Google first" principle.
-- Email/password form: `--cl-surface` (#fff) card on `--cl-paper` (#f5f1ea) background. Inputs use mockup specs (6px radius, line border, 13px Geist).
-- Verification pending screen: dot grid background, Fraunces heading ("Almost there"), centered card layout matching modal specs (14px radius, warm footer bg).
-- Error states: red tint background (`#fbeaea`) with `--cl-red` text, matching mockup status patterns.
-- Invite acceptance: center's name in Fraunces display, role badge using `--cl-accent-2` amber (matching nav badge style).
-
-**Landing-specific application:**
-- Hero: Fraunces 44px heading on dot-grid `--cl-paper` background. Primary CTA button in `--cl-ink` navy.
-- Pricing cards: white cards (`--cl-surface`) on paper background, `--cl-line-soft` borders, `10px` radius. Popular tier highlighted with `--cl-tint-gold` border.
-- Feature blocks: card-based with `--cl-shadow-card`, matching hub-tile and action-card patterns from mockups.
-- Footer: `--cl-ink` navy background, `--cl-sidebar-text` (#cfd1d8) for links — mirrors the sidebar aesthetic.
-
-## Defining Core Experience
-
-### Defining Experience
-
-**"I saw what it does, signed up with Google, and graded a sample essay — all before my coffee got cold."**
-
-The defining experience for the landing page and auth flows is the **speed of the trust-to-value pipeline** — how fast a skeptical Vietnamese center owner or teacher goes from "what is this?" to "this actually works." This is not a single screen or interaction. It's the seamless compression of five cognitive stages into minutes:
-
-1. Awareness → "I have a problem I'm paying for" (landing page pain articulation)
-2. Recognition → "This is for someone like me" (social proof, pricing, center archetypes)
-3. Decision → "I'll try the free tier" (CTA click)
-4. Entry → "I'm in" (Google OAuth, 10 seconds)
-5. Proof → "It works" (first AI grade on sample essay)
-
-Every screen in this scope exists to accelerate the visitor through these stages. A delay at any stage — a confusing landing page, a slow auth flow, a verification wall, a blank dashboard — breaks the pipeline and loses the user permanently.
-
-### User Mental Model
-
-**What the center owner brings to this moment:**
-
-The Vietnamese center owner arriving at `classlite.app` is not a first-time software buyer. They've used Google Classroom, maybe Zalo for group communication, probably a shared Google Sheet for grades. Their mental model for "new software" is:
-
-- "This will take hours to set up before I know if it's useful"
-- "My teachers won't adopt it even if I like it"
-- "The free tier will be crippled and I'll have to pay to evaluate properly"
-- "It's probably not designed for Vietnamese centers"
-
-Every one of these assumptions must be broken in the first 60 seconds.
-
-**What the teacher brings:**
-
-A teacher clicking an invite link thinks: "My boss told me to sign up for this thing." Their mental model is compliance, not curiosity. The invite flow must convert compliance into interest by answering one question immediately: "What do I actually do here?" The answer is: "Grade this sample essay with AI." Not "explore the dashboard" or "complete your profile."
-
-**What the student brings:**
-
-A student tapping a link on their phone thinks: "My teacher told me to join." Their mental model is simplicity — tap, sign in, see my class. Any screen that isn't directly on that path is friction. Students don't read onboarding. They don't care about ClassLite's value proposition. They want to find their assignment.
-
-**Current solutions and their mental residue:**
-
-| Current tool | What they love | What they hate | Mental residue for ClassLite |
-|---|---|---|---|
-| WhatsApp/Zalo groups | Instant, everyone's already there | Chaotic, no structure, can't find anything | "Will this be as fast to communicate through?" |
-| Google Sheets (gradebook) | Flexible, familiar, free | Manual, error-prone, no analytics | "Will entering grades be slower than my spreadsheet?" |
-| Paper gradebooks | Tangible, no tech issues | Can't share, no analytics, lost data | "I don't trust digital — what if data disappears?" |
-| YouPass | Free practice, AI writing feedback | Student-only, no center management | "Will this have the same quality of IELTS content?" |
-
-### Success Criteria
-
-The core experience succeeds when:
-
-| Criteria | Metric | How we know |
-|---|---|---|
-| **Landing page holds attention** | Visitor stays >15 seconds, scrolls past hero | Scroll depth tracking, bounce rate <60% |
-| **CTA converts** | >20% of visitors who scroll to pricing click "Start free" | Click-through rate on primary CTA |
-| **Auth completes** | >85% of users who start signup finish it | Funnel completion rate (start → dashboard) |
-| **Google OAuth dominance** | >65% of signups use Google OAuth | Auth method distribution |
-| **Verification doesn't kill** | >80% of email/password users verify within 1 hour | Time-to-verify distribution |
-| **First AI grade happens** | >60% of new users run AI grading in first session | SM-adjacent: first-session activation |
-| **Time-to-value** | Median <5 minutes from landing page to first AI grade result | End-to-end funnel timing |
-| **Invite acceptance rate** | >70% of sent invites are accepted within 48 hours | Invite → active user conversion |
-
-The experience fails when:
-- A visitor bounces from the landing page because it looks like a generic English-language SaaS
-- A user abandons signup because Google OAuth failed and email/password feels like too much work
-- A teacher accepts an invite but never grades anything because there was no clear first action
-- An owner sets up their center but never sees proof that AI grading works
-
-### Novel UX Patterns
-
-**Mostly established patterns, applied to a specific market:**
-
-The landing page and auth flows don't require novel interaction design. Registration forms, OAuth buttons, pricing tables, and verification screens are deeply established. The innovation is in how these patterns are **sequenced and contextualized** for the Vietnamese IELTS market.
-
-**Established patterns we adopt as-is:**
-- Google OAuth as primary auth (standard)
-- Email/password as fallback (standard)
-- Pricing comparison table with tier toggle (standard SaaS)
-- Email verification with resend (standard)
-- Password reset via email link (standard)
-- Invite acceptance with pre-filled form (standard B2B SaaS)
-
-**Established patterns we adapt:**
-- **Pain articulation before feature showcase** (adapted from long-form sales pages). Landing pages typically lead with features or a hero value proposition. We lead with a quantified cost of the status quo — adapted from direct-response copywriting, uncommon in SaaS landing pages.
-- **"Grade first, configure later" onboarding** (adapted from Duolingo's "play first" pattern). Instead of setup → explore → discover value, we flip to: signup → sample AI grade → setup. This is a known pattern (Duolingo, Canva) but novel for B2B education SaaS.
-- **Center-branded invite acceptance** (adapted from Slack's workspace invite). The invite screen foregrounds the center's identity, not ClassLite's. This is borrowed from team-first collaboration tools but uncommon in edtech.
-
-**Nothing requires user education.** Every interaction uses patterns users already know. The "novelty" is contextual — not in how the interactions work, but in what content they surface and in what order.
-
-### Experience Mechanics
-
-**The trust-to-value pipeline, screen by screen:**
-
-#### Stage 1: Landing Page → Decision (classlite.app)
-
-**Initiation:** Visitor arrives via search, referral, or direct URL. Browser detects locale → Vietnamese or English route.
-
-**Interaction flow:**
-1. **Hero** (above fold) — Fraunces heading quantifying the pain: "Giáo viên của bạn đang mất 12 phút chấm mỗi bài Writing. ClassLite giảm xuống còn 3 phút." Primary CTA: "Bắt đầu miễn phí" (Start free). Secondary: "Xem cách hoạt động" (See how it works) scrolls to features.
-2. **Pain articulation** — Calculator-style visual: "5 giáo viên × 3 giờ/tuần × 48 tuần = 720 giờ/năm chấm bài thủ công" (720 hours/year of manual grading).
-3. **Feature showcase** — 3-4 cards with screenshots: AI grading in action, class management dashboard, student analytics. Visual proof of capability, not a feature list.
-4. **Social proof** — Named center archetypes: "Trung tâm IELTS, TP.HCM, 8 giáo viên — giảm 65% thời gian chấm bài." Local, specific, Vietnamese-register.
-5. **Pricing** — Three tier cards (Free/Pro/Studio), VND, annual/monthly toggle. Free tier CTA: "Bắt đầu miễn phí." Pro/Studio: "Dùng thử miễn phí."
-6. **Footer** — Navy background (mirrors sidebar), legal links, language toggle, Zalo support widget.
-
-**Feedback:** Smooth scroll between sections. CTA buttons always visible (sticky header with CTA on scroll-past-hero).
-
-**Completion:** Visitor clicks CTA → redirected to `my.classlite.app/register` (or `/register?plan=pro` for tier-specific CTAs).
-
-#### Stage 2: Auth → Account Creation (my.classlite.app)
-
-**Initiation:** User lands on register page. Same paper background, dot grid, Fraunces headings — visually continuous with landing page.
-
-**Interaction flow (Google OAuth — happy path):**
-1. Register screen shows: Fraunces heading "Tạo tài khoản", large Google OAuth button ("Tiếp tục với Google"), divider "hoặc", email/password form below.
-2. User clicks Google OAuth → Google consent screen → callback → cookie set → redirect to onboarding.
-3. Total time: ~10 seconds P50.
-
-**Interaction flow (Email/password — secondary path):**
-1. Same screen. User fills: full name, email, password (with strength indicator). Clicks "Tạo tài khoản."
-2. → Verification pending screen: dot grid background, Fraunces heading "Kiểm tra email", email address shown, "Gửi lại" button with 60-second cooldown, link to "Thử đăng nhập bằng Google."
-3. User clicks email link → verified → redirect to onboarding.
-4. Total time: 1-3 minutes (dependent on email delivery).
-
-**Interaction flow (Login — returning user):**
-1. Login screen: Google OAuth button (primary), email/password form (secondary), "Quên mật khẩu?" link.
-2. Failed login: generic "Email hoặc mật khẩu không đúng" error. After 5 failures: lockout screen with countdown.
-
-**Feedback:** Inline validation, live password strength indicator. Google OAuth shows brief loading state before redirect.
-
-**Completion:** Authenticated user lands on persona selection (new) or dashboard (returning).
-
-#### Stage 3: Invite Acceptance (my.classlite.app/invite)
-
-**Initiation:** User clicks invite link from email. Link contains signed token with invite ID.
-
-**Interaction flow (valid invite, new user):**
-1. Invite screen: center logo/lettermark, Fraunces heading "[Inviter name] đã mời bạn tham gia [Center name]", role badge in amber, Google OAuth button + email/password form (email locked to invite address).
-2. User authenticates → role-appropriate dashboard. No onboarding wizard.
-3. Teachers see "Chấm bài đầu tiên" (Grade your first essay) CTA card with pre-loaded sample.
-
-**Interaction flow (valid invite, existing user):**
-1. "Bạn đã có tài khoản ClassLite" message + single "Tham gia [Center name]" button.
-2. One click → linked to center → dashboard.
-
-**Interaction flow (expired/invalid invite):**
-1. Fraunces heading "Lời mời đã hết hạn", center name visible, CTA: "Liên hệ [inviter name] để gửi lại" with mailto link.
-
-**Feedback:** Center branding loads immediately — no skeleton for center info.
-
-**Completion:** User is in the center's dashboard with a clear first action.
-
-#### Stage 4: First AI Grade → Proof (post-auth)
-
-**Initiation:** New user sees prominent "Thử chấm bài bằng AI" card on first dashboard. One click.
-
-**Interaction flow:**
-1. Pre-loaded sample IELTS Writing essay in grading view. Single CTA: "Chạy AI chấm bài."
-2. Click → loading state (~15-30 seconds) with "AI đang phân tích bài viết..." → results appear: band scores for 4 criteria, inline comments, overall band.
-3. No forced next action — user can explore, dismiss, or start setting up.
-
-**Feedback:** Animated progress during AI processing. Result appears with subtle transition — no celebratory modal. Clean and usable.
-
-**Completion:** The teacher has felt the 12→3 minute promise. The pipeline is complete.
-
-## Visual Design Foundation
-
-### Color System — Accessibility Audit
-
-**WCAG 2.1 AA contrast ratio verification against mockup tokens:**
-
-#### Passing Combinations (no changes needed)
-
-| Combination | Ratio | AA Normal | AA Large | AAA |
-|---|---|---|---|---|
-| `--cl-ink` on `--cl-paper` | 14.6:1 | PASS | PASS | PASS |
-| `--cl-ink` on `--cl-surface` | 16.4:1 | PASS | PASS | PASS |
-| `--cl-ink` on `--cl-paper-2` | 13.6:1 | PASS | PASS | PASS |
-| `--cl-ink-soft` on `--cl-paper` | 11.4:1 | PASS | PASS | PASS |
-| `--cl-ink-soft` on `--cl-surface` | 12.8:1 | PASS | PASS | PASS |
-| `--cl-accent` on `--cl-paper` | 9.2:1 | PASS | PASS | PASS |
-| `--cl-accent` on `--cl-surface` | 10.4:1 | PASS | PASS | PASS |
-| `--cl-green` on `--cl-tint-green` | 6.4:1 | PASS | PASS | — |
-| `--cl-red` on `--cl-tint-red` | 7.2:1 | PASS | PASS | PASS |
-| `--cl-amber` on `--cl-tint-gold` | 4.7:1 | PASS | PASS | — |
-| `--cl-accent` on `--cl-tint-blue` | 9.1:1 | PASS | PASS | PASS |
-| `--cl-sidebar-text` on `--cl-sidebar-bg` | 10.8:1 | PASS | PASS | PASS |
-| `#fff` on `--cl-ink` (primary btn) | 16.4:1 | PASS | PASS | PASS |
-| `#fff` on `--cl-accent` (btn hover) | 10.4:1 | PASS | PASS | PASS |
-
-#### Failures Requiring Token Adjustments
-
-| # | Combination | Ratio | Severity | Issue |
-|---|---|---|---|---|
-| 1 | `--cl-muted` on `--cl-paper` | 4.5:1 | MEDIUM | Borderline — fails AA normal by rounding |
-| 2 | `--cl-muted` on `--cl-paper-2` | 4.2:1 | MEDIUM | Fails AA normal text |
-| 3 | `--cl-accent-2` on `--cl-paper` | 2.8:1 | HIGH | Fails AA normal AND large text |
-| 4 | `--cl-accent-2` on `--cl-surface` | 3.2:1 | HIGH | Fails AA normal text |
-| 5 | `#fff` on `--cl-accent-2` (badge) | 3.2:1 | HIGH | White on amber fails AA normal |
-| 6 | `--cl-line` on `--cl-paper` | 1.3:1 | INFO | Decorative border — exempt if non-interactive |
-| 7 | `--cl-line-soft` on `--cl-surface` | 1.3:1 | INFO | Decorative border — exempt if non-interactive |
-
-#### Required Token Fixes
-
-```css
-/* FIX 1: Darken muted text for AA compliance on warm backgrounds */
---cl-muted: #595c66;   /* 5.1:1 on --cl-paper, 5.7:1 on --cl-surface */
-
-/* FIX 2: Amber accent needs text-safe and decorative variants */
---cl-accent-2: #d97706;          /* KEEP for decorative use */
---cl-accent-2-text: #7c4309;     /* Text-safe: 5.0:1 on white */
---cl-accent-2-btn: #92500a;      /* Button-safe: white text = 4.6:1 */
-
-/* FIX 3: Input borders — darken for interactive controls (WCAG 1.4.11) */
---cl-line-interactive: #a8a095;   /* 3.0:1 on --cl-paper */
-```
-
-**Rule for auth screens:** `--cl-accent-2` (#d97706) is never used as foreground text on light backgrounds. Use `--cl-accent-2-text` for text, or `--cl-ink` on `--cl-accent-2` backgrounds.
-
-### Landing Page Visual Hierarchy
-
-#### Layout Structure
-
-```
-┌─────────────────────────────────────────────┐
-│  Header (sticky on scroll)                  │
-│  Logo · Nav links · Lang toggle · CTA btn   │
-├─────────────────────────────────────────────┤
-│  HERO (--cl-paper bg, dot grid)             │
-│  Fraunces 44px · Geist 15px · CTA btn      │
-├─────────────────────────────────────────────┤
-│  PAIN ARTICULATION (--cl-surface cards)     │
-│  Calculator visual, Geist Mono numbers      │
-├─────────────────────────────────────────────┤
-│  FEATURES (3-4 cards, --cl-surface bg)      │
-│  Screenshot + Fraunces 28px + body          │
-├─────────────────────────────────────────────┤
-│  SOCIAL PROOF (--cl-paper-2 bg section)     │
-│  Center archetypes, outcome stats           │
-├─────────────────────────────────────────────┤
-│  PRICING (--cl-paper bg)                    │
-│  3 tier cards, toggle, VND                  │
-├─────────────────────────────────────────────┤
-│  FOOTER (--cl-ink bg, mirrors sidebar)      │
-│  --cl-sidebar-text for links                │
-└─────────────────────────────────────────────┘
-```
-
-#### Section Specs
-
-| Section | Background | Max Width | Typography | Spacing |
-|---|---|---|---|---|
-| **Header** | `--cl-surface` + `--cl-line-soft` border | 1320px | Fraunces 22px logo, Geist 13px nav | `18px 32px` |
-| **Hero** | `--cl-paper` + dot grid | 880px | Fraunces 44px h1, Geist 15px body | `80px 32px 64px` |
-| **Pain** | `--cl-surface` | 880px | Geist Mono 28px stats, Geist 13px labels | `64px 32px` |
-| **Features** | `--cl-paper` | 1120px (3-col) | Fraunces 28px titles, Geist 13px body | Gap `24px`, card padding `24px` |
-| **Social proof** | `--cl-paper-2` | 880px | Fraunces 18px names, Geist 13px | `64px 32px` |
-| **Pricing** | `--cl-paper` | 1000px (3-col) | Fraunces 22px tiers, Geist Mono 28px prices | Gap `20px`, card padding `28px` |
-| **Footer** | `--cl-ink` | 1320px | Fraunces 22px wordmark, Geist 12px links | `48px 32px` |
-
-#### Landing Component Variants
-
-| Component | Dashboard spec | Landing adaptation |
-|---|---|---|
-| **Primary CTA** | `7px 14px`, 12.5px | Larger: `14px 28px`, 15px. Full-width on mobile. |
-| **Secondary CTA** | N/A | Ghost: transparent bg, `--cl-ink` text, `--cl-line` border |
-| **Feature card** | Hub tile: 10px radius | Larger padding (24px), `--cl-shadow-card` on hover |
-| **Pricing card** | N/A | 12px radius, `--cl-line-soft` border. Popular: `2px solid --cl-accent-2` + `--cl-tint-gold` header |
-| **Stat number** | Fraunces 28px | Geist Mono 28px (desktop 36px), `--cl-accent-2-text` |
-
-#### Sticky Header Behavior
-
-- Default: transparent bg, logo + nav, CTA secondary style
-- On scroll past hero: `--cl-surface` bg + `--cl-line-soft` border + `--cl-shadow-subtle`, CTA becomes primary
-- Transition: `all 0.2s`
-
-### Mobile Auth Visual Treatment
-
-Auth screens at 390×844 (iPhone reference). No sidebar, no topbar — full-bleed until authenticated.
-
-#### Mobile Layout Principles
-
-- One action per screen, full-width buttons, centered card layout
-- Minimum 44×44px touch targets (WCAG 2.5.5), buttons at 48px height
-- Thumb-zone: primary CTA in bottom third of screen
-- Card: 14px radius, `--cl-shadow-card`, `padding: 24px 20px`
-
-#### Mobile Screen Wireframes
-
-**Register:**
-```
-┌──────────────────────┐
-│  ClassLite wordmark   │  Fraunces 22px
-│  (dot grid bg)        │
-│  ┌──────────────────┐ │
-│  │ Tạo tài khoản    │ │  Fraunces 28px
-│  │ [Google btn]     │ │  48px, full-width, --cl-ink
-│  │ ─── hoặc ───    │ │
-│  │ [Họ và tên]      │ │  48px inputs
-│  │ [Email]          │ │
-│  │ [Mật khẩu] [👁]  │ │  Strength indicator
-│  │ [Tạo tài khoản]  │ │  Full-width primary
-│  │ Đã có? Đăng nhập │ │  --cl-accent link
-│  └──────────────────┘ │
-└──────────────────────┘
-```
-
-**Verification pending:**
-```
-┌──────────────────────┐
-│  ClassLite wordmark   │
-│  ┌──────────────────┐ │
-│  │  ✉️              │ │  80px illustration
-│  │ Kiểm tra email   │ │  Fraunces 28px
-│  │ Link xác nhận    │ │  Geist 15px
-│  │ đến email@...    │ │  --cl-ink bold
-│  │ [Gửi lại] (57s)  │ │  Secondary btn + countdown
-│  │ Thử Google       │ │  --cl-accent link
-│  └──────────────────┘ │
-└──────────────────────┘
-```
-
-**Invite acceptance:**
-```
-┌──────────────────────┐
-│  ClassLite wordmark   │
-│  ┌──────────────────┐ │
-│  │  [Center logo]   │ │  48px
-│  │ Linh đã mời bạn  │ │  Fraunces 22px
-│  │ IELTS Academy    │ │  Fraunces 28px
-│  │ [Giáo viên]      │ │  Amber badge
-│  │ [Google btn]     │ │  Full-width
-│  │ ─── hoặc ───    │ │
-│  │ [Email locked]   │ │  Read-only
-│  │ [Password]       │ │
-│  │ [Tham gia]       │ │  Full-width primary
-│  └──────────────────┘ │
-└──────────────────────┘
-```
-
-**Expired invite:**
-```
-┌──────────────────────┐
-│  ClassLite wordmark   │
-│  ┌──────────────────┐ │
-│  │  ⏰              │ │  Illustration
-│  │ Lời mời hết hạn  │ │  Fraunces 28px
-│  │ IELTS Academy    │ │  --cl-ink bold
-│  │ [Liên hệ Linh]   │ │  Primary btn, mailto
-│  │ Về trang chủ     │ │  --cl-accent link
-│  └──────────────────┘ │
-└──────────────────────┘
-```
-
-#### Mobile Token Overrides
-
-```css
-@media (max-width: 640px) {
-  --cl-input-height: 48px;
-  --cl-btn-height: 48px;
-  --cl-btn-font-size: 15px;
-  --cl-card-padding: 24px 20px;
-  --cl-card-margin: 0 16px;
-  --cl-heading-size: 28px;
-}
-```
-
-### Accessibility Considerations
-
-1. **Focus indicators.** `2px solid var(--cl-accent)` with `2px` offset on all interactive elements.
-2. **Touch targets.** Minimum 44×44px, buttons 48px on mobile.
-3. **Form accessibility.** Visible labels (not placeholder-only), `aria-describedby` for errors, `aria-required` for required fields.
-4. **Screen reader flow.** Landmark regions, sequential headings, `aria-label` on icon-only buttons.
-5. **Motion sensitivity.** `prefers-reduced-motion` disables transitions and parallax.
-6. **Language declaration.** `lang="vi"` or `lang="en"` on `<html>`. IELTS terms wrapped in `<span lang="en">`.
-7. **Color not sole indicator.** Error = red tint + icon + text. Success = green tint + checkmark + text.
-
-## Design Direction Decision
-
-### Design Directions Explored
-
-A single design direction was explored — the existing ClassLite mockup design language applied to the new landing page and auth screens. The visual identity is already established across 93 authenticated screens; the task was to extend it to the pre-auth experience, not to explore alternatives.
-
-The HTML showcase (`_bmad-output/planning-artifacts/ux-design-directions.html`) contains 9 screens: LP-01 (Landing Page Desktop), AUTH-01 through AUTH-08 (Register, Login, Verification, Invite Acceptance, Lockout, Password Reset in desktop and mobile variants).
-
-### Chosen Direction
-
-**Warm paper aesthetic with serif/sans typography, navy/amber accents, extended to landing page and auth.** The direction maintains exact visual continuity with the 93 existing mockup screens.
-
-Key characteristics:
-- Warm parchment background (`#f5f1ea`) with subtle dot-grid pattern
-- Fraunces serif for display headings, Geist sans-serif for body, Geist Mono for labels
-- Deep navy (`#1a1f2e`) as primary button/text color, deep blue (`#1e3a8a`) as accent, amber (`#d97706`) as secondary accent
-- White cards on paper background with warm gray borders
-- Navy footer mirroring the authenticated sidebar
-
-### Design Rationale
-
-1. **Visual continuity across domains.** A user going from `classlite.app` (landing) to `my.classlite.app` (auth) to the dashboard must not notice the domain transition. Same paper background, same dot grid, same Fraunces headings, same button styles.
-
-2. **Warm ≠ playful.** The paper/serif combination reads as professional-yet-approachable — right for B2B edtech in Vietnam. It avoids both the cold corporate blue of enterprise SaaS and the playful cartoon style of consumer apps like Duolingo. Trust through warmth, credibility through refinement.
-
-3. **Vietnamese-first with IELTS English.** All screen text is natively Vietnamese with proper diacritics. IELTS terminology (Writing, Reading, Speaking, Listening, Task 2, band score) stays in English — matching the bilingual register Vietnamese IELTS teachers already use daily.
-
-### Implementation Notes from Review
-
-Feedback from party mode review (John, Winston, Amelia) produced these refinements, already applied to the HTML showcase:
-
-**Google OAuth button (Winston — ToS compliance):** Changed from navy (`--ink`) background to Google's required branded styling — white background, line border, colored Google logo. Non-negotiable per Google's OAuth branding guidelines.
-
-**Collapsed email/password form (John — conversion):** Register and login screens now show only the Google OAuth button by default. Email/password form is collapsed behind a "Đăng ký bằng email" / "Đăng nhập bằng email" link. Reduces visual noise, emphasizes Google as the primary path.
-
-**"For IELTS centers" above the fold (John — intent clarity):** Added eyebrow text "Nền tảng quản lý trung tâm IELTS" above the hero heading. Answers "is this for me?" within the first 3 seconds.
-
-**Recovery-focused lockout (John — tone):** Lockout screen heading changed from "Tài khoản tạm khóa" (punishing) to "Hãy thử lại sau" (recovery). "Quên mật khẩu?" promoted to primary CTA. Countdown timer made secondary.
-
-**Spam hint on password reset (John — trust):** Added "Không nhận được email? Kiểm tra thư mục spam" below the submit button.
-
-**Explicit verification fallback (John — clarity):** Verification pending Google fallback changed to: "Không nhận được email? Đăng nhập bằng Google — cùng tài khoản, không cần xác nhận."
-
-**CTA after pricing (John — conversion):** Added "Bắt đầu miễn phí" CTA centered below the pricing grid.
-
-**Vietnamese font support verified:** Fraunces supports Vietnamese subset (Google Fonts). Geist added full Vietnamese diacritics support in v1.6.0. Google Fonts URL includes `&subset=vietnamese,latin`.
-
-### Open Implementation Questions (from Amelia)
-
-These need answers before implementation begins:
-
-| # | Question | Blocks |
-|---|---|---|
-| 1 | Go API endpoint contracts (request/response shapes) for auth | AUTH-04, AUTH-07 |
-| 2 | Pain calculator formula + interactive inputs (static or configurable?) | LP-01 |
-| 3 | OAuth strategy: redirect to `/auth/google` or use `@react-oauth/google` SDK? | AUTH-01/02/03 |
-| 4 | Password strength library: `zxcvbn` or custom? | AUTH-01/02 |
-| 5 | Invite token URL structure: `/invite?token=abc` or `/invite/abc`? | AUTH-05 |
-| 6 | Pricing data: hardcoded in Astro or fetched from API? | LP-01 |
-| 7 | Sticky header scroll threshold (px value) | LP-01 |
-| 8 | Form validation trigger: `onBlur` or `onChange`? | AUTH-01/02/03 |
-| 9 | `@classlite/tokens` package: monorepo workspace or inline CSS vars? | All screens |
-
-**Recommended implementation order:** AUTH-08 → AUTH-06 → AUTH-03 → AUTH-05 → AUTH-01/02 → AUTH-07 → AUTH-04 → LP-01 (safest first, most dependencies last).
-
-## User Journey Flows
-
-### Journey 1: Owner Discovery → Signup → First AI Grade
-
-The primary conversion funnel. A center owner finds ClassLite, evaluates it, signs up, and experiences AI grading.
-
-```mermaid
-flowchart TD
-    A[Owner lands on classlite.app] --> B{Browser locale?}
-    B -->|Vietnamese| C[/vi/ landing page]
-    B -->|English| D[/en/ landing page]
-    B -->|Other| C
-    
-    C --> E{Already logged in?<br>hint cookie check}
-    D --> E
-    E -->|Yes| F[Redirect to my.classlite.app/dashboard]
-    E -->|No| G[View landing page]
-    
-    G --> H[Hero: pain articulation<br>"12 phút → 3 phút"]
-    H --> I[Scroll: calculator, features,<br>social proof, pricing]
-    I --> J{Clicks CTA?}
-    J -->|"Bắt đầu miễn phí"| K[→ my.classlite.app/register]
-    J -->|Pro/Studio CTA| L[→ my.classlite.app/register?plan=pro]
-    J -->|Bounces| M[Lost — landing page failed]
-    
-    K --> N{Auth method?}
-    L --> N
-    N -->|Google OAuth| O[Google consent screen]
-    N -->|"Đăng ký bằng email"| P[Expand email form]
-    
-    O --> Q{OAuth success?}
-    Q -->|Yes| R[Cookie set → Redirect to onboarding]
-    Q -->|Workspace blocked| S[Error: "Thử Gmail cá nhân<br>hoặc đăng ký bằng email"]
-    S --> N
-    
-    P --> T[Fill: name, email, password]
-    T --> U[Submit → Verification pending]
-    U --> V{Email received?}
-    V -->|Yes, clicks link| W[Verified → Redirect to onboarding]
-    V -->|No after 60s| X["Gửi lại" or<br>"Thử Google — không cần xác nhận"]
-    X -->|Resend| U
-    X -->|Switch to Google| O
-    
-    R --> Y[Persona selection:<br>Operator / Founder / Solo]
-    W --> Y
-    Y --> Z[Center setup + class creation]
-    Z --> AA["Thử chấm bài bằng AI" card<br>on first dashboard]
-    AA --> AB[Pre-loaded sample essay]
-    AB --> AC[Click "Chạy AI chấm bài"]
-    AC --> AD[AI processing ~15-30s]
-    AD --> AE[Band scores + inline comments appear]
-    AE --> AF[✅ Pipeline complete:<br>"I just saved time"]
-```
-
-**Key decision points:**
-- Auth method selection (Google vs email) — Google is visually primary
-- Verification gate (email users only) — must feel brief, not blocking
-- Persona selection — determines onboarding path, creates intermediate `role: null` state; API must handle users past auth but pre-onboarding
-- First AI grade — the conversion trigger that justifies everything before it; sample essay is pre-loaded server-side, not hitting external LLM on unauthenticated users
-
-**Estimated time (happy path):** Landing page (30-60s scroll) → Google OAuth (10s) → Persona + setup (2-3 min) → First AI grade (30s) = **under 5 minutes total**
-
----
-
-### Journey 2: Teacher Invite Acceptance → First Grade
-
-The highest-value conversion path. Each invite accepted is a switching-cost multiplier.
-
-```mermaid
-flowchart TD
-    A[Teacher receives invite email] --> B[Clicks invite link]
-    B --> C[→ my.classlite.app/invite/:token]
-    C --> D{Token valid?}
-    
-    D -->|Expired| E[Expired screen:<br>"Lời mời đã hết hạn"<br>CTA: "Liên hệ inviter"]
-    D -->|Already used| F[Redirect to login<br>"Bạn đã tham gia center"]
-    D -->|Not found| G[Error screen:<br>"Link không hợp lệ"]
-    
-    D -->|Valid| H[Invite screen:<br>Center logo, inviter name,<br>role badge, center name]
-    
-    H --> I{Has existing account?}
-    I -->|Yes, logged in| J[One-click "Tham gia"<br>→ linked to center → dashboard]
-    I -->|Yes, not logged in| K[Login form with<br>Google OAuth + email/password]
-    I -->|No account| L{Auth method?}
-    
-    L -->|Google OAuth| M[Google consent → callback<br>→ invite token in state param<br>→ validate email match<br>→ create account + accept invite]
-    L -->|"Đăng ký bằng email"| N[Email locked to invite address<br>+ name + password]
-    
-    K --> O{Login success?}
-    O -->|Yes| J
-    O -->|Wrong password| P[Error + "Quên mật khẩu?" link]
-    
-    M --> Q{Email matches invite?}
-    Q -->|Yes| R[Account created/linked<br>→ invite accepted → dashboard]
-    Q -->|No| S[Mismatch screen:<br>"Lời mời gửi đến teacher@school.com.<br>Bạn đã đăng nhập bằng personal@gmail.com."]
-    S --> S2{Recovery options}
-    S2 -->|"Thử tài khoản Google khác"| M2[Sign out of Google<br>→ re-initiate OAuth]
-    S2 -->|"Đăng ký bằng email"| N
-    
-    N --> T[Submit → Verification email]
-    T --> U[Verify → invite accepted → dashboard]
-    
-    R --> V[Teacher dashboard:<br>"Chấm bài đầu tiên" CTA card]
-    J --> V
-    U --> V
-    V --> W[Pre-loaded sample essay]
-    W --> X[AI grading → results]
-    X --> Y[✅ Teacher activated:<br>grades within 48 hours]
-```
-
-**Critical failure states:**
-- Expired invite → shows center name and inviter, not generic error
-- Email mismatch on OAuth → **specific recovery screen** showing which email was expected vs. which was used, with two recovery paths: try different Google account, or use email registration instead
-- Already-accepted invite → graceful redirect to login, not an error
-- Not-found token → distinct from expired (different error message)
-
-**OAuth state management (from Winston):**
-- Invite token travels in the OAuth `state` parameter, combined with CSRF nonce: `${nonce}:${inviteToken}`. Split on callback. Never skip CSRF verification.
-- Token persistence: use the state param itself, not sessionStorage (which breaks if OAuth opens a new tab).
-- Email match validated server-side atomically with account creation + invite acceptance.
-
----
-
-### Journey 3: Student Invite Acceptance (Mobile)
-
-Highest volume, simplest path. Zero tolerance for friction.
-
-```mermaid
-flowchart TD
-    A[Student receives invite<br>via Zalo/SMS/email] --> B[Taps link on phone]
-    B --> C[→ my.classlite.app/invite/:token<br>Mobile viewport]
-    C --> D{Token valid?}
-    
-    D -->|Expired| E[Expired screen:<br>"Liên hệ giáo viên"]
-    D -->|Valid| F[Invite screen:<br>Center name, teacher name,<br>role: "Học viên"]
-    
-    F --> G{Auth method?}
-    G -->|Google OAuth<br>one tap| H[Google → callback<br>→ accept invite → class dashboard]
-    G -->|"Đăng ký bằng email"| I[Name + email locked<br>+ password → verify → dashboard]
-    
-    H --> J[Student class dashboard:<br>assignments, schedule, feedback]
-    I --> J
-    
-    J --> K[✅ Student in class:<br>sees first assignment]
-```
-
-**Target time:** Under 30 seconds for Google OAuth path (authenticated), under 50 seconds for cold unauthenticated path.
-
-**Mobile-specific:** Full-width buttons, 48px touch targets, one action per screen. Student never sees onboarding wizard — they're placed directly into their class.
-
----
-
-### Journey 4: Returning User Login (Happy + Failure Paths)
-
-```mermaid
-flowchart TD
-    A[User opens my.classlite.app] --> B{Valid session?}
-    B -->|Access token valid| C[→ Dashboard]
-    B -->|Access token expired| D{Silent refresh}
-    
-    D -->|Refresh succeeds| C
-    D -->|Refresh fails<br>token expired/revoked| E[→ Login screen<br>"Phiên đã hết hạn"]
-    
-    B -->|No session| F[→ Login screen]
-    
-    E --> F
-    F --> G{Auth method?}
-    G -->|Google OAuth| H[Google consent → dashboard]
-    G -->|Email/password| I[Enter credentials]
-    
-    I --> J{Login result?}
-    J -->|Success| K{Remember me?}
-    K -->|Yes| L[30-day refresh token → dashboard]
-    K -->|No| M[24-hour refresh token → dashboard]
-    
-    J -->|Wrong credentials| N[Generic error:<br>"Email hoặc mật khẩu không đúng"]
-    N --> O{Attempt count?}
-    O -->|< 5 attempts| F
-    O -->|5 attempts in 10 min| P[Lockout screen:<br>"Hãy thử lại sau" + countdown]
-    
-    P --> Q{"Đặt lại mật khẩu"<br>primary CTA}
-    Q --> R[Password reset flow]
-    P --> S{Countdown expires}
-    S --> F
-    
-    J -->|Unverified email| T[Verification pending screen<br>with resend + Google fallback]
-```
-
-**Multi-tab refresh coordination (from Winston):**
-- Use `navigator.locks.request('token_refresh', ...)` alongside `BroadcastChannel`. One tab acquires the lock and refreshes; others wait, then read the new token from the broadcast.
-- Without this lock, strict token rotation (single-use refresh tokens) causes one tab to get 401 on concurrent refresh — appearing as a silent logout.
-- Lockout countdown initialized from server's `retry_after` timestamp, not a client-side constant. Page refresh fetches remaining lockout duration from API.
-
-**Silent refresh preserves state:** When refresh bounce redirects to login, the URL the user was trying to reach is preserved. Post-login, they return to their in-progress work. Autosave ensures no data loss.
-
----
-
-### Journey 5: Email Verification Gate
-
-```mermaid
-flowchart TD
-    A[User registers with<br>email/password] --> B[API creates unverified account<br>+ sends verification email via Resend]
-    B --> C[→ Verification pending screen]
-    
-    C --> D[Page polls GET /auth/verify-status<br>every 5 seconds]
-    
-    D --> E{Poll response?}
-    E -->|status: unverified| D
-    E -->|status: verified| F[Auto-redirect to onboarding<br>no manual action needed]
-    E -->|status: token_expired| G["Link đã hết hạn"<br>→ "Gửi email mới" CTA]
-    
-    D --> H{Poll timeout?<br>10 min max}
-    H -->|Yes| I[Stop polling<br>show manual "Kiểm tra lại" button]
-    
-    C --> J{60 seconds elapsed?}
-    J -->|No| D
-    J -->|Yes| K["Gửi lại" button activates]
-    
-    K --> L{User action?}
-    L -->|Clicks "Gửi lại"| M[POST /auth/resend-verification<br>rate-limited server-side]
-    M --> N[New email sent<br>countdown resets to 60s]
-    N --> D
-    
-    L -->|Clicks Google fallback| O[Google OAuth flow]
-    O --> P{oauth_email === registered_email?}
-    P -->|Yes| Q[Account linked + verified<br>→ onboarding]
-    P -->|No| R[Error: email mismatch<br>→ "Thử tài khoản Google khác"]
-    
-    L -->|Closes tab, returns later| S[Tries to login]
-    S --> T{Account verified?}
-    T -->|No| C
-    T -->|Yes| U[→ Onboarding or dashboard]
-```
-
-**Key implementation details (from Winston):**
-- Poll endpoint must be cheap — potentially hit every 5s by every unverified user. Go handler should be a simple DB lookup, no business logic.
-- **Poll timeout at 10 minutes.** After 10 min, stop polling and show a manual "Kiểm tra lại" button. Prevents leaked long-lived connections.
-- **Server returns three distinct statuses:** `unverified` (keep polling), `verified` (auto-redirect), `token_expired` (show "request new link"). Never return the same response for "not yet verified" and "token expired."
-- **Google escape hatch security:** When OAuth callback arrives for an unverified email-registered account, server must explicitly verify `oauth_email === registered_email` before marking account verified. If emails don't match, it's an account takeover surface, not a linking operation.
-
----
-
-### Journey Patterns
-
-**Common patterns across all five journeys:**
-
-1. **Google OAuth as escape hatch.** Every flow that encounters friction (lockout, verification delay, failed credentials, email mismatch) offers Google OAuth as an alternative. It's the universal recovery path.
-
-2. **Center identity foregrounds on invite flows.** Journeys 2 and 3 show the center's name and inviter before showing ClassLite's UI. The product recedes; the center advances.
-
-3. **Auto-detection over manual action.** Verification pending auto-polls and auto-redirects. Session refresh is silent. Logged-in redirect on the landing page is automatic. The user takes fewer actions than they expect.
-
-4. **Three-part error recovery.** Every failure state follows: (1) what happened, (2) why, (3) what to do next — as a single button. No dead ends across any journey.
-
-5. **Time-to-value compression.** Every journey converges on the same endpoint: the first AI grade. Owner signs up → grade. Teacher accepts invite → grade. The product's value proposition is the gravitational center of all flows.
-
-### Flow Optimization Principles
-
-1. **Minimize screens between intent and value.** The owner's happy path is: landing page → Google OAuth → persona pick → first AI grade. Four screens. Every additional screen is a potential drop-off.
-
-2. **Branch late, not early.** Auth method selection (Google vs email) is one decision point, not two screens. Persona selection is one screen, not a wizard. Defer complexity until after the user has committed.
-
-3. **Failure states are conversion paths.** An expired invite is a "contact your admin" path. A lockout is a "reset your password" path. An email mismatch is a "try a different account" path. No dead ends.
-
-4. **Mobile flows are subsets, not adaptations.** The student mobile journey (Journey 3) has fewer decision points than the owner desktop journey (Journey 1). Mobile means fewer steps, not same flow on a small screen.
-
-### Out of Scope — Flagged for Next UX Pass
-
-**Return-visit journey and upgrade trigger.** SM-6 (free-to-pro >15% within 60 days) requires the owner to come back on day 3, day 7. What triggers re-engagement? What's the upgrade moment? This is outside the landing + auth scope but critical for conversion. Flagged for the retention/engagement UX pass.
-
-## Component Strategy
-
-### Design System Components (shadcn/ui — React auth screens)
-
-Components used directly from shadcn/ui, themed with ClassLite design tokens:
-
-| Component | Theme Overrides | Auth Usage |
-|---|---|---|
-| **Button** | `--cl-ink` bg, `6px` radius, Geist 12.5px/500 | Primary submit, secondary actions |
-| **Input** | `--cl-line` border, `6px` radius, Geist 13px | Email, name fields |
-| **Card** | `--cl-surface` bg, `--cl-line-soft` border, `14px` radius | Auth form wrapper |
-| **Alert** | Red tint for errors, gold tint for warnings | Lockout, validation errors |
-| **Separator** | `--cl-line-soft` | "hoặc" divider |
-| **Badge** | `--cl-accent-2-btn` bg, white text, `999px` radius | Role badge on invite |
-| **Checkbox** | `--cl-accent` accent | "Nhớ tài khoản" |
-| **Label** | Geist Mono 10px/500, `0.12em` tracking, uppercase | Form field labels |
-| **Collapsible** | Structural only | Email form expand/collapse |
-
-### Custom Components — React (my.classlite.app/features/auth/)
-
-#### 1. GoogleOAuthButton
-
-Google-branded OAuth button compliant with Google's ToS. White bg, `1px solid var(--cl-line)`, colored Google SVG logo. Hover: `#f8f8f8` bg. Full-width on auth screens (`padding: 12px 20px`). States: default, hover, loading (spinner replaces logo during redirect), disabled. Label: "Tiếp tục với Google". `aria-label="Đăng nhập bằng tài khoản Google"`.
-
-#### 2. PasswordInput + PasswordStrengthBar
-
-**PasswordInput:** shadcn Input with `padding-right: 38px` for eye toggle SVG. Eye toggle: `aria-label="Hiện mật khẩu"` / `"Ẩn mật khẩu"`.
-
-**PasswordStrengthBar** (extracted — isolated unit tests for strength logic): 4 segments, each `3px` height, `999px` radius. Colors: 1/4 `--cl-red`, 2/4 `--cl-amber`, 3/4 `--cl-accent-2`, 4/4 `--cl-green`. Strength communicated via `aria-live="polite"`: "Mật khẩu: yếu/trung bình/tốt/mạnh". Strength library: decision needed (zxcvbn vs custom regex tiers) before implementation.
-
-#### 3. AuthCard
-
-Centered card container for all auth screens. ClassLite wordmark (Fraunces 22px italic + amber dot) above card. Card: `max-width: 420px`, `padding: 36px 32px`, `14px` radius, `--cl-shadow-card`. Paper background with dot grid behind. Mobile: `max-width: none`, `padding: 24px 20px`, `margin: 0 16px`.
-
-#### 4. VerificationPending + useVerificationPoller hook
-
-**useVerificationPoller** (extracted — testable without rendering): Polls `GET /auth/verify-status` every 5 seconds. Returns status: `unverified` | `verified` | `token_expired`. Auto-stops after 10 minutes (wall clock, not poll count). On `verified`: triggers redirect to onboarding URL (passed as prop/config, not hardcoded). On `token_expired`: returns expired state for UI to show "Gửi email mới" CTA.
-
-**VerificationPending** (UI shell): Envelope SVG (80×80), Fraunces heading "Kiểm tra email", bold email address, "Gửi lại" secondary button with countdown. States: waiting (countdown active, resend disabled), resend available (countdown expired, button enabled), verified (auto-redirect), token expired ("Link đã hết hạn"), poll timeout (manual "Kiểm tra lại" button). Google fallback: "Không nhận được email? Đăng nhập bằng Google — cùng tài khoản, không cần xác nhận."
-
-Resend calls `POST /auth/resend-verification` (rate-limited server-side). Countdown is UI-only — server enforces the real rate limit.
-
-#### 5. InviteCard + useInviteToken hook
-
-**useInviteToken** (extracted — MSW-mockable fetch logic): Calls `GET /api/invites/:token` (unauthenticated). Returns: `{ status, centerName, centerLogoUrl, inviterName, role, inviteEmail }`. Status enum: `valid` | `expired` | `already_accepted` | `not_found`. High-entropy tokens (128-bit minimum).
-
-**InviteCard** (display): Center lettermark (56×56 gradient circle), invite heading "[Inviter] đã mời bạn tham gia", center name (Fraunces 24px), role badge (`--cl-accent-2-btn`). Six states:
-- Valid (new user): Google OAuth + CollapsibleEmailForm (email locked to invite address)
-- Valid (existing user, logged in): single "Tham gia" button — **prompts for confirmation, does not auto-accept**
-- Valid (existing user, not logged in): login form
-- Expired: clock illustration + "Lời mời đã hết hạn" + "Liên hệ [inviter]" mailto CTA
-- Already accepted: redirect to dashboard with "Bạn đã tham gia [center]"
-- Not found: "Link không hợp lệ" error (distinct from expired)
-
-Error boundary: InviteCard owns all 6 state UIs. Parent route handles only network failures.
-
-#### 6. CollapsibleEmailForm
-
-Wraps shadcn Collapsible. Trigger: "Đăng ký bằng email" (register) or "Đăng nhập bằng email" (login). `aria-expanded` on trigger, `aria-label="Mở form đăng ký bằng email"`. Collapsed: dashed border container with trigger link. Expanded: solid border, form fields animate in (200ms ease). Validation: client-side mirrors server rules (min 8 chars for password, email format). Server 422 errors rendered inline on relevant fields.
-
-### Custom Components — Astro (classlite-landing/src/components/)
-
-#### 7. StickyHeader
-
-Transparent → solid on scroll past 400px from top. `client:load` directive. Default: transparent bg, secondary CTA. Scrolled: `--cl-surface` bg + `--cl-line-soft` border + `--cl-shadow-subtle`, primary CTA. Transition: `all 0.2s`. Respects `prefers-reduced-motion` (instant transition). Mobile: hamburger menu (not specced — flag for landing page detail pass).
-
-#### 8. PainCalculator
-
-Static stat display: `5 giáo viên × 3 giờ/tuần × 48 tuần = 720 giờ/năm`. Values are hardcoded (not configurable). Geist Mono 28px values, Geist Mono 11px units, result in `--cl-accent-2-text` at 36px. No JS needed — pure HTML/CSS. No `client:visible` animation in MVP (revisit post-launch).
-
-#### 9. PricingCard
-
-Tier card. Props: `tier` (string), `price` (string), `priceUnit` (string), `features` (string[]), `ctaLabel` (string), `ctaHref` (string), `popular` (boolean). Popular variant: `2px solid var(--cl-accent-2)` border + absolute-positioned "Phổ biến" badge. CTA: `<a>` tag linking to `my.classlite.app/register` (or `?plan=pro`). Prices hardcoded in Astro — no API fetch.
-
-#### 10. SocialProofCard
-
-Props: `stat` (string, e.g. "-65%"), `quote` (string), `source` (string, e.g. "Trung tâm IELTS, TP.HCM"), `details` (string, e.g. "8 giáo viên · 120 học viên"). All content hardcoded in Astro pages — no CMS, no API.
-
-#### 11. FeatureCard
-
-Props: `title` (string), `description` (string), `tint` (`blue` | `gold` | `green`), `icon` (inline SVG slot). Tint maps to `--cl-tint-blue` / `--cl-tint-gold` / `--cl-tint-green`. Preview area: 160px height. SVG passed as inline slot content (not `<img>` — avoids alt text requirement, enables token-colored strokes).
-
-### Shared Design Tokens Strategy
-
-**Pragmatic path (from Winston):** Skip full monorepo `@classlite/tokens` package for MVP. Instead:
-
-- Ship a single `tokens.css` file defining all CSS custom properties
-- Commit it to both `classlite-web/src/` and `classlite-landing/src/styles/`
-- Add a lint rule (ESLint custom rule or stylelint) enforcing no raw hex values — all colors must reference `var(--cl-*)` tokens
-- Track drift via visual regression tests (Chromatic or Percy) comparing equivalent elements across both codebases
-- Revisit the monorepo workspace package when a second team starts touching tokens independently
-
-This gives 80% of the shared-token benefit with 20% of the infrastructure cost.
-
-### Implementation Roadmap
-
-**Phase 1 — Auth core (blocks all other auth work):**
-- `tokens.css` committed to both repos + lint rule
-- AuthCard (layout wrapper)
-- GoogleOAuthButton (ToS-compliant)
-- CollapsibleEmailForm (Google-first pattern)
-- PasswordInput + PasswordStrengthBar
-
-**Phase 2 — Auth flows (needs API contracts first):**
-- useVerificationPoller hook + VerificationPending UI
-- useInviteToken hook + InviteCard (all 6 states)
-
-**Phase 3 — Landing page (most external dependencies):**
-- StickyHeader
-- PainCalculator
-- FeatureCard, PricingCard, SocialProofCard
-
-Build order: AUTH-08 → AUTH-06 → AUTH-03 → AUTH-05 → AUTH-01/02 → AUTH-07 → AUTH-04 → LP-01.
-
-## UX Consistency Patterns
-
-Quick-reference guide for consistent interaction patterns across all landing page and auth screens.
-
-### Button Patterns
-
-| Context | Style | Size (desktop) | Size (mobile) | Behavior |
-|---|---|---|---|---|
-| **Primary action** (submit, CTA) | `--cl-ink` bg, white text, hover `--cl-accent` | `7px 14px`, 12.5px | `14px 20px`, 15px, full-width | Single primary per screen |
-| **Secondary action** (cancel, back) | White bg, `--cl-line` border, `--cl-ink` text | Same padding | Full-width | Never competes with primary |
-| **Google OAuth** | White bg, `--cl-line` border, Google colored logo | `12px 20px`, 14px | `14px 20px`, 15px, full-width | Always largest button on auth screens |
-| **Landing CTA** | `--cl-ink` bg, white text | `14px 28px`, 15px | Full-width | Sticky header CTA transitions from secondary → primary on scroll |
-| **Text link action** | `--cl-accent` text, no underline, 500 weight | 13px | 13px | Used for "Quên mật khẩu?", "Đăng nhập", navigation |
-
-### Form Patterns
-
-| Pattern | Rule |
+| **Button (default)** | bg `#fff`, `1px solid var(--cl-line)`, radius `6px`, padding `7px 14px`, Geist 12.5px/500 |
+| **Button (primary)** | bg `--cl-ink`, color `#fff`, hover bg `--cl-accent` |
+| **Button (AI / `btn-ai`)** | gradient/amber-marked, paired with the "AI" chip — visually distinct from teacher actions (§6.2) |
+| **Input** | `1px solid var(--cl-line)`, radius `6px`, padding `9px 11px`, Geist 13px; focus `2px --cl-accent` |
+| **Card** | bg `#fff`, `1px solid var(--cl-line-soft)`, radius `10px` |
+| **Modal** | width `460px` (520–640px for dense modals), radius `14px`, `--cl-shadow-modal`, scrim `--cl-scrim`, footer bg `#fcfaf6` |
+| **Status pill** | radius `999px`, padding `4px 10px`, 11.5px/500; semantic tint + foreground (§5.6) |
+| **Band pill** | bold accent numeral + label; red when flagged/weakest |
+| **Badge (nav/role)** | bg `--cl-accent-2-btn`, white text, 10px/600, radius `999px` |
+| **Table header** | Geist Mono 10px/500, 0.14em tracking, padding `14px 16px` |
+| **Avatar** | 28px circle, gradient `135deg --cl-accent → --cl-accent-2` |
+| **Load bar** | mini track + value (e.g. "7/10"); fill turns `--cl-amber` past threshold |
+| **Usage meter (`um-bar`)** | progress track per constrained resource; `.warn` amber state past threshold |
+| **Switch** | track 34×19px, knob 15px, on `--cl-accent` |
+| **Progress bar** | height 6px, track `--cl-line-soft`, fill `--cl-accent`, radius `999px` |
+
+### 5.5 Color Accessibility Audit (WCAG 2.1 AA)
+
+Verified against the mockup tokens. **Passing** (representative): `--cl-ink` on `--cl-paper` 14.6:1; `--cl-ink` on `--cl-surface` 16.4:1; `--cl-accent` on `--cl-paper` 9.2:1; `--cl-green` on `--cl-tint-green` 6.4:1; `--cl-red` on `--cl-tint-red` 7.2:1; `#fff` on `--cl-ink` 16.4:1; `--cl-sidebar-text` on `--cl-sidebar-bg` 10.8:1.
+
+**Failures fixed in the token file (already reflected in 5.2):**
+
+| Issue | Fix |
 |---|---|
-| **Labels** | Always visible above field (Geist Mono 10px uppercase). Never placeholder-only. |
-| **Validation** | Inline, triggered on `blur`. All errors shown simultaneously. Server 422 errors rendered on relevant fields. |
-| **Required fields** | All auth fields are required. No asterisk markers needed — if everything is required, marking it is noise. |
-| **Password** | Always has eye toggle + strength indicator bar. Placeholder: "Ít nhất 8 ký tự". |
-| **Read-only fields** | `--cl-paper` bg, `--cl-muted` text, cursor: default. Used for locked invite email. |
-| **Error state** | `--cl-red` border on field + error message below in `--cl-red` 12px. Field label unchanged. |
-| **Focus state** | `--cl-accent` border (2px). No other visual change. |
+| `--cl-muted` `#6b6f7a` on paper 4.5:1 (borderline) / on paper-2 4.2:1 (fail) | Darkened to **`#595c66`** → 5.1:1 / 5.7:1 |
+| `--cl-accent-2` `#d97706` as text 2.8–3.2:1 (fail) | Amber restricted to **decorative**; `--cl-accent-2-text` `#7c4309` (5.0:1) for text; `--cl-accent-2-btn` `#92500a` (white 4.6:1) for buttons/badges |
+| Interactive borders on paper 1.3:1 | `--cl-line-interactive` `#a8a095` (3.0:1) for input/control boundaries (WCAG 1.4.11) |
 
-### Error & Feedback Patterns
+**Hard rule:** `--cl-accent-2` (`#d97706`) is never foreground text on light backgrounds. Use `--cl-accent-2-text`, or `--cl-ink` on an amber background.
 
-| Pattern | Treatment |
-|---|---|
-| **Inline field error** | Red text below field, 12px. Shows on blur after first submit attempt. |
-| **Form-level error** | Alert component above form. Red tint bg + `--cl-red` text + icon. "Email hoặc mật khẩu không đúng." |
-| **Recovery-focused error** | Gold tint bg + `--cl-amber` text. Used for lockout. Tone: "Hãy thử lại sau" not "Tài khoản bị khóa". |
-| **Success feedback** | Auto-redirect (verification complete) or page transition (login success). No success toasts on auth screens — speed is the feedback. |
-| **Loading state** | Primary button shows spinner, text changes to "Đang xử lý...". Form fields disabled. Google button: spinner replaces logo. |
-| **Rate limit hit** | "Vui lòng thử lại sau X giây." Countdown visible. Action disabled until countdown completes. |
+### 5.6 Status & Semantic Color System
 
-### Navigation Patterns
+A single, product-wide semantic mapping — applied identically across tables, pills, charts, banners, meters, and timelines:
 
-| Pattern | Rule |
-|---|---|
-| **Auth screen → auth screen** | Link text below card: "Đã có tài khoản? Đăng nhập" / "Chưa có tài khoản? Đăng ký". |
-| **Back to landing** | "Quay lại trang chủ" link, `--cl-accent` color. Always at bottom of card. |
-| **Post-auth redirect** | New user → onboarding (persona selection). Returning user → dashboard. Invited user → center dashboard (skip onboarding). |
-| **Landing page scroll** | Smooth scroll for internal anchor links. Sticky header CTA scrolls to pricing or links to register. |
-| **Language toggle** | VI/EN toggle in header (landing) and on auth screens. Selection persists via cookie across domains. |
+| Semantic | Foreground / Tint | Meaning |
+|---|---|---|
+| **Green** | `--cl-green` / `--cl-tint-green` | success · active · granted · on-time · improvement · Reading |
+| **Amber** | `--cl-amber` / `--cl-tint-gold` | warning · late · nearing-limit · needs-attention · editable · Writing |
+| **Red** | `--cl-red` / `--cl-tint-red` | error · blocked · hard limit · at-risk · ended · Speaking |
+| **Blue** | `--cl-accent` / `--cl-tint-blue` | info · upcoming · primary action · Listening/accent |
+| **Neutral** | `--cl-ink-soft` / `--cl-muted` | stable · informational · de-emphasized |
 
-### Spacing Patterns
+**Severity escalation (limits & failures):** amber = proactive/soft warning (non-blocking banner) → red = hard block/failure (top strip). Demonstrated by `s72` (amber soft-limit banner) vs `s73` (red grace-period strip).
 
-| Context | Spacing |
-|---|---|
-| **Between form fields** | `16px` margin-bottom |
-| **Between sections in card** | `20px` (divider, button group) |
-| **Card to wordmark** | `32px` (desktop), `24px` (mobile) |
-| **Landing page sections** | `64px` padding top/bottom |
-| **Screen sections in doc** | `80px` margin-bottom |
+**Feedback exception (UX-DR22):** in *student-facing* performance and grading contexts, **decline is never rendered red**. Regression uses neutral framing ("Your band changed from 6.5 to 6.0") in `--cl-muted`; improvement uses `--cl-accent`; stable uses `--cl-ink-soft`. Red is reserved for teacher-side error pins and weakest-skill emphasis, not for telling a student they did worse. (See §6.1.)
 
-## Responsive Design & Accessibility Summary
+**Color is never the sole signal** (WCAG 1.4.1): error = red tint + icon + text; success = green tint + checkmark + text; chart/heatmap cells pair color with value labels.
 
-### Responsive Strategy
+---
 
-This UX spec covers two responsive contexts:
+## 6. Cross-Cutting Design Language
 
-**Landing page (classlite.app):** Desktop-first design surface. The primary audience (center owners, teachers) evaluates on desktop. Responsive down to 390px for mobile visitors. Key breakpoints:
-- Desktop: full layout as designed (max-width sections at 880px-1320px)
-- Tablet (768px): pricing grid collapses to 1-column, feature grid to 2-column
-- Mobile (≤640px): single column, full-width buttons, hero heading drops to 28px
+These patterns recur across many screens. Specifying them once here prevents drift; each role section (§8) references them rather than re-describing them.
 
-**Auth screens (my.classlite.app):** Mobile-first design surface. Students (highest volume) arrive on phones via invite links. Key breakpoints:
-- Mobile (390px reference): full-width card, 48px inputs/buttons, 24px padding
-- Desktop (>640px): centered card at max-width 420px, 36px padding, standard input heights
+### 6.1 Feedback & Score Design Language *(UX-DR22)*
 
-### Accessibility Compliance Summary
+How scores, criteria, progress, and regression appear everywhere they appear — submission results (`s35`), grading (`s23`–`s25`), analytics (`s46`–`s47`), dashboards, and My Performance (`s37`).
 
-All requirements documented inline throughout previous sections. Consolidated reference:
+- **Band scores** are presented as a **per-criterion grid of Geist Mono numerals** (14px per-criterion) collapsing to a **single oversized overall band** (Fraunces 32px display, or a circular `band-ring` on the student result `s35`). The four IELTS criteria are skill-specific (Writing: Task response / Coherence & cohesion / Lexical resource / Grammar; Speaking: Fluency / Lexical / Grammar / Pronunciation).
+- **Criteria can be evidenced by pinned comments.** A criterion in the scoring grid annotates its pinned-comment count ("Lexical · 1 pinned", accent-bordered; red-bordered for error pins) — tying the score to the evidence in the essay (§6.3).
+- **Per-skill breakdown** uses horizontal bars, strongest highlighted green, weakest named as a "focus area."
+- **Progress over time** uses spark/bar charts: improvement `--cl-accent`, stable `--cl-ink-soft`, **decline `--cl-muted` (never red)** in student-facing contexts.
+- **Neutral framing for regression.** "Your band changed from 6.5 to 6.0," never "You scored worse." Weaknesses are reframed as named focus areas paired with a concrete fix.
+- **AI confidence is shown to teachers, hidden from students.** Teachers see High/Medium confidence labels on AI proposals; students never see a confidence rating on their own feedback.
+- **Trajectory framing.** Bands are framed toward a target ("Band 6.0 · on track to reach 6.5 by week 14"), not as a static verdict.
+
+### 6.2 AI Assistance Pattern *(FR-24–26, FR-34, FR-36, UX-DR21, UX-DR22)*
+
+The single most important consistency contract in the product. AI appears in authoring (`s16`/`s17`), Writing grading (`s23`), Speaking grading (`s24`), and analytics recommendations (`s46`/`s47`) — and looks and behaves identically in all of them.
+
+- **Always labeled.** A gradient **"AI" chip / `ai-mark`** marks every AI element; AI suggestion cards use a distinct style (gradient avatar, `q-card.ai`, `ai-rail-strip`) clearly separated from teacher input (dark avatar, "You").
+- **Preview before commit.** *Generation* (exercises) produces a preview the teacher must explicitly **Insert** — Regenerate / Cancel / Insert. Nothing auto-commits to the document.
+- **Accept / Edit / Dismiss per item.** *Grading* proposals (band scores, inline comments, flagged moments) each carry Accept / Edit-before-applying / Dismiss. Batch affordances exist ("Accept all praise") but never auto-apply on load.
+- **Confidence labels** on teacher-facing proposals (High/Medium).
+- **Explicit disclaimers** at every AI surface: "You decide each one," "Suggestion · teacher always decides the final band," "AI suggestions are starting points — you have full control."
+- **Draws only on existing content.** AI recommendations link existing exercises/Knowledge-hub materials; AI never invents new student-facing content. **Teacher advice overrides AI** where both appear (`s47` Recommendations are tagged by source: AI vs "From [teacher]").
+- **Cost is visible.** A credit budget shows on generation dialogs ("3 of 50 monthly AI credits used"; "est. cost 1 credit"); AI runs are async (HTTP 202 → poll), never blocking — see §9.
+- **First-run AI grade** (`s53`/onboarding → `s23`): a pre-loaded sample essay, one CTA ("Run AI grading"), animated progress (~15–30s, "AI đang phân tích bài viết…"), results appear with a subtle transition — **no celebratory modal**. Quiet competence. *(UX-DR21)*
+- **AI degraded/slow:** "AI grading is temporarily slow — your essay is queued," never a broken result.
+
+### 6.3 Anchored Comments & Anchored Q&A *(FR-33, FR-35, FR-38–40)*
+
+The product has **no chat/messaging surface**. All teacher↔student communication is anchored to work, via one shared Docs-style mechanic.
+
+- **Mechanic:** select a span/item → a numbered **pin** appears in the text → a **card** appears in a sticky side **rail**; clicking a pin focuses its card (amber border + connector line to the anchor).
+- **Anchor scope color:** orange pin = item/span-level; blue pin = whole-exercise/whole-essay.
+- **Comment taxonomy (grading, `s23`):** Error (red, `!`), Praise (green, `★`), Suggestion (amber, `✎`). Comments can be **pinned to a band criterion** to justify the score.
+- **Q&A taxonomy (`s18` teacher / `s36` student):** student highlights an item or chooses "Whole exercise," composes, "Send to teacher"; teacher answers in-thread, can **batch-handle similar questions**, and **resolve**. Answers carry a **visibility label** ("Shared with your class" vs private). Unanswered questions surface as Inbox action items (FR-40).
+- **Rail behavior:** header with count + filter ("Unanswered ▾"), cross-exercise link ("↗ 7 across all exercises"), per-card reply box. On **mobile**, the rail becomes a **chat-bubble thread** (`s80`/`s85`) and result comments expand **inline under the line** rather than in a side rail (`s79`).
+- **Reciprocity:** what the teacher writes as anchored comments on a submission is exactly what the student reads on their result (`s35`) and is previewed in the student's Inbox "Graded" row.
+
+### 6.4 State Patterns: Loading · Empty · Error
+
+Every data-fetching view implements all three states — no exceptions *(UX-1, UX-DR24)*.
+
+**Loading (UX-DR24).** Skeletons that mirror the final layout, never a centered spinner — a list gets list-shaped skeletons, a chart gets a chart-dimensioned rectangle, a table gets row skeletons. Skeleton uses `--cl-line-soft` with a subtle pulse; content fades in over 150ms (respects `prefers-reduced-motion`). A load error shows an **inline retry**, not a full-page error.
+
+**Empty (FR-69, `s53`–`s62`).** Empty ≠ broken — empties teach the IA. Canonical structure: (1) circular ghosted icon echoing the section's nav glyph; (2) Fraunces headline with one italic-accent word ("No classes *yet*"); (3) one-line muted explanation of what the surface is *for*; (4) **usually a single primary action** (`es-actions`); an optional dashed `es-help` "→" list for multi-path onboarding. Variants:
+- **Guided first-run** replaces the bare component: teacher day-one (`s53`) is a 3-step starter with done/active/disabled progress disclosure; student first-login (`s62`) is a forward-looking next-session hero + checklist.
+- **Ghosted-frame** for data surfaces (`s57` My Performance, `s61` Analytics): render the real chart frames at ~0.5 opacity with em-dash placeholders and a labeled amber threshold banner ("Analytics needs at least 3 graded submissions to show patterns").
+- **Role tone** (clearest in `s56`, three inboxes side-by-side): Student = encouragement ("Nothing *new yet*"); Teacher = activation ("When students start working… things land here"); Owner = reassurance ("All *caught up* · the center is humming along").
+
+**Error (FR-70, `s63`–`s67`).** Three-part recovery, blame-free *(UX-DR16)*: (1) **honest diagnosis** — a colored banner naming exactly what happened (amber `warn-banner` for recoverable/penalty; red `err-banner` for hard locks/validation); (2) **transparent context** — the math/timeline/audit-trail so the state never feels arbitrary; (3) **one clear next action** (plus a lower-stakes escape), routed through a human where relevant. Patterns:
+- **Penalty** (`s63`): calm amber banner + transparent band math (Final 5.5 ← Raw 6.0 − 0.5) + submission timeline + "Request penalty waiver" (→ teacher's inbox).
+- **Lock** (`s64` past-deadline, `s66` finalized): submit affordance removed; read-only strip preserves the user's draft; recovery = request extension / clone-&-edit (safe path offered first, destructive path gated and warned).
+- **Validation** (`s65`): top summary banner + inline per-field messages with fix suggestions + primary action disabled until resolved ("Save · 3 errors to fix").
+- **Permission denied** (`s67`): reframed as orientation — names what's behind the boundary *and who can grant access* ("Owner + Admin · Message →"), never a bare 403.
+- All error copy is in i18n, never hardcoded English, never raw HTTP codes or stack traces.
+
+### 6.5 Structural Patterns
+
+- **List-table pattern** (`s07`, `s10a`, `s15`, `s39`, `s42`, `s70`): page-head with count superscript → filter row (status tabs with mono counts + filter/sort chips) → `table.grid`. First cell = colored letter/skill tile + name + mono meta line. Row hover = paper tint; row click → detail; ended/upcoming rows dimmed (0.7). Status via `perf-pill`; load via mini bar.
+- **Tabbed-shell pattern** (`s08`/`s09`, `s40`, `s47`, `s69`, `s49`): shared `detail-head` + stat strip + `tab-strip`, body swapped per tab. Embedded summary content defers to a full destination ("View full Analytics →").
+- **Detail + right-rail** (`s08`, `s10`, `s12`, `s35`): main column + 300–320px `detail-side` of info/next-step cards, including a dashed **Actions card** that segregates role-gated/destructive affordances.
+- **Compose-row workspace** (`s43` enrolment): search + segmented action toggle (Add/Transfer/Withdraw) + apply, above a "needs attention" list with color-coded left borders, above a chronological audit history with action pills.
+
+### 6.6 Reuse, Templating & Recurrence
+
+A first-class loop that lets centers compound their work:
+- **Save-as-template → template index (`s19`) → Create class from template (`s22`)** — class structure (ordered session plans with docs + exercises) is reusable (FR-15).
+- **Archive (`s28`) → Duplicate-to-active** (live copy as-is) **vs Edit-a-copy** (open create flow pre-filled) — the two reuse verbs (FR-60).
+- **Recurrence scope** on every session mutation: editing or deleting a recurring session always branches "This session only / This and all following / All sessions in the series" (`s12`/`s14`, FR-17).
+- **Save-and-resume** on every onboarding step (auto-save indicator + "save and finish later" exit), with skipped steps surfacing as dashboard "Finish setting up" tasks (`s09`, FR-5/FR-6).
+
+---
+
+## 7. Emotional Design
+
+### 7.1 Primary Emotional Goals
+
+| User | Primary emotion | Expression |
+|---|---|---|
+| **Owner** | Recognition → Relief | "They understand my world" → "Someone finally built this" → operational confidence ("I can see my center without micromanaging") |
+| **Admin** | Control without friction | "I can keep things running and see what needs me" |
+| **Teacher** | Momentum → Quiet competence | "I'm already moving" → "This actually works, next essay" |
+| **Teacher (invited)** | Belonging | "My center is already here, they saved me a spot" |
+| **Student** | Simplicity → Encouragement | "I know exactly what to do" → "I can see how to improve" |
+| **All (failure states)** | Confident recovery | "This broke, but I can see the next step" |
+| **All (first AI grade)** | Quiet competence | "This thing actually works" |
+
+### 7.2 Micro-Emotions
+
+**Cultivate:** *Trust over excitement* (steady, credible, not hype-driven — muted confidence). *Competence over delight* (teachers want to feel fast, not entertained — AI reads as a reliable assistant, not a magic trick). *Belonging over onboarding* (invited users join a community, not start an account). *Calm over urgency* (no countdowns, no "limited time," free tier always available). *Encouragement over judgment* (students see focus areas + praise, never red verdicts).
+
+**Avoid:** *Suspicion* ("too polished to be real" — ground every claim, show pricing, name real archetypes). *Abandonment* ("broken, no one's helping" — every failure names what happened + one next action). *Overwhelm* ("too much to set up" — value before configuration). *Impatience* ("why verify my email?" — "Almost there — check your inbox," not "Verification required").
+
+### 7.3 Emotional Design Principles
+
+1. **Credibility is the emotion.** In a distrustful market, "I believe this will work" is the highest-value state; every choice serves it. Delight is a luxury; trust is the requirement.
+2. **Understatement signals reliability.** AI results appear cleanly, pricing is plain, errors are calm. Confident professional, not excited salesperson.
+3. **Speed is an emotion.** 10s auth, 30s first grade — the user *feels* the product respects their time.
+4. **Belonging before branding.** On invite flows and the first dashboard view, the center's identity leads; ClassLite is the infrastructure.
+5. **Recovery is care.** A thoughtful error with a clear next step communicates more empathy than any onboarding animation.
+
+---
+
+## 8. Role Experience Design
+
+Each subsection distills the design directions for one role/area from the realized mockups, citing screen IDs and the cross-cutting patterns (§6) they inherit.
+
+### 8.1 Onboarding (persona-forked, `s00`–`s09`)
+
+A full-bleed shell (no app sidebar — the product doesn't yet know the persona) that forks on the first screen and converges on the dashboard handoff.
+
+- **Persona pick (`s00`).** Three large selectable cards (Operator / Solo / Founder), each with a color-keyed SVG relationship diagram (amber/blue/green) and Fraunces+italic title. One pre-selected; single "Continue →". No step counter (the three flows have different lengths). *(FR-1)*
+- **Center setup (`s01`, Operator/Founder).** Single-column `setup-card`; dot step-progress ("Step 2 of 4"); name (required), short code, branches, and a **brand-picker** (auto letter-mark preview + 6-color row + optional logo). Persistent "Auto-saving · last saved Ns ago"; footer names the next step and offers "save and finish later." *(FR-2, FR-6)*
+- **Build template (`s02` Operator / `s07` Founder).** Import banner ("from spreadsheet"), a starter grid of suggested IELTS templates (one pre-selected) + a "Build from scratch" card, then an editable template form (band pill, primary skill, sessions, schedule pattern). Skippable. *(FR-3)*
+- **Spawn classes (`s03` Operator / `s08` Founder).** Each class is a numbered, removable `class-row`: cohort name, start date, **teacher field with inline-invite**, optional "+ Paste emails" students; "+ Add another class." Founder's first class auto-assigns the founder (★ default); empty rows show "Assign or invite a teacher." *(FR-4)*
+- **Solo path (`s05`).** Single class form, **teacher locked to "you"** ("solo workspace"); step "2 of 3"; option to create a template instead. No center-management surface.
+- **Done (`s04`/`s06`).** Centered success hero (✓ + Fraunces+italic center name) + a stat strip summarizing what was created + "Open Dashboard →".
+- **Dashboard handoff (`s09`).** First real app shell with a pinned **"Finish setting up"** card (eyebrow, italic title, its own progress meter, per-persona deferred tasks; snooze/dismiss, re-openable from Settings). Skipped onboarding steps become these tasks. *(FR-5)*
+
+**Owner first-run value:** before configuration completes, the owner is shown a **pre-graded sample dashboard** — what their center analytics will look like once teachers are active — so they feel the value their team will generate, not just fill out forms (Pillar 1, UX-DR21).
+
+### 8.2 Owner / Admin Experience (`s39`–`s49`)
+
+Drawn from the Owner POV; Admin sees the same minus Owner-only affordances (`s44` permissions, Owner-role invite on `s41`, Billing). The framing throughout is **center pulse and oversight without micromanagement**.
+
+- **Admin/Owner dashboard (`s48`).** "Center pulse," not "my next session." 4-up pulse stats; left column = "Today across the center" (sessions with teacher/room/student-count, "live now" amber) + trend side-cards (avg band spark, attendance, submissions) + operational activity feed (with `.flag` warning variant); right column = **"Needs your attention"** card (amber left-border, icon-coded rows: unassigned, capacity, pending invite, at-risk, heavy-load — each an action link) + staff snapshot + a plain-language "Center health" summary. *(FR-51)*
+- **Staff list (`s39`) & detail (`s40`).** List-table: Name / Role pill / Classes / **Load** (mini bar + "7/10", amber when overloaded) / Status (`perf-pill`) / Last active. Owner excluded (managed in Settings); pending invites render dimmed with `??` avatar. Detail = `student-head` + 6-up stat strip + tabs (Overview/Classes/Schedule/Activity), with a dashed **"Owner actions"** card (Assign / Reset password / Archive) segregating role-gated affordances. *(FR-41)*
+- **Invite staff modal (`s41`).** Email (+ "recipient sets own password"), optional name, **role as a segmented toggle** (Teacher/Admin; Owner dimmed unless sender is Owner), optional class (teachers only), optional welcome note; footer "Invite expires in 7 days." *(FR-42, FR-11)*
+- **Center-wide students (`s42`).** Same table pattern; adds Classes + Teacher(s); tabs All/At-risk/New/Unassigned/Archived; unassigned flagged amber. Row → shared student detail (`s10`). Distinct from the teacher's own-roster `s10a`. *(FR-43)*
+- **Enrolment (`s43`).** The compose-row workspace (§6.5): Add/Transfer/Withdraw with effective date + note; "needs attention" list with color-coded borders (amber unassigned / red capacity); chronological audit history with action pills. All actions logged + notify; Admin/Owner only. *(FR-46, NFR-6)*
+- **Roles & permissions (`s44`, Owner-only).** Three role summary cards (Owner card amber-tinted "YOU") above a **capability × role matrix** grouped by area; cells = granted ✓ / blank / **locked 🔒** (fixed ladder); **editable rows amber-highlighted** with an "editable" tag (only the two toggleable capabilities: see-teacher-analytics, publish-to-Knowledge-hub). Read-only elsewhere. *(FR-9, FR-10)*
+- **Center settings (`s49`, Owner-only).** Single tabbed screen (Profile / Term calendar / Integrations / Rooms) — rarely accessed, so consolidated. Profile re-edits onboarding `s01`; includes Google Meet connect (FR-8) and a "re-open setup" link. *(FR-7)*
+- **Analytics (`s45`–`s47`)** are shared and covered in §8.7.
+
+### 8.3 Teacher Experience (`s06`–`s28`, `s10a`)
+
+The teacher is the product's center of gravity. The experience is **launchpad → work queues → flow-state grading**, with authoring and grading as the differentiating surfaces (grading detailed in §9).
+
+- **Dashboard (`s06`).** Two zones: a read-only **week-strip** (7 day columns, colored mini-events, next session inverted with amber left-border + "· NEXT") and an **action rail** of triage cards (Needs grading 19 / Unanswered questions 7 / At-risk students 7), each row avatar + name + meta tag (overdue/today/2h) + footer link ("Open grading queue →"). Explicitly a glance/launchpad — "Read-only glance · click a session or Open Schedule to manage." *(FR-52)*
+- **Classes index (`s07`) & detail (`s08`/`s09`).** Index = list-table (Class / Skill / Schedule / Students / Sessions [fraction + progress bar] / Status / Target band / Actions). Detail = tabbed shell: Overview (embedded students + active-assignments tables, side cards, dashed Actions with "Save as template") + Students / Assignments / Sessions / Materials (link-cards with "viewed by 12 of 14" telemetry) / Analytics (summary deferring to full Analytics). *(FR-12–14)*
+- **Student detail (`s10`) & my-students (`s10a`).** `s10` = `student-head` + 6-box stats + `perf-card` (overall band + per-criterion bars + trajectory) + assignments table (submission-pill states + inquiry-count dots) + **teacher's notes** (chronological comment log, flag/warn variants, composer). `s10a` = the teacher's own aggregated roster across classes (tabs All/At-risk/New/By class), deliberately distinct from the owner's center-wide `s42`; enrolment is class-scoped. *(FR-44, FR-45)*
+- **Sessions & schedule (`s11`–`s14`).** Session list = month calendar with state-coded chips (past faded / next dark+amber / cancelled red-strikethrough) + legend. Session detail (`s12`) = recur-banner + **attendance roster** (Present/Absent/Late segmented toggle, green/red/amber) + linked docs/exercises + notes; cancel/edit branches to recurrence scope. Schedule workspace (`s13`) = two-pane (mini-month navigator + class-color legend / Day-Week-Month grid with absolutely-positioned class-colored session blocks); "click empty slot to create, click session to edit." Create/edit modal (`s14`) = one shared modal; Delete expands the "Apply to…" recurrence scope. *(FR-16–19)*
+- **Exercise library (`s15`) & editor (`s16`).** Library = list-table with skill tabs + filter chips. Editor = two-panel: a fixed **metadata sidebar** (title, skill, tags, target band, assigned classes) + a **content panel** of ordered, drag-reorderable **section-blocks**, each holding an imported material link-card + dashed **question-group cards** (type badge, per-question rows, expanded options with the key tinted green + "✓ KEY"). Section type-picker = 5 skill cards + an AI "Generate section" card. Exercise-level settings as toggle switches (time limit, case-sensitive key). Autosave ("Auto-saved · 2 min ago"). Finalized exercises lock once assigned + submitted (`s66`). *(FR-20–23)*
+- **AI generation dialog (`s17`).** Modal with adaptive chip-pickers (section type, topic/source — free text or a dragged Knowledge-hub doc, target band, question count, question mix). Per §6.2: **preview-before-insert** (passage name, word count, estimated band, breakdown, "est. cost 1 credit") with Regenerate / Cancel / **Insert section**, and a visible credit budget. Note: Writing & Speaking are prompt-only (AI drafts the prompt). *(FR-24–26)*
+- **Anchored Q&A — teacher (`s18`).** Docs-style sticky rail (§6.3): amber-underlined anchors with orange (item) / blue (whole-exercise) pins; rail with count + "Unanswered ▾" filter + cross-exercise link; **batch bar** for similar questions (Batch reply / Resolve); per-card reply with visibility toggle. *(FR-39)*
+- **Templates (`s19`–`s22`).** Template index (within Classes tabs) → template detail (ordered session blueprint: each session's title/description/documents/exercises) → edit template → create class from template (pre-filled). *(FR-15)*
+- **Grading (`s23`–`s25`).** The differentiator — see §9.
+- **Knowledge hub (`s26`) & file detail (`s27`).** Hub = two-pane folder-tree + tile grid (type-tinted icons, tags, **"Used in EX-R114" back-links**). Detail = type-specific preview (paged doc / waveform audio) + info + **Linked-to** list + dashed Actions; "Use in exercise" CTA. Bidirectional linking ties files to exercises/sessions. *(FR-54, FR-55, XL-3 presigned uploads)*
+- **Archive (`s28`).** List-table with the two reuse verbs — **Duplicate to active** vs **Edit a copy** (§6.6). Teacher-only; rows open read-only. *(FR-60)*
+
+### 8.4 Student Experience (`s29`–`s38`)
+
+Read-only consumer framing, mobile-first, calm and encouraging. The student's sidebar uses possessive verbs ("My classes", "My schedule", "My performance"). **No classmate roster, no class averages, no peer comparison anywhere.**
+
+- **Dashboard (`s29`).** Greeting + dated summary over a week-strip glance + action rail (Due soon / Recent feedback [calmer count treatment] / My questions). Footer disclaimer: "Sessions are set by your teacher · read-only." *(FR-53)*
+- **My classes (`s30`) & class detail (`s31`).** Cards with personal stats ("My band," attendance, due, sessions progress) — placement, not catalog. Detail = 4-box personal stat strip + tabs; class materials as link-cards ("shared by your teacher"); **no roster**; a dashed "My progress" card ("on track toward 6.5 → View my performance"). *(read-only consumer)*
+- **My schedule (`s32`).** Read-only calendar; twin disclaimers ("your teachers manage these sessions"); clicking opens detail only.
+- **Exercise attempt (`s33`).** One adaptive shell, three variants: **Reading/Listening/Vocab** split-pane (passage/audio + questions, choice rows, gap inputs, Prev/Next + ⚑ Flag); **Writing** redirects to `s34`; **Speaking** recorder (prompt + circular record button, "● Recording," timer, "re-record before submitting"). Side navigator = numbered progress dots (done/current/flagged) + "This attempt" stats + dashed "Stuck? Ask a question." Incremental save-draft + timer. *(FR-28, FR-30)*
+- **Writing attempt (`s34`).** Built-in Docs-style editor (not Google Docs): formatting toolbar + **"● Saved 4s ago · all changes synced"** autosave indicator + **live word count "287 / 250 min"**; stat cards (Words +37 above min / Time on task / Due in 19h). ⚑ Flag, ? Ask, Submit essay. Footnote sets expectation: feedback returns as **anchored comments on the submitted text**. This is the sole RHF-exempt surface (document-editing pattern, debounced mutations). *(FR-29, FW-8)*
+- **Submission & result (`s35`).** Band hero (circular `band-ring` overall + per-criterion bars) + teacher feedback quote (attributed) + the student's submission preview. **Class average explicitly hidden.** A "Have a question?" card opens an anchored question about the result. Late/low bands framed neutrally. *(FR-32)*
+- **Anchored Q&A — student (`s36`).** "? Ask about this" affordance on items; "Attach to: This item / Whole exercise" chooser; awaiting + answered cards (teacher reply with "Shared with your class" visibility note). *(FR-38)*
+- **My performance (`s37`).** Two tabs only — Overview (band progression spark + per-skill bars with named focus area) and **Patterns** (softened Mistakes view): each row phrased as a coaching action ("Watch the…", "Try building longer conclusions"), shows the teacher's actual quote + inline practice links to existing materials, **interleaved with praise rows**. Dashed note: "only your own data; class averages not shown; nothing new is generated." Per §6.1: no red regression, no peer comparison. *(FR-50, UX-DR22)*
+- **Profile (`s38`).** Common to all roles; here in the student shell. Target band pill, notification toggles mapping to inbox event types; footnote: "enrolment is managed by your center — contact your Admin." *(FR-68)*
+
+### 8.5 Inbox (`s50`–`s52`) — one pattern, three lenses
+
+A single scaffold specialized per role: page header ("N unread · M total") + horizontal **filter-chip bar** + a **flat chronological list** grouped by date dividers; each row = color-coded type icon + body (from-name + type-pill + timestamp + snippet + context links) + type-matched **quick actions** ending in Snooze/Archive. Unread rows highlighted; one row shown **expanded** with an inline composer so the most common action needs no navigation. Topbar: Mark all read + rules. Near-real-time via polling (FR-59). *(FR-56–58, UX-DR24 for loading)*
+
+- **Teacher (`s50`):** chips All/Unread/Questions/Submissions/Late/Mentions/System. Actions: Grade now, Grade·apply-penalty / Waive, Reply inline (with **✦ AI-suggest reply**), Open in exercise. Expanded = inline reply composer beside the quoted student draft.
+- **Student (`s51`):** chips All/Unread/Replies/Grades/Class. Sender role tags ("Teacher"). Actions: Read feedback / Ask a question, Open assignment / Add to calendar, Update calendar. Encouraging grade snippets; late penalties stated factually, not alarmed. Anchored comments surface as "3 anchored comments → View."
+- **Admin/Owner (`s52`):** chips All/Unread/Approvals/People/System/Alerts; first divider "Today · needs action." Actions: Approve enrolment / Decline with note / Suggest alternative, Re-auth Google, Resend/Revoke invite, Upgrade plan. Expanded approval shows inline **capacity + prerequisite** context cards before the decision.
+
+### 8.6 Billing & Limits (`s68`–`s73`, Owner-only)
+
+Transparency is the design value — every constrained or destructive moment surfaces explicit math and named consequences before confirmation.
+
+- **Plan picker (`s68`).** 3-up Free/Pro/Studio with Monthly/Annual toggle ("Save 2 mo"); current plan flagged + CTA neutralized; excluded features struck through; a usage-based upgrade callout. *(FR-61, FR-72)*
+- **Billing dashboard (`s69`).** Sub-tabbed; current-plan card (savings vs monthly) + next-invoice card with full **tax breakdown** (subtotal / VAT 10% / total); **usage meters** for every constrained resource with `.warn` amber state + plain-language read-out. *(FR-66)*
+- **Invoice history (`s70`).** Table with status pills (paid/upcoming/declined/refunded/free); filters; **Export CSV / "Email all to accountant"**; VAT line items + tax ID (accountant-oriented). *(FR-66)*
+- **Upgrade modal (`s71`).** 640px modal over a dimmed+blurred dashboard (preserves context); before→after comparison; **prorated math made explicit** (new price − unused credit + VAT = "Charged today"); confirm button shows the exact amount. *(FR-63, FR-64)*
+- **Soft limit (`s72`).** Non-blocking amber banner on a still-functional page; explains what happens at the cap; **two resolution paths** (Upgrade w/ prorated price vs free "Split into 2 classes"); dismissible, re-shows at threshold. *(FR-62)*
+- **Grace period (`s73`).** Persistent **red strip** on every Owner page: reason + deadline + countdown + "Update payment method"; body shows a 5-node recovery timeline (declined → retries → warning → day-7 downgrade) + plain-language "what downgrade means" (center keeps running, features paused) + fix-it form. Red throughout = hard failure, vs amber soft warning. *(FR-65)*
+
+### 8.7 Analytics (`s45`–`s47`, shared, role-scoped)
+
+Teacher sees own classes/students; Admin/Owner see center-wide; student sees only self via `s37`.
+
+- **Analytics home (`s45`).** Hub: cards for Class performance / Student performance, each with mini-stats; an Owner/Admin-only **Teacher-performance card rendered dimmed with a tag** ("Not visible to teachers") — role-gating shown, not hidden. *(FR-47)*
+- **Class performance (`s46`).** Scope bar + 4-up stats (cohort avg band + delta, target, at-risk, on-time) + **band-over-time bar chart** + **skill × week heatmap** (cell darkness = closer to target, with plain-language read-out) + **repetitive-mistake rows** (severity, skill tags, frequency, trend arrows; a calm praise variant) + at-risk/on-track action cards + an **AI insight card** ("Apply to all 9" / Dismiss, per §6.2). *(FR-48, PERF-2 aggregate in SQL)*
+- **Student performance (`s47`).** `student-head` + stats + three tabs: Overview (progression + per-skill bars) / **Mistakes** (expandable rows revealing the graded-essay quote with the error span highlighted + teacher's note + "View all N instances") / **Recommendations** (priority-ordered cards tagged by source — AI vs "From [teacher]" — linking existing exercises/materials, Assign/Edit/Dismiss; teacher advice overrides AI). Student sees the softened `s37` framing. *(FR-49, FR-50, UX-DR25 progress sharing)*
+- **Progress sharing (UX-DR25).** "Share summary" on student detail + My Performance generates a clipboard-ready plain-text block (Zalo/WhatsApp-friendly: name, range, overall band, per-skill, attendance) + a one-page branded PDF export. No parent accounts in v1 — sharing is copy/paste + PDF.
+
+---
+
+## 9. The Grading Experience (the differentiator)
+
+Grading is *the* reason the product exists; its UX gets disproportionate care. Three skill-specific modes share one frame: a **topbar Prev/Next-student queue navigator**, the AI-assistance pattern (§6.2), the feedback/score language (§6.1), and a final **lock/release** CTA. *(FR-33–37, UX-DR22, UX-DR23)*
+
+### 9.1 Writing grading — anchored comments (`s23`, flagship)
+
+Three zones: (1) top `editor-head` (assignment type, prompt, student/word-count/submission meta); (2) middle `with-rail` — the student's essay rendered as the surface they wrote on, with span highlights + numbered pins, beside a sticky **comment rail**; (3) a full-width **band-scoring strip**.
+
+- **Essay toolbar:** comment-type tools — ✎ Suggestion (amber), ! Error (red), ★ Praise (green) — plus "Pin to criterion" and live word count.
+- **Comment rail:** header with count + summary ("1 praise · 2 suggestions · 1 error"); an **AI review strip** ("AI reviewed the essay · 3 suggestions awaiting" + "Accept all praise" / "Review one by one" + "You decide each one"); cards distinguishing **teacher** (dark avatar, "You") from **AI** (gradient "AI" avatar, type tag + criterion tag + Accept/Edit/Dismiss + confidence label).
+- **Band-scoring strip:** an `ai-suggestion` block ("analysed 287 words · 1.4s") with per-criterion bands + prose rationale (weakest/strongest) + Accept/Edit-before-applying/Dismiss + "teacher always decides the final band"; below it the teacher's editable **band-score grid** (four criteria as large numerals, each annotating its **pinned-comment count** to evidence the score), the oversized overall band (Fraunces 32px), an overall-feedback quote, and **"Submit grade & notify student."** *(FR-33, FR-34)*
+
+### 9.2 Speaking grading (`s24`)
+
+Two-column: recording + timestamped notes / scoring. **Audio player** with waveform (played bars darker), time, and speed control; tip: "click the waveform to pin a comment to that moment." AI suggestion block works "from transcript" — per-criterion bands (Fluency/Lexical/Grammar/Pronunciation) + rationale citing exact timestamps ("hesitation 1:05–1:09"), and **flagged moments** pinned to the waveform. Notes thread mixes saved teacher notes (dark time chip) with AI-suggested items (Accept/Edit/Dismiss + confidence). Side: 2×2 bands grid + overall + feedback + Submit. *(FR-35, FR-36)*
+
+### 9.3 Auto-grade review (`s25`, Reading/Listening/Vocab)
+
+Summary band (big fraction score + provisional band + breakdown + an **After-overrides** recomputed score) → **answer-review table** (#, student's answer, the key shown when wrong, Result ✓/✕/override, per-answer **Override** action) → before-releasing card (overrides applied + final score + "Release result & notify"). Flagged spelling variants (e.g. "hydro-electric" vs "hydroelectric") surfaced for teacher review; score recomputes live; the student sees the breakdown only after release. *(FR-37)*
+
+### 9.4 The grading queue (`s50` → grading, UX-DR23)
+
+The bulk-review flow that turns grading into a fast loop: queue rows (student, assignment, class, submission time, overdue flag); **Prev/Next navigation without returning to the list**; a progress indicator ("3 of 12 graded"); a quick-action bar (Accept AI grade / Skip / Flag for later); keyboard shortcuts (arrows to navigate, Enter to open, Escape to return). This is a desktop-only surface by design (`s87`); mobile offers triage and reading, with an honest "Open in desktop for grading" seam (`s83`).
+
+---
+
+## 10. Landing Page & Authentication
+
+The two pre-auth surfaces, preserved from the prior specification and integrated here. They share the §5 token system exactly so the `classlite.app → my.classlite.app → dashboard` transition is seamless. Full screen detail: `ux-design-directions.html` (`LP-01`, `AUTH-01`–`AUTH-08`). *(FR-71–81, UX-DR3–DR20)*
+
+### 10.1 The trust-to-value pipeline
+
+The defining pre-auth experience compresses five cognitive stages into minutes: **Awareness** ("I have a problem I'm paying for") → **Recognition** ("this is for someone like me") → **Decision** ("I'll try free") → **Entry** ("I'm in," Google OAuth ~10s) → **Proof** ("it works," first AI grade ~30s). A delay at any stage loses the user. Target: **median < 5 minutes** landing → first AI grade result.
+
+### 10.2 Landing page (`LP-01`, `classlite.app`, Astro)
+
+Desktop-optimized for owners/teachers, responsive to 390px, SEO-first, bilingual `/vi`+`/en`. Sections top-to-bottom: sticky **Header** (transparent → solid on scroll past 400px, secondary → primary CTA) · **Hero** (Fraunces 44px on dot-grid paper; eyebrow "Nền tảng quản lý trung tâm IELTS"; pain-quantifying headline "12 phút → 3 phút"; "Bắt đầu miễn phí") · **Pain articulation** (static calculator, Geist Mono: "5 giáo viên × 3 giờ/tuần × 48 tuần = 720 giờ/năm") · **Features** (3–4 tinted cards with screenshots — show, don't list) · **Social proof** (named Vietnamese center archetypes + outcome stats, "-65%") · **Pricing** (3 VND tier cards, annual/monthly toggle, popular tier with amber border + badge, "Bắt đầu miễn phí" repeated below) · **Footer** (navy, mirrors the sidebar; legal, language toggle, Zalo support). *(FR-71–74, UX-DR3, DR4, DR11–14)*
+
+### 10.3 Auth screens (`AUTH-01`–`AUTH-08`, `my.classlite.app`, React)
+
+Mobile-first (students arrive on phones). Centered `AuthCard` (420px desktop / full-bleed mobile) on dot-grid paper, Fraunces wordmark above. **Google-first:** the ToS-compliant `GoogleOAuthButton` (white bg, line border, colored logo) is the largest button; the email/password form is **collapsed** behind "Đăng ký/Đăng nhập bằng email." One action per screen. Password field has eye toggle + 4-segment strength bar (`aria-live`). Screens: Register, Login, Verification pending (envelope, "Kiểm tra email," resend with 60s cooldown, Google fallback "cùng tài khoản, không cần xác nhận"), Invite acceptance (center identity foregrounded), Lockout (recovery-framed "Hãy thử lại sau," "Quên mật khẩu?" primary), Password reset (+ spam hint). *(FR-75–81, UX-DR5–DR10, DR15)*
+
+### 10.4 Failure-state catalog (pre-auth)
+
+Every failure has an explicit recovery path — these are where users are permanently lost. *(UX-DR16, UX-DR20)*
+
+| Failure | Trigger | Recovery |
+|---|---|---|
+| **Expired invite** | Link clicked after 7 days | Center name + "Ask [inviter] to send a new one" (mailto). Not a generic error. |
+| **Already-accepted invite** | Same link twice | Redirect to login/dashboard: "You've already joined [center]." |
+| **Existing account invited** | Existing user gets a new-center invite | "You already have an account. Join [center] as [role]?" one-click. |
+| **Google Workspace blocks OAuth** | Institutional account | "Try a personal Gmail, or sign up with email" — both one click. |
+| **Verification email not received** | >60s, no email | Troubleshoot + resend (rate-limited); after 2 resends, "Try Google instead." |
+| **Account lockout** | 5 fails / 10 min | 15-min lockout + countdown (from server `retry_after`); "Forgot password?" stays active. |
+| **Reset link expired** | >1 hour | "Request a new one" — pre-fills email. |
+| **Silent refresh failure** | Access + refresh expired/revoked | Login with "Session expired"; **preserve target URL**; in-progress work preserved via autosave. |
+| **Stale hint-cookie loop** | `logged_in=1` but session dead | Clear hint, redirect to `classlite.app?session_expired=true` (loop broken in one redirect). |
+| **OAuth email mismatch** | OAuth email ≠ invited/registered email | Specific screen naming expected vs used email; two paths (different Google account / email signup). Server validates match atomically (account-takeover surface). |
+
+### 10.5 Key pre-auth journeys
+
+Five journeys converge on the same endpoint — the first AI grade. Full flowcharts in the prior showcase; the load-bearing decisions:
+
+1. **Owner discovery → signup → first grade.** Landing (locale-routed, logged-in redirect via hint cookie) → CTA → Google OAuth or email+verification → persona pick → center setup → first AI grade. Four screens on the happy path; < 5 min.
+2. **Teacher invite → first grade** (highest-value). Invite link → token validation (6 states) → center-foregrounded accept → role dashboard with "Chấm bài đầu tiên." Invite token rides the OAuth `state` param (`nonce:inviteToken`); email match validated server-side.
+3. **Student invite (mobile).** Tap → center/teacher/role shown → one-tap Google → straight into the class. No onboarding wizard. < 30s authenticated.
+4. **Returning login (happy + failure).** Valid session → dashboard; expired → silent refresh (multi-tab coordinated via `navigator.locks` + `BroadcastChannel`) → on failure, login preserving target URL. Lockout/unverified branch to recovery.
+5. **Email verification gate.** Poll `verify-status` every 5s (10-min cap) → auto-redirect on verify; three distinct statuses (unverified/verified/token_expired); Google escape hatch with strict email-match.
+
+**Journey principles:** Google OAuth is the universal escape hatch; center identity foregrounds on invites; auto-detection over manual action; three-part error recovery everywhere; every path converges on the first AI grade.
+
+---
+
+## 11. Mobile Strategy
+
+Mobile screens are **purpose-built for the thumb and the moment** (iPhone 390×844 reference), not responsive squishes *(UX-DR15, UX-4, FR-74)*. Bottom **tab bars replace the sidebar**, with role-specific spines: Student 5-tab (Home/Assignments/Inbox/Classes/Me), Teacher 4-tab (Home/Classes/Inbox/More), Owner 4-tab (Home/Inbox/People/More).
+
+### 11.1 Coverage buckets (`s87`)
+
+Every desktop surface is placed in exactly one bucket, so gaps read as intentional:
+- **Mobile-first (purpose-built):** student consumption (dashboard, assignments, class, essay-write, result, Q&A, performance, inbox), teacher triage (dashboard, class-health, inbox, question-reply), owner approve-from-push.
+- **Mobile-triage (responsive fallback):** read-only or one-tap surfaces — class/schedule scanning, question reading, knowledge-hub reading, billing usage check, invoice PDF, grace strip, permission-denied. Empties degrade gracefully.
+- **Desktop-only by design:** the work that doesn't fit a phone — onboarding, exercise builder + anchored-comment grading, class creation, people/roles, center settings, analytics drill-down, plan picker/upgrade, creation-side errors. These show a "best viewed on desktop" hint, not a degraded screen.
+
+### 11.2 Mobile patterns
+
+- **Above-fold priority:** student dashboard (`s74`) leads with a single due-now hero (countdown + progress + "Continue writing"); teacher dashboard (`s82`) leads with triage ("is anyone blocked"); owner (`s86`) is a single-screen push-driven decision.
+- **Gestures over hover:** swipe-to-act on inbox rows (`s75`/`s84`) replaces hover actions; horizontally-scrolling filter chips replace wrapping.
+- **Detail via full-screen push, not modal** (`s76`) — phones don't carry modal context.
+- **Essay write (`s78`):** maximized text area, sticky word-counter strip, formatting bar only when the keyboard is up, slide-up submit sheet confirming word count + late policy.
+- **Result (`s79`):** anchored comments expand **inline under the line** (not a side rail).
+- **Q&A (`s80`/`s85`):** chat-thread bubbles (student right, teacher left) with a context strip.
+- **Honest seams:** `s83` shows an explicit "Open in desktop for grading" CTA — the product names the workflow boundary rather than faking parity.
+- **Touch & input floor:** 44×44px minimum touch targets (buttons 48px), ≥16px input font (no iOS zoom-on-focus), keyboard-accessible nav drawer, tables reflow or horizontal-scroll (never invisible overflow). *(UX-DR15, TEST-UX-4)*
+
+### 11.3 Mobile auth
+
+Auth screens at 390px: full-width 48px buttons/inputs, one action per screen, primary CTA in the thumb zone, card padding `24px 20px`. Mobile token overrides: `--cl-input-height/btn-height: 48px`, `--cl-btn-font-size: 15px`, `--cl-heading-size: 28px`. Register / Verification / Invite / Expired-invite wireframes per `AUTH-02/04/06`.
+
+---
+
+## 12. Accessibility (WCAG 2.1 AA, product-wide) *(NFR-5)*
+
+Consolidated reference; requirements are also stated inline in the relevant sections.
 
 | Requirement | Standard | Implementation |
 |---|---|---|
-| **Color contrast** | WCAG 2.1 AA (4.5:1 normal, 3:1 large) | All token pairs verified. `--cl-muted` darkened to `#595c66`. `--cl-accent-2` restricted to decorative use; text variant `#7c4309`. |
-| **Touch targets** | WCAG 2.5.5 (44×44px minimum) | All buttons 48px on mobile. Links have sufficient padding or own line. |
-| **Focus indicators** | WCAG 2.4.7 | `2px solid var(--cl-accent)` with `2px` offset on all interactive elements. |
-| **Form labels** | WCAG 1.3.1 | All inputs have visible `<label>`. No placeholder-only fields. `aria-describedby` for errors. `aria-required` on all auth fields. |
-| **Screen readers** | WCAG 4.1.2 | Landmark regions (`<main>`, `<nav>`, `<footer>`). Sequential heading hierarchy. `aria-label` on icon-only buttons. `aria-live="polite"` for password strength and verification status. |
-| **Motion** | WCAG 2.3.3 | `prefers-reduced-motion` disables scroll transitions and animations. |
-| **Language** | WCAG 3.1.1, 3.1.2 | `lang="vi"` or `lang="en"` on `<html>`. IELTS terms wrapped in `<span lang="en">`. |
-| **Non-text contrast** | WCAG 1.4.11 (3:1 for UI boundaries) | Interactive borders use `--cl-line-interactive` (`#a8a095`). Decorative borders exempt. |
-| **Color not sole indicator** | WCAG 1.4.1 | Error = red tint + icon + text. Success = green tint + checkmark + text. Strength bar segments use color + position. |
+| **Color contrast** | 1.4.3 (4.5:1 / 3:1) | All token pairs verified (§5.5). `--cl-muted` `#595c66`; amber decorative-only with `-text`/`-btn` variants. |
+| **Non-text contrast** | 1.4.11 | Interactive borders `--cl-line-interactive` `#a8a095` (3:1); decorative borders exempt. |
+| **Color not sole signal** | 1.4.1 | Error/success/status pair color with icon + text; charts pair color with value labels; feedback decline is neutral-framed, never color-only (§6.1). |
+| **Touch targets** | 2.5.5 | 44×44px min; 48px buttons on mobile. |
+| **Focus indicators** | 2.4.7 | `2px solid var(--cl-accent)` + 2px offset on all interactive elements. |
+| **Form labels** | 1.3.1 | Visible `<label>` always (no placeholder-only); `aria-describedby` for errors; `aria-required`. |
+| **Keyboard navigation** | 2.1.1 | Full keyboard path including the **grading queue** (arrows/Enter/Escape, UX-DR23); focus traps in modals with focus-return on close; skip-to-content on every page. |
+| **Screen readers** | 4.1.2 | Landmark regions, sequential headings, `aria-label` on icon-only buttons, `aria-live="polite"` for password strength, verification status, autosave, and async content (loading complete / error appeared). Page titles change on route navigation. |
+| **Motion** | 2.3.3 | `prefers-reduced-motion` disables scroll transitions, skeleton pulse easing, and the 150ms fade-in. |
+| **Language** | 3.1.1/3.1.2 | `lang="vi"`/`"en"` on `<html>`; IELTS terms wrapped `<span lang="en">`; both locales tested for visual + semantic (aria) parity (TEST-UX-1). |
 
-### Screen Inventory (this UX spec)
+---
 
-| Screen ID | Screen | Platform | Status |
-|---|---|---|---|
-| LP-01 | Landing Page | Desktop (responsive) | Designed — HTML showcase |
-| AUTH-01 | Register | Desktop | Designed — HTML showcase |
-| AUTH-02 | Register | Mobile (390px) | Designed — HTML showcase |
-| AUTH-03 | Login | Desktop | Designed — HTML showcase |
-| AUTH-04 | Verification Pending | Mobile | Designed — HTML showcase |
-| AUTH-05 | Invite Acceptance (Valid) | Desktop | Designed — HTML showcase |
-| AUTH-06 | Invite Acceptance (Expired) | Mobile | Designed — HTML showcase |
-| AUTH-07 | Login Lockout | Desktop | Designed — HTML showcase |
-| AUTH-08 | Password Reset | Desktop | Designed — HTML showcase |
+## 13. Component Strategy
 
-These 9 screens extend the existing 93-screen mockup set (s00-s87) documented in `docs/classlite-entry/classlite-ia.md`. Together they provide complete UX coverage from first visit through authentication to the product experience.
+**Three tiers, never blurred** *(FW-7)*: `components/ui/` (shadcn primitives, generated, never hand-edited) · `components/shared/` (app-wide layout) · `components/domain/` (business-aware, reusable, e.g. `BandScoreChart`, `AnchoredCommentRail`, `AIGradeSuggestion`) · `features/<feature>/components/` (feature-local). Domain/feature components never live in `ui/`; behavioral extensions wrap a primitive in `domain/`.
+
+- **Auth/landing components** (specified for build): `GoogleOAuthButton`, `PasswordInput` + `PasswordStrengthBar`, `AuthCard`, `VerificationPending` + `useVerificationPoller`, `InviteCard` + `useInviteToken` (6 states), `CollapsibleEmailForm` (React); `StickyHeader`, `PainCalculator`, `PricingCard`, `SocialProofCard`, `FeatureCard` (Astro). Logic hooks are extracted for isolated testing; MSW mocks the HTTP boundary (never mock TanStack Query, TEST-FE-1).
+- **Cross-product domain components** (derived from §6, to be built per epic): the **anchored comment/Q&A rail** (highlight→pin→card), the **AI suggestion card** (chip + confidence + Accept/Edit/Dismiss), the **band-score grid + criterion pinning**, the **status pill / load bar / usage meter**, the **skeleton set** (one per primary layout, UX-DR24), the **empty-state** and **three-part error** shells, and the **list-table / tabbed-shell** scaffolds.
+- **Shared tokens (pragmatic path):** ship one `tokens.css` committed to both repos + a no-raw-hex lint rule + visual-regression diffing; defer a monorepo `@classlite/tokens` package until a second team touches tokens independently. *(UX-DR1)*
+
+---
+
+## 14. Open Questions & Assumptions
+
+### 14.1 Phase-blocking (resolve before the relevant epic)
+
+| # | Question | Blocks |
+|---|---|---|
+| 1 | Go API auth endpoint contracts (request/response shapes) | Auth flows (Epic 1B/1C) |
+| 2 | OAuth strategy: redirect to `/auth/google` vs `@react-oauth/google` SDK | Auth screens |
+| 3 | Password strength library: `zxcvbn` vs custom tiers | Register/Login |
+| 4 | Invite token URL structure: `/invite?token=` vs `/invite/:token` | Invite acceptance |
+| 5 | Grading-queue keyboard-shortcut map + AI-prefill timing (does AI run on queue-open or on-demand?) | Epic 6 (grading, UX-DR23) |
+| 6 | Heatmap/chart rendering approach for analytics (lib vs hand-built, perf on 4G per NFR-3) | Epic 8 |
+
+### 14.2 Assumptions (validate; non-blocking)
+
+- `[ASSUMPTION]` The 93-screen mockup set is the authoritative visual realization; this spec defers to it on screen detail and only overrides on principle (§1).
+- `[ASSUMPTION]` Pricing/social-proof content is hardcoded in Astro for v1 (no CMS/API).
+- `[ASSUMPTION]` Pain-calculator values are static (not interactive) for MVP.
+- `[ASSUMPTION]` Mobile coverage buckets (`s87`) are the v1 contract; "desktop-only" surfaces ship a hint, not a degraded mobile screen.
+
+### 14.3 Flagged for a later UX pass
+
+- **Return-visit / re-engagement & upgrade-trigger journey.** SM-6 (>15% free→pro within 60 days) depends on day-3/day-7 re-engagement and a defined upgrade moment. Out of scope here; needs its own retention UX pass.
+- **Global search palette (⌘K) UI** (FR-67) — the interaction is named in the app shell but the palette itself is not yet drawn.
+- **Bulk-operation modals/drawers** — pattern defined (count → parameters → preview → confirm) but no specific bulk flows drawn yet.
+
+---
+
+## 15. Screen Inventory & Status
+
+| Range | Area | Status |
+|---|---|---|
+| `LP-01`, `AUTH-01–08` | Landing + Auth (9) | Designed — HTML showcase (`ux-design-directions.html`) |
+| `s00–s09` | Onboarding (10) | Mocked — `01-owner-onboarding.html` |
+| `s06–s28`, `s10a` | Teacher (24) | Mocked — `02a–02d` |
+| `s29–s38` | Student (10) | Mocked — `03-student.html` |
+| `s39–s49` | Admin/Owner + cross-role (11) | Mocked — `04`, `05` |
+| `s50–s67` | Inbox + empty + error states (18) | Mocked — `06a–06c` |
+| `s68–s73` | Billing (6) | Mocked — `07-billing.html` |
+| `s74–s87` | Mobile (14) | Mocked — `08-mobile.html` |
+| **Total: 102** | **Full product** | Visual language settled; this spec is the behavioral + directional contract over it |
+
+Together these provide complete UX coverage from first visit through authentication to every authenticated surface. The mockups own screen-level layout; this specification owns the cross-cutting principles, patterns, states, and role logic that bind them into one coherent product.
