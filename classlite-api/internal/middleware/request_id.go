@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/ducdo/classlite-api/internal/model"
@@ -16,7 +15,6 @@ func RequestID(next http.Handler) http.Handler {
 		id := uuid.New().String()
 		ctx := context.WithValue(r.Context(), model.RequestID, id)
 		w.Header().Set("X-Request-ID", id)
-		slog.InfoContext(ctx, "request", "method", r.Method, "path", r.URL.Path, "request_id", id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

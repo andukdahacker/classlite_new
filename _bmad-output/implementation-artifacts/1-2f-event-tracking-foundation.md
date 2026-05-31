@@ -1,6 +1,6 @@
 # Story 1.2f: Event Tracking Foundation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -64,6 +64,12 @@ Then they are processed in-process without requiring any external infrastructure
 - Never log Payload content if it could contain PII (EDGE-4 principle) — log Type, CenterID, UserID only
 - Bus must be goroutine-safe (sync.RWMutex on handler map)
 - No external dependencies — stdlib only
+
+### Review Findings
+
+- [x] [Review][Patch] Handler-error log omits center_id and user_id — fixed: added both fields to ErrorContext [bus.go]
+- [x] [Review][Defer] No concurrent Publish+Subscribe test for RWMutex validation — add when concurrency complexity increases
+- [x] [Review][Defer] Payload field exported with no slog.LogValuer redaction — bus never logs it, handler authors' responsibility
 
 ### References
 - [Source: _bmad-output/planning-artifacts/epics.md — Story 1.2f]

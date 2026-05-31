@@ -57,7 +57,7 @@ development_status:
   1-2c-error-handling-and-config-system: done
   1-2d-email-service-abstraction: done
   1-2e-presigned-upload-infrastructure: done
-  1-2f-event-tracking-foundation: review
+  1-2f-event-tracking-foundation: done
   1-3-auth-database-schema-rls-and-security-testing: ready-for-dev
   1-3b-audit-logging-infrastructure: ready-for-dev
   epic-1a-retrospective: optional

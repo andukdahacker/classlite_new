@@ -35,3 +35,13 @@ type FieldError struct {
 func (e ValidationError) Error() string {
 	return "validation failed"
 }
+
+// ConflictError indicates a resource conflict (e.g., duplicate).
+type ConflictError struct {
+	Resource string
+	ID       string
+}
+
+func (e ConflictError) Error() string {
+	return fmt.Sprintf("%s %s already exists", e.Resource, e.ID)
+}
