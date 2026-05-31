@@ -47,9 +47,6 @@ Thumbs.db
 # Astro
 .astro/
 
-# BMad framework
-_bmad/
-_bmad-output/
 
 # Claude
 .claude/

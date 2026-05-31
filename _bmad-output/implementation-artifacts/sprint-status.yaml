@@ -1,0 +1,164 @@
+# generated: 2026-05-28
+# last_updated: 2026-05-30
+# project: classlite_new
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# RESTRUCTURING NOTE (2026-05-29):
+# =================================
+# Epic 1 split into 1A/1B/1C. Stories 1.2, 1.7, 1.9, 2.3 decomposed into sub-stories.
+# New gap stories added: 1.2d-f, 1.3b, 2.7, 4.5, 8.5.
+# Epic files now in _bmad-output/planning-artifacts/epics/ (sharded).
+# See epics/index.md for full structure.
+
+generated: 2026-05-28
+last_updated: 2026-05-30
+project: classlite_new
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1A: Project Foundation
+  epic-1a: in-progress
+  1-1-monorepo-scaffold-and-infrastructure-setup: done
+  1-2a-go-api-skeleton-and-middleware-chain: done
+  1-2b-database-connection-health-endpoint-and-tenant-context: done
+  1-2c-error-handling-and-config-system: done
+  1-2d-email-service-abstraction: done
+  1-2e-presigned-upload-infrastructure: done
+  1-2f-event-tracking-foundation: review
+  1-3-auth-database-schema-rls-and-security-testing: ready-for-dev
+  1-3b-audit-logging-infrastructure: ready-for-dev
+  epic-1a-retrospective: optional
+
+  # Epic 1B: Authentication
+  epic-1b: backlog
+  1-4-email-password-registration-and-email-verification-api: backlog
+  1-5-login-session-management-and-password-reset-api: backlog
+  1-6-google-oauth-and-invite-acceptance-api: backlog
+  epic-1b-retrospective: optional
+
+  # Epic 1C: Frontend Foundation & Landing Page
+  epic-1c: backlog
+  1-7a-design-system-and-component-library: backlog
+  1-7b-app-shell-routing-and-state-management: backlog
+  1-7c-shared-layout-components-and-i18n: backlog
+  1-8-auth-ui-registration-and-login-screens: backlog
+  1-9a-email-verification-ui: backlog
+  1-9b-password-reset-ui: backlog
+  1-9c-invite-acceptance-ui: backlog
+  1-9d-auth-error-and-recovery-states: backlog
+  1-10-astro-landing-page: backlog
+  epic-1c-retrospective: optional
+
+  # Epic 2: Onboarding, Center Setup & Roles
+  epic-2: backlog
+  2-1-onboarding-api-persona-selection-center-setup-and-save-resume: backlog
+  2-2-class-template-and-spawning-api: backlog
+  2-3a-onboarding-ui-persona-selection-and-center-setup: backlog
+  2-3b-onboarding-ui-template-selection-and-class-spawning: backlog
+  2-3c-onboarding-ui-completion-and-resume: backlog
+  2-4-post-onboarding-checklist-and-first-ai-grade-card: backlog
+  2-5-center-settings-and-google-meet-integration: backlog
+  2-6-roles-permissions-and-authorization-enforcement: backlog
+  2-7-bulk-student-import: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Class Management & Scheduling
+  epic-3: backlog
+  3-1-class-crud-lifecycle-and-creation-ui: backlog
+  3-2-class-detail-view-with-tabs: backlog
+  3-3-class-templates-management: backlog
+  3-4-schedule-workspace-and-session-management: backlog
+  3-5-session-detail-and-attendance-recording: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Exercise Authoring, AI Content Generation & Knowledge Hub
+  epic-4: backlog
+  4-1-exercise-library-and-crud-api: backlog
+  4-2-exercise-editor-structure-questions-and-settings: backlog
+  4-3-ai-content-generation-pipeline: backlog
+  4-4-knowledge-hub-and-file-management: backlog
+  4-5-jsonb-schema-migration-strategy: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Assignments, Student Attempts & Submissions
+  epic-5: backlog
+  5-1-assignment-creation-and-submission-lifecycle-api: backlog
+  5-2-quiz-attempt-interface-reading-listening-vocabulary: backlog
+  5-3-writing-attempt-interface: backlog
+  5-4-speaking-attempt-interface: backlog
+  5-5-submission-result-view: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Grading & AI-Assisted Grading
+  epic-6: backlog
+  6-1-writing-grading-with-anchored-comments: backlog
+  6-2-ai-assisted-writing-grading: backlog
+  6-3-speaking-grading-and-ai-assisted-speaking-grading: backlog
+  6-4-auto-grading-reading-listening-vocabulary: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: People Management, Enrollment & Anchored Q&A
+  epic-7: backlog
+  7-1-staff-management-and-invitation: backlog
+  7-2-student-lists-and-student-detail-view: backlog
+  7-3-enrollment-management: backlog
+  7-4-anchored-qa-system: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: Analytics, Dashboards & Search
+  epic-8: backlog
+  8-1-role-specific-dashboards: backlog
+  8-2-analytics-home-and-class-performance: backlog
+  8-3-student-performance-views: backlog
+  8-4-global-search-cmd-k: backlog
+  8-5-analytics-seed-data-script: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: Billing, Plans & Account Management
+  epic-9: backlog
+  9-1-plan-tiers-and-limit-enforcement: backlog
+  9-2-upgrade-downgrade-and-ai-credit-add-ons: backlog
+  9-3-payment-failure-grace-period-and-invoices: backlog
+  9-4-user-profile-management: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10: Inbox, Notifications, Archive & Polish
+  epic-10: backlog
+  10-1-role-scoped-inbox-and-notifications: backlog
+  10-2-archive: backlog
+  10-3-empty-states: backlog
+  10-4-error-states: backlog
+  epic-10-retrospective: optional
