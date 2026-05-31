@@ -3842,9 +3842,9 @@
 
   /* setup form — used inside task flows */
   .setup-card {
-    max-width: 680px; margin: 0 auto;
+    max-width: 800px; margin: 0 auto;
     background: #fff; border: 1px solid var(--line-soft);
-    border-radius: 12px; overflow: hidden;
+    border-radius: 18px; overflow: hidden;
     box-shadow: 0 8px 24px -12px rgba(26,31,46,0.08);
   }
   .setup-card .sc-head {
@@ -3865,17 +3865,21 @@
     margin-top: 6px;
   }
   .setup-card .sc-body { padding: 22px 28px; }
-  .setup-card .sc-foot {
-    padding: 14px 28px;
-    border-top: 1px solid var(--line-soft);
+  .sc-foot {
+    max-width: 800px; margin: 12px auto 0;
+    padding: 16px 0;
     background: var(--paper);
-    display: flex; align-items: center; gap: 8px;
+    border-radius: 18px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
-  .setup-card .sc-foot .sc-back {
+  .sc-foot .sc-next-row {
+    width: 100%; text-align: right; margin-top: -4px;
+  }
+  .sc-foot .sc-back {
     font-family: var(--mono); font-size: 11px;
     color: var(--muted); cursor: pointer;
   }
-  .setup-card .sc-foot .sc-spacer { margin-left: auto; }
+  .sc-foot .sc-spacer { margin-left: auto; }
 
   /* branding picker */
   .brand-picker {
@@ -5687,18 +5691,12 @@
 .onb-task.you-teach .ot-badge.flag {
     background: #eef0fb; color: var(--accent);
   }
-.sc-action {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-  }
-.sc-action .next-caption {
+.next-caption {
     font-family: var(--mono); font-size: 10px;
     color: var(--muted); letter-spacing: 0.06em;
     text-transform: uppercase;
   }
-.sc-action .next-caption strong { color: var(--ink-soft); font-weight: 500; }
+.next-caption strong { color: var(--ink-soft); font-weight: 500; }
 .onb-autosave {
     margin-left: auto;
     font-family: var(--mono); font-size: 11px;
@@ -5854,7 +5852,7 @@
     content: ''; width: 5px; height: 5px;
     background: var(--accent); border-radius: 50%;
   }
-.spawn-row {
+.class-row {
     background: #fff;
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -5862,34 +5860,40 @@
     margin-bottom: 10px;
     transition: border-color 0.15s;
   }
-.spawn-row:hover { border-color: var(--line-soft); }
-.spawn-row .sr-head {
+.class-row:hover { border-color: var(--line-soft); }
+.class-row .sr-head {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 12px;
     padding-bottom: 10px;
     border-bottom: 1px dashed var(--line-soft);
   }
-.spawn-row .sr-num {
+.class-row .sr-num {
     font-family: var(--display); font-style: italic;
     font-size: 13px; color: var(--accent);
   }
-.spawn-row .sr-name {
+.class-row .sr-name {
     flex: 1; margin-left: 10px;
     font-weight: 600; font-size: 13.5px; color: var(--ink);
   }
-.spawn-row .sr-x {
+.class-row .sr-x {
     color: var(--muted); cursor: pointer; font-size: 13px;
     padding: 2px 6px;
   }
-.spawn-row .sr-x:hover { color: var(--red); }
-.spawn-row .sr-row {
+.class-row .sr-x:hover { color: var(--red); }
+.class-row .sr-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     margin-bottom: 10px;
   }
-.spawn-row .sr-row:last-child { margin-bottom: 0; }
-.spawn-row .sr-row.full { grid-template-columns: 1fr; }
-.spawn-row .m-field { margin-bottom: 0; }
-.spawn-add {
+.class-row .sr-row:last-child { margin-bottom: 0; }
+.class-row .sr-row.full { grid-template-columns: 1fr; }
+.class-row .m-field { margin-bottom: 0; }
+.class-row .m-input {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+  }
+.class-add {
     display: flex; align-items: center; justify-content: center;
     gap: 6px;
     width: 100%;
@@ -5903,11 +5907,11 @@
     background: transparent;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
   }
-.spawn-add:hover {
+.class-add:hover {
     border-color: var(--ink); color: var(--ink);
     background: var(--paper);
   }
-.spawn-add strong { color: var(--accent); font-weight: 500; }
+.class-add strong { color: var(--accent); font-weight: 500; }
 .sc-skip {
     font-family: var(--mono); font-size: 11px;
     color: var(--muted); cursor: pointer;
@@ -6581,13 +6585,13 @@
   <div class="ch-features">
     <span class="ch-feat">Center setup</span>
     <span class="ch-feat">One template (suggested or custom)</span>
-    <span class="ch-feat">Spawn N classes from the template</span>
+    <span class="ch-feat">Create N classes from the template</span>
     <span class="ch-feat">Per-class: teacher (required) + students (optional)</span>
     <span class="ch-feat">Every step skippable</span>
   </div>
   <div class="ch-meta">
     <span>Time on screen: <strong>≈4–6 minutes</strong></span>
-    <span>Outcome: <strong>Center named · template built · N classes spawned with teachers</strong></span>
+    <span>Outcome: <strong>Center named · template built · N classes created with teachers</strong></span>
   </div>
 </section>
 
@@ -6661,13 +6665,14 @@
           </div>
         </div>
 
-        <div class="sc-foot">
-          <span class="sc-back">← Back</span>
-          <span class="sc-spacer"></span>
-          <div class="sc-action">
-            <button class="btn btn-primary">Save &amp; continue →</button>
-            <span class="next-caption">next: <strong>Build template</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot">
+        <span class="sc-back">← Back</span>
+        <span class="sc-spacer"></span>
+        <button class="btn btn-primary">Save &amp; continue →</button>
+        <div class="sc-next-row">
+          <span class="next-caption">next: <strong>Build template</strong></span>
         </div>
       </div>
 
@@ -6702,7 +6707,7 @@
         <span class="onb-autosave">Auto-saving · last saved 14s ago</span>
       </div>
 
-      <div class="setup-card" style="max-width:760px;">
+      <div class="setup-card">
         <div class="sc-head">
           <div class="sc-step">Step 3 of 4<span class="sc-step-dots"><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot active"></span><span class="sc-step-dot"></span></span></div>
           <div class="sc-title">Build your first class template</div>
@@ -6797,14 +6802,15 @@
 
         </div>
 
-        <div class="sc-foot">
-          <span class="sc-back">← Back</span>
-          <span class="sc-skip">Skip this step</span>
-          <span class="sc-spacer"></span>
-          <div class="sc-action">
-            <button class="btn btn-primary">Save template &amp; continue →</button>
-            <span class="next-caption">next: <strong>Spawn classes</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot">
+        <span class="sc-back">← Back</span>
+        <span class="sc-skip">Skip this step</span>
+        <span class="sc-spacer"></span>
+        <button class="btn btn-primary">Save template &amp; continue →</button>
+        <div class="sc-next-row">
+          <span class="next-caption">next: <strong>Create classes</strong></span>
         </div>
       </div>
 
@@ -6821,16 +6827,16 @@
 <section class="screen-section" id="s03">
   <div class="screen-label">
     <div>
-      <div class="num">03 / Operator · Spawn classes</div>
-      <h2>Spawn classes from the template</h2>
+      <div class="num">03 / Operator · Create classes</div>
+      <h2>Create classes from the template</h2>
     </div>
-    <div class="desc">Each row is one real class spawned from the template. Operator gives it a cohort name, a start date, the teacher (required, with inline-invite if not yet on the team), and optional student emails. "+ Add another class" repeats the pattern. Skip exits to onboarding's Done; classes can also be spawned later from the dashboard.</div>
+    <div class="desc">Each row is one real class created from the template. Operator gives it a cohort name, a start date, the teacher (required, with inline-invite if not yet on the team), and optional student emails. "+ Add another class" repeats the pattern. Skip exits to onboarding's Done; classes can also be created later from the dashboard.</div>
   </div>
 
   <div class="browser-frame">
     <div class="browser-bar">
       <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="url">classlite.app/setup/spawn</div>
+      <div class="url">classlite.app/setup/classes</div>
     </div>
 
     <div class="onb-shell">
@@ -6839,16 +6845,16 @@
         <span class="onb-autosave">Auto-saving · last saved 9s ago</span>
       </div>
 
-      <div class="setup-card" style="max-width:780px;">
+      <div class="setup-card">
         <div class="sc-head">
           <div class="sc-step">Step 4 of 4<span class="sc-step-dots"><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot active"></span></span></div>
-          <div class="sc-title">Spawn classes from your template</div>
+          <div class="sc-title">Create classes from your template</div>
           <div class="sc-sub">Each row becomes a real class. Assign a teacher to each — students can wait. Add as many as you like or skip and finish from the dashboard.</div>
         </div>
 
         <div class="sc-body">
 
-          <!-- Template badge (reminder of what's being spawned) -->
+          <!-- Template badge (reminder of what's being created) -->
           <div style="margin-bottom: 16px; padding: 10px 14px; background: var(--paper); border: 1px solid var(--line-soft); border-radius: 8px; display: flex; align-items: center; gap: 10px;">
             <span style="font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase;">Template</span>
             <span style="font-weight: 600; font-size: 13px;">IELTS Writing — Band 6.5 Bootcamp</span>
@@ -6856,7 +6862,7 @@
           </div>
 
           <!-- Class instance #1 -->
-          <div class="spawn-row">
+          <div class="class-row">
             <div class="sr-head">
               <span class="sr-num">#1</span>
               <span class="sr-name">Spring batch · Wed/Sat evenings</span>
@@ -6875,7 +6881,7 @@
             <div class="sr-row">
               <div class="m-field">
                 <div class="m-lbl">Teacher<span class="req-mark">*</span></div>
-                <div class="m-input" style="display:flex; align-items:center; gap:6px; padding: 5px 8px;">
+                <div class="m-input" style="gap:6px; padding: 0 8px;">
                   <span class="assign-chip">
                     <span class="ac-av">MN</span>
                     Minh Nguyen
@@ -6891,7 +6897,7 @@
           </div>
 
           <!-- Class instance #2 -->
-          <div class="spawn-row">
+          <div class="class-row">
             <div class="sr-head">
               <span class="sr-num">#2</span>
               <span class="sr-name">Spring batch · weekend intensive</span>
@@ -6910,7 +6916,7 @@
             <div class="sr-row">
               <div class="m-field">
                 <div class="m-lbl">Teacher<span class="req-mark">*</span></div>
-                <div class="m-input" style="display:flex; align-items:center; gap:6px; padding: 5px 8px;">
+                <div class="m-input" style="gap:6px; padding: 0 8px;">
                   <span class="assign-chip">
                     <span class="ac-av" style="background:#fdf6e3; color:var(--accent-2);">LP</span>
                     Lan Pham
@@ -6926,7 +6932,7 @@
           </div>
 
           <!-- Class instance #3 — empty teacher state, shows the inline-invite affordance -->
-          <div class="spawn-row">
+          <div class="class-row">
             <div class="sr-head">
               <span class="sr-num">#3</span>
               <span class="sr-name" style="color: var(--muted); font-weight: 500;">untitled cohort</span>
@@ -6945,7 +6951,7 @@
             <div class="sr-row">
               <div class="m-field">
                 <div class="m-lbl">Teacher<span class="req-mark">*</span></div>
-                <div class="m-input" style="padding: 5px 8px;">
+                <div class="m-input" style="padding: 0 8px;">
                   <span class="assign-chip empty">Assign or invite a teacher</span>
                 </div>
               </div>
@@ -6956,20 +6962,21 @@
             </div>
           </div>
 
-          <button class="spawn-add">
-            <strong>+</strong> Spawn another class from this template
+          <button class="class-add">
+            <strong>+</strong> Add another class
           </button>
 
         </div>
 
-        <div class="sc-foot">
-          <span class="sc-back">← Back</span>
-          <span class="sc-skip">Skip this step</span>
-          <span class="sc-spacer"></span>
-          <div class="sc-action">
-            <button class="btn btn-primary">Save 2 classes &amp; finish →</button>
-            <span class="next-caption">next: <strong>Done</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot">
+        <span class="sc-back">← Back</span>
+        <span class="sc-skip">Skip this step</span>
+        <span class="sc-spacer"></span>
+        <button class="btn btn-primary">Save 2 classes &amp; finish →</button>
+        <div class="sc-next-row">
+          <span class="next-caption">next: <strong>Done</strong></span>
         </div>
       </div>
 
@@ -7008,7 +7015,7 @@
         <div class="onb-done-hero">
           <div class="od-mark">✓</div>
           <h1>Saigon English Center is <em>open</em>, Trang.</h1>
-          <p>Template built. Two classes spawned with teachers assigned. Both Minh and Lan have invites waiting.</p>
+          <p>Template built. Two classes created with teachers assigned. Both Minh and Lan have invites waiting.</p>
         </div>
 
         <div class="onb-done-summary">
@@ -7018,7 +7025,7 @@
           </div>
           <div class="ods">
             <div class="ods-v">2</div>
-            <div class="ods-l">Classes spawned</div>
+            <div class="ods-l">Classes created</div>
           </div>
           <div class="ods">
             <div class="ods-v">2</div>
@@ -7084,7 +7091,7 @@
         <span class="onb-autosave">Auto-saving · last saved 12s ago</span>
       </div>
 
-      <div class="setup-card" style="max-width:720px;">
+      <div class="setup-card">
         <div class="sc-head">
           <div class="sc-step">Step 2 of 3<span class="sc-step-dots"><span class="sc-step-dot done"></span><span class="sc-step-dot active"></span><span class="sc-step-dot"></span></span></div>
           <div class="sc-title">Create your first class</div>
@@ -7137,14 +7144,15 @@
           </div>
         </div>
 
-        <div class="sc-foot" style="flex-wrap:wrap;">
-          <span class="sc-back">← Back</span>
-          <span class="sc-spacer"></span>
-          <button class="btn" style="border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px;">Create template instead</button>
-          <button class="btn btn-primary" style="margin-left:8px;">Create class &amp; finish →</button>
-          <div style="width:100%; text-align:right; margin-top:4px;">
-            <span style="font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase;">next: <strong style="color:var(--ink-soft); font-weight:500;">Setup complete</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot" style="flex-wrap:wrap;">
+        <span class="sc-back">← Back</span>
+        <span class="sc-spacer"></span>
+        <button class="btn" style="border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px;">Create template instead</button>
+        <button class="btn btn-primary" style="margin-left:8px;">Create class &amp; finish →</button>
+        <div style="width:100%; text-align:right; margin-top:-4px;">
+          <span style="font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase;">next: <strong style="color:var(--ink-soft); font-weight:500;">Setup complete</strong></span>
         </div>
       </div>
 
@@ -7222,10 +7230,10 @@
     <span class="ch-role both">Founder</span>
   </div>
   <h2>Path C · Linh runs a small center <em>and</em> teaches</h2>
-  <p class="ch-lede">Linh Hoang owns a small IELTS school she started teaching in. Same flow as the operator — Center setup → Build template → Spawn classes — but the framing shifts: at least one of the spawned classes is hers to teach, so the teacher field defaults to her. She still invites other teachers per class for any she doesn't take on herself. Every step is skippable; classes she doesn't spawn now spawn from the dashboard later.</p>
+  <p class="ch-lede">Linh Hoang owns a small IELTS school she started teaching in. Same flow as the operator — Center setup → Build template → Create classes — but the framing shifts: at least one of the created classes is hers to teach, so the teacher field defaults to her. She still invites other teachers per class for any she doesn't take on herself. Every step is skippable; classes she doesn't create now can be created from the dashboard later.</p>
   <div class="ch-features">
     <span class="ch-feat">Same shape as operator</span>
-    <span class="ch-feat">Teacher defaults to founder on the first spawned class</span>
+    <span class="ch-feat">Teacher defaults to founder on the first created class</span>
     <span class="ch-feat">Other teachers invited per class as needed</span>
     <span class="ch-feat">Every step skippable</span>
   </div>
@@ -7259,7 +7267,7 @@
         <span class="onb-autosave">Auto-saving · last saved 6s ago</span>
       </div>
 
-      <div class="setup-card" style="max-width:760px;">
+      <div class="setup-card">
         <div class="sc-head">
           <div class="sc-step">Step 3 of 4<span class="sc-step-dots"><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot active"></span><span class="sc-step-dot"></span></span></div>
           <div class="sc-title">Build your first class template</div>
@@ -7351,14 +7359,15 @@
 
         </div>
 
-        <div class="sc-foot">
-          <span class="sc-back">← Back</span>
-          <span class="sc-skip">Skip this step</span>
-          <span class="sc-spacer"></span>
-          <div class="sc-action">
-            <button class="btn btn-primary">Save template &amp; continue →</button>
-            <span class="next-caption">next: <strong>Spawn classes</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot">
+        <span class="sc-back">← Back</span>
+        <span class="sc-skip">Skip this step</span>
+        <span class="sc-spacer"></span>
+        <button class="btn btn-primary">Save template &amp; continue →</button>
+        <div class="sc-next-row">
+          <span class="next-caption">next: <strong>Create classes</strong></span>
         </div>
       </div>
 
@@ -7375,16 +7384,16 @@
 <section class="screen-section" id="s08">
   <div class="screen-label">
     <div>
-      <div class="num">08 / Founder · Spawn classes</div>
-      <h2>Spawn classes — your own first</h2>
+      <div class="num">08 / Founder · Create classes</div>
+      <h2>Create classes — your own first</h2>
     </div>
-    <div class="desc">Founder version of the spawn screen. The first spawned class auto-assigns Linh as the teacher (she's already in the system as both founder and teacher). Additional classes default to "+ Assign or invite a teacher" — same inline-invite affordance as the operator path. Skip leaves classes for the dashboard.</div>
+    <div class="desc">Founder version of the create-classes screen. The first created class auto-assigns Linh as the teacher (she's already in the system as both founder and teacher). Additional classes default to "+ Assign or invite a teacher" — same inline-invite affordance as the operator path. Skip leaves classes for the dashboard.</div>
   </div>
 
   <div class="browser-frame">
     <div class="browser-bar">
       <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="url">classlite.app/setup/spawn</div>
+      <div class="url">classlite.app/setup/classes</div>
     </div>
 
     <div class="onb-shell">
@@ -7393,10 +7402,10 @@
         <span class="onb-autosave">Auto-saving · last saved 4s ago</span>
       </div>
 
-      <div class="setup-card" style="max-width:780px;">
+      <div class="setup-card">
         <div class="sc-head">
           <div class="sc-step">Step 4 of 4<span class="sc-step-dots"><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot done"></span><span class="sc-step-dot active"></span></span></div>
-          <div class="sc-title">Spawn classes from your template</div>
+          <div class="sc-title">Create classes from your template</div>
           <div class="sc-sub">The first class defaults to you as the teacher. Add another if you're hiring help — or skip and add them later from the dashboard.</div>
         </div>
 
@@ -7409,7 +7418,7 @@
           </div>
 
           <!-- Class #1 · founder teaches -->
-          <div class="spawn-row">
+          <div class="class-row">
             <div class="sr-head">
               <span class="sr-num">#1</span>
               <span class="sr-name">Spring evening cohort</span>
@@ -7428,7 +7437,7 @@
             <div class="sr-row">
               <div class="m-field">
                 <div class="m-lbl">Teacher<span class="req-mark">*</span></div>
-                <div class="m-input" style="display:flex; align-items:center; gap:6px; padding: 5px 8px; background:#fcfcfe;">
+                <div class="m-input" style="gap:6px; padding: 0 8px; background:#fcfcfe;">
                   <span class="assign-chip">
                     <span class="ac-av" style="background:#ecf4ec; color:var(--green);">LH</span>
                     Linh Hoang (you)
@@ -7444,7 +7453,7 @@
           </div>
 
           <!-- Class #2 · empty teacher state -->
-          <div class="spawn-row">
+          <div class="class-row">
             <div class="sr-head">
               <span class="sr-num">#2</span>
               <span class="sr-name" style="color: var(--muted); font-weight: 500;">untitled cohort</span>
@@ -7463,7 +7472,7 @@
             <div class="sr-row">
               <div class="m-field">
                 <div class="m-lbl">Teacher<span class="req-mark">*</span></div>
-                <div class="m-input" style="padding: 5px 8px;">
+                <div class="m-input" style="padding: 0 8px;">
                   <span class="assign-chip empty">Assign or invite a teacher</span>
                 </div>
               </div>
@@ -7474,20 +7483,21 @@
             </div>
           </div>
 
-          <button class="spawn-add">
-            <strong>+</strong> Spawn another class from this template
+          <button class="class-add">
+            <strong>+</strong> Add another class
           </button>
 
         </div>
 
-        <div class="sc-foot">
-          <span class="sc-back">← Back</span>
-          <span class="sc-skip">Skip this step</span>
-          <span class="sc-spacer"></span>
-          <div class="sc-action">
-            <button class="btn btn-primary">Save 1 class &amp; finish →</button>
-            <span class="next-caption">next: <strong>Done</strong></span>
-          </div>
+      </div>
+
+      <div class="sc-foot">
+        <span class="sc-back">← Back</span>
+        <span class="sc-skip">Skip this step</span>
+        <span class="sc-spacer"></span>
+        <button class="btn btn-primary">Save 1 class &amp; finish →</button>
+        <div class="sc-next-row">
+          <span class="next-caption">next: <strong>Done</strong></span>
         </div>
       </div>
 
@@ -7500,7 +7510,7 @@
 
 <div class="design-note">
   <strong>Design note · founder path divergence</strong>
-  Structurally identical to the operator path. The only difference is the spawn screen's defaults: the first row auto-assigns the founder as the teacher (she's already a verified user in the system as both founder and teacher). Additional rows behave the same as the operator's — empty teacher field with inline-invite affordance. The founder's Done screen would match the operator's structure, with stats reflecting "1 template · N classes (you teach N of them) · M teachers invited" — not drawn separately.
+  Structurally identical to the operator path. The only difference is the create-classes screen's defaults: the first row auto-assigns the founder as the teacher (she's already a verified user in the system as both founder and teacher). Additional rows behave the same as the operator's — empty teacher field with inline-invite affordance. The founder's Done screen would match the operator's structure, with stats reflecting "1 template · N classes (you teach N of them) · M teachers invited" — not drawn separately.
 </div>
 
 <!-- ============================================================ -->
@@ -7512,7 +7522,7 @@
     <span class="ch-role all">After onboarding</span>
   </div>
   <h2>Day 1 · the <em>handoff</em></h2>
-  <p class="ch-lede">When the user opens the Dashboard from the Done screen, they land on the real product — sidebar, classes, the works. The classes spawned during onboarding are right there as cards. Sitting at the top of the canvas is a <em>Finish setting up</em> card with what's still left: enrol students, spawn more classes, set up billing. Drawn from the operator's perspective; founder's card looks similar with their own classes shown. Solo card holds a different set entirely.</p>
+  <p class="ch-lede">When the user opens the Dashboard from the Done screen, they land on the real product — sidebar, classes, the works. The classes created during onboarding are right there as cards. Sitting at the top of the canvas is a <em>Finish setting up</em> card with what's still left: enrol students, create more classes, set up billing. Drawn from the operator's perspective; founder's card looks similar with their own classes shown. Solo card holds a different set entirely.</p>
   <div class="ch-features">
     <span class="ch-feat">Real dashboard sidebar</span>
     <span class="ch-feat">Finish-setup card pinned to top</span>
@@ -7623,7 +7633,7 @@
               <div class="finish-task done">
                 <div class="ft-ico">✓</div>
                 <div>
-                  <div class="ft-name">First classes spawned<span class="ft-badge req">Done</span></div>
+                  <div class="ft-name">First classes created<span class="ft-badge req">Done</span></div>
                   <div class="ft-sub">2 classes · Minh and Lan invited · pending</div>
                 </div>
                 <span class="ft-arrow">✓</span>
@@ -7641,7 +7651,7 @@
               <div class="finish-task required">
                 <div class="ft-ico">◫</div>
                 <div>
-                  <div class="ft-name">Spawn more classes<span class="ft-badge req">Required</span></div>
+                  <div class="ft-name">Create more classes<span class="ft-badge req">Required</span></div>
                   <div class="ft-sub">Use the template again, or create a new one</div>
                 </div>
                 <span class="ft-arrow">→</span>
@@ -7714,7 +7724,7 @@
                 </div>
               </div>
             </div>
-            <div class="dash-class-card empty" style="border-color:var(--accent); color:var(--accent); background:#fcfbf7;">+ Spawn another from template</div>
+            <div class="dash-class-card empty" style="border-color:var(--accent); color:var(--accent); background:#fcfbf7;">+ Create another from template</div>
           </div>
         </div>
       </main>
