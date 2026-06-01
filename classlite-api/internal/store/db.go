@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,7 +31,8 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 
 // SetTenantContext executes SET LOCAL app.current_tenant_id within a transaction.
 // This MUST be called within an active transaction — SET LOCAL has no effect outside one (PERF-1).
-// Uses parameterized query to prevent SQL injection.
+// SET does not support parameterized queries, so the center ID is validated as a UUID
+// before interpolation to prevent SQL injection.
 func SetTenantContext(ctx context.Context, tx pgx.Tx, tc model.TenantContext) error {
 	if tx == nil {
 		return fmt.Errorf("set tenant context: tx is nil")
@@ -38,7 +40,10 @@ func SetTenantContext(ctx context.Context, tx pgx.Tx, tc model.TenantContext) er
 	if tc.CenterID == "" {
 		return fmt.Errorf("set tenant context: center_id is required")
 	}
-	_, err := tx.Exec(ctx, "SET LOCAL app.current_tenant_id = $1", tc.CenterID)
+	if _, err := uuid.Parse(tc.CenterID); err != nil {
+		return fmt.Errorf("set tenant context: invalid center_id: %w", err)
+	}
+	_, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL app.current_tenant_id = '%s'", tc.CenterID))
 	if err != nil {
 		return fmt.Errorf("set tenant context: %w", err)
 	}

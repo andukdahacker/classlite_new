@@ -6,16 +6,20 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 source "$ROOT_DIR/.env" 2>/dev/null || true
 
-if [ -z "${DATABASE_URL:-}" ]; then
-  echo "ERROR: DATABASE_URL not set. Copy .env.example to .env and configure it." >&2
+# Migrations require superuser privileges (CREATE TABLE, CREATE ROLE, etc.).
+# Use MIGRATION_DATABASE_URL if set, otherwise fall back to DATABASE_URL.
+MIGRATE_URL="${MIGRATION_DATABASE_URL:-${DATABASE_URL:-}}"
+
+if [ -z "$MIGRATE_URL" ]; then
+  echo "ERROR: Neither MIGRATION_DATABASE_URL nor DATABASE_URL is set. Copy .env.example to .env and configure it." >&2
   exit 1
 fi
 
 MIGRATIONS_DIR="$ROOT_DIR/classlite-api/migrations"
 
 case "${1:-up}" in
-  up)     migrate -path "$MIGRATIONS_DIR" -database "$DATABASE_URL" up ;;
-  down)   migrate -path "$MIGRATIONS_DIR" -database "$DATABASE_URL" down 1 ;;
+  up)     migrate -path "$MIGRATIONS_DIR" -database "$MIGRATE_URL" up ;;
+  down)   migrate -path "$MIGRATIONS_DIR" -database "$MIGRATE_URL" down 1 ;;
   create)
     if [ -z "${2:-}" ]; then
       echo "Usage: $0 create <name>" >&2
