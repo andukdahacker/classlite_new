@@ -53,12 +53,14 @@ func main() {
 	mux.HandleFunc("POST /api/uploads/presign", middleware.ErrorMapper(uploadHandler.Presign))
 	mux.HandleFunc("POST /api/uploads/confirm", middleware.ErrorMapper(uploadHandler.Confirm))
 
-	// Middleware chain order: RequestID → Logger → CORS → RateLimit → mux
+	// Middleware chain order: RequestID → ClientIP → Logger → CORS → RateLimit → mux
 	// 200 requests per minute = ~3.33 per second, burst allows short spikes.
 	wrapped := middleware.RequestID(
-		middleware.Logger(
-			middleware.CORS(cfg.CORSOrigins)(
-				middleware.RateLimit(200.0/60.0, 200)(mux),
+		middleware.ClientIP(
+			middleware.Logger(
+				middleware.CORS(cfg.CORSOrigins)(
+					middleware.RateLimit(200.0/60.0, 200)(mux),
+				),
 			),
 		),
 	)

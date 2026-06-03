@@ -8,4 +8,5 @@ var (
 	TenantID  = contextKey{"tenant_id"}
 	UserID    = contextKey{"user_id"}
 	Role      = contextKey{"role"}
+	IPAddress = contextKey{"ip_address"}
 )
