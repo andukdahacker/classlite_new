@@ -1,5 +1,5 @@
 # generated: 2026-05-28
-# last_updated: 2026-06-03
+# last_updated: 2026-06-04 (story 1-4 code review applied; status=done)
 # project: classlite_new
 # project_key: NOKEY
 # tracking_system: file-system
@@ -42,7 +42,7 @@
 # See epics/index.md for full structure.
 
 generated: 2026-05-28
-last_updated: 2026-06-03
+last_updated: 2026-06-04
 project: classlite_new
 project_key: NOKEY
 tracking_system: file-system
@@ -63,8 +63,8 @@ development_status:
   epic-1a-retrospective: optional
 
   # Epic 1B: Authentication
-  epic-1b: backlog
-  1-4-email-password-registration-and-email-verification-api: backlog
+  epic-1b: in-progress
+  1-4-email-password-registration-and-email-verification-api: done
   1-5-login-session-management-and-password-reset-api: backlog
   1-6-google-oauth-and-invite-acceptance-api: backlog
   epic-1b-retrospective: optional

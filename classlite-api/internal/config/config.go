@@ -22,6 +22,9 @@ type Config struct {
 	R2AccessKeyID    string
 	R2SecretAccessKey string
 	R2BucketName     string
+	// AppVerifyURLBase is the canonical base URL embedded in verification emails
+	// (story 1.4). The token is appended as ?token=<value>.
+	AppVerifyURLBase string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -40,6 +43,7 @@ func Load() Config {
 		R2AccessKeyID:    getEnv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
 		R2BucketName:     getEnv("R2_BUCKET_NAME", "classlite-uploads"),
+		AppVerifyURLBase: getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
 	}
 }
 
@@ -53,6 +57,9 @@ func (c Config) Validate() error {
 		}
 		if c.JWTSecret == "" {
 			missing = append(missing, "JWT_SECRET")
+		}
+		if c.AppVerifyURLBase == "" {
+			missing = append(missing, "APP_VERIFY_URL_BASE")
 		}
 		if len(missing) > 0 {
 			return fmt.Errorf("required config missing for %s: %s", c.AppEnv, strings.Join(missing, ", "))
@@ -75,6 +82,7 @@ func (c Config) LogSummary() {
 		"resend_from_email", c.ResendFromEmail,
 		"r2_account_id_set", c.R2AccountID != "",
 		"r2_bucket_name", c.R2BucketName,
+		"app_verify_url_base_set", c.AppVerifyURLBase != "",
 	)
 }
 

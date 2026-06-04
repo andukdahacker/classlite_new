@@ -41,11 +41,16 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var forbidden model.ForbiddenError
 		var validation model.ValidationError
 		var conflict model.ConflictError
+		var gone model.GoneError
 
 		switch {
 		case errors.As(err, &notFound):
+			code := notFound.Code
+			if code == "" {
+				code = "NOT_FOUND"
+			}
 			handler.WriteError(w, r, http.StatusNotFound,
-				"NOT_FOUND", notFound.Error(), nil)
+				code, notFound.Error(), nil)
 		case errors.As(err, &forbidden):
 			handler.WriteError(w, r, http.StatusForbidden,
 				"FORBIDDEN", forbidden.Error(), nil)
@@ -57,8 +62,15 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"VALIDATION_ERROR", "Validation failed.", fields)
 		case errors.As(err, &conflict):
+			code := conflict.Code
+			if code == "" {
+				code = "CONFLICT"
+			}
 			handler.WriteError(w, r, http.StatusConflict,
-				"CONFLICT", conflict.Error(), nil)
+				code, conflict.Error(), nil)
+		case errors.As(err, &gone):
+			handler.WriteError(w, r, http.StatusGone,
+				gone.Code, gone.Reason, nil)
 		default:
 			slog.Error("unhandled error",
 				"error", err,

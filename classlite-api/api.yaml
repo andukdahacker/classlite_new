@@ -25,3 +25,328 @@ paths:
                     example: "ok"
                 required:
                   - status
+
+  /api/auth/register:
+    post:
+      operationId: registerUser
+      summary: Email/password registration (story 1.4)
+      description: |
+        Creates a new user account and sends a verification email. The
+        `emailDelivery` field in the response is always present:
+        `"sent"` when the verification email was enqueued cleanly,
+        `"failed"` when the retry queue rejected the job (buffer full — no
+        async retry will occur; the client should prompt the user to hit
+        Resend Verification). `"delayed"` is reserved for future use cases.
+        Returns 409 EMAIL_ALREADY_REGISTERED for any duplicate regardless of
+        verification status (anti-enumeration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRegisterResult'
+        "409":
+          description: Email already registered (ambiguous — does not reveal verification status)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure or malformed JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit exceeded (token bucket — burst 5, replenishment 1 every 2 min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/auth/verify-email:
+    post:
+      operationId: verifyEmail
+      summary: Verify email via token (story 1.4)
+      description: |
+        Consumes the verification token, sets `users.email_verified = true`,
+        and invalidates any other unconsumed tokens for the same user. The
+        operation is idempotent — replaying any prior-issued token after the
+        user is verified also returns 200.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        "200":
+          description: Verified (or idempotent replay)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeVerifyEmailResult'
+        "404":
+          description: Token does not exist (VERIFICATION_TOKEN_INVALID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "410":
+          description: |
+            Token expired — the link is older than 24 hours and the user has
+            not verified yet (VERIFICATION_TOKEN_EXPIRED). Rotated-out tokens
+            (a newer resend has been issued) DO NOT return 410 on their own —
+            once the user is verified, replaying any prior-issued token
+            returns 200 idempotent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure (missing token) or malformed JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/auth/resend-verification:
+    post:
+      operationId: resendVerification
+      summary: Resend verification email (story 1.4)
+      description: |
+        Rotates the user's verification token (invalidating any prior
+        unconsumed tokens) and sends a new email. Returns 200 with
+        `verifyPollId: null` when the email is unknown OR already verified,
+        to prevent enumeration. All 200 responses are padded to ≥ 200 ms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+      responses:
+        "200":
+          description: |
+            Ambiguous success. `verifyPollId` is null when the email is
+            unknown or already verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeResendResult'
+        "422":
+          description: Invalid email format or malformed JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: |
+            Rate limit exceeded — either the per-IP token bucket (burst 5, 1
+            token / 2 min) or the per-email bucket (1 token / 60 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/auth/verify-status:
+    get:
+      operationId: verifyStatus
+      summary: Poll current verification state (story 1.4)
+      description: |
+        Returns the user's current `emailVerified` state given a poll ID. The
+        poll ID is the `email_verifications.id` of the row issued at
+        registration or resend. Poll IDs expire 24 hours after creation,
+        matching the verification token TTL. Unknown, malformed, or expired
+        poll IDs all return the same 404 POLL_ID_NOT_FOUND.
+      parameters:
+        - in: query
+          name: pollId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Current verification status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeVerifyStatusResult'
+        "404":
+          description: Poll ID not found, malformed, or expired (POLL_ID_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+components:
+  schemas:
+    # ---------------- Request bodies ----------------
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+
+    ResendVerificationRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    # ---------------- Response bodies (data part only) ----------------
+    UserSummary:
+      type: object
+      required: [id, email, fullName, emailVerified]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        emailVerified:
+          type: boolean
+
+    RegisterResult:
+      type: object
+      required: [user, verifyPollId, emailDelivery]
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        verifyPollId:
+          type: string
+          format: uuid
+        emailDelivery:
+          type: string
+          enum: [sent, delayed, failed]
+          description: |
+            `sent` — verification email was enqueued for delivery. `delayed` —
+            reserved for future use when a send is genuinely postponed rather
+            than dropped. `failed` — the retry queue rejected the job (buffer
+            full); no async retry will occur. The frontend should prompt the
+            user to hit Resend Verification when it sees `failed`.
+
+    VerifyEmailResult:
+      type: object
+      required: [verified, email]
+      properties:
+        verified:
+          type: boolean
+        email:
+          type: string
+          format: email
+
+    ResendResult:
+      type: object
+      required: [verifyPollId]
+      properties:
+        verifyPollId:
+          type: string
+          format: uuid
+          nullable: true
+
+    VerifyStatusResult:
+      type: object
+      required: [verified, email]
+      properties:
+        verified:
+          type: boolean
+        email:
+          type: string
+          format: email
+
+    # ---------------- Envelopes ----------------
+    EnvelopeRegisterResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/RegisterResult'
+
+    EnvelopeVerifyEmailResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/VerifyEmailResult'
+
+    EnvelopeResendResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ResendResult'
+
+    EnvelopeVerifyStatusResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/VerifyStatusResult'
+
+    # ---------------- Error envelope ----------------
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+
+    ErrorBody:
+      type: object
+      required: [code, message, requestId, details]
+      properties:
+        code:
+          type: string
+          description: UPPER_SNAKE_CASE error code (e.g., VALIDATION_ERROR, EMAIL_ALREADY_REGISTERED, VERIFICATION_TOKEN_EXPIRED).
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          oneOf:
+            - type: 'null'
+            - type: array
+              items:
+                $ref: '#/components/schemas/FieldError'
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'

@@ -3,8 +3,10 @@ package middleware
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,35 +20,52 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-// RateLimit returns middleware that limits requests per IP using a token bucket.
-// rate is requests per second; burst is the maximum burst size.
-// Stale entries are cleaned up every minute.
+// RateLimit returns the existing global token-bucket middleware (one bucket per IP).
+// Behavior preserved from story 1.2a: IP key, hard-coded Retry-After: 60.
 func RateLimit(rps rate.Limit, burst int) func(http.Handler) http.Handler {
+	return rateLimitByKeyInternal("global", rps, burst, IPKeyFn, false)
+}
+
+// RateLimitByKey returns a token-bucket middleware keyed by an arbitrary
+// per-request function. Story 1.4 task 8.
+//
+// Empty key sentinel: if keyFn returns "" the request is passed through
+// WITHOUT consuming a token. This is the spec'd behavior for the per-email
+// limiter when the body is malformed (Task 8 / H3) — incoherent bodies have
+// no key to bucket by.
+//
+// name appears in slog log fields ("limiter": name) for correlation. The
+// Retry-After header is computed from limiter.Reserve().Delay() rounded UP
+// to seconds, not the hard-coded "60" of the global limiter.
+func RateLimitByKey(name string, rps rate.Limit, burst int, keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+	return rateLimitByKeyInternal(name, rps, burst, keyFn, true)
+}
+
+func rateLimitByKeyInternal(name string, rps rate.Limit, burst int, keyFn func(*http.Request) string, computedRetryAfter bool) func(http.Handler) http.Handler {
 	var mu sync.Mutex
 	visitors := make(map[string]*visitor)
 
-	// Cleanup stale entries every minute.
 	go func() {
 		for {
 			time.Sleep(1 * time.Minute)
 			mu.Lock()
-			for ip, v := range visitors {
+			for k, v := range visitors {
 				if time.Since(v.lastSeen) > 3*time.Minute {
-					delete(visitors, ip)
+					delete(visitors, k)
 				}
 			}
 			mu.Unlock()
 		}
 	}()
 
-	getVisitor := func(ip string) *rate.Limiter {
+	getLimiter := func(key string) *rate.Limiter {
 		mu.Lock()
 		defer mu.Unlock()
-		v, exists := visitors[ip]
+		v, exists := visitors[key]
 		if !exists {
-			limiter := rate.NewLimiter(rps, burst)
-			visitors[ip] = &visitor{limiter: limiter, lastSeen: time.Now()}
-			return limiter
+			l := rate.NewLimiter(rps, burst)
+			visitors[key] = &visitor{limiter: l, lastSeen: time.Now()}
+			return l
 		}
 		v.lastSeen = time.Now()
 		return v.limiter
@@ -54,15 +73,47 @@ func RateLimit(rps rate.Limit, burst int) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := extractIP(r)
-			limiter := getVisitor(ip)
-
-			if !limiter.Allow() {
+			key := keyFn(r)
+			if key == "" {
+				// Spec'd skip-the-limiter path (Task 8 / H3 — keyFn signalled
+				// "no key" because the body couldn't be parsed). The global IP
+				// limiter still applies to this request, but operators need
+				// visibility into how often per-key buckets are bypassed.
 				requestID, _ := r.Context().Value(model.RequestID).(string)
-				slog.Warn("rate limit exceeded", "ip", ip, "request_id", requestID)
+				slog.Debug("rate_limit_skipped_empty_key",
+					"limiter", name,
+					"request_id", requestID,
+				)
+				next.ServeHTTP(w, r)
+				return
+			}
+			limiter := getLimiter(key)
+
+			reservation := limiter.Reserve()
+			if !reservation.OK() {
+				// limiter never allows this rate — should not happen with non-zero rps.
+				reservation.Cancel()
+			}
+			delay := reservation.Delay()
+			if delay > 0 {
+				reservation.Cancel()
+				requestID, _ := r.Context().Value(model.RequestID).(string)
+				retryAfter := "60"
+				if computedRetryAfter {
+					retryAfter = strconv.Itoa(int(math.Ceil(delay.Seconds())))
+					if retryAfter == "0" {
+						retryAfter = "1"
+					}
+				}
+				slog.Warn("rate_limit_exceeded",
+					"limiter", name,
+					"key", key,
+					"retry_after", retryAfter,
+					"request_id", requestID,
+				)
 
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Retry-After", "60")
+				w.Header().Set("Retry-After", retryAfter)
 				w.WriteHeader(http.StatusTooManyRequests)
 				if err := json.NewEncoder(w).Encode(map[string]any{
 					"error": map[string]any{
@@ -82,14 +133,26 @@ func RateLimit(rps rate.Limit, burst int) func(http.Handler) http.Handler {
 	}
 }
 
-func extractIP(r *http.Request) string {
-	// X-Forwarded-For behind Railway proxy — comma-separated list of IPs, no port.
+// IPKeyFn is the default IP-based key function for RateLimitByKey. Closes
+// deferred-work W1 from story 1.3b by preferring the ClientIP middleware's
+// context value over re-reading X-Forwarded-For. Falls back to the legacy
+// logic when the context value is absent (so this middleware still works in
+// isolation). Exported so cmd/api/main.go can share the same key function
+// across global and per-route limiters without duplicating the logic.
+func IPKeyFn(r *http.Request) string {
+	if ip, ok := r.Context().Value(model.IPAddress).(string); ok && ip != "" {
+		return ip
+	}
+	return extractIPFromRequest(r)
+}
+
+// extractIPFromRequest is the legacy fallback used when ClientIP middleware
+// did not run (e.g., standalone middleware tests).
+func extractIPFromRequest(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first (leftmost) entry — the original client IP.
 		first := strings.SplitN(xff, ",", 2)[0]
 		return strings.TrimSpace(first)
 	}
-	// RemoteAddr is host:port.
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

@@ -148,6 +148,73 @@ func TestErrorMapper_PanicRecovery(t *testing.T) {
 	}
 }
 
+func TestErrorMapper_NotFoundError_CustomCode(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return model.NotFoundError{Resource: "verification_token", Code: "VERIFICATION_TOKEN_INVALID"}
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "VERIFICATION_TOKEN_INVALID" {
+		t.Errorf("expected VERIFICATION_TOKEN_INVALID, got %s", body.Error.Code)
+	}
+}
+
+func TestErrorMapper_ConflictError_CustomCodeAndMessage(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return model.ConflictError{
+			Resource: "email",
+			Code:     "EMAIL_ALREADY_REGISTERED",
+			Message:  "If this email is not yet registered, you will receive a verification email shortly.",
+		}
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "EMAIL_ALREADY_REGISTERED" {
+		t.Errorf("expected EMAIL_ALREADY_REGISTERED, got %s", body.Error.Code)
+	}
+	if body.Error.Message != "If this email is not yet registered, you will receive a verification email shortly." {
+		t.Errorf("custom message not propagated: %q", body.Error.Message)
+	}
+}
+
+func TestErrorMapper_GoneError(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return model.GoneError{Code: "VERIFICATION_TOKEN_EXPIRED", Reason: "This verification link has expired."}
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+
+	if rec.Code != http.StatusGone {
+		t.Errorf("expected 410, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "VERIFICATION_TOKEN_EXPIRED" {
+		t.Errorf("expected VERIFICATION_TOKEN_EXPIRED, got %s", body.Error.Code)
+	}
+	if body.Error.Message != "This verification link has expired." {
+		t.Errorf("Reason not propagated as message: %q", body.Error.Message)
+	}
+	if body.Error.RequestID != "test-req-id" {
+		t.Errorf("expected test-req-id, got %s", body.Error.RequestID)
+	}
+}
+
 func TestErrorMapper_NoError(t *testing.T) {
 	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
 		w.WriteHeader(http.StatusCreated)

@@ -22,15 +22,23 @@ func TestValidate_ProductionRequiresDBURL(t *testing.T) {
 }
 
 func TestValidate_ProductionRequiresJWTSecret(t *testing.T) {
-	cfg := config.Config{AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: ""}
+	cfg := config.Config{AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "", AppVerifyURLBase: "https://x"}
 	err := cfg.Validate()
 	if err == nil {
 		t.Error("production should reject empty JWT_SECRET")
 	}
 }
 
+func TestValidate_ProductionRequiresAppVerifyURLBase(t *testing.T) {
+	cfg := config.Config{AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "secret", AppVerifyURLBase: ""}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("production should reject empty APP_VERIFY_URL_BASE")
+	}
+}
+
 func TestValidate_ProductionPassesWithAllSet(t *testing.T) {
-	cfg := config.Config{AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "secret"}
+	cfg := config.Config{AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "secret", AppVerifyURLBase: "https://my.classlite.app/verify-email"}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("production with all values set should pass, got: %v", err)
 	}

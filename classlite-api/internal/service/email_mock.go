@@ -43,3 +43,21 @@ func (m *MockEmailSender) Reset() {
 	m.SentEmails = nil
 	m.SendError = nil
 }
+
+// Count returns the number of recorded sends under the mock's mutex so tests
+// running alongside the retry worker do not race against Send writes.
+func (m *MockEmailSender) Count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.SentEmails)
+}
+
+// Snapshot returns a defensive copy of recorded sends under the mock's mutex.
+// Callers may iterate the result without holding the lock.
+func (m *MockEmailSender) Snapshot() []SentEmail {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SentEmail, len(m.SentEmails))
+	copy(out, m.SentEmails)
+	return out
+}

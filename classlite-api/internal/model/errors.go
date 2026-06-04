@@ -3,9 +3,11 @@ package model
 import "fmt"
 
 // NotFoundError indicates a resource was not found.
+// Code overrides the default "NOT_FOUND" error envelope code when set.
 type NotFoundError struct {
 	Resource string
 	ID       string
+	Code     string
 }
 
 func (e NotFoundError) Error() string {
@@ -37,11 +39,29 @@ func (e ValidationError) Error() string {
 }
 
 // ConflictError indicates a resource conflict (e.g., duplicate).
+// Code and Message override the default envelope when set.
 type ConflictError struct {
 	Resource string
 	ID       string
+	Code     string
+	Message  string
 }
 
 func (e ConflictError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
 	return fmt.Sprintf("%s %s already exists", e.Resource, e.ID)
+}
+
+// GoneError indicates a resource that once existed is no longer available
+// (e.g., expired verification token). Maps to HTTP 410.
+// Code is required — callers always set it explicitly.
+type GoneError struct {
+	Code   string
+	Reason string
+}
+
+func (e GoneError) Error() string {
+	return e.Reason
 }
