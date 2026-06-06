@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/config"
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/middleware"
@@ -65,11 +66,19 @@ func main() {
 		slog.Warn("email sender mocked — no RESEND_API_KEY set; verification emails will not actually be delivered")
 	}
 
-	// Story 1.4 dependencies.
+	// AuthService — RealClock; SetJWTSigner with the production secret;
+	// SetResetURLBase with the configured reset URL.
 	authAudit := service.NewPgAuthAuditLogger(pool)
 	retryQ := service.NewEmailRetryQueue(emailSender, 256)
 	hasher := service.BcryptHasher{Cost: 12}
-	authSvc := service.NewAuthService(pool, hasher, emailSender, authAudit, retryQ, cfg.AppVerifyURLBase)
+	authSvc := service.NewAuthServiceWithClock(pool, hasher, emailSender, authAudit, retryQ, cfg.AppVerifyURLBase, clock.RealClock{})
+
+	if cfg.JWTSecret != "" {
+		authSvc.SetJWTSigner(service.NewJWTSigner([]byte(cfg.JWTSecret)))
+	}
+	if cfg.AppResetURLBase != "" {
+		authSvc.SetResetURLBase(cfg.AppResetURLBase)
+	}
 
 	// Long-lived context that survives request cancellations — the retry worker
 	// must keep running until graceful shutdown signals.
@@ -90,15 +99,18 @@ func main() {
 	mux.HandleFunc("POST /api/uploads/presign", middleware.ErrorMapper(uploadHandler.Presign))
 	mux.HandleFunc("POST /api/uploads/confirm", middleware.ErrorMapper(uploadHandler.Confirm))
 
-	// Auth routes (story 1.4) — register + resend get per-IP throttling; resend
-	// additionally gets per-email throttling. verify-email and verify-status use
-	// only the global limiter (AC10).
-	authHandler := &handler.AuthHandler{Svc: authSvc}
+	// Cookie config — non-dev demands all four attributes (R7 / AC10).
+	cookieCfg := handler.CookieConfig{
+		Domain:   pickCookieDomain(cfg),
+		Secure:   cfg.AppEnv != "development",
+		SameSite: http.SameSiteLaxMode,
+	}
+	authHandler := handler.NewAuthHandler(authSvc, cookieCfg)
 
 	registerIPLimit := middleware.RateLimitByKey(
 		"auth-register",
-		rate.Every(2*time.Minute), // 1 token per 2 min
-		5,                         // burst 5 (per AC9 / B3)
+		rate.Every(2*time.Minute),
+		5,
 		middleware.IPKeyFn,
 	)
 	resendIPLimit := middleware.RateLimitByKey(
@@ -111,7 +123,32 @@ func main() {
 		"resend-email",
 		rate.Every(60*time.Second),
 		1,
-		resendEmailKeyFn,
+		makeEmailKeyFn(resendBodyKey),
+	)
+	// Why burst 8 (not 5): the per-email account lockout (AC6) fires at 5
+	// failed attempts. If the IP rate-limit burst were also 5, the 6th
+	// attempt would be 429 RATE_LIMIT_EXCEEDED before the service-layer
+	// lockout check could surface 429 ACCOUNT_LOCKED. Keeping the burst
+	// slightly higher lets the lockout envelope code surface at the HTTP
+	// edge — single IP still tops out fast, just with the more specific
+	// code.
+	loginLimit := middleware.RateLimitByKey(
+		"auth-login",
+		rate.Every(2*time.Minute),
+		8,
+		middleware.IPKeyFn,
+	)
+	forgotIPLimit := middleware.RateLimitByKey(
+		"forgot-pw-ip",
+		rate.Every(2*time.Minute),
+		5,
+		middleware.IPKeyFn,
+	)
+	forgotEmailLimit := middleware.RateLimitByKey(
+		"forgot-pw-email",
+		rate.Every(60*time.Second),
+		3,
+		makeEmailKeyFn(forgotPasswordBodyKey),
 	)
 
 	mux.Handle("POST /api/auth/register",
@@ -119,18 +156,41 @@ func main() {
 	mux.Handle("POST /api/auth/verify-email",
 		http.HandlerFunc(middleware.ErrorMapper(authHandler.VerifyEmail)))
 	mux.Handle("POST /api/auth/resend-verification",
-		resendBodyGate(resendIPLimit(resendEmailLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.ResendVerification))))))
+		emailKeyGate(resendBodyKey, resendIPLimit(resendEmailLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.ResendVerification))))))
 	mux.Handle("GET /api/auth/verify-status",
 		http.HandlerFunc(middleware.ErrorMapper(authHandler.VerifyStatus)))
 
-	// Middleware chain order: RequestID → ClientIP → Logger → CORS → global RateLimit → mux
-	// Per-route limiters are wired into the mux entries above (they sit BETWEEN
-	// the global limiter and the handler, on a per-route basis).
+	// Story 1.5 auth endpoints. Login + Logout were previously bypassing
+	// ErrorMapper via an in-handler `writeMappedError` shim; they now
+	// route through the canonical mapper alongside Refresh / ForgotPassword
+	// / ResetPassword so envelope shape stays byte-identical.
+	mux.Handle("POST /api/auth/login",
+		loginLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.Login))))
+	mux.Handle("POST /api/auth/refresh",
+		http.HandlerFunc(middleware.ErrorMapper(authHandler.Refresh)))
+	mux.Handle("POST /api/auth/logout",
+		http.HandlerFunc(middleware.ErrorMapper(authHandler.Logout)))
+	mux.Handle("POST /api/auth/forgot-password",
+		emailKeyGate(forgotPasswordBodyKey, forgotIPLimit(forgotEmailLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.ForgotPassword))))))
+	mux.Handle("POST /api/auth/reset-password",
+		http.HandlerFunc(middleware.ErrorMapper(authHandler.ResetPassword)))
+
+	// Middleware chain order (AC11/AC12):
+	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux
+	corsOrigins := middleware.ParseOrigins(cfg.CORSOrigins)
+	corsMW := middleware.NewCORS(middleware.CORSConfig{
+		AllowedOrigins:   corsOrigins,
+		AllowCredentials: true,
+	})
+	originMW := middleware.NewOriginCheck(corsOrigins)
+
 	wrapped := middleware.RequestID(
 		middleware.ClientIP(
 			middleware.Logger(
-				middleware.CORS(cfg.CORSOrigins)(
-					middleware.RateLimit(200.0/60.0, 200)(mux),
+				corsMW(
+					originMW(
+						middleware.RateLimit(200.0/60.0, 200)(mux),
+					),
 				),
 			),
 		),
@@ -165,57 +225,51 @@ func main() {
 	slog.Info("server stopped")
 }
 
-// resendEmailKeyFn implements Task 8 / H3: returns the normalized email as
-// the per-email bucket key.
+// pickCookieDomain selects the cookie Domain attribute based on AppEnv.
 //
-// Pre-conditions established by resendBodyGate (which runs BEFORE this keyFn):
-//   - r.Body has been read into r.Context() at resendBodyKey, then restored
-//   - the body is at most maxResendBodyBytes
-//   - body-read errors have already been short-circuited with a 400
+// D4 contract: in non-dev, COOKIE_DOMAIN MUST be set explicitly (validated
+// at config load — Validate() rejects empty). The previous shape silently
+// fell back to ".classlite.app" for any non-dev environment, which made a
+// staging deployment at staging.classlite.app emit cookies that the prod
+// frontend would also read. There is no fallback now: operator-supplied
+// value is the value used.
 //
-// Returns "" on:
-//   - JSON parse failure (per spec H3 — incoherent body has no key; handler
-//     will return 422)
-//   - missing / unparseable email (so per-email visitor map cannot be filled
-//     with unbounded attacker-controlled garbage keys)
-//
-// On valid input returns the RFC-mailbox-normalized email. This is the same
-// normalization the AuthService uses, so the limiter bucket matches the
-// uniqueness key.
-func resendEmailKeyFn(r *http.Request) string {
-	body, _ := r.Context().Value(resendBodyKey).([]byte)
-	if len(body) == 0 {
+// Dev: empty (host-only on localhost, which the Vite proxy needs) UNLESS
+// the operator explicitly overrode with COOKIE_DOMAIN. Operator config
+// wins for parity with prod debugging.
+func pickCookieDomain(cfg config.Config) string {
+	if cfg.AppEnv == "development" {
+		return cfg.CookieDomain
+	}
+	if cfg.CookieDomain == "localhost" {
+		// Defensive guard: localhost is almost never the right value in a
+		// non-dev environment. Refuse to use it; the operator must fix
+		// the config rather than silently downgrading prod cookie scope.
+		slog.Warn("COOKIE_DOMAIN=localhost rejected in non-dev; using empty (host-only)",
+			"env", cfg.AppEnv)
 		return ""
 	}
-	var decoded struct {
-		Email string `json:"email"`
-	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return ""
-	}
-	candidate := strings.TrimSpace(decoded.Email)
-	if candidate == "" {
-		return ""
-	}
-	parsed, err := mail.ParseAddress(candidate)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(parsed.Address))
+	return cfg.CookieDomain
 }
 
-// resendBodyKeyType is the context-key type for the cached body payload that
-// resendBodyGate stashes for resendEmailKeyFn / the downstream handler.
+// resendBodyKeyType / forgotPasswordBodyKeyType are typed context keys for
+// the cached body payload that emailKeyGate stashes for the per-email
+// rate-limit keyFn.
 type resendBodyKeyType struct{}
+type forgotPasswordBodyKeyType struct{}
 
-var resendBodyKey resendBodyKeyType
+var (
+	resendBodyKey         resendBodyKeyType
+	forgotPasswordBodyKey forgotPasswordBodyKeyType
+)
 
-// resendBodyGate reads and caps the request body once, stashes it in context,
-// restores r.Body for downstream consumers, and short-circuits with 400 on a
-// read failure (review decision D2 — body-read errors should not bypass the
-// per-email rate limiter the way JSON parse failures do, since they look like
-// targeted attempts to evade the bucket key).
-func resendBodyGate(next http.Handler) http.Handler {
+// emailKeyGate reads + caps the request body once, stashes the bytes in
+// context under the given key, restores r.Body, and short-circuits with
+// 400 on a read failure. Shared by /resend-verification (Story 1.4) and
+// /forgot-password (Story 1.5) — both endpoints need the body twice
+// (once for per-email rate-limit key extraction, once for the handler's
+// JSON decoder), and both honor the same 16 KiB body cap.
+func emailKeyGate(bodyKey any, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxResendBodyBytes)
 		body, err := io.ReadAll(r.Body)
@@ -223,16 +277,50 @@ func resendBodyGate(next http.Handler) http.Handler {
 			writeBadRequestJSON(w, r, "INVALID_BODY", "Request body could not be read.")
 			return
 		}
-		ctx := context.WithValue(r.Context(), resendBodyKey, body)
-		// GFW-6: restore the body so downstream Decoders still work.
+		ctx := context.WithValue(r.Context(), bodyKey, body)
 		r2 := r.Clone(ctx)
 		r2.Body = io.NopCloser(bytes.NewBuffer(body))
 		next.ServeHTTP(w, r2)
 	})
 }
 
+// makeEmailKeyFn returns a RateLimitByKey keyFn that reads the cached body
+// from the given context key (set by emailKeyGate), parses the email
+// field, and returns the normalized form.
+//
+// Malformed-body handling (P27): rather than returning "" (which makes
+// RateLimitByKey pass through without consuming a token, letting a
+// distributed attacker spam the endpoint with `{"email":"not-an-email"}`
+// to bypass per-email throttling), we key the malformed bucket on the
+// client IP — same throttling shape as a single bad emailer, so spammers
+// don't get a free pass just by sending unparseable payloads.
+func makeEmailKeyFn(bodyKey any) func(*http.Request) string {
+	return func(r *http.Request) string {
+		malformedKey := "malformed:" + middleware.IPKeyFn(r)
+		body, _ := r.Context().Value(bodyKey).([]byte)
+		if len(body) == 0 {
+			return malformedKey
+		}
+		var decoded struct {
+			Email string `json:"email"`
+		}
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return malformedKey
+		}
+		candidate := strings.TrimSpace(decoded.Email)
+		if candidate == "" {
+			return malformedKey
+		}
+		parsed, err := mail.ParseAddress(candidate)
+		if err != nil {
+			return malformedKey
+		}
+		return strings.ToLower(strings.TrimSpace(parsed.Address))
+	}
+}
+
 // writeBadRequestJSON emits the envelope-shaped 400 response used by the
-// resend body gate when the body cannot be read.
+// body gate when the body cannot be read.
 func writeBadRequestJSON(w http.ResponseWriter, r *http.Request, code, message string) {
 	requestID, _ := r.Context().Value(model.RequestID).(string)
 	w.Header().Set("Content-Type", "application/json")

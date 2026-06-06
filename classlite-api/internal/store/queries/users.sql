@@ -22,3 +22,8 @@ RETURNING id, email, password_hash, full_name, email_verified, avatar_url, langu
 UPDATE users
 SET email_verified = true, updated_at = now()
 WHERE id = $1;
+
+-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = $2, updated_at = now()
+WHERE id = $1;

@@ -1,5 +1,3 @@
-//go:build atdd_red_phase
-
 // login_test_atdd.go — Story 1.5 ATDD red-phase scaffolds.
 //
 // HOW TO USE THIS FILE
@@ -199,18 +197,16 @@ func TestLogin_AC07_LockoutExpiry_Allows15MinLaterLogin(t *testing.T) {
 }
 
 // newAuthServiceWithClock is the test-helper factory used by Story 1.5
-// scaffolds. The real AuthService factory does not yet accept a Clock;
-// adding that parameter is the first impl step for AC-1.5-06/07.
+// scaffolds. Uses BcryptHasher{Cost: 4} (real bcrypt) so the Login path's
+// CompareHashAndPassword check verifies — MockHasher's "mock-hash" string
+// fails bcrypt validation.
 func newAuthServiceWithClock(t *testing.T, db *test.TxDB, c clock.Clock) *service.AuthService {
 	t.Helper()
 	_ = model.TenantContext{} // keep import live; real impl uses TC in mutating ops
-	hasher := &service.MockHasher{}
+	hasher := service.BcryptHasher{Cost: 4}
 	sender := &service.MockEmailSender{}
 	queue := service.NewEmailRetryQueue(sender, 8)
 	auditLogger := service.NewPgAuthAuditLogger(db)
 
-	// NOTE: The current NewAuthService signature does not accept a Clock.
-	// Story 1.5 impl extends the constructor with a clock.Clock parameter
-	// so lockout windows + token expiry can be time-travelled in tests.
 	return service.NewAuthServiceWithClock(db, hasher, sender, auditLogger, queue, testVerifyURLBase, c)
 }

@@ -26,7 +26,8 @@ func newTestAuthHandler(t *testing.T) (*handler.AuthHandler, *test.TxDB, *servic
 	queue := service.NewEmailRetryQueue(sender, 8)
 	auditLogger := service.NewPgAuthAuditLogger(db)
 	svc := service.NewAuthService(db, hasher, sender, auditLogger, queue, testVerifyURLBase)
-	return &handler.AuthHandler{Svc: svc}, db, sender, queue
+	cookieCfg := handler.CookieConfig{Domain: "", Secure: false, SameSite: http.SameSiteLaxMode}
+	return handler.NewAuthHandler(svc, cookieCfg), db, sender, queue
 }
 
 // drainQueueAndWaitFor starts the retry-queue worker and polls (via the

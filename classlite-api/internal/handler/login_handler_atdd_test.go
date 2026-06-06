@@ -1,5 +1,3 @@
-//go:build atdd_red_phase
-
 // login_handler_test_atdd.go — Story 1.5 ATDD red-phase scaffolds.
 //
 // ACCEPTANCE CRITERIA COVERED
@@ -140,12 +138,9 @@ func TestLoginHandler_AC01_SuccessEnvelopeShape(t *testing.T) {
 
 func newAuthHandlerService(t *testing.T, db *test.TxDB) *service.AuthService {
 	t.Helper()
-	hasher := &service.MockHasher{}
+	hasher := service.BcryptHasher{Cost: 4}
 	sender := &service.MockEmailSender{}
 	queue := service.NewEmailRetryQueue(sender, 8)
 	auditLogger := service.NewPgAuthAuditLogger(db)
-	// Real impl: handler should depend on a smaller AuthService interface,
-	// not the full struct. This helper uses the WithClock factory so
-	// lockout tests still work if shared.
 	return service.NewAuthService(db, hasher, sender, auditLogger, queue, "https://my.classlite.app/verify-email")
 }

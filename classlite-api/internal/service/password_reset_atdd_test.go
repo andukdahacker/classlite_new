@@ -1,5 +1,3 @@
-//go:build atdd_red_phase
-
 // password_reset_test_atdd.go — Story 1.5 ATDD red-phase scaffolds.
 //
 // ACCEPTANCE CRITERIA COVERED
@@ -11,6 +9,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,8 +51,19 @@ func TestRequestPasswordReset_AC03_KnownEmail_CreatesTokenAndSendsEmail(t *testi
 	db := test.SetupDB(t)
 	mockClock := clock.NewMockClock(time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC))
 	user := test.CreateUser(t, db, "alice@example.com", "Alice Test")
+	if _, err := db.Exec(context.Background(),
+		`UPDATE users SET email_verified = true WHERE id = $1`, user.ID); err != nil {
+		t.Fatalf("mark user verified: %v", err)
+	}
 
-	svc, _, sender, _ := newAuthServiceWithSenderAccess(t, db, mockClock)
+	svc, _, sender, queue := newAuthServiceWithSenderAccess(t, db, mockClock)
+	startQueueWorker(t, queue)
+
+	// Capture the expected expires_at BEFORE the call: padToFloor advances
+	// the mock clock by ResendConstantTimeFloor, but the row's expires_at
+	// is computed from the pre-pad clock (P30 — decouple expiry from the
+	// floor implementation).
+	expectedExpiresAt := mockClock.Now().Add(1 * time.Hour)
 
 	if err := svc.RequestPasswordReset(context.Background(), "alice@example.com"); err != nil {
 		t.Fatalf("RequestPasswordReset: %v", err)
@@ -66,15 +76,12 @@ func TestRequestPasswordReset_AC03_KnownEmail_CreatesTokenAndSendsEmail(t *testi
 	).Scan(&expiresAt); err != nil {
 		t.Fatalf("query password_resets: %v", err)
 	}
-	expected := mockClock.Now().Add(1 * time.Hour)
-	if !expiresAt.Equal(expected) {
-		t.Fatalf("expires_at: expected %v (now + 1h), got %v", expected, expiresAt)
+	if !expiresAt.Equal(expectedExpiresAt) {
+		t.Fatalf("expires_at: expected %v (now + 1h), got %v", expectedExpiresAt, expiresAt)
 	}
 
-	// Email dispatched.
-	if sender.Count() != 1 {
-		t.Fatalf("expected 1 email send, got %d", sender.Count())
-	}
+	// Email dispatched via the async retry queue.
+	waitForEmailCount(t, sender, 1, 2*time.Second)
 }
 
 // TestResetPassword_AC04_HappyPath_InvalidatesAllSessions proves that
@@ -86,8 +93,13 @@ func TestResetPassword_AC04_HappyPath_InvalidatesAllSessions(t *testing.T) {
 	db := test.SetupDB(t)
 	mockClock := clock.NewMockClock(time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC))
 	user := test.CreateUser(t, db, "alice@example.com", "Alice Test")
+	if _, err := db.Exec(context.Background(),
+		`UPDATE users SET email_verified = true WHERE id = $1`, user.ID); err != nil {
+		t.Fatalf("mark user verified: %v", err)
+	}
 	_ = test.CreateCenterWithID(t, db, test.TenantAID, "Tenant A", "TENA")
-	svc := newAuthServiceWithClock(t, db, mockClock)
+	svc, _, sender, queue := newAuthServiceWithSenderAccess(t, db, mockClock)
+	startQueueWorker(t, queue)
 
 	if err := svc.SetPassword(context.Background(), user.ID, "OldPassword123!"); err != nil {
 		t.Fatalf("SetPassword: %v", err)
@@ -102,17 +114,14 @@ func TestResetPassword_AC04_HappyPath_InvalidatesAllSessions(t *testing.T) {
 		}
 	}
 
-	// Get a reset token via the service path so we use the same hashing
-	// the impl uses (impl detail not asserted here).
+	// Get the raw reset token from the dispatched email body. P3 stores
+	// sha256(token) in `password_resets.token_hash`; the raw value only
+	// exists in transit (queued email).
 	if err := svc.RequestPasswordReset(context.Background(), "alice@example.com"); err != nil {
 		t.Fatalf("RequestPasswordReset: %v", err)
 	}
-	var token string
-	if err := db.QueryRow(context.Background(),
-		`SELECT token FROM password_resets WHERE user_id = $1`, user.ID,
-	).Scan(&token); err != nil {
-		t.Fatalf("query password_resets token: %v", err)
-	}
+	waitForEmailCount(t, sender, 1, 2*time.Second)
+	token := extractResetToken(t, sender.Snapshot()[0])
 
 	// Apply reset.
 	if err := svc.ResetPassword(context.Background(), token, "NewPassword123!"); err != nil {
@@ -154,17 +163,69 @@ func TestResetPassword_AC04_HappyPath_InvalidatesAllSessions(t *testing.T) {
 }
 
 // newAuthServiceWithSenderAccess wraps newAuthServiceWithClock and also
-// returns the mock sender so tests can assert email dispatch counts.
+// returns the mock sender so tests can assert email dispatch counts. Uses
+// BcryptHasher{Cost: 4} so reset-password's bcrypt check works.
+//
+// Note (D3): password-reset is now async via EmailRetryQueue. Tests must
+// start the worker (`go queue.Start(ctx)`) and use waitForEmailCount to
+// observe sends — the queue is a buffered channel that nobody drains
+// otherwise.
 func newAuthServiceWithSenderAccess(
 	t *testing.T,
 	db *test.TxDB,
 	c clock.Clock,
 ) (*service.AuthService, *service.MockHasher, *service.MockEmailSender, *service.InProcessRetryQueue) {
 	t.Helper()
-	hasher := &service.MockHasher{}
+	mockHasher := &service.MockHasher{}
 	sender := &service.MockEmailSender{}
 	queue := service.NewEmailRetryQueue(sender, 8)
 	auditLogger := service.NewPgAuthAuditLogger(db)
-	svc := service.NewAuthServiceWithClock(db, hasher, sender, auditLogger, queue, testVerifyURLBase, c)
-	return svc, hasher, sender, queue
+	svc := service.NewAuthServiceWithClock(db, service.BcryptHasher{Cost: 4}, sender, auditLogger, queue, testVerifyURLBase, c)
+	return svc, mockHasher, sender, queue
+}
+
+// startQueueWorker spawns the queue's Start loop and returns a cancel
+// func tied to t.Cleanup. Tests should call waitForEmailCount before the
+// cleanup fires.
+func startQueueWorker(t *testing.T, queue *service.InProcessRetryQueue) context.CancelFunc {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	go queue.Start(ctx)
+	t.Cleanup(cancel)
+	return cancel
+}
+
+// waitForEmailCount polls sender.Count() until it reaches want or the
+// deadline elapses. Avoids time.Sleep flakiness by using a tight poll
+// interval against a real-wall-clock deadline.
+func waitForEmailCount(t *testing.T, sender *service.MockEmailSender, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if sender.Count() >= want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("waitForEmailCount: expected %d emails within %s, got %d", want, timeout, sender.Count())
+}
+
+// extractResetToken pulls the `?token=<value>` parameter from the reset
+// email body the service enqueues. The raw token is no longer recoverable
+// from the DB (P3 stores sha256 only); the email body is the test's
+// canonical source.
+func extractResetToken(t *testing.T, email service.SentEmail) string {
+	t.Helper()
+	idx := strings.Index(email.HTML, "?token=")
+	if idx < 0 {
+		t.Fatalf("reset email body has no `?token=` URL parameter: %s", email.HTML)
+	}
+	rest := email.HTML[idx+len("?token="):]
+	// Token runs until the next non-base64url character (closing quote, `>`,
+	// `&`, whitespace).
+	end := strings.IndexAny(rest, `"'<>& `)
+	if end < 0 {
+		end = len(rest)
+	}
+	return rest[:end]
 }

@@ -1,5 +1,3 @@
-//go:build atdd_red_phase
-
 // auth_test_atdd.go — Story 1.5 ATDD red-phase scaffolds.
 //
 // ACCEPTANCE CRITERIA COVERED
@@ -105,7 +103,13 @@ func TestExtractTenant_AC16_ValidJWT_DeletedUser_Returns401(t *testing.T) {
 		t.Fatalf("sign token: %v", err)
 	}
 
-	// Delete the user.
+	// Delete the user. The `users` row is FK-referenced by `center_members`
+	// (no ON DELETE CASCADE), so clear the membership row first or the user
+	// DELETE fails on FK violation before we reach the assertion.
+	if _, err := db.Exec(context.Background(),
+		`DELETE FROM center_members WHERE user_id = $1`, user.ID); err != nil {
+		t.Fatalf("clear center_members FK before user delete: %v", err)
+	}
 	if _, err := db.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, user.ID); err != nil {
 		t.Fatalf("delete user: %v", err)
 	}

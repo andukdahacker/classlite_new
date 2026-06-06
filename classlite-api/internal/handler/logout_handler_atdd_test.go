@@ -1,5 +1,3 @@
-//go:build atdd_red_phase
-
 // logout_handler_test_atdd.go — Story 1.5 ATDD red-phase scaffolds.
 //
 // ACCEPTANCE CRITERIA COVERED

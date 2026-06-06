@@ -25,6 +25,9 @@ type Config struct {
 	// AppVerifyURLBase is the canonical base URL embedded in verification emails
 	// (story 1.4). The token is appended as ?token=<value>.
 	AppVerifyURLBase string
+	// AppResetURLBase is the canonical base URL embedded in password-reset
+	// emails (story 1.5). The token is appended as ?token=<value>.
+	AppResetURLBase string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -34,6 +37,10 @@ func Load() Config {
 		Port:         getEnv("PORT", "8080"),
 		DatabaseURL:  getEnv("DATABASE_URL", ""),
 		JWTSecret:    getEnv("JWT_SECRET", ""),
+		// D4: no fallback to ".classlite.app" for cookies. The default is
+		// localhost (dev parity); non-dev MUST explicitly set COOKIE_DOMAIN
+		// — enforced by Validate(). This stops a staging deploy from
+		// silently writing cookies onto the production domain.
 		CookieDomain: getEnv("COOKIE_DOMAIN", "localhost"),
 		CORSOrigins:    getEnv("CORS_ORIGINS", "http://localhost:5173"),
 		SentryDSN:      getEnv("SENTRY_DSN", ""),
@@ -44,11 +51,18 @@ func Load() Config {
 		R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
 		R2BucketName:     getEnv("R2_BUCKET_NAME", "classlite-uploads"),
 		AppVerifyURLBase: getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
+		AppResetURLBase:  getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
 	}
 }
 
+// MinJWTSecretBytes is the HMAC-SHA256 minimum keylength per RFC 2104 (256 bits).
+const MinJWTSecretBytes = 32
+
 // Validate checks that critical configuration values are set.
-// In non-development mode, DATABASE_URL and JWT_SECRET must be non-empty.
+// In non-development mode, DATABASE_URL, JWT_SECRET, APP_VERIFY_URL_BASE
+// and APP_RESET_URL_BASE must be non-empty, and JWT_SECRET must be at
+// least MinJWTSecretBytes long (AC15). In development a short or missing
+// JWT_SECRET emits slog.Warn so the developer notices but boot proceeds.
 func (c Config) Validate() error {
 	if c.AppEnv != "development" {
 		var missing []string
@@ -61,8 +75,27 @@ func (c Config) Validate() error {
 		if c.AppVerifyURLBase == "" {
 			missing = append(missing, "APP_VERIFY_URL_BASE")
 		}
+		if c.AppResetURLBase == "" {
+			missing = append(missing, "APP_RESET_URL_BASE")
+		}
+		// D4: COOKIE_DOMAIN must be set explicitly in non-dev. The default
+		// is "localhost" (good for local dev only); a deploy that forgets
+		// to override would otherwise emit cookies scoped to localhost in
+		// prod, or — worse — silently inherit the previous "fallback to
+		// .classlite.app" shape and leak between staging and prod.
+		if c.CookieDomain == "" || c.CookieDomain == "localhost" {
+			missing = append(missing, "COOKIE_DOMAIN")
+		}
 		if len(missing) > 0 {
 			return fmt.Errorf("required config missing for %s: %s", c.AppEnv, strings.Join(missing, ", "))
+		}
+		if len([]byte(c.JWTSecret)) < MinJWTSecretBytes {
+			return fmt.Errorf("JWT_SECRET must be ≥ %d bytes for HS256 (got %d)", MinJWTSecretBytes, len([]byte(c.JWTSecret)))
+		}
+	} else {
+		if c.JWTSecret != "" && len([]byte(c.JWTSecret)) < MinJWTSecretBytes {
+			slog.Warn("JWT_SECRET is shorter than 32 bytes — fine for dev only",
+				"current_bytes", len([]byte(c.JWTSecret)))
 		}
 	}
 	return nil
@@ -83,6 +116,7 @@ func (c Config) LogSummary() {
 		"r2_account_id_set", c.R2AccountID != "",
 		"r2_bucket_name", c.R2BucketName,
 		"app_verify_url_base_set", c.AppVerifyURLBase != "",
+		"app_reset_url_base_set", c.AppResetURLBase != "",
 	)
 }
 

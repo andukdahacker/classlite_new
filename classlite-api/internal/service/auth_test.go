@@ -121,7 +121,7 @@ func TestAuthService_Register_HappyPath(t *testing.T) {
 	// auth_audit_logs row exists
 	var auditCount int
 	if err := db.Tx.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND action = 'user.registered'`,
+		`SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND event = 'user.registered'`,
 		res.User.ID).Scan(&auditCount); err != nil {
 		t.Fatalf("count audit: %v", err)
 	}
@@ -296,9 +296,9 @@ func TestAuthService_VerifyEmail_HappyPath(t *testing.T) {
 		t.Error("users.email_verified should be true")
 	}
 
-	// audit row for email_verified action
+	// audit row for email_verified event
 	var n int
-	db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND action = 'user.email_verified'`, res.User.ID).Scan(&n)
+	db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND event = 'user.email_verified'`, res.User.ID).Scan(&n)
 	if n != 1 {
 		t.Errorf("expected 1 email_verified audit row, got %d", n)
 	}

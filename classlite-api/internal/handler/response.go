@@ -36,8 +36,14 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // WriteError writes an error JSON response with the standard error envelope.
+// requestID is best-effort: passing a nil request leaves the field empty.
 func WriteError(w http.ResponseWriter, r *http.Request, status int, code string, message string, details any) {
-	requestID, _ := r.Context().Value(model.RequestID).(string)
+	var requestID string
+	if r != nil {
+		if id, ok := r.Context().Value(model.RequestID).(string); ok {
+			requestID = id
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(ErrorResponse{

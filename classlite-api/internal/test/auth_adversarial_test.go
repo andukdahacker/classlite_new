@@ -28,7 +28,8 @@ func newSvc(t *testing.T) (*handler.AuthHandler, *test.TxDB) {
 	queue := service.NewEmailRetryQueue(sender, 8)
 	auditLogger := service.NewPgAuthAuditLogger(db)
 	svc := service.NewAuthService(db, hasher, sender, auditLogger, queue, testVerifyURLBase)
-	return &handler.AuthHandler{Svc: svc}, db
+	cookieCfg := handler.CookieConfig{Domain: "", Secure: false, SameSite: http.SameSiteLaxMode}
+	return handler.NewAuthHandler(svc, cookieCfg), db
 }
 
 func newReq(method, path, body string) *http.Request {

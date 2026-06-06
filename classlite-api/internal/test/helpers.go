@@ -67,6 +67,19 @@ func getPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// SetupRawPool returns the raw shared *pgxpool.Pool. Use it ONLY when a
+// test needs concurrent connections (goroutine-safe operations) that the
+// transaction-wrapped TxDB cannot provide — e.g., the AC9 concurrent
+// rotation race in refresh_atdd_test.go. The caller is responsible for
+// cleaning up any rows it inserts via t.Cleanup.
+//
+// Prefer SetupDB(t) for everything else: it auto-rollbacks and leaves
+// zero residue, which is the right default for ATDD / service tests.
+func SetupRawPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	return getPool(t)
+}
+
 // SetupDB returns a transaction-wrapped DB handle. The transaction is
 // automatically rolled back via t.Cleanup, so each test gets a clean slate
 // without mutating the database.

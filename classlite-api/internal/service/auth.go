@@ -28,6 +28,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 	"github.com/google/uuid"
@@ -47,7 +48,38 @@ const (
 	uniqueViolationPgErrorCode    = "23505"
 	emailAlreadyRegisteredCode    = "EMAIL_ALREADY_REGISTERED"
 	emailAlreadyRegisteredMessage = "If this email is not yet registered, you will receive a verification email shortly."
+
+	// Story 1.5 — login + session constants (CQ-3 named-constants rule).
+	LoginLockoutThreshold     = 5
+	LoginLockoutWindow        = 10 * time.Minute
+	LoginLockoutDuration      = 15 * time.Minute
+	AccessTokenTTL            = 15 * time.Minute
+	RefreshTokenTTLDefault    = 7 * 24 * time.Hour
+	RefreshTokenTTLRememberMe = 30 * 24 * time.Hour
+	PasswordResetTTL          = 1 * time.Hour
+	PasswordResetTokenBytes   = 32
+	RefreshTokenRandomBytes   = 32
+	BcryptDummyHash           = "$2a$12$abcdefghijklmnopqrstuvLZ8sFlR0BoB3FfJqrV1F7DKDmoUWYW6.W"
+	JWTMinSecretBytes         = 32
 )
+
+// ephemeralJWTSecret generates a 32-byte cryptographically-random key.
+// The default JWT signer installed by NewAuthServiceWithClock uses this so
+// no hardcoded secret ever ships in source — production main.go MUST call
+// SetJWTSigner with the configured JWT_SECRET; if it forgets, tokens are
+// signed with bytes that nobody else holds, making forgery impossible.
+// Each process gets a fresh key, so cross-process forgery via "I know the
+// dev default" is impossible by construction.
+func ephemeralJWTSecret() []byte {
+	b := make([]byte, JWTMinSecretBytes)
+	if _, err := rand.Read(b); err != nil {
+		// rand.Read should not fail; if it does, falling back to a fixed
+		// value would silently weaken the default. Panic so the process
+		// fails loudly at startup.
+		panic("auth: crypto/rand failed while generating ephemeral JWT secret: " + err.Error())
+	}
+	return b
+}
 
 // EmailDelivery values surfaced to the frontend.
 const (
@@ -66,7 +98,22 @@ type AuthDB interface {
 	generated.DBTX
 }
 
-// AuthService orchestrates registration, verification, and resend flows.
+// AuthService orchestrates registration, verification, resend, login, refresh,
+// password reset, logout, and the canonical role-revalidation guard.
+//
+// Time sources: clock/sleep (legacy func fields, kept to avoid Story 1.4 churn)
+// AND clk (clock.Clock, new in Story 1.5) are both backed by the same wall
+// clock in production and the same MockClock in tests — constructors always
+// set them consistently.
+//
+// JWT signer: jwt is the Story 1.5 token signer. NewAuthService and
+// NewAuthServiceWithClock default it to an in-process signer using a dev
+// secret. Production main.go MUST call SetJWTSigner with the configured
+// JWT_SECRET before serving requests.
+//
+// resetURL: the base URL emailed to users for password reset. Set via
+// SetResetURLBase from main.go; defaults to a localhost address used by
+// tests + dev. The token is appended as ?token=<value>.
 type AuthService struct {
 	db        AuthDB
 	hasher    Hasher
@@ -74,8 +121,11 @@ type AuthService struct {
 	audit     AuthAuditLogger
 	retry     EmailRetryQueue
 	verifyURL string
+	resetURL  string
 	clock     func() time.Time
 	sleep     func(time.Duration)
+	clk       clock.Clock
+	jwt       JWTSigner
 }
 
 // NewAuthService wires AuthService for production. verifyURL must NOT end with
@@ -83,8 +133,20 @@ type AuthService struct {
 // "fail fast on misconfiguration" guarantee is enforced here so a deployment
 // without a retry queue cannot silently degrade to no-email registrations.
 func NewAuthService(db AuthDB, hasher Hasher, email EmailSender, audit AuthAuditLogger, retry EmailRetryQueue, verifyURL string) *AuthService {
+	return NewAuthServiceWithClock(db, hasher, email, audit, retry, verifyURL, clock.RealClock{})
+}
+
+// NewAuthServiceWithClock is the test-friendly constructor. It pairs the
+// service's time-dependent operations (lockout windows, JWT expiry, reset
+// token expiry, constant-time floor) with the injected Clock. The internal
+// JWT signer is clock-driven too so tests can advance MockClock and observe
+// the AccessExpiresAt timestamp deterministically.
+func NewAuthServiceWithClock(db AuthDB, hasher Hasher, email EmailSender, audit AuthAuditLogger, retry EmailRetryQueue, verifyURL string, c clock.Clock) *AuthService {
 	if retry == nil {
 		panic("auth service: retry queue is required")
+	}
+	if c == nil {
+		c = clock.RealClock{}
 	}
 	return &AuthService{
 		db:        db,
@@ -93,9 +155,25 @@ func NewAuthService(db AuthDB, hasher Hasher, email EmailSender, audit AuthAudit
 		audit:     audit,
 		retry:     retry,
 		verifyURL: strings.TrimRight(verifyURL, "/"),
-		clock:     time.Now,
-		sleep:     time.Sleep,
+		resetURL:  "http://localhost:5173/reset-password",
+		clock:     c.Now,
+		sleep:     c.Sleep,
+		clk:       c,
+		jwt:       NewJWTSignerWithClock(ephemeralJWTSecret(), c),
 	}
+}
+
+// SetJWTSigner overrides the default JWT signer. Production main.go calls
+// this with a signer built from the real Config.JWTSecret right after
+// construction — tests can rely on the clock-driven default.
+func (s *AuthService) SetJWTSigner(j JWTSigner) {
+	s.jwt = j
+}
+
+// SetResetURLBase overrides the default reset URL base. Production main.go
+// passes Config.AppResetURLBase.
+func (s *AuthService) SetResetURLBase(base string) {
+	s.resetURL = strings.TrimRight(base, "/")
 }
 
 // RegisterRequest carries the validated inputs from the HTTP handler.
@@ -205,7 +283,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 
 	s.logAuthAuditBestEffort(postCtx, AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.registered",
+		Event:      "user.registered",
 		EntityType: "user",
 		EntityID:   userUUID,
 		Changes:    Changes{Before: nil, After: map[string]any{"emailVerified": false}},
@@ -314,7 +392,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, token string) (*VerifyEma
 	postCtx := context.WithoutCancel(ctx)
 	s.logAuthAuditBestEffort(postCtx, AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.email_verified",
+		Event:      "user.email_verified",
 		EntityType: "user",
 		EntityID:   userUUID,
 		Changes: Changes{
@@ -407,7 +485,7 @@ func (s *AuthService) resendInner(ctx context.Context, normalizedEmail string) (
 	postCtx := context.WithoutCancel(ctx)
 	s.logAuthAuditBestEffort(postCtx, AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.verification_resent",
+		Event:      "user.verification_resent",
 		EntityType: "user",
 		EntityID:   userUUID,
 	})
@@ -495,7 +573,7 @@ func (s *AuthService) logAuthAuditBestEffort(ctx context.Context, entry AuthAudi
 	}
 	if err := s.audit.Log(ctx, entry); err != nil {
 		slog.ErrorContext(ctx, "auth_audit_log_failed",
-			"action", entry.Action,
+			"event", entry.Event,
 			"user_id", entry.UserID,
 			"error", err.Error(),
 		)

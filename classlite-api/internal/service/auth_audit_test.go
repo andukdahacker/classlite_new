@@ -13,7 +13,7 @@ import (
 
 type storedAuthAuditRow struct {
 	UserID     string
-	Action     string
+	Event      string
 	EntityType string
 	EntityID   string
 	Changes    []byte
@@ -24,7 +24,7 @@ func fetchAuthAuditRowsForUser(t *testing.T, db *test.TxDB, userID string) []sto
 	t.Helper()
 	rows, err := db.Tx.Query(
 		context.Background(),
-		`SELECT user_id::text, action, entity_type, entity_id::text, changes, ip_address
+		`SELECT user_id::text, event, entity_type, entity_id::text, changes, ip_address
 		 FROM auth_audit_logs
 		 WHERE user_id = $1::uuid
 		 ORDER BY created_at ASC`,
@@ -38,7 +38,7 @@ func fetchAuthAuditRowsForUser(t *testing.T, db *test.TxDB, userID string) []sto
 	var out []storedAuthAuditRow
 	for rows.Next() {
 		var row storedAuthAuditRow
-		if err := rows.Scan(&row.UserID, &row.Action, &row.EntityType, &row.EntityID, &row.Changes, &row.IPAddress); err != nil {
+		if err := rows.Scan(&row.UserID, &row.Event, &row.EntityType, &row.EntityID, &row.Changes, &row.IPAddress); err != nil {
 			t.Fatalf("scan auth_audit_logs: %v", err)
 		}
 		out = append(out, row)
@@ -61,7 +61,7 @@ func TestAuthAuditLogger_Log_InsertsRow(t *testing.T) {
 
 	err = logger.Log(ctx, service.AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.registered",
+		Event:      "user.registered",
 		EntityType: "user",
 		EntityID:   userUUID,
 		Changes:    service.Changes{Before: nil, After: map[string]any{"emailVerified": false}},
@@ -75,8 +75,8 @@ func TestAuthAuditLogger_Log_InsertsRow(t *testing.T) {
 		t.Fatalf("expected 1 audit row, got %d", len(rows))
 	}
 	row := rows[0]
-	if row.Action != "user.registered" {
-		t.Errorf("action = %q, want user.registered", row.Action)
+	if row.Event != "user.registered" {
+		t.Errorf("event = %q, want user.registered", row.Event)
 	}
 	if row.EntityType != "user" {
 		t.Errorf("entity_type = %q, want user", row.EntityType)
@@ -105,7 +105,7 @@ func TestAuthAuditLogger_Log_WithoutIPLeavesNullColumn(t *testing.T) {
 	userUUID, _ := uuid.Parse(test.UUIDString(user.ID))
 	err := logger.Log(ctx, service.AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.verification_resent",
+		Event:      "user.verification_resent",
 		EntityType: "user",
 		EntityID:   userUUID,
 		Changes:    service.Changes{},
@@ -133,7 +133,7 @@ func TestAuthAuditLogger_Log_AppendOnlyEnforced(t *testing.T) {
 	userUUID, _ := uuid.Parse(test.UUIDString(user.ID))
 	if err := logger.Log(context.Background(), service.AuthAuditEntry{
 		UserID:     userUUID,
-		Action:     "user.registered",
+		Event:      "user.registered",
 		EntityType: "user",
 		EntityID:   userUUID,
 	}); err != nil {
@@ -141,7 +141,7 @@ func TestAuthAuditLogger_Log_AppendOnlyEnforced(t *testing.T) {
 	}
 
 	// Verify UPDATE is denied
-	_, err := db.Tx.Exec(context.Background(), `UPDATE auth_audit_logs SET action = 'tampered' WHERE user_id = $1::uuid`, test.UUIDString(user.ID))
+	_, err := db.Tx.Exec(context.Background(), `UPDATE auth_audit_logs SET event = 'tampered' WHERE user_id = $1::uuid`, test.UUIDString(user.ID))
 	if err == nil {
 		t.Fatal("expected UPDATE on auth_audit_logs to be denied")
 	}
