@@ -134,10 +134,18 @@ So that student placement is controlled and every change is traceable.
 **When** completed
 **Then** the action is logged in the enrollment history with: student, action type, source class, target class, effective date, note, performed by, timestamp
 **And** the history is immutable — no editing or deleting past entries (NFR-6)
+**And** immutability is enforced at the DB layer: the `enrollment_history` table has an INSERT-only RLS policy mirroring Story 1.3b auth_audit_logs (UPDATE and DELETE statements return 0 rows / are rejected by the policy).
+
+**Given** the enrollment service writes a history row
+**When** the service runs, Then exactly ONE row is inserted per operation with fields: `performer_id`, `performed_at`, `effective_date`, `action_type` ('add'|'transfer'|'withdraw'), `from_class_id` (nullable for Add), `to_class_id` (nullable for Withdraw), `student_id`, `center_id`, `note`. The history row is inserted in the same transaction as the enrollment state change. (R17 mitigation.)
+
+**Given** an Admin attempts to UPDATE or DELETE an existing `enrollment_history` row via direct SQL or API
+**When** the request reaches the DB
+**Then** the RLS policy rejects with 0-rows-affected; adversarial integration test asserts the row is unchanged. (R17 mitigation.)
 
 **Given** enrollment restrictions
 **When** a Teacher attempts an enrollment action
-**Then** the request is rejected with 403 — only Admin/Owner can perform enrollment actions (FR-46)
+**Then** the request is rejected with 403 `INSUFFICIENT_ROLE` — only Admin/Owner can perform enrollment actions (FR-46). The service-layer role check re-fetches the role from `center_members` (does NOT trust JWT claim alone — R15 mitigation, see Epic 1B Story 1.5 service-layer role re-validation AC).
 
 **Given** the database
 **When** migrations run
@@ -198,3 +206,15 @@ So that I get help on specific parts of the material without leaving the exercis
 **And** a `question_replies` table exists: id, question_id, author_id, content, visibility (private/shared), created_at
 **And** Admin has NO visibility into Q&A — it is teacher↔student only
 **And** RLS policies are applied
+
+**Given** Owner OR Admin querying any Q&A endpoint (`GET /api/questions`, `GET /api/questions/{id}`, search results, inbox)
+**When** the request runs
+**Then** the response returns an empty list — NEVER null, NEVER 403, NEVER error. The service-layer applies a role-scope filter that elides Q&A entirely for Owner and Admin roles. Adversarial integration test asserts: Owner queries → 0 Q&A rows; Admin queries → 0 Q&A rows; Teacher queries → only own exercises; Student queries → only own attempts. (R25 / R26 mitigation.)
+
+**Given** a Teacher replies with `visibility='shared'`
+**When** the reply is posted
+**Then** the thread becomes visible to ALL students CURRENTLY enrolled in the class at the time of reply posting. Students who later transfer in or transfer out of the class see/lose access accordingly (RLS scopes by current enrollment). Students in OTHER classes (even within the same center) cannot see it.
+
+**Given** a Teacher replies with `visibility='personal'`
+**When** the reply is posted
+**Then** only the asking student AND the replying teacher can see the thread. Other teachers, even within the same class, cannot see it (per-thread teacher binding via `questions.exercise_id` ownership).

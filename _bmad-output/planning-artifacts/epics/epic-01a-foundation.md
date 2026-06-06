@@ -263,3 +263,34 @@ So that multi-tenant billing and enrollment changes are traceable.
 **Given** the `audit_logs` table has data,
 **When** querying by center, entity type, and date range,
 **Then** the query uses the index on `(center_id, entity_type, created_at)` efficiently.
+
+---
+
+### Story 1.3c: Custom golangci-lint TenantContext Analyzer
+
+**Size:** S | **Audience:** Backend | **Dependencies:** Story 1.3
+
+As the platform, I want a custom golangci-lint analyzer that flags any Store method whose first non-context parameter is not `TenantContext`,
+So that the BLOCK-severity risk R1 (cross-tenant data leakage via missing `TenantContext`) is caught at compile/CI time instead of at runtime by an adversarial test. (Project-context GO-1 is the highest-severity trap in the stack; this analyzer is its compile-time gate.)
+
+**Acceptance Criteria:**
+
+**Given** the custom analyzer at `classlite-api/tools/lint/tenantcontext/`,
+**When** it runs against any package under `classlite-api/internal/store/`,
+**Then** it flags every exported method whose signature does NOT match the pattern `func (s *XxxStore) MethodName(ctx context.Context, tc TenantContext, ...) (..., error)`. Build fails on the first violation; report message names the offending method and the expected signature.
+
+**Given** the analyzer is wired into `.golangci.yml` as a custom check,
+**When** `golangci-lint run` executes in CI,
+**Then** the analyzer runs as part of the standard lint phase and violations fail the CI build.
+
+**Given** an allow-listed exception (constructor `NewXxxStore`, lifecycle hooks like `Close`, repository-pattern test seams),
+**When** the analyzer encounters them,
+**Then** it skips via a documented marker comment (`//tenantcontext:exempt {reason}`) or via a method-name pattern allowlist documented in the analyzer README. Marker comments without a reason are themselves flagged.
+
+**Given** the analyzer's regression test suite at `classlite-api/tools/lint/tenantcontext/testdata/`,
+**When** `go test ./tools/lint/tenantcontext/...` runs,
+**Then** positive cases (correct signatures) pass, negative cases (missing `TenantContext`, wrong parameter order, wrong type) fail with expected error messages, and allow-listed cases pass.
+
+**Given** the analyzer is documented in `classlite-api/tools/lint/tenantcontext/README.md`,
+**When** a new backend developer reads it,
+**Then** they understand: the R1 risk, the GO-1 rule from project-context, how to add a method that legitimately doesn't need `TenantContext`, and how to debug a false-positive flag. (R1 BLOCK risk mitigation; pairs with the worker harness Story 1.3 of test design.)

@@ -50,3 +50,8 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Playwright runtime artifacts
+classlite-web/.playwright/
+classlite-web/test-results/
+classlite-web/playwright-report/

@@ -42,6 +42,14 @@ So that I can give students precise, contextualized feedback on their essays.
 **And** the student receives a notification that their grade is available
 **And** the graded submission becomes immutable (NFR-6)
 
+**Given** a graded and released submission
+**When** any user (including the original grading teacher) attempts to UPDATE the submission row
+**Then** a Postgres trigger rejects with error `submission_immutable_after_release`, mirroring the DB-level append-only pattern from Story 1.3b audit_logs. Adversarial integration test asserts UPDATE returns the error AND that data is unchanged. (R16 mitigation.)
+
+**Given** a teacher needs to revise a released grade (correction, dispute resolution)
+**When** they click "Revise & re-release"
+**Then** a NEW grade row is created with `version=2`, the original `version=1` row stays untouched, and `audit_logs` records both the revision request and the re-release with performer + timestamp + reason.
+
 **Given** the grading API
 **When** POST `/api/submissions/{id}/grade` is called
 **Then** the request body includes: `{ "criterionScores": { "taskResponse": 6.5, ... }, "overallBand": 6.5, "comments": [{ "type", "criterion", "anchorStart", "anchorEnd", "text" }], "feedback" (optional text) }`
@@ -83,8 +91,12 @@ So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggesti
 
 **Given** AI grading credit consumption
 **When** AI grading is triggered
-**Then** credits are deducted from the center's monthly allocation
+**Then** a `-1` ledger entry is inserted in `ai_credit_ledger` (defined in new Story 6.5) in the SAME transaction as the job insert — guarantees atomic deduct + enqueue
 **And** the credit cost is shown before confirming
+
+**Given** the AI grading worker implementation
+**When** integration tests run
+**Then** the worker uses `test.SetupWorkerHarness` from `classlite-api/internal/test/workers/harness.go` with the 3 mandatory adversarial patterns: HappyPath, PayloadCenterIdIgnored, NullTenantContextRejected. The job row's `center_id` is the sole tenant trust anchor; payload `center_id` (if present) is logged as a discrepancy signal. (R3 / A7 mitigation.)
 
 **Given** the AI grading worker (`internal/worker/ai_grade_writing.go`)
 **When** processing a writing grading job
@@ -117,6 +129,18 @@ So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggesti
 **Given** the teacher starts manual grading while AI is still processing
 **When** AI results arrive
 **Then** they are presented as a non-blocking overlay: "AI suggestions are ready — Review?" with option to merge into existing work
+
+**Given** a job final state of `failed` after 3 retries (Gemini API errors)
+**When** the worker transitions the state to `failed`
+**Then** a `+1` refund entry is inserted in `ai_credit_ledger` in the same transaction with `reason='job_failed_refund'` and `ref_job_id` linking to the failed job. UX toast: "AI grading failed. Credit returned. Try again later or grade manually."
+
+**Given** Gemini returns malformed output (`invalid_ai_response` or `invalid_band_scores`)
+**When** the worker fails the job (no auto-retry per existing failure-path AC)
+**Then** the refund row is inserted same-tx with `reason='job_failed_refund'`. UX: "AI returned invalid output. Credit returned. Please grade manually."
+
+**Given** the refund mechanism
+**When** the worker retries N>1 times before final failure
+**Then** idempotency is guaranteed by a unique index `(ref_job_id, reason)` on `ai_credit_ledger` — duplicate refund inserts are rejected by the DB.
 
 ### Story 6.3: Speaking Grading & AI-Assisted Speaking Grading
 
@@ -168,6 +192,14 @@ So that I can efficiently evaluate spoken responses with precise feedback.
 **When** the teacher opens the grading view
 **Then** a clear error explains the file issue with "Ask student to re-record" as the suggested action
 
+**Given** Speaking `partial_success` (transcription failed but band proposals were attempted from audio analysis)
+**When** the result is returned
+**Then** the credit is NOT refunded — the user got partial value. UX: "Transcript unavailable. Bands proposed below — review carefully."
+
+**Given** the AI Speaking grading worker
+**When** integration tests run
+**Then** the worker uses `test.SetupWorkerHarness` with the 3 adversarial patterns (HappyPath, PayloadCenterIdIgnored, NullTenantContextRejected) — same harness as Writing grading.
+
 ### Story 6.4: Auto-Grading (Reading/Listening/Vocabulary)
 
 **Size:** M | **Audience:** Backend | **Dependencies:** 5.2
@@ -210,3 +242,51 @@ So that objective assessments are graded instantly while I retain control over e
 **Then** the provisional grade is stored in the `grades` table with `graded_by: "system"`
 **And** the submission status changes to "graded" but `released_at` remains null until the teacher releases
 **And** POST `/api/submissions/{id}/release` sets `released_at` and triggers student notification
+
+### Story 6.5: AI Credit Ledger (append-only)
+
+**Size:** M | **Audience:** Backend | **Dependencies:** 1.3b (audit logging pattern), 9.1 (subscription tiers)
+
+As the platform, I want all AI credit movements recorded in an append-only ledger,
+So that every deduct, refund, monthly grant, and purchase is fully auditable, idempotent, and reconcilable.
+
+**Acceptance Criteria:**
+
+**Given** the database schema
+**When** migrations run
+**Then** `ai_credit_ledger` table exists with columns:
+- `id uuid PK`
+- `center_id uuid NOT NULL` (RLS scope)
+- `user_id uuid NOT NULL` (which center member used or received the credit)
+- `change int NOT NULL` (positive: grant/refund/purchase; negative: deduct)
+- `reason text NOT NULL` (one of: `monthly_grant`, `job_deduction`, `job_failed_refund`, `addon_purchase`, `admin_adjustment`)
+- `ref_job_id uuid NULL` (links refunds and deductions to the AI job)
+- `ref_purchase_id uuid NULL` (links purchases to Polar payment)
+- `balance_after int NOT NULL` (cached for read performance)
+- `created_at timestamptz NOT NULL`
+- Unique index on `(ref_job_id, reason)` for idempotency
+- Read index on `(center_id, user_id, created_at DESC)`
+
+**Given** the ledger RLS policy
+**When** the table is created
+**Then** the policy is INSERT-only mirroring Story 1.3b auth_audit_logs — UPDATE and DELETE return 0 rows / are rejected at the policy layer. Adversarial test asserts this.
+
+**Given** a monthly billing cycle renewal
+**When** Pro tier renews (500 credits) or Studio tier renews (2.000 credits) or the Studio add-on packs are applied
+**Then** a `monthly_grant` or `addon_purchase` row is inserted in the ledger atomically with the subscription period update.
+
+**Given** a nightly reconciliation cron
+**When** it runs at 03:00 Asia/Ho_Chi_Minh
+**Then** it sums all ledger entries per `(center_id, user_id)` and compares to the latest cached `balance_after` — Sentry alert fires on any drift detected.
+
+**Given** the user-facing balance API
+**When** a user queries their credit balance
+**Then** the response returns `balance_after` from the most recent ledger row for that user. Performance: p95 < 50 ms (read index serves this).
+
+**Given** a Free-tier user
+**When** they navigate to Settings → Billing → Usage
+**Then** the Usage panel is hidden; only an Upgrade-to-Pro CTA is shown (Free tier has 0 credits forever per locked tier design — see Story 9.1).
+
+**Given** the credit history view for a Pro or Studio user
+**When** they navigate to Settings → Billing → Usage → Credit History
+**Then** the ledger is rendered as a chronological list: monthly grants, deductions per AI job, refunds (with link to the failed job), purchases — full transparency. Refund rows display "+1 returned (AI grading failed)" with hover-tooltip showing the linked job ID.

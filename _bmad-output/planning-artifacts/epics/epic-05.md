@@ -106,6 +106,8 @@ As a student, I want a writing interface to compose and submit written responses
 **Failure-Path Acceptance Criteria:**
 - Given a network drop during autosave, When the student continues typing, Then a "Offline — changes saved locally" indicator appears, and local changes sync when connection resumes
 - Given the browser tab is closed during an active attempt, When the student returns, Then their last autosaved content is restored
+- Given MSW (in component test) or real network throttling (in E2E) simulates intermittent autosave failures, When the test runs, Then: (a) the draft persists to localStorage as fallback; (b) the "Saving / Saved / Error" indicator transitions through all three states correctly; (c) on page reload, the draft recovers from localStorage; (d) on reconnect, the local draft sync-merges with server state (server wins on conflict, user warned via non-blocking toast). (R42 mitigation.)
+- Given a multi-tab scenario where the same student opens the same writing attempt in two tabs, When tab 1 submits, Then `BroadcastChannel` notifies tab 2 with a "Submitted in another session — view result" overlay; tab 2's editor becomes read-only. (UX-DR19 cross-reference.)
 
 ---
 
@@ -142,6 +144,18 @@ As a student, I want to record and submit speaking responses so that I can compl
 **Failure-Path Acceptance Criteria:**
 - Given microphone permission is denied, When the student starts a speaking attempt, Then a clear message explains how to enable microphone access with browser-specific instructions
 - Given the R2 upload fails, When the student clicks submit, Then the upload retries automatically (up to 3 times) with progress indicator, and on permanent failure shows "Upload failed — your recording is saved locally, please try again"
+- Given the Speaking audio per-file cap (locked A9), When the student attempts to upload a file >25 MB, Then the same defense-in-depth enforcement applies as Knowledge Hub (Story 4.4): client pre-check, server pre-check at `/uploads/presign` returns 413 `FILE_TOO_LARGE`, R2 `Content-Length-Range` constraint, server post-check at `/uploads/confirm`.
+
+### Release-Gate Manual Checklist (Real-Device Verification)
+
+The Speaking pipeline depends on `MediaRecorder` API behavior that is NOT covered by Playwright WebKit (the iOS Simulator uses a desktop-class WebKit backend, NOT iOS Safari's real media pipeline). Before Epic 5 ships, the following checklist MUST pass on REAL iPhone (Safari) AND REAL Android (Chrome) — Playwright WebKit alone is NOT sufficient. ~20 minutes manual sweep per release. (A5 mitigation.)
+
+- [ ] Speaking recorder: record / re-record / upload on real iPhone (Safari)
+- [ ] Speaking recorder: record / re-record / upload on real Android (Chrome)
+- [ ] Microphone permission denial → graceful UX with browser-specific recovery instructions
+- [ ] Interrupted by incoming call → recording state preserved or cleanly aborted (no orphan recording state)
+- [ ] Recording survives backgrounding the tab for 30 seconds
+- [ ] Submitted audio playable on a different device + browser combo (cross-device codec compatibility check)
 
 ---
 

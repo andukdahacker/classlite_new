@@ -10,6 +10,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	clockpkg "github.com/ducdo/classlite-api/internal/clock"
 )
 
 // EmailJob is the unit of work processed by EmailRetryQueue.
@@ -29,16 +31,10 @@ type EmailRetryQueue interface {
 	Enqueue(job EmailJob) (accepted bool)
 }
 
-// Clock abstracts time for deterministic retry-backoff tests.
-type Clock interface {
-	Now() time.Time
-	Sleep(d time.Duration)
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time        { return time.Now() }
-func (realClock) Sleep(d time.Duration) { time.Sleep(d) }
+// Clock is an alias for clock.Clock so existing call sites and tests in this
+// package keep working unchanged. New services should import internal/clock
+// directly and depend on clock.Clock.
+type Clock = clockpkg.Clock
 
 // MaxEmailAttempts is the total number of attempts (initial + retries).
 // Backoff schedule: 30s, 2m, 8m, 30m, then drop.
@@ -66,7 +62,7 @@ type InProcessRetryQueue struct {
 // NewEmailRetryQueue constructs an InProcessRetryQueue with the given buffer
 // size and the real wall clock.
 func NewEmailRetryQueue(sender EmailSender, bufferSize int) *InProcessRetryQueue {
-	return newQueue(sender, bufferSize, realClock{}, slog.Default())
+	return newQueue(sender, bufferSize, clockpkg.RealClock{}, slog.Default())
 }
 
 func newQueue(sender EmailSender, bufferSize int, clock Clock, logger *slog.Logger) *InProcessRetryQueue {

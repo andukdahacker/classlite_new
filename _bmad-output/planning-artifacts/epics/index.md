@@ -30,18 +30,30 @@ This directory contains the complete epic and story breakdown for ClassLite v2, 
 
 | File | Epic | Stories |
 |------|------|---------|
-| [epic-01a-foundation.md](epic-01a-foundation.md) | 1A: Project Foundation | 1.1, 1.2a–f, 1.3, 1.3b |
+| [epic-01a-foundation.md](epic-01a-foundation.md) | 1A: Project Foundation | 1.1, 1.2a–f, 1.3, 1.3b, 1.3c |
 | [epic-01b-auth.md](epic-01b-auth.md) | 1B: Authentication | 1.4, 1.5, 1.6 |
 | [epic-01c-frontend-landing.md](epic-01c-frontend-landing.md) | 1C: Frontend Foundation & Landing | 1.7a–c, 1.8, 1.9a–d, 1.10 |
 | [epic-02.md](epic-02.md) | 2: Onboarding, Center Setup & Roles | 2.1–2.7 |
 | [epic-03.md](epic-03.md) | 3: Class Management & Scheduling | 3.1–3.5 |
 | [epic-04.md](epic-04.md) | 4: Exercise Authoring, AI Content & Knowledge Hub | 4.1–4.5 |
 | [epic-05.md](epic-05.md) | 5: Assignments, Student Attempts & Submissions | 5.1–5.5 |
-| [epic-06.md](epic-06.md) | 6: Grading & AI-Assisted Grading | 6.1–6.4 |
+| [epic-06.md](epic-06.md) | 6: Grading & AI-Assisted Grading | 6.1–6.5 |
 | [epic-07.md](epic-07.md) | 7: People Management, Enrollment & Q&A | 7.1–7.4 |
 | [epic-08.md](epic-08.md) | 8: Analytics, Dashboards & Search | 8.1–8.5 |
 | [epic-09.md](epic-09.md) | 9: Billing, Plans & Account Management | 9.1–9.4 |
 | [epic-10.md](epic-10.md) | 10: Inbox, Notifications, Archive & Polish | 10.1–10.4 |
+
+## Locked Decisions and Test Design
+
+The following authoritative documents track decisions and quality gates that EVERY epic and story below must respect. Always check these before picking up a story.
+
+| Document | Purpose |
+|---|---|
+| [blocker-resolutions-2026-06-04.md](../../test-artifacts/test-design/blocker-resolutions-2026-06-04.md) | All 7 BLOCKER decisions locked on 2026-06-04: Polar webhook signature scheme (A2), worker tenant-context test harness (A7), R2 presigned URL replay policy (A10), AI credit refund-on-failure policy (A6), VND prices + VAT (A8), per-file size caps (A9), iOS verification approach (A5), SLO + scalability targets |
+| [test-design-architecture.md](../../test-artifacts/test-design/test-design-architecture.md) | Full 50-risk register. Before picking up a story, check whether it touches any risk score ≥6 — if so, ATDD red tests are mandatory per WF-8 |
+| [test-design-qa.md](../../test-artifacts/test-design/test-design-qa.md) | Coverage matrix P0–P3, execution recipe (PR / Nightly / Weekly), QA effort estimates |
+| [classlite_new-handoff.md](../../test-artifacts/test-design/classlite_new-handoff.md) | Risk-to-Story mapping, per-epic AC patterns embedded into the relevant stories below |
+| `docs/project-context.md` § WF-8 | Per-story testing protocol: `/bmad-tea AT` before dev; `/bmad-tea TA` + `/bmad-tea RV` after; per-epic `/bmad-tea TR` + `/bmad-tea NR` + `/bmad-tea GATE` |
 
 ### Story Metadata Convention
 
@@ -59,6 +71,7 @@ Each story includes:
 4. **New UX-DRs added:** UX-DR22-25 for Epics 5-8 (feedback design language, teacher bulk-review, skeleton states, progress sharing)
 5. **Failure-path ACs added** to security-surface stories (auth, AI pipeline, file uploads, billing webhooks)
 6. **Story metadata added** (size, audience, dependencies) to every story
+7. **2026-06-04 BLOCKER patches:** Locked decisions folded into ACs across Epics 1A (Story 1.3c golangci-lint TenantContext analyzer added), 1B (Story 1.5 + 1.6 security ACs: lockout, refresh rotation, cookie attrs, CORS, role re-val from DB, JWT spoofing, cross-tenant force-logout), 1C (i18n parity, cross-subdomain cookies, axe-core, L/E/E trilogy, locked pricing on landing), 2 (Free-tier behavior, no v1 trial), 4 (worker harness, file caps, R2 reinforcements, AI credit deduction), 5 (Speaking 25 MB cap + manual iOS/Android release-gate checklist), 6 (Story 6.5 ai_credit_ledger added; submission immutability DB trigger; refund matrix; worker harness reference), 7 (enrollment_history append-only RLS, Q&A scope verification, role re-val for mutations), 8 (search role-scoping per role × type, N+1 query-count assertion), 9 (locked VND prices, VAT inclusive, Polar Standard Webhooks scheme + dedup table, grace MockClock, downgrade-pauses-not-deletes), 10 (storage overflow notification routing, 100% hard-block UI)
 
 ---
 

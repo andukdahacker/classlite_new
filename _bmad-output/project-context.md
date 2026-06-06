@@ -1060,6 +1060,48 @@ CORRECT:
   classlite-web/src/ imports from ./src/generated/ (codegen output only)
 ```
 
+#### WF-8: Per-story testing workflow — TEA skill chain
+*Why:* Tests written after dev "feels done" drift from intent; tests written first tighten the AC and prevent rework. The system-level test design (`_bmad-output/test-artifacts/test-design/`) already decomposed every epic into risk-scored, prioritized scenarios. This rule turns that into a per-story protocol so coverage never trails implementation.
+
+**Authoritative test artifacts (read these first when picking up a story):**
+- `_bmad-output/test-artifacts/test-design/test-design-qa.md` — coverage matrix P0–P3, scenarios per epic
+- `_bmad-output/test-artifacts/test-design/test-design-architecture.md` — full risk register; check whether the story touches a risk score ≥6
+- `_bmad-output/test-artifacts/test-design/classlite_new-handoff.md` — story-level AC patterns per epic
+
+**Per-story protocol:**
+
+```
+1. Pre-dev → /bmad-tea AT (ATDD)
+   - Generates RED-phase acceptance tests for the story's P0/P1 ACs
+   - MANDATORY if the story touches ANY risk score ≥6 from the handoff
+   - Skippable for P2/P3 stories at engineer discretion
+
+2. During dev → no TEA invocation
+   - Dev implements to turn the red tests green
+   - Dev adds unit/service/store/component tests inline (per TEST-FE-*, TEST-BE-* rules above)
+
+3. Post-dev → /bmad-tea TA (Test Automate)
+   - Expands P2/P3 scenarios, fixtures, MSW fault injection, role-negative coverage
+   - Produces DoD summary
+
+4. Post-dev → /bmad-tea RV (Review Tests)
+   - Catches hard waits, hidden assertions, missing cleanup, flake risk
+```
+
+**Per-epic protocol (at epic boundary, not per story):**
+
+```
+5. /bmad-tea TR (Trace) — AC-to-test traceability + coverage gap report
+6. /bmad-tea NR (NFR Audit) — consumes evidence artifacts from stages 1-3
+7. /bmad-tea GATE — PASS / CONCERNS / FAIL decision before epic merges to main
+```
+
+**Hard rule:** A story whose ACs map to any risk score ≥6 in the handoff MUST have ATDD red tests on the branch before transitioning to `in-progress`. Stories without ATDD on their high-risk ACs fail gate review at the epic boundary.
+
+**Mock seams are NOT overridden by this workflow.** AT, TA, and RV all honor TEST-FE-1 (MSW at HTTP boundary) and TEST-BE-1..5 (store interface as backend seam, real DB in transactions, etc.).
+
+**When the test design becomes stale** (epic scope changes materially, new BLOCKER decisions land, risk profile shifts): re-run `/bmad-tea TD` for that epic before continuing — never patch tests against a stale design.
+
 ### Git Conventions
 
 | Convention | Pattern | Example |

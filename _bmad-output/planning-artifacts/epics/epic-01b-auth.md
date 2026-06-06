@@ -106,6 +106,26 @@ So that my account remains secure and I can always regain access.
 **When** the logout request is processed,
 **Then** the refresh token is invalidated and the httpOnly cookie is cleared.
 
+**Given** a `Set-Cookie` response in any non-dev environment (staging, production),
+**When** the response is inspected,
+**Then** the cookie carries ALL four attributes verified by handler integration test: `HttpOnly`, `Secure`, `SameSite=Lax`, `Domain=.classlite.app`. Missing any attribute fails the test. (R7 mitigation.)
+
+**Given** the CORS configuration on every API endpoint,
+**When** a cross-origin request arrives,
+**Then** the allowlist enforces exact match against the configured production origins (`https://classlite.app`, `https://my.classlite.app`, plus tenant subdomain pattern `https://{slug}.classlite.app` validated dynamically). The `Access-Control-Allow-Origin: *` header is NEVER returned when `Access-Control-Allow-Credentials: true` is set. `Vary: Origin` header is always emitted. (R8 mitigation, project-context SEC-5.)
+
+**Given** any state-mutating endpoint (POST/PUT/DELETE/PATCH),
+**When** the request arrives,
+**Then** the middleware validates the `Origin` header against the allowlist BEFORE handler execution — defense in depth even when CORS preflight passed. Mismatch → 403 `ORIGIN_NOT_ALLOWED`.
+
+**Given** a service-layer mutation by a Teacher, Admin, or Owner,
+**When** the call runs,
+**Then** the service re-fetches the user role from the DB (`SELECT role FROM center_members WHERE user_id = $1 AND center_id = $2 AND status = 'active'`) and does NOT trust the JWT role claim alone. If the role changed in DB (e.g., Teacher was demoted to Student, member status set to `revoked`), the mutation returns 403 `INSUFFICIENT_ROLE` even though the JWT signature is valid. Read-only paths MAY trust JWT role for UI rendering (the 15-min staleness window is documented as accepted UX tradeoff per EDGE-2). (R15 / SEC-1 mitigation.)
+
+**Given** a JWT with a valid cryptographic signature but a `center_id` claim that does not match any active `center_members` row for the JWT's `user_id`,
+**When** the `extractTenant` middleware runs,
+**Then** the request is rejected with 403 `INVALID_TENANT_CLAIM` and an `auth_audit_logs` entry is created recording the attempt. Adversarial integration test crafts a forged JWT (valid signature, wrong center_id) and asserts the 403. (R4 mitigation.)
+
 ### Rate Limit Storage
 
 Rate limiting uses PostgreSQL-backed storage (not in-memory) so it functions correctly behind a load balancer across multiple API instances. Implementation uses a `rate_limits` table with columns: `key` (VARCHAR, primary key composite), `count` (INTEGER), `window_start` (TIMESTAMPTZ), `expires_at` (TIMESTAMPTZ). A periodic cleanup job removes expired rows.
@@ -177,3 +197,7 @@ So that I can use social login for convenience and seamlessly join a class when 
 **Given** a force-logout has been issued for a staff member but their current access token is still within the 15-minute validity window,
 **When** the staff member makes API requests using that access token,
 **Then** the requests succeed until the access token expires naturally. Force-logout only deletes refresh tokens, not access tokens. **This is a known limitation:** the staff member retains access for up to 15 minutes after force-logout. This tradeoff is accepted to avoid the performance cost of checking a token blocklist on every request, and must be documented in the API documentation and communicated to administrators.
+
+**Given** an Owner of Center A calling force-logout on a user,
+**When** the user belongs to Center B (different tenant),
+**Then** the request returns 404 (user not visible to Center A per RLS) — NEVER 403, which would leak the user's existence across the tenant boundary. Cross-tenant force-logout guard. Adversarial integration test asserts this. (R1 / R5 mitigation.)

@@ -163,6 +163,26 @@ So that every page has a consistent shell, errors are caught gracefully, and the
 **When** inspecting app-wide hooks,
 **Then** `useAuth.ts`, `useCurrentCenter.ts`, `useRole.ts`, and `usePolling.ts` exist as stubs ready for implementation in subsequent stories.
 
+**Given** the i18n parity CI step (`pnpm run i18n-parity`),
+**When** a developer adds a translation key to either `en.json` or `vi.json` and forgets the matching key in the other file,
+**Then** the CI step fails the build with a diff report listing missing keys per locale. R38 (Vietnamese-user-sees-raw-key) is mitigated at PR-time. The check runs in the PR pipeline and blocks merge.
+
+**Given** the `assertI18nParity(keysUsed, ['en','vi'])` test helper,
+**When** any component test runs against `react-i18next`,
+**Then** the helper asserts every key the component renders exists in BOTH `en.json` AND `vi.json`. Used in every component test that calls `t(...)` (project-context TEST-FE-4).
+
+**Given** every public React route,
+**When** axe-core CLI runs in CI (or `vitest-axe` runs in component tests),
+**Then** zero WCAG 2.1 AA violations are reported. Any violation fails the build. Allowlist for known false positives lives in `axe.allowlist.json` with documented justification per entry.
+
+**Given** every component that fetches server data,
+**When** its test suite is reviewed,
+**Then** the Loading / Empty / Error trilogy is implemented and verified by three named test cases per component (project-context TEST-FE-2): skeleton state during fetch, success state with rendered data, error state with retry CTA. MSW is the only mock seam (TEST-FE-1).
+
+**Given** the cross-subdomain cookie auth flow,
+**When** the user logs in on `classlite.app` (Astro landing) and clicks "Open Dashboard",
+**Then** they are redirected to `my.classlite.app` and the dashboard recognizes them via the shared `.classlite.app` Domain cookie — no second login required. Playwright cross-domain E2E project (two projects: `landing` + `dashboard` sharing `storageState`) asserts this end-to-end. (A3 mitigation.)
+
 ---
 
 ### Story 1.8: Auth UI -- Registration & Login Screens
@@ -409,7 +429,7 @@ So that I understand what ClassLite does and can start using it for free.
 3. **Pain Articulation** — PainCalculator component: a static calculator visual showing the cost of manual grading (e.g., 5 teachers x 3 hours/week x 48 weeks = 720 hours/year), rendered with Geist Mono 28px values, 11px units, and result in `--cl-accent-2-text` at 36px; pure HTML/CSS, no JavaScript required (UX-DR11)
 4. **Feature Showcase** — 3-4 FeatureCard components with tinted backgrounds (blue/gold/green mapping to `--cl-tint-*` tokens), each with title, description, and 160px preview area; SVG via inline slot for token-colored strokes (UX-DR14)
 5. **Social Proof** — SocialProofCard components with Vietnamese-register social proof: named center archetypes with outcome data, stats, quotes, and details; all content hardcoded in Astro (UX-DR13)
-6. **Pricing** — three PricingCard components (Free/Pro/Studio) with features matching tier limits, prices displayed in VND with an annual/monthly toggle, annual showing savings callout; the Pro tier card has a `2px solid --cl-accent-2` border and a popular badge; Free CTA links to registration, Pro/Studio CTAs link to registration with `?plan=pro` or `?plan=studio`; a centered CTA appears below the pricing grid (UX-DR12)
+6. **Pricing** — three PricingCard components (Free/Pro/Studio) with locked VND prices: **Free 0 VND**, **Pro 399.000 VND/tháng** (or **3.990.000 VND/năm**), **Studio 999.000 VND/tháng** (or **9.990.000 VND/năm**); a small caption "*Giá đã bao gồm VAT 10%*" appears under each price; annual toggle shows "~2 tháng miễn phí" badge on annual prices; the Pro tier card has a `2px solid --cl-accent-2` border and a popular badge; Free CTA links to registration, Pro/Studio CTAs link to registration with `?plan=pro` or `?plan=studio`; a centered CTA appears below the pricing grid (UX-DR12)
 7. **Footer** — background using `--cl-ink` (navy) mirroring the authenticated sidebar, links using `--cl-sidebar-text` color, legal links (Terms, Privacy), Fraunces wordmark
 
 **Given** the StickyHeader component,

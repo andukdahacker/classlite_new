@@ -56,7 +56,11 @@
 **Then** a `notifications` table exists: id, center_id, user_id, type (enum), title, body, link, metadata (JSONB), read_at (nullable), archived_at (nullable), created_at
 **And** an index on (user_id, read_at, created_at) supports efficient unread queries
 **And** RLS policies are applied
-**And** notification creation is triggered by domain events: grade released, question asked, enrollment changed, assignment created, schedule changed, payment failed
+**And** notification creation is triggered by domain events: grade released, question asked, enrollment changed, assignment created, schedule changed, payment failed, storage threshold crossed
+
+**Given** the storage threshold notification (per A9 locked decision: 95% triggers escalation),
+**When** a tenant's cumulative used storage crosses 95% of plan total
+**Then** a notification is delivered to the **OWNER** (NOT the uploader if different) via BOTH the in-app inbox AND email (via Resend, Vietnamese-localized). The inbox row links to Settings → Storage with one-click "Upgrade to Studio" CTA in the body. Test: seed storage usage to 94% → upload to push past 95% → assert exactly ONE notification row created for the owner.
 
 ---
 
@@ -211,3 +215,7 @@
 **Then** each follows the three-part pattern: (1) what happened, (2) why, (3) what to do next as a clear action
 **And** no generic error pages are used — every error names the specific issue
 **And** all error text uses i18n translation keys
+
+**Given** a user attempts an upload and storage is at 100% of plan total (per A9 locked decision),
+**When** the upload control renders
+**Then** an inline error displays: "Storage full. Delete files or upgrade to Studio." with a "View storage" CTA linking to Settings → Storage. The existing files remain accessible — only NEW uploads are blocked. Follows the three-part pattern: (1) what happened: storage full; (2) why: at plan limit; (3) what to do next: delete or upgrade.

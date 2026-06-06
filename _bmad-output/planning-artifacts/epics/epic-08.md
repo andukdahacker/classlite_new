@@ -48,6 +48,10 @@
 **Then** the response is role-scoped: teacher gets teaching data, student gets personal data, admin/owner gets center-wide aggregates
 **And** each section's data is sourced from existing tables (submissions, questions, attendance, sessions, enrollments)
 
+**Given** the dashboard endpoint integration tests
+**When** they run against a seeded multi-tenant dataset
+**Then** an instrumented pgx pool asserts the query count per `GET /api/dashboard` invocation is ≤ N (a fixed constant per role, documented in the test). Any change introducing N+1 fails the test. EXPLAIN ANALYZE harness in CI verifies the query plans contain no Seq Scan on tenant-filtered indexes (`center_id`, `class_id`, `teacher_id`). (R31 / PERF-2 mitigation.)
+
 ---
 
 ## Story 8.2: Analytics Home & Class Performance
@@ -170,8 +174,16 @@
 **When** GET `/api/search?q={query}` is called
 **Then** the response returns categorized results with a maximum of 5 per category
 **And** search uses PostgreSQL full-text search across relevant tables
-**And** results are returned within 500ms (NFR-3)
+**And** results are returned within 500ms p95 under 50 concurrent users sustained (k6 nightly assertion against the locked SLO)
 **And** the endpoint enforces role-based scoping via RLS and middleware
+
+**Given** role-scoping per role × per result type
+**When** integration + E2E tests run
+**Then** the following matrix is verified (one test per cell): {Owner, Admin, Teacher, Student} × {Class, Student, Exercise, Assignment, Knowledge Hub file, Q&A thread}. Teacher queries return ONLY own classes/exercises/students/assignments — NOT other teachers' resources in the same center. Owner/Admin → center-wide. Student → only own classes/assignments. Q&A category is excluded entirely from Owner/Admin results (cross-references Story 7.4 R25/R26 mitigation). (R26 mitigation.)
+
+**Given** the cross-tenant adversarial test for search
+**When** Teacher in Center A queries for a name that exists in Center B
+**Then** the response excludes Center B's data (RLS + service-layer scope filter both enforce this). Adversarial integration test runs as part of the J15 cross-tenant grid.
 
 **Given** the search palette keyboard navigation
 **When** the palette is open

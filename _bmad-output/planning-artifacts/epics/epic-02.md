@@ -198,6 +198,10 @@ So that I know what else to configure and get an early taste of ClassLite's core
 **When** the dashboard renders after onboarding,
 **Then** a sample dashboard preview is displayed showing placeholder analytics and class overview instead of the AI grade card.
 
+**Given** the Free tier in v1 (lead-gen positioning, per locked product decision),
+**When** an owner signs up and completes onboarding,
+**Then** there is NO 7-day Pro trial mechanic in v1 — the 5-student/class cap (Story 9.1) acts as the natural upgrade trigger. The Upgrade-to-Pro CTA appears at the cap boundary AND in the Free-tier Settings → Billing → Upgrade panel. Trial mechanic is deferred to post-launch conversion-data review.
+
 ---
 
 ### Story 2.5: Center Settings & Google Meet Integration

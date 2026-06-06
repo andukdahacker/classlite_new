@@ -18,16 +18,25 @@
 
 **Given** the plan tier definitions
 **When** the system enforces limits
-**Then** three tiers are available with these limits:
+**Then** three tiers are available with these limits and locked VND prices:
 | Limit | Free | Pro | Studio |
 |---|---|---|---|
+| **Monthly price (VAT inclusive 10%)** | **0 VND** | **399.000 VND** | **999.000 VND** |
+| **Annual price (VAT inclusive 10%)** | **0 VND** | **3.990.000 VND** | **9.990.000 VND** |
 | Teachers | 1 | Up to 10 | Unlimited |
 | Classes | 1 | Unlimited | Unlimited |
 | Students per class | 5 | 20 | 60 |
 | AI credits/month | 0 | 500 | 2,000 + add-on packs |
 | Knowledge Hub storage | 500 MB | 5 GB | 50 GB |
-**And** pricing is displayed in VND
-**And** annual billing saves the equivalent of 2 months vs. monthly
+**And** annual billing saves the equivalent of ~2 months vs. monthly
+
+**Given** the public pricing page renders
+**When** prices are displayed
+**Then** they appear with VAT inclusive: "**399.000 VND/tháng**" prominent + "*Giá đã bao gồm VAT 10%*" small caption underneath. Annual prices follow the same convention with "~2 tháng miễn phí" badge.
+
+**Given** a Free-tier owner navigates to Settings → Billing → Usage
+**When** the page renders
+**Then** the Usage panel is hidden and replaced with an "Upgrade to Pro" CTA (lead-gen motion: Free has 0 credits forever, no usage data to display).
 
 **Given** an Owner navigating to `/settings/billing/plans` (s68)
 **When** the plan picker renders
@@ -96,10 +105,19 @@
 
 **Given** the AI credit add-on feature (FR-64)
 **When** an Owner on Pro or Studio clicks "Buy more credits"
-**Then** available add-on credit packs are displayed with pricing (one-time purchase)
+**Then** available add-on credit packs are displayed with locked pricing (one-time purchase, VAT inclusive 10%):
+| Pack | Pro tier price | Studio tier price |
+|---|---|---|
+| 100 credits | **99.000 VND** | n/a (too small) |
+| 500 credits | **399.000 VND** | **299.000 VND** (Studio loyalty discount) |
+| 2.000 credits | n/a | **999.000 VND** |
 **And** the purchase is processed via Polar.sh
 **And** add-on credits are consumed AFTER the monthly allocation is exhausted
 **And** add-on credits do not expire at month end — they carry forward
+
+**Given** the checkout summary for any tier purchase or add-on
+**When** the totals render
+**Then** VAT is broken out explicitly: subtotal + VAT 10% = total (e.g., Pro monthly: subtotal 362.727 + VAT 36.273 = 399.000). The Polar-generated invoice uses standard Vietnamese VAT invoice format.
 
 **Given** a Free tier center attempting to purchase AI credits
 **When** they navigate to the add-on section
@@ -167,6 +185,31 @@
 **Given** the auto-downgrade triggers on day 7
 **When** the center has more data than Free tier allows
 **Then** NO data is deleted — AI credits pause, extra teacher seats lock, classes over 5 students become read-only, storage uploads blocked but existing files remain accessible
+**And** a downgrade-restore integration test asserts zero row deletions across all tables (classes, exercises, submissions, enrollments, knowledge files, ai_credit_ledger) — only state flags change. Re-upgrade restores full access. (R24 mitigation.)
+
+**Given** the Polar.sh webhook signature verification middleware
+**When** any webhook arrives at `POST /api/webhooks/polar`
+**Then** the verifier follows Standard Webhooks spec: (1) reads `webhook-id`, `webhook-timestamp`, `webhook-signature` headers; (2) computes HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{raw-body}` using `POLAR_WEBHOOK_SECRET`; (3) constant-time compares via `crypto/hmac.Equal`; (4) rejects if `webhook-timestamp` > 300s old (±30s clock skew) with 401 `WEBHOOK_TIMESTAMP_STALE`; (5) rejects mismatched signature with 401 `WEBHOOK_SIGNATURE_INVALID`. Implemented as `classlite-api/internal/polarwebhook/` (~50 LOC, roll-our-own, stdlib only).
+
+**Given** the secret rotation period
+**When** `POLAR_WEBHOOK_SECRET_PREVIOUS` env var is set
+**Then** the verifier accepts signatures from BOTH the current AND previous secret for the 24-hour overlap window — supports zero-downtime secret rotation.
+
+**Given** a duplicate webhook delivery (same `webhook-id`)
+**When** it arrives a second time
+**Then** the handler returns 200 with "already processed" log entry — no double state mutation. Dedup enforced by unique index on `polar_webhook_events(event_id)` table.
+
+**Given** the verifier reads `r.Body` to compute HMAC
+**When** the middleware completes verification
+**Then** the body is restored via `io.NopCloser(bytes.NewBuffer(body))` before calling downstream handler (project-context GFW-6).
+
+**Given** the database schema
+**When** migrations run for Story 9.3
+**Then** `polar_webhook_events` table exists: `event_id` text PRIMARY KEY, `received_at` timestamptz NOT NULL, `payload_hash` text. Index on `received_at` for cleanup. RLS NOT applied (webhook layer runs before tenant context is set; dedup is global).
+
+**Given** the plan grace state machine
+**When** tested in CI with `MockClock` advancing through days 0 / 3 / 5 / 6 / 7 23:59
+**Then** day 0 + day 3 + day 5 + day 6 emails sent at the right times; day 3 + day 5 auto-retries attempted; day 7 23:59 triggers auto-downgrade to Free. Recovery before day 7 cancels all subsequent retries/emails and clears the top strip immediately. The `Clock` interface (introduced in Story 1.4 for AuthService) is propagated to BillingService — no real `time.Sleep` in tests.
 
 ---
 
