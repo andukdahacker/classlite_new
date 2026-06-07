@@ -16,6 +16,23 @@ import (
 // HandlerWithError is a handler that returns an error for the error mapper to process.
 type HandlerWithError func(w http.ResponseWriter, r *http.Request) error
 
+// Story 1.6 — typed details payloads echoed in the error envelope so the
+// frontend can render UX recovery without re-fetching the invite row.
+// Names follow the API camelCase convention (CQ wire format rules).
+type inviteExpiredDetails struct {
+	CenterName   string `json:"centerName"`
+	InviterEmail string `json:"inviterEmail"`
+}
+
+type inviteAlreadyAcceptedDetails struct {
+	CenterName string `json:"centerName"`
+}
+
+type inviteEmailMismatchDetails struct {
+	InvitedEmail string `json:"invitedEmail"`
+	OAuthEmail   string `json:"oauthEmail"`
+}
+
 // ErrorMapper wraps a HandlerWithError, mapping domain errors to HTTP responses.
 // It also recovers from panics and returns 500 without leaking internals.
 func ErrorMapper(h HandlerWithError) http.HandlerFunc {
@@ -52,6 +69,15 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var refreshInvalid *service.RefreshTokenInvalidError
 		var userGone *service.AuthUserGoneError
 		var invalidTenant *service.InvalidTenantClaimError
+		// Story 1.6 invite-acceptance pointer-typed errors (REST path).
+		// OAuth callback errors are mapped to 302 redirects at the
+		// handler level, NOT here.
+		var inviteNotFound *service.InviteNotFoundError
+		var inviteExpired *service.InviteExpiredError
+		var inviteAlreadyAccepted *service.InviteAlreadyAcceptedError
+		var inviteEmailMismatch *service.InviteEmailMismatchError
+		var passwordNotAllowedOAuth *service.PasswordNotAllowedForOAuthUserError
+		var googleIDAlreadyLinked *service.GoogleIDAlreadyLinkedError
 
 		switch {
 		case errors.As(err, &invalidCreds):
@@ -99,6 +125,41 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		case errors.As(err, &invalidTenant):
 			handler.WriteError(w, r, http.StatusForbidden,
 				"INVALID_TENANT_CLAIM", "JWT center claim does not match active membership.", nil)
+			return
+		case errors.As(err, &inviteNotFound):
+			handler.WriteError(w, r, http.StatusNotFound,
+				"INVITE_NOT_FOUND", "This invite link is no longer valid.", nil)
+			return
+		case errors.As(err, &inviteExpired):
+			handler.WriteError(w, r, http.StatusGone,
+				"INVITE_EXPIRED", "This invite link has expired.",
+				inviteExpiredDetails{
+					CenterName:   inviteExpired.CenterName,
+					InviterEmail: inviteExpired.InviterEmail,
+				})
+			return
+		case errors.As(err, &inviteAlreadyAccepted):
+			handler.WriteError(w, r, http.StatusConflict,
+				"INVITE_ALREADY_ACCEPTED", "This invite has already been accepted.",
+				inviteAlreadyAcceptedDetails{CenterName: inviteAlreadyAccepted.CenterName})
+			return
+		case errors.As(err, &inviteEmailMismatch):
+			handler.WriteError(w, r, http.StatusConflict,
+				"INVITE_EMAIL_MISMATCH", "Invite email does not match signed-in account.",
+				inviteEmailMismatchDetails{
+					InvitedEmail: inviteEmailMismatch.InvitedEmail,
+					OAuthEmail:   inviteEmailMismatch.OAuthEmail,
+				})
+			return
+		case errors.As(err, &passwordNotAllowedOAuth):
+			handler.WriteError(w, r, http.StatusConflict,
+				"PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER",
+				"This account uses Google sign-in. Continue with Google to accept the invite.", nil)
+			return
+		case errors.As(err, &googleIDAlreadyLinked):
+			handler.WriteError(w, r, http.StatusConflict,
+				"GOOGLE_ID_ALREADY_LINKED",
+				"Google account is already linked to another user.", nil)
 			return
 		}
 

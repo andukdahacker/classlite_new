@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// accept_invite_atdd_test.go — Story 1.6 ATDD red-phase scaffolds for
+// accept_invite_atdd_test.go — Story 1.6 ATDD tests for
 // the invite acceptance service-layer method (email/password path) and
 // the OAuth-callback variant with email-mismatch handling.
 //

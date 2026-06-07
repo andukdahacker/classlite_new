@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// require_role_atdd_test.go — Story 1.6 ATDD red-phase scaffolds for
+// require_role_atdd_test.go — Story 1.6 ATDD tests for
 // the new RequireRole middleware (Task 8). RequireRole reads the
 // DB-resolved tc.Role injected by ExtractTenant and rejects any
 // caller whose role is not in the allowlist.

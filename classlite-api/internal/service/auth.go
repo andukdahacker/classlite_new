@@ -126,6 +126,16 @@ type AuthService struct {
 	sleep     func(time.Duration)
 	clk       clock.Clock
 	jwt       JWTSigner
+
+	// Story 1.6 — Google OAuth wiring (nil unless main.go calls
+	// SetGoogleOAuth). Endpoints return 503 when nil. Setters are
+	// preferred over expanding the constructor signature to keep Story
+	// 1.4/1.5 callsites unchanged.
+	oauth                GoogleOAuthClient
+	oauthState           OAuthStateSigner
+	appApexHost          string // e.g. "my.classlite.app" — host that skips AC3 tenant binding
+	appPostLoginURL      string // dev: http://localhost:5173/  — successful OAuth lands here
+	appLoginErrorURLBase string // dev: http://localhost:5173/login — failure-redirect base
 }
 
 // NewAuthService wires AuthService for production. verifyURL must NOT end with
@@ -170,11 +180,64 @@ func (s *AuthService) SetJWTSigner(j JWTSigner) {
 	s.jwt = j
 }
 
+// JWTSigner exposes the active signer so middleware (ExtractTenant) can
+// verify access tokens with the same instance the service signs them.
+// Added in Story 1.6 because main.go wires both AuthService.SetJWTSigner
+// and middleware.ExtractTenant from the same signer; the accessor avoids
+// the previous "signer drift" foot-gun where two NewJWTSigner calls
+// produced two distinct ephemeral secrets.
+func (s *AuthService) JWTSigner() JWTSigner {
+	return s.jwt
+}
+
 // SetResetURLBase overrides the default reset URL base. Production main.go
 // passes Config.AppResetURLBase.
 func (s *AuthService) SetResetURLBase(base string) {
 	s.resetURL = strings.TrimRight(base, "/")
 }
+
+// SetGoogleOAuth wires the Google OAuth client + state signer. Optional
+// — when nil, /api/auth/google + /api/auth/google/callback return 503.
+// Called from main.go after NewAuthServiceWithClock; tests call it with
+// a mock client so the OAuth round-trip never hits accounts.google.com.
+func (s *AuthService) SetGoogleOAuth(client GoogleOAuthClient, state OAuthStateSigner) {
+	s.oauth = client
+	s.oauthState = state
+}
+
+// SetAppApexHost configures the host string used by AC3 tenant binding.
+// On apex callbacks (Host == AppApexHost) the membership check is
+// skipped — the apex is the unscoped sign-in surface. Subdomain
+// callbacks resolve the leading host label to a center and assert
+// membership before issuing the session.
+func (s *AuthService) SetAppApexHost(host string) {
+	s.appApexHost = host
+}
+
+// SetAppPostLoginURL configures the redirect target for a successful
+// OAuth callback (dev: http://localhost:5173/).
+func (s *AuthService) SetAppPostLoginURL(url string) {
+	s.appPostLoginURL = url
+}
+
+// SetAppLoginErrorURLBase configures the base URL used to build error
+// redirects on OAuth callback failure paths (dev:
+// http://localhost:5173/login). The handler appends ?error=<code>.
+func (s *AuthService) SetAppLoginErrorURLBase(url string) {
+	s.appLoginErrorURLBase = url
+}
+
+// AppPostLoginURL exposes the configured post-login URL so the handler
+// can build success redirects without re-reading config.
+func (s *AuthService) AppPostLoginURL() string { return s.appPostLoginURL }
+
+// AppLoginErrorURLBase exposes the configured failure-redirect base.
+func (s *AuthService) AppLoginErrorURLBase() string { return s.appLoginErrorURLBase }
+
+// OAuthStateSigner exposes the configured signer so handler-side code
+// (cookie issuance / clearing) can format the same token type the
+// service emits.
+func (s *AuthService) OAuthStateSigner() OAuthStateSigner { return s.oauthState }
 
 // RegisterRequest carries the validated inputs from the HTTP handler.
 type RegisterRequest struct {

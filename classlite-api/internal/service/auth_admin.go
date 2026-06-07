@@ -14,6 +14,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -93,17 +95,21 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 	}
 
 	// Genuinely owner → write the invite. Token + expiry are placeholder
-	// values — Epic 7 owns the real invite flow. We just need a
-	// successful write to prove the gate works.
-	token, err := newPasswordResetToken() // 32 random bytes, reuse helper
+	// values — Epic 7 owns the real invite flow (email send + raw token
+	// echo). Story 1.6 migrated invites.token → invites.token_hash so we
+	// persist the sha256-hex; the raw token is currently discarded
+	// because this synthetic hook doesn't email anyone.
+	rawToken, err := newPasswordResetToken() // 32 random bytes, reuse helper
 	if err != nil {
 		return fmt.Errorf("invite token: %w", err)
 	}
+	tokenHashBytes := sha256.Sum256([]byte(rawToken))
+	tokenHash := hex.EncodeToString(tokenHashBytes[:])
 	now := s.clk.Now()
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO invites (center_id, inviter_id, email, role, token, expires_at)
+		`INSERT INTO invites (center_id, inviter_id, email, role, token_hash, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		centerUUID, userUUID, email, role, token, now.Add(inviteTTL),
+		centerUUID, userUUID, email, role, tokenHash, now.Add(inviteTTL),
 	); err != nil {
 		return fmt.Errorf("insert invite: %w", err)
 	}

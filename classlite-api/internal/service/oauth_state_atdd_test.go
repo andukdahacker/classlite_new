@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// oauth_state_atdd_test.go — Story 1.6 ATDD red-phase scaffolds.
+// oauth_state_atdd_test.go — Story 1.6 ATDD tests for the HMAC state signer.
 //
 // HOW TO USE THIS FILE
 //

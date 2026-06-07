@@ -80,6 +80,22 @@ func main() {
 		authSvc.SetResetURLBase(cfg.AppResetURLBase)
 	}
 
+	// Story 1.6 — Google OAuth wiring. If the operator left the
+	// credentials empty (dev parity), the OAuth endpoints will return 503
+	// instead of redirecting to a misconfigured Google authorize URL.
+	if cfg.GoogleClientID != "" && cfg.OAuthStateSecret != "" {
+		googleClient := service.NewGoogleOAuthClient(
+			cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL,
+		)
+		oauthState := service.NewOAuthStateSigner([]byte(cfg.OAuthStateSecret))
+		authSvc.SetGoogleOAuth(googleClient, oauthState)
+	} else {
+		slog.Warn("Google OAuth not configured — /api/auth/google endpoints will 503")
+	}
+	authSvc.SetAppApexHost(cfg.AppApexHost)
+	authSvc.SetAppPostLoginURL(cfg.AppPostLoginURL)
+	authSvc.SetAppLoginErrorURLBase(cfg.AppLoginErrorURLBase)
+
 	// Long-lived context that survives request cancellations — the retry worker
 	// must keep running until graceful shutdown signals.
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
@@ -174,6 +190,34 @@ func main() {
 		emailKeyGate(forgotPasswordBodyKey, forgotIPLimit(forgotEmailLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.ForgotPassword))))))
 	mux.Handle("POST /api/auth/reset-password",
 		http.HandlerFunc(middleware.ErrorMapper(authHandler.ResetPassword)))
+
+	// Story 1.6 — Google OAuth + invite acceptance + force-logout.
+	//
+	// OAuth init/callback skip ErrorMapper (302 redirects, not envelopes).
+	// The global 200/min/IP cap covers them (browser-driven, low frequency).
+	mux.HandleFunc("GET /api/auth/google", authHandler.GoogleInit)
+	mux.HandleFunc("GET /api/auth/google/callback", authHandler.GoogleCallback)
+
+	// Invite acceptance — per-IP rate limit defends against token
+	// enumeration. The route otherwise uses the canonical ErrorMapper.
+	acceptInviteIPLimit := middleware.RateLimitByKey(
+		"auth-accept-invite",
+		rate.Every(time.Minute),
+		10,
+		middleware.IPKeyFn,
+	)
+	mux.Handle("POST /api/auth/accept-invite",
+		acceptInviteIPLimit(http.HandlerFunc(middleware.ErrorMapper(authHandler.AcceptInvite))))
+
+	// Force-logout — only Owners; ExtractTenant runs first to populate
+	// the DB-resolved role, then RequireRole gates.
+	adminHandler := handler.NewAdminHandler(authSvc)
+	forceLogoutChain := middleware.ExtractTenant(pool, authSvc.JWTSigner())(
+		middleware.RequireRole("owner")(
+			http.HandlerFunc(middleware.ErrorMapper(adminHandler.ForceLogout)),
+		),
+	)
+	mux.Handle("POST /api/admin/users/{userId}/force-logout", forceLogoutChain)
 
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux

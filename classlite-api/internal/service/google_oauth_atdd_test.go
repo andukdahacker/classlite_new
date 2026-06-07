@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// google_oauth_atdd_test.go — Story 1.6 ATDD red-phase scaffolds for
+// google_oauth_atdd_test.go — Story 1.6 ATDD tests for
 // the Google OAuth init + callback service-layer methods.
 //
 // ACCEPTANCE CRITERIA COVERED

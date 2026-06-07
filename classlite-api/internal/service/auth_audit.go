@@ -23,29 +23,45 @@ import (
 // Changes reuses service.Changes from audit.go so the wire shape matches the
 // tenant-scoped audit_logs table exactly — frontends can render either.
 //
-// Controlled event vocabulary (Story 1.4 + Story 1.5 — keep this list in sync
+// Controlled event vocabulary (Story 1.4–1.6 — keep this list in sync
 // with new emitters so the audit downstream knows every value to expect):
 //
-//	user.registered                 — Story 1.4 Register
-//	user.email_verified             — Story 1.4 VerifyEmail
-//	user.verification_resent        — Story 1.4 ResendVerification
-//	login.failed                    — Story 1.5 Login wrong-password / unknown
-//	login.locked_out                — Story 1.5 Login lockout rejection
-//	login.succeeded                 — Story 1.5 Login success
-//	session.refreshed               — Story 1.5 RefreshTokens success
-//	session.logged_out              — Story 1.5 Logout
-//	session.family_revoked          — Story 1.5 reuse-detection family revoke
-//	password.reset_requested.hit    — Story 1.5 RequestPasswordReset known
-//	password.reset_requested.miss   — Story 1.5 RequestPasswordReset unknown
-//	password.reset_applied          — Story 1.5 ResetPassword
-//	auth.role_revalidation_blocked  — Story 1.5 AdminInviteStaff blocked
-//	invalid_tenant_claim            — Story 1.5 ExtractTenant forged center
+//	user.registered                          — Story 1.4 Register
+//	user.email_verified                      — Story 1.4 VerifyEmail
+//	user.verification_resent                 — Story 1.4 ResendVerification
+//	login.failed                             — Story 1.5 Login wrong-password / unknown
+//	login.locked_out                         — Story 1.5 Login lockout rejection
+//	login.succeeded                          — Story 1.5 Login success
+//	session.refreshed                        — Story 1.5 RefreshTokens success
+//	session.logged_out                       — Story 1.5 Logout
+//	session.family_revoked                   — Story 1.5 reuse-detection family revoke
+//	password.reset_requested.hit             — Story 1.5 RequestPasswordReset known
+//	password.reset_requested.miss            — Story 1.5 RequestPasswordReset unknown
+//	password.reset_applied                   — Story 1.5 ResetPassword
+//	auth.role_revalidation_blocked           — Story 1.5 AdminInviteStaff blocked
+//	invalid_tenant_claim                     — Story 1.5 ExtractTenant forged center
+//	auth.google_signin                       — Story 1.6 Branch A (existing google_id)
+//	auth.google_account_linked               — Story 1.6 Branch B (email match → link)
+//	auth.google_account_created              — Story 1.6 Branch C (new user)
+//	auth.oauth_tenant_mismatch               — Story 1.6 AC3 cross-subdomain login (R6)
+//	auth.force_logout                        — Story 1.6 AC6 — actor (Owner) revoked subject (target)
+//	auth.force_logout_cross_tenant_attempt   — Story 1.6 AC7 cross-tenant scan attempt (R1)
+//	invite.accepted                          — Story 1.6 AC4 password-path invite acceptance
+//	invite.accepted_via_oauth                — Story 1.6 AC5 OAuth-path invite acceptance
+//	invite.email_mismatch                    — Story 1.6 AC5 OAuth email != invite email
+//
+// ActorUserID describes "who triggered this event" while UserID describes
+// "who the event is about". For self-initiated events (login, register)
+// leave ActorUserID at its zero value; the audit row's actor_user_id
+// column ends up NULL (which the audit consumer reads as "self"). For
+// admin events (force-logout, role-changed) ActorUserID is the operator.
 type AuthAuditEntry struct {
-	UserID     uuid.UUID
-	Event      string
-	EntityType string
-	EntityID   uuid.UUID
-	Changes    Changes
+	UserID      uuid.UUID
+	ActorUserID uuid.UUID
+	Event       string
+	EntityType  string
+	EntityID    uuid.UUID
+	Changes     Changes
 }
 
 // AuthAuditLogger persists pre-tenant auth events. Errors must be tolerated by
@@ -93,13 +109,18 @@ func (l *pgAuthAuditLogger) Log(ctx context.Context, entry AuthAuditEntry) error
 	if entry.EntityID != uuid.Nil {
 		entityParam = pgtype.UUID{Bytes: entry.EntityID, Valid: true}
 	}
+	var actorParam pgtype.UUID
+	if entry.ActorUserID != uuid.Nil {
+		actorParam = pgtype.UUID{Bytes: entry.ActorUserID, Valid: true}
+	}
 	err = queries.InsertAuthAuditLog(ctx, generated.InsertAuthAuditLogParams{
-		UserID:     userParam,
-		Event:      entry.Event,
-		EntityType: entry.EntityType,
-		EntityID:   entityParam,
-		Changes:    changesJSON,
-		IpAddress:  ipParam,
+		UserID:      userParam,
+		Event:       entry.Event,
+		EntityType:  entry.EntityType,
+		EntityID:    entityParam,
+		Changes:     changesJSON,
+		IpAddress:   ipParam,
+		ActorUserID: actorParam,
 	})
 	if err != nil {
 		return fmt.Errorf("auth audit log: insert: %w", err)

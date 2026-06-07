@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// force_logout_atdd_test.go — Story 1.6 ATDD red-phase scaffolds for
+// force_logout_atdd_test.go — Story 1.6 ATDD tests for
 // the Owner-initiated force-logout primitive (FR-80).
 //
 // ACCEPTANCE CRITERIA COVERED
@@ -32,14 +30,17 @@ import (
 )
 
 // seedRefreshTokensForUser inserts N refresh-token rows for a user.
-// Used to assert ForceLogout actually deletes them.
-func seedRefreshTokensForUser(t *testing.T, db *test.TxDB, userID, familyID string, count int, expiresAt time.Time) {
+// Each row gets a fresh family UUID since the bulk-delete shape under
+// test doesn't care which family they belong to. familyHint is folded
+// into the token_hash so each seeded row's hash stays unique.
+func seedRefreshTokensForUser(t *testing.T, db *test.TxDB, userID, familyHint string, count int, expiresAt time.Time) {
 	t.Helper()
 	for i := 0; i < count; i++ {
+		familyID := uuid.New()
 		if _, err := db.Exec(context.Background(),
 			`INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, remember_me)
 			 VALUES ($1, $2, $3, $4, false)`,
-			userID, "hash-"+familyID+"-"+itoa(i), familyID, expiresAt,
+			userID, "hash-"+familyHint+"-"+itoa(i), familyID, expiresAt,
 		); err != nil {
 			t.Fatalf("seed refresh_token: %v", err)
 		}

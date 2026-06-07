@@ -27,3 +27,16 @@ WHERE id = $1;
 UPDATE users
 SET password_hash = $2, updated_at = now()
 WHERE id = $1;
+
+-- name: LinkGoogleAccount :execrows
+-- Story 1.6 — Branch B of HandleGoogleCallback's account-resolution. The
+-- WHERE google_id IS NULL clause is the race guard: two simultaneous
+-- linkers can both load the row with google_id NULL, but only the first
+-- UPDATE succeeds (1 row affected). The loser sees 0 rows affected and
+-- the service surfaces *GoogleIDAlreadyLinkedError.
+UPDATE users
+SET google_id      = $2,
+    email_verified = true,
+    avatar_url     = COALESCE(avatar_url, $3),
+    updated_at     = now()
+WHERE id = $1 AND google_id IS NULL;

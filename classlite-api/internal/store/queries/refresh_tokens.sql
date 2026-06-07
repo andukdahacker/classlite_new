@@ -45,3 +45,12 @@ RETURNING id, user_id;
 
 -- name: CountSiblingsInFamily :one
 SELECT COUNT(*) FROM refresh_tokens WHERE family_id = $1;
+
+-- name: DeleteRefreshTokensByUserReturningFamilies :many
+-- Story 1.6 — used by ForceLogout (AC6). Returns family_id per deleted
+-- row so the service can count revoked sessions for the audit row. The
+-- bulk-delete shape is intentional: token reuse detection is moot when
+-- the Owner is explicitly burning everything for the target user.
+DELETE FROM refresh_tokens
+WHERE user_id = $1
+RETURNING family_id;

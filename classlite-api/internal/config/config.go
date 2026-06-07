@@ -28,6 +28,14 @@ type Config struct {
 	// AppResetURLBase is the canonical base URL embedded in password-reset
 	// emails (story 1.5). The token is appended as ?token=<value>.
 	AppResetURLBase string
+	// Story 1.6 — Google OAuth + invite acceptance + force-logout.
+	GoogleClientID       string
+	GoogleClientSecret   string
+	GoogleRedirectURL    string
+	OAuthStateSecret     string
+	AppApexHost          string
+	AppPostLoginURL      string
+	AppLoginErrorURLBase string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -52,11 +60,22 @@ func Load() Config {
 		R2BucketName:     getEnv("R2_BUCKET_NAME", "classlite-uploads"),
 		AppVerifyURLBase: getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
 		AppResetURLBase:  getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
+		GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:    getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback"),
+		OAuthStateSecret:     getEnv("OAUTH_STATE_SECRET", ""),
+		AppApexHost:          getEnv("APP_APEX_HOST", "localhost:5173"),
+		AppPostLoginURL:      getEnv("APP_POST_LOGIN_URL", "http://localhost:5173/"),
+		AppLoginErrorURLBase: getEnv("APP_LOGIN_ERROR_URL_BASE", "http://localhost:5173/login"),
 	}
 }
 
 // MinJWTSecretBytes is the HMAC-SHA256 minimum keylength per RFC 2104 (256 bits).
 const MinJWTSecretBytes = 32
+
+// MinOAuthStateSecretBytes mirrors MinJWTSecretBytes for the Story 1.6
+// OAuth state HMAC signer.
+const MinOAuthStateSecretBytes = 32
 
 // Validate checks that critical configuration values are set.
 // In non-development mode, DATABASE_URL, JWT_SECRET, APP_VERIFY_URL_BASE
@@ -92,10 +111,48 @@ func (c Config) Validate() error {
 		if len([]byte(c.JWTSecret)) < MinJWTSecretBytes {
 			return fmt.Errorf("JWT_SECRET must be ≥ %d bytes for HS256 (got %d)", MinJWTSecretBytes, len([]byte(c.JWTSecret)))
 		}
+		// Story 1.6 — Google OAuth + state secret + apex URLs.
+		var oauthMissing []string
+		if c.GoogleClientID == "" {
+			oauthMissing = append(oauthMissing, "GOOGLE_CLIENT_ID")
+		}
+		if c.GoogleClientSecret == "" {
+			oauthMissing = append(oauthMissing, "GOOGLE_CLIENT_SECRET")
+		}
+		if c.GoogleRedirectURL == "" {
+			oauthMissing = append(oauthMissing, "GOOGLE_REDIRECT_URL")
+		}
+		if c.OAuthStateSecret == "" {
+			oauthMissing = append(oauthMissing, "OAUTH_STATE_SECRET")
+		}
+		if c.AppApexHost == "" {
+			oauthMissing = append(oauthMissing, "APP_APEX_HOST")
+		}
+		if c.AppPostLoginURL == "" {
+			oauthMissing = append(oauthMissing, "APP_POST_LOGIN_URL")
+		}
+		if c.AppLoginErrorURLBase == "" {
+			oauthMissing = append(oauthMissing, "APP_LOGIN_ERROR_URL_BASE")
+		}
+		if len(oauthMissing) > 0 {
+			return fmt.Errorf("required oauth config missing for %s: %s", c.AppEnv, strings.Join(oauthMissing, ", "))
+		}
+		if len([]byte(c.OAuthStateSecret)) < MinOAuthStateSecretBytes {
+			return fmt.Errorf("OAUTH_STATE_SECRET must be ≥ %d bytes for HMAC-SHA256 (got %d)",
+				MinOAuthStateSecretBytes, len([]byte(c.OAuthStateSecret)))
+		}
+		// AC10 — reject http:// redirect URLs in non-dev.
+		if !strings.HasPrefix(c.GoogleRedirectURL, "https://") {
+			return fmt.Errorf("GOOGLE_REDIRECT_URL must use https:// in %s (got %q)", c.AppEnv, c.GoogleRedirectURL)
+		}
 	} else {
 		if c.JWTSecret != "" && len([]byte(c.JWTSecret)) < MinJWTSecretBytes {
 			slog.Warn("JWT_SECRET is shorter than 32 bytes — fine for dev only",
 				"current_bytes", len([]byte(c.JWTSecret)))
+		}
+		if c.OAuthStateSecret != "" && len([]byte(c.OAuthStateSecret)) < MinOAuthStateSecretBytes {
+			slog.Warn("OAUTH_STATE_SECRET is shorter than 32 bytes — fine for dev only",
+				"current_bytes", len([]byte(c.OAuthStateSecret)))
 		}
 	}
 	return nil
@@ -117,6 +174,10 @@ func (c Config) LogSummary() {
 		"r2_bucket_name", c.R2BucketName,
 		"app_verify_url_base_set", c.AppVerifyURLBase != "",
 		"app_reset_url_base_set", c.AppResetURLBase != "",
+		"google_client_id_set", c.GoogleClientID != "",
+		"oauth_state_secret_set", c.OAuthStateSecret != "",
+		"app_apex_host", c.AppApexHost,
+		"app_post_login_url_set", c.AppPostLoginURL != "",
 	)
 }
 

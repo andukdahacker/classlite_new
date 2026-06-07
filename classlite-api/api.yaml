@@ -321,6 +321,205 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/auth/google:
+    get:
+      operationId: googleInit
+      summary: Initiate Google OAuth sign-in (story 1.6)
+      description: |
+        Generates a CSRF-bound signed state token, sets the `oauth_state`
+        httpOnly cookie (Path=/api/auth, Max-Age=600), and 302-redirects to
+        Google's authorization URL. Optional `inviteToken` is verified
+        pre-flight to short-circuit a wasted Google round-trip; `redirectTo`
+        is honored only when it matches the same-origin allowlist.
+      parameters:
+        - in: query
+          name: inviteToken
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+        - in: query
+          name: redirectTo
+          required: false
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "302":
+          description: Redirect to Google authorization URL. Sets `oauth_state` cookie.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Google's authorization URL with `state=<signed>` query param.
+            Set-Cookie:
+              schema:
+                type: string
+              description: |
+                `oauth_state=<signed>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=600`
+                (Domain set in non-dev).
+        "404":
+          description: INVITE_NOT_FOUND — inviteToken was supplied but the invite no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "400":
+          description: INVALID_INVITE_TOKEN — supplied token exceeds the 256-char cap.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/auth/google/callback:
+    get:
+      operationId: googleCallback
+      summary: Google OAuth callback (story 1.6)
+      description: |
+        Always returns 302. Success → `APP_POST_LOGIN_URL` plus
+        `?invited=true&center=<name>` when an invite was accepted, or
+        `?error=<code>` for invite-recoverable failures. Failure →
+        `APP_LOGIN_ERROR_URL_BASE?error=<code>`. Codes: `csrf_invalid`,
+        `csrf_expired`, `google_exchange_failed`, `google_userinfo_failed`,
+        `google_email_unverified`, `google_access_denied`,
+        `google_server_error`, `oauth_wrong_tenant`, `google_link_race`,
+        `invite_email_mismatch`, `invite_expired`, `invite_already_accepted`.
+        The `oauth_state` cookie is cleared on every exit path.
+      parameters:
+        - in: query
+          name: code
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: state
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: error
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Browser-navigation redirect — success or failure carries the outcome in the Location query string.
+          headers:
+            Location:
+              schema:
+                type: string
+            Set-Cookie:
+              schema:
+                type: string
+              description: |
+                `refresh_token=<value>` on success (per AC10 from story 1.5)
+                AND `oauth_state=; Max-Age=0` (replay defense).
+
+  /api/auth/accept-invite:
+    post:
+      operationId: acceptInvite
+      summary: Accept a staff invite via email/password (story 1.6)
+      description: |
+        Two branches based on whether the invite email matches an existing
+        user. New users supply `fullName` + `password`; existing users
+        omit both. The invite link is the email verification — accepted
+        users land with `emailVerified: true`. Per-IP rate limited
+        (10 / 60s) to defend against token enumeration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInviteRequest'
+      responses:
+        "200":
+          description: Invite accepted, session issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAcceptInviteResult'
+        "404":
+          description: INVITE_NOT_FOUND — the token does not match a row.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "410":
+          description: INVITE_EXPIRED — surfaces details `{ centerName, inviterEmail }` so the SPA can render UX recovery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: INVITE_ALREADY_ACCEPTED / INVITE_EMAIL_MISMATCH / PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER / GOOGLE_ID_ALREADY_LINKED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR — missing fullName/password on new-user branch, or malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit (10 / 60s) exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/admin/users/{userId}/force-logout:
+    post:
+      operationId: forceLogout
+      summary: Owner-initiated force-logout for a staff member (story 1.6 / FR-80)
+      description: |
+        Bulk-deletes every `refresh_tokens` row for the target user.
+        Documented limitation: access tokens already issued remain valid
+        for up to AccessTokenTTL (15 min) — EDGE-2 tradeoff accepted.
+        Cross-tenant targets return 404 USER_NOT_FOUND (NEVER 403, which
+        would leak existence). Requires authenticated Owner JWT.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sessions revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeForceLogoutResult'
+        "401":
+          description: AUTH_REQUIRED — missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE — caller is not an Owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: USER_NOT_FOUND — target does not exist in the caller's tenant (cross-tenant attempts also collapse here).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR — malformed UUID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/auth/verify-status:
     get:
       operationId: verifyStatus
@@ -609,3 +808,109 @@ components:
       properties:
         error:
           $ref: '#/components/schemas/ErrorBody'
+
+    # ---------------- Story 1.6 — Google OAuth + Invite Acceptance + Force-Logout ----------------
+    AcceptInviteRequest:
+      type: object
+      required: [inviteToken]
+      properties:
+        inviteToken:
+          type: string
+          minLength: 1
+          maxLength: 256
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          nullable: true
+          description: Required only on the new-user branch.
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          nullable: true
+          description: Required only on the new-user branch.
+
+    InviteCenter:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    AcceptInviteResult:
+      type: object
+      required: [accessToken, user, center, role]
+      properties:
+        accessToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        center:
+          $ref: '#/components/schemas/InviteCenter'
+        role:
+          type: string
+          enum: [owner, admin, teacher, student]
+
+    EnvelopeAcceptInviteResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AcceptInviteResult'
+
+    ForceLogoutResult:
+      type: object
+      required: [forcedLogout, sessionsRevoked]
+      properties:
+        forcedLogout:
+          type: boolean
+        sessionsRevoked:
+          type: integer
+          minimum: 0
+          description: Number of refresh_tokens rows deleted for the target.
+
+    EnvelopeForceLogoutResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ForceLogoutResult'
+
+    # Detail payloads echoed in invite error envelopes.
+    InviteExpiredDetails:
+      type: object
+      required: [centerName, inviterEmail]
+      properties:
+        centerName:
+          type: string
+        inviterEmail:
+          type: string
+          format: email
+
+    InviteAlreadyAcceptedDetails:
+      type: object
+      required: [centerName]
+      properties:
+        centerName:
+          type: string
+
+    InviteEmailMismatchDetails:
+      type: object
+      required: [invitedEmail, oauthEmail]
+      properties:
+        invitedEmail:
+          type: string
+          format: email
+        oauthEmail:
+          type: string
+          format: email
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -279,7 +279,7 @@ func TestRLS_Invites_CrossTenantRead(t *testing.T) {
 		InviterID: inviterA.ID,
 		Email:     "new-teacher@example.com",
 		Role:      "teacher",
-		Token:     "invite-token-a",
+		TokenHash: "hash-invite-token-a",
 		ExpiresAt: expires,
 	})
 	if err != nil {
@@ -293,7 +293,7 @@ func TestRLS_Invites_CrossTenantRead(t *testing.T) {
 		InviterID: inviterB.ID,
 		Email:     "new-student@example.com",
 		Role:      "student",
-		Token:     "invite-token-b",
+		TokenHash: "hash-invite-token-b",
 		ExpiresAt: expires,
 	})
 	if err != nil {
@@ -338,7 +338,7 @@ func TestRLS_Invites_CrossTenantWrite(t *testing.T) {
 		InviterID: inviterB.ID,
 		Email:     "victim@example.com",
 		Role:      "teacher",
-		Token:     "invite-token-b",
+		TokenHash: "hash-invite-token-b",
 		ExpiresAt: expires,
 	})
 	if err != nil {
@@ -355,13 +355,22 @@ func TestRLS_Invites_CrossTenantWrite(t *testing.T) {
 		t.Errorf("RLS VIOLATION: cross-tenant UPDATE on invite affected %d rows", tag.RowsAffected())
 	}
 
-	// Verify invite unchanged as tenant B
+	// Verify invite unchanged as tenant B. ListInvitesByCenter is the
+	// closest RLS-respecting accessor now that GetInviteByToken is gone
+	// (Story 1.6 — token-based reads go through SECURITY DEFINER).
 	TenantContext(t, db, centerB.ID)
-	unchanged, err := queries.GetInviteByToken(ctx, "invite-token-b")
+	invitesB, err := queries.ListInvitesByCenter(ctx, centerB.ID)
 	if err != nil {
-		t.Fatalf("get invite as tenant B: %v", err)
+		t.Fatalf("list invites as tenant B: %v", err)
 	}
-	if unchanged.AcceptedAt.Valid {
+	var stillUnaccepted bool
+	for _, inv := range invitesB {
+		if inv.ID == invite.ID {
+			stillUnaccepted = !inv.AcceptedAt.Valid
+			break
+		}
+	}
+	if !stillUnaccepted {
 		t.Error("RLS VIOLATION: cross-tenant UPDATE on invite succeeded")
 	}
 }
@@ -384,7 +393,7 @@ func TestRLS_Invites_CrossTenantInsert(t *testing.T) {
 		InviterID: inviterA.ID,
 		Email:     "hacker@example.com",
 		Role:      "owner",
-		Token:     "evil-invite",
+		TokenHash: "hash-evil-invite",
 		ExpiresAt: expires,
 	})
 	if err == nil {
@@ -408,7 +417,7 @@ func TestRLS_Invites_NullTenant(t *testing.T) {
 		InviterID: inviter.ID,
 		Email:     "test@example.com",
 		Role:      "teacher",
-		Token:     "token-1",
+		TokenHash: "hash-token-1",
 		ExpiresAt: expires,
 	})
 	if err != nil {

@@ -1,10 +1,12 @@
-// Package handler — auth handlers for stories 1.4 and 1.5.
+// Package handler — auth handlers for stories 1.4, 1.5, 1.6.
 package handler
 
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -18,6 +20,13 @@ import (
 // this limit is either malformed or hostile. Cap exists to prevent unbounded
 // io.ReadAll / json.Decode allocation from OOMing the process.
 const maxAuthRequestBodyBytes = 16 * 1024
+
+// Story 1.6 cookie constants.
+const (
+	oauthStateCookieName = "oauth_state"
+	oauthStateCookiePath = "/api/auth"
+	oauthStateCookieTTL  = 600 // 10 min in seconds — mirrors OAuthStateTTL
+)
 
 // CookieConfig drives the attributes the AuthHandler sets on Set-Cookie
 // responses. Production (APP_ENV != "development") MUST set all three to
@@ -90,6 +99,25 @@ type forgotPasswordRequestBody struct {
 type resetPasswordRequestBody struct {
 	Token       string `json:"token"`
 	NewPassword string `json:"newPassword"`
+}
+
+// Story 1.6 — invite acceptance.
+type acceptInviteRequestBody struct {
+	InviteToken string `json:"inviteToken"`
+	FullName    string `json:"fullName"`
+	Password    string `json:"password"`
+}
+
+type acceptInviteCenterPayload struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type acceptInviteResponseBody struct {
+	AccessToken string                    `json:"accessToken"`
+	User        userSummary               `json:"user"`
+	Center      acceptInviteCenterPayload `json:"center"`
+	Role        string                    `json:"role"`
 }
 
 // Response DTOs — GO-5: never use omitempty.
@@ -370,6 +398,298 @@ func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
 		return
 	}
 	w.Header().Add("Set-Cookie", header)
+}
+
+// ---------------------------------------------------------------------
+// Story 1.6 — Google OAuth + invite-acceptance handlers.
+// ---------------------------------------------------------------------
+
+// GoogleInit implements GET /api/auth/google (AC1). The handler is the
+// plain func(w, r) shape — not the error-returning one — because the
+// success path emits a 302 to Google, not a JSON envelope. The single
+// JSON failure case (InviteNotFoundError) is written inline.
+func (h *AuthHandler) GoogleInit(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	inviteToken := strings.TrimSpace(q.Get("inviteToken"))
+	redirectTo := strings.TrimSpace(q.Get("redirectTo"))
+
+	// Defensive caps so a malicious caller can't push gigabytes through
+	// the query string. The service also enforces these, but rejecting at
+	// the edge keeps a confused log line out of the service layer.
+	if len(inviteToken) > service.MaxInviteTokenChars {
+		WriteError(w, r, http.StatusBadRequest, "INVALID_INVITE_TOKEN", "Invite token is malformed.", nil)
+		return
+	}
+	if len(redirectTo) > service.MaxRedirectToChars {
+		redirectTo = "" // silently drop
+	}
+
+	result, err := h.svc.InitiateGoogleOAuth(r.Context(), service.InitiateGoogleOAuthInput{
+		InviteToken: inviteToken,
+		RedirectTo:  redirectTo,
+	})
+	if err != nil {
+		// Pre-Google failure: inline JSON envelope so the SPA can render
+		// the error without round-tripping through the login screen.
+		var inviteNotFound *service.InviteNotFoundError
+		switch {
+		case errors.As(err, &inviteNotFound):
+			WriteError(w, r, http.StatusNotFound,
+				"INVITE_NOT_FOUND", "This invite link is no longer valid.", nil)
+		default:
+			slog.Error("oauth init failed", "error", err)
+			WriteError(w, r, http.StatusInternalServerError,
+				"INTERNAL_ERROR", "An unexpected error occurred.", nil)
+		}
+		return
+	}
+
+	header, err := buildOAuthStateCookieHeader(result.SignedState, h.cookie, oauthStateCookieTTL)
+	if err != nil {
+		slog.Error("oauth state cookie build failed", "error", err)
+		WriteError(w, r, http.StatusInternalServerError,
+			"INTERNAL_ERROR", "An unexpected error occurred.", nil)
+		return
+	}
+	w.Header().Add("Set-Cookie", header)
+	http.Redirect(w, r, result.AuthCodeURL, http.StatusFound)
+}
+
+// GoogleCallback implements GET /api/auth/google/callback (AC2). Errors
+// map to 302 redirects to APP_LOGIN_ERROR_URL_BASE with ?error=<code>
+// rather than JSON envelopes — the user landed here via a browser
+// navigation, so an envelope would be hostile UX.
+func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	code := q.Get("code")
+	state := q.Get("state")
+	upstreamErr := q.Get("error")
+
+	// Always clear the oauth_state cookie on EVERY exit path (defense
+	// against replay if the same cookie/state pair makes it back).
+	defer h.clearOAuthStateCookie(w)
+
+	// User-cancellation surface: no audit row (it's normal behavior).
+	if upstreamErr == "access_denied" {
+		http.Redirect(w, r, h.errorRedirect("google_access_denied"), http.StatusFound)
+		return
+	}
+	if upstreamErr != "" {
+		slog.Warn("google oauth callback upstream error",
+			"event", "oauth_upstream_error",
+			"upstream_error", upstreamErr)
+		http.Redirect(w, r, h.errorRedirect("google_server_error"), http.StatusFound)
+		return
+	}
+
+	// Cookie present.
+	cookie, _ := r.Cookie(oauthStateCookieName)
+	cookieValue := ""
+	if cookie != nil {
+		cookieValue = cookie.Value
+	}
+
+	result, err := h.svc.HandleGoogleCallback(r.Context(), service.GoogleCallbackInput{
+		Code:        code,
+		State:       state,
+		CookieState: cookieValue,
+		RequestHost: r.Host,
+	})
+	if err != nil {
+		http.Redirect(w, r, h.errorRedirect(oauthCallbackErrorCode(err, r)), http.StatusFound)
+		return
+	}
+
+	// Success path: emit refresh-token cookie + redirect to post-login URL.
+	h.setRefreshCookie(w, &service.LoginResult{
+		RefreshToken: result.RefreshToken,
+		RefreshTTL:   result.RefreshTTL,
+	})
+
+	dest := h.successRedirect(result)
+	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// oauthCallbackErrorCode maps a service-layer error to the redirect
+// query-param token. Defaults to "google_server_error" — any unmatched
+// error indicates a logic gap, surface loudly via slog.
+func oauthCallbackErrorCode(err error, r *http.Request) string {
+	var stateMissing *service.OAuthStateMissingError
+	var stateInvalid *service.OAuthStateInvalidError
+	var stateExpired *service.OAuthStateExpiredError
+	var exchange *service.OAuthExchangeError
+	var userinfo *service.OAuthUserinfoError
+	var emailUnverified *service.OAuthEmailUnverifiedError
+	var tenantMismatch *service.OAuthTenantMismatchError
+	var googleLinkRace *service.GoogleIDAlreadyLinkedError
+	switch {
+	case errors.As(err, &stateMissing), errors.As(err, &stateInvalid):
+		return "csrf_invalid"
+	case errors.As(err, &stateExpired):
+		return "csrf_expired"
+	case errors.As(err, &exchange):
+		return "google_exchange_failed"
+	case errors.As(err, &userinfo):
+		return "google_userinfo_failed"
+	case errors.As(err, &emailUnverified):
+		return "google_email_unverified"
+	case errors.As(err, &tenantMismatch):
+		return "oauth_wrong_tenant"
+	case errors.As(err, &googleLinkRace):
+		return "google_link_race"
+	}
+	slog.Error("oauth callback unhandled error", "error", err, "path", r.URL.Path)
+	return "google_server_error"
+}
+
+// successRedirect builds the post-login URL. When the invite succeeded
+// the URL gets ?invited=true&center=<name>; when an invite was
+// attempted but produced a recoverable error (mismatch, expired,
+// already-accepted), the URL gets ?error=<code> with the relevant
+// details echoed in additional params.
+func (h *AuthHandler) successRedirect(result *service.GoogleCallbackResult) string {
+	base := h.svc.AppPostLoginURL()
+	if base == "" {
+		base = "/"
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return base
+	}
+	q := u.Query()
+	if result.InviteSurface != nil {
+		q.Set("error", inviteSurfaceErrorCode(result.InviteSurface))
+		var mismatch *service.InviteEmailMismatchError
+		if errors.As(result.InviteSurface, &mismatch) {
+			q.Set("expectedEmail", mismatch.InvitedEmail)
+			q.Set("googleEmail", mismatch.OAuthEmail)
+		}
+	} else if result.InviteAccepted {
+		q.Set("invited", "true")
+		if result.CenterName != "" {
+			q.Set("center", result.CenterName)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func inviteSurfaceErrorCode(err error) string {
+	var mismatch *service.InviteEmailMismatchError
+	var expired *service.InviteExpiredError
+	var already *service.InviteAlreadyAcceptedError
+	switch {
+	case errors.As(err, &mismatch):
+		return "invite_email_mismatch"
+	case errors.As(err, &expired):
+		return "invite_expired"
+	case errors.As(err, &already):
+		return "invite_already_accepted"
+	}
+	return "invite_unknown_error"
+}
+
+// errorRedirect builds the failure redirect URL.
+func (h *AuthHandler) errorRedirect(code string) string {
+	base := h.svc.AppLoginErrorURLBase()
+	if base == "" {
+		base = "/login"
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return base + "?error=" + code
+	}
+	q := u.Query()
+	q.Set("error", code)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// AcceptInvite implements POST /api/auth/accept-invite (AC4). This
+// endpoint goes through the canonical middleware.ErrorMapper so error
+// envelopes match the rest of the API.
+func (h *AuthHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) error {
+	var req acceptInviteRequestBody
+	if err := decodeAuthBody(w, r, &req); err != nil {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "body", Message: "invalid JSON"}}}
+	}
+	res, err := h.svc.AcceptInvite(r.Context(), service.AcceptInviteInput{
+		Token:    req.InviteToken,
+		FullName: req.FullName,
+		Password: req.Password,
+	})
+	if err != nil {
+		return err
+	}
+	h.setRefreshCookie(w, &service.LoginResult{
+		RefreshToken: res.RefreshToken,
+		RefreshTTL:   res.RefreshTTL,
+	})
+	WriteJSON(w, http.StatusOK, acceptInviteResponseBody{
+		AccessToken: res.AccessToken,
+		User: userSummary{
+			ID:            uuid.UUID(res.User.ID.Bytes).String(),
+			Email:         res.User.Email,
+			FullName:      res.User.FullName,
+			EmailVerified: res.User.EmailVerified,
+		},
+		Center: acceptInviteCenterPayload{ID: res.CenterID, Name: res.CenterName},
+		Role:   res.Role,
+	})
+	return nil
+}
+
+// clearOAuthStateCookie emits a Set-Cookie with Max-Age=0 so the browser
+// discards the existing oauth_state cookie. Same Path / Domain as the
+// init endpoint so the discard matches.
+func (h *AuthHandler) clearOAuthStateCookie(w http.ResponseWriter) {
+	header, err := buildOAuthStateCookieHeader("", h.cookie, -1)
+	if err != nil {
+		return
+	}
+	w.Header().Add("Set-Cookie", header)
+}
+
+// buildOAuthStateCookieHeader is the oauth_state-specific cookie
+// builder. Path is hard-coded to /api/auth (narrower than refresh_token's
+// /). Otherwise mirrors buildCookieHeader's CRLF / ';' rejection.
+func buildOAuthStateCookieHeader(value string, cfg CookieConfig, maxAge int) (string, error) {
+	if strings.ContainsAny(value, "\r\n\t\x00;") {
+		return "", errors.New("cookie value contains forbidden character")
+	}
+	var b strings.Builder
+	b.WriteString(oauthStateCookieName)
+	b.WriteByte('=')
+	b.WriteString(value)
+	b.WriteString("; Path=")
+	b.WriteString(oauthStateCookiePath)
+	if cfg.Domain != "" {
+		if strings.ContainsAny(cfg.Domain, "\r\n\t\x00;") {
+			return "", errors.New("cookie domain contains forbidden character")
+		}
+		b.WriteString("; Domain=")
+		b.WriteString(cfg.Domain)
+	}
+	switch {
+	case maxAge < 0:
+		b.WriteString("; Max-Age=0")
+	case maxAge > 0:
+		b.WriteString("; Max-Age=")
+		b.WriteString(strconv.Itoa(maxAge))
+	}
+	b.WriteString("; HttpOnly")
+	if cfg.Secure {
+		b.WriteString("; Secure")
+	}
+	switch cfg.SameSite {
+	case http.SameSiteLaxMode:
+		b.WriteString("; SameSite=Lax")
+	case http.SameSiteStrictMode:
+		b.WriteString("; SameSite=Strict")
+	case http.SameSiteNoneMode:
+		b.WriteString("; SameSite=None")
+	}
+	return b.String(), nil
 }
 
 // buildCookieHeader serializes a Set-Cookie header by hand so that a

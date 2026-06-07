@@ -9,6 +9,28 @@ import (
 
 const okSecret = "x-this-secret-is-exactly-thirty-two-bytes!!"
 
+// productionBase returns a Config that passes Validate in production
+// when the test only wants to mutate ONE field. Story 1.6 added the
+// Google + OAuth state + apex URL fields; every production test must
+// fill them or hit the "required oauth config missing" branch.
+func productionBase() config.Config {
+	return config.Config{
+		AppEnv:               "production",
+		DatabaseURL:          "postgres://...",
+		JWTSecret:            okSecret,
+		AppVerifyURLBase:     "https://my.classlite.app/verify-email",
+		AppResetURLBase:      "https://my.classlite.app/reset-password",
+		CookieDomain:         ".classlite.app",
+		GoogleClientID:       "client-id",
+		GoogleClientSecret:   "client-secret",
+		GoogleRedirectURL:    "https://my.classlite.app/api/auth/google/callback",
+		OAuthStateSecret:     okSecret,
+		AppApexHost:          "my.classlite.app",
+		AppPostLoginURL:      "https://my.classlite.app/",
+		AppLoginErrorURLBase: "https://my.classlite.app/login",
+	}
+}
+
 func TestValidate_DevelopmentAcceptsEmpty(t *testing.T) {
 	cfg := config.Config{AppEnv: "development", DatabaseURL: "", JWTSecret: ""}
 	if err := cfg.Validate(); err != nil {
@@ -72,14 +94,61 @@ func TestValidate_ProductionRejectsShortJWTSecret(t *testing.T) {
 }
 
 func TestValidate_ProductionPassesWithAllSet(t *testing.T) {
-	cfg := config.Config{
-		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
-		AppVerifyURLBase: "https://my.classlite.app/verify-email",
-		AppResetURLBase:  "https://my.classlite.app/reset-password",
-		CookieDomain:     ".classlite.app",
-	}
+	cfg := productionBase()
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("production with all values set should pass, got: %v", err)
+	}
+}
+
+// Story 1.6 — OAuth fields.
+
+func TestValidate_ProductionRequiresGoogleClientID(t *testing.T) {
+	cfg := productionBase()
+	cfg.GoogleClientID = ""
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_CLIENT_ID") {
+		t.Fatalf("expected GOOGLE_CLIENT_ID error, got %v", err)
+	}
+}
+
+func TestValidate_ProductionRequiresOAuthStateSecret(t *testing.T) {
+	cfg := productionBase()
+	cfg.OAuthStateSecret = ""
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "OAUTH_STATE_SECRET") {
+		t.Fatalf("expected OAUTH_STATE_SECRET error, got %v", err)
+	}
+}
+
+func TestValidate_ProductionRejectsShortOAuthStateSecret(t *testing.T) {
+	cfg := productionBase()
+	cfg.OAuthStateSecret = "too-short"
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "OAUTH_STATE_SECRET") {
+		t.Fatalf("expected OAUTH_STATE_SECRET length error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "32") {
+		t.Errorf("error should mention 32-byte minimum, got %v", err)
+	}
+}
+
+func TestValidate_ProductionRejectsHTTPRedirect(t *testing.T) {
+	cfg := productionBase()
+	cfg.GoogleRedirectURL = "http://my.classlite.app/api/auth/google/callback"
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "https://") {
+		t.Fatalf("expected GOOGLE_REDIRECT_URL https requirement, got %v", err)
+	}
+}
+
+func TestValidate_DevelopmentAcceptsEmptyOAuth(t *testing.T) {
+	cfg := config.Config{
+		AppEnv:           "development",
+		GoogleClientID:   "",
+		OAuthStateSecret: "",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("development should accept empty OAuth values, got: %v", err)
 	}
 }
 

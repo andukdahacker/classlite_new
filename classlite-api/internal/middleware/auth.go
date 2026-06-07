@@ -100,20 +100,17 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 				UserID:   claims.UserID,
 				Role:     dbRole,
 			}
-			ctx := context.WithValue(r.Context(), tenantContextKey{}, tc)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(model.WithTenantContext(r.Context(), tc)))
 		})
 	}
 }
 
-// TenantFromContext extracts the model.TenantContext injected by
-// ExtractTenant. Returns (zero, false) when no context was set.
+// TenantFromContext is the in-package re-export of
+// model.TenantFromContext kept for backward-compat with Story 1.5
+// callsites. New code should call model.TenantFromContext directly.
 func TenantFromContext(ctx context.Context) (model.TenantContext, bool) {
-	tc, ok := ctx.Value(tenantContextKey{}).(model.TenantContext)
-	return tc, ok
+	return model.TenantFromContext(ctx)
 }
-
-type tenantContextKey struct{}
 
 func writeMiddlewareJSON(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	requestID, _ := r.Context().Value(model.RequestID).(string)
