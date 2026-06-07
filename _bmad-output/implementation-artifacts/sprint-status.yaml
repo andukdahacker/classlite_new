@@ -1,5 +1,5 @@
 # generated: 2026-05-28
-# last_updated: 2026-06-07 (story 1-5 code review complete: 5 decisions + 31 patches applied, 10 deferred, 4 dismissed; codegen + migrate round-trip + go test ./... + -race all green; status=done)
+# last_updated: 2026-06-07 (story 1-6 context engineered + ready-for-dev: Google OAuth init/callback, invite acceptance API, Owner force-logout; 10 ACs + 4 failure-path ACs spanning R6/R7/R1 risk mitigations; status=ready-for-dev)
 # project: classlite_new
 # project_key: NOKEY
 # tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
   epic-1b: in-progress
   1-4-email-password-registration-and-email-verification-api: done
   1-5-login-session-management-and-password-reset-api: done
-  1-6-google-oauth-and-invite-acceptance-api: backlog
+  1-6-google-oauth-and-invite-acceptance-api: ready-for-dev
   epic-1b-retrospective: optional
 
   # Epic 1C: Frontend Foundation & Landing Page
