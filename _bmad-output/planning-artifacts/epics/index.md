@@ -33,6 +33,7 @@ This directory contains the complete epic and story breakdown for ClassLite v2, 
 | [epic-01a-foundation.md](epic-01a-foundation.md) | 1A: Project Foundation | 1.1, 1.2a–f, 1.3, 1.3b, 1.3c |
 | [epic-01b-auth.md](epic-01b-auth.md) | 1B: Authentication | 1.4, 1.5, 1.6 |
 | [epic-01c-frontend-landing.md](epic-01c-frontend-landing.md) | 1C: Frontend Foundation & Landing | 1.7a–c, 1.8, 1.9a–d, 1.10 |
+| [epic-01d-component-library.md](epic-01d-component-library.md) | 1D: Component Library Buildout (Path B) | 1d-1, 1d-2, 1d-3, 1d-4 (Phase 4 visual bridge) |
 | [epic-02.md](epic-02.md) | 2: Onboarding, Center Setup & Roles | 2.1–2.7 |
 | [epic-03.md](epic-03.md) | 3: Class Management & Scheduling | 3.1–3.5 |
 | [epic-04.md](epic-04.md) | 4: Exercise Authoring, AI Content & Knowledge Hub | 4.1–4.5 |
@@ -309,6 +310,13 @@ UX-DR25: Progress Sharing — defines how performance data can be shared outside
 | UX-DR23 | 6 | 6.1, 6.2, 6.3, 6.4 |
 | UX-DR24 | 3–10 | All data-fetching views |
 | UX-DR25 | 7, 8 | 7.2, 8.3 |
+| UX-DR26 | 1D | 1d-1, 1d-2, 1d-3, 1d-4, 1d-5, 1d-6, 1d-7, 1d-8 |
+| UX-DR27 | 1D | 1d-1, 1d-3 |
+| UX-DR28 | 1D | 1d-1, 1d-2, 1d-3, 1d-4, 1d-5, 1d-6, 1d-7, 1d-8 |
+| UX-DR29 | 1D | 1d-1, 1d-3, 1d-4 |
+| UX-DR30 | 1D | 1d-4 |
+| UX-DR31 | 1D | 1d-5 |
+| UX-DR32 | 1D | 1d-3 |
 
 ---
 
@@ -420,6 +428,15 @@ Design system with tokens.css, React dashboard scaffold (routing, state, i18n, S
 **UX-DRs:** UX-DR1 through UX-DR20
 **NFRs:** NFR-1, NFR-3, NFR-5
 
+### Epic 1D: Component Library Buildout (Path B — Trim + Phase 4 Visual Bridge)
+Re-scoped 2026-06-07 after party-mode review (Winston + Sally + Mary + Murat + Paige + Amelia). Storybook foundation with 3-tier Rolldown compat ladder + preview-side deps + i18n parity CI (R38 mitigation), 34 shadcn primitives themed (incl. Toggle/ToggleGroup per Amelia's coupling-gap fix; shape-semantic Skeletons split off to Epic 10), app-shell stack with explicit role-variant Props interfaces (per Amelia), and Phase 4 visual bridge (Sally synthesis — static visual shells of `WriteDocSurface` `s34`, `WritingGradingSurface` `s23`, `SpeakingGradingSurface` `s24`, `AnchoredQuestionCard` `s18/s36`, `MobileWritingSurface` `s78`, `InboxListShell` `s50/51/52`, `AnalyticsHomeShell` `s45/48`). Behavior wiring for all Phase 4 components defers to feature epics 5/6/7/8/10 — autosave, anchor persistence, audio playback, AI overlays, polling, RBAC. Legacy stories 1d-4 (visual/status), 1d-5 (shells+states), 1d-6 (DataListTable), 1d-7 (drawers/modals/forms), 1d-8 (tabs+calendar) deferred to feature epics 2/3/6/8/9/10 — files retained as input artifacts.
+**Stories:** 1d-1, 1d-2, 1d-3, 1d-4 (4 active stories — Path B; 5 legacy stories deferred to feature epics)
+**FRs:** None new (internal tooling supporting downstream FR delivery)
+**UX-DRs:** UX-DR26 through UX-DR32 (new) + reuses UX-DR1, UX-DR2, UX-DR16, UX-DR22, UX-DR23, UX-DR24
+**NFRs:** NFR-1 (R38 mitigated via 1d-1 AC4 i18n parity CI), NFR-3, NFR-5
+**Sequencing:** Slots between Epic 1C and Epic 2; adds ~4–5 weeks frontend critical path (down from 4–9 weeks original) under Path B trim; Epic 2 backend proceeds in parallel.
+**Pre-dev gate:** `/bmad-tea TD` re-run for Epic 1D before any 1d-N story transitions backlog → ready-for-dev (Murat — addresses stale test-design and R38 score 6).
+
 ### Epic 2: Onboarding, Center Setup & Roles
 Persona selection, center setup with branding, template selection and class spawning, post-onboarding checklist, center settings with Google Meet, role hierarchy and permissions, bulk student import.
 **Stories:** 2.1–2.7 (9 stories, including 2.3a–c decomposition)
@@ -487,10 +504,17 @@ Epic 1A (Foundation)
 │                        │    │    └── Epic 7 (People & Q&A)
 │                        │    └── Epic 7 (People & Q&A)
 │                        └── Epic 9 (Billing)
-├── Epic 1C (Frontend) ──→ (parallel with 1B, feeds into all frontend stories)
+├── Epic 1C (Frontend) ──→ Epic 1D (Component Library Buildout — Path B) ──→ feeds Epic 2-10 frontend stories
+│                                                                            (DoD amendment: feature stories ship Storybook coverage alongside)
 └── Epic 10 (Inbox/Notifications/Polish) ← depends on events from Epics 3-9
 ```
 
+Note (Paige's flag): Epic 1D was previously missing from this graph. Under Path B, 1D consumes Epic 1C (design tokens, app shell baseline, i18n setup) and produces the Storybook foundation + primitive coverage + app-shell + Phase 4 visual bridge that Epic 2–10 frontend stories consume. Epic 1D runs after 1C; backend Epic 2 API stories (2-1, 2-2) and Epic 1B remainder can run in parallel.
+
 ---
 
-**Total: 12 epic files, 68 stories (up from 46 in original), 81 FRs fully covered, 25 UX-DRs.**
+**Total: 13 epic files, 72 active stories (Path B: down from 76 — 4 active 1d-N stories + 5 legacy 1d-N deferred to feature epics as input artifacts), 81 FRs fully covered, 32 UX-DRs.**
+
+_Path B re-scope summary (2026-06-07):_ Epic 1D trimmed from 8 to 4 active stories after party-mode convergent critique (Winston + Sally + Mary). Active scope: foundation + primitives + app-shell + Phase 4 visual bridge (Sally synthesis). Legacy story content (visual/status, shells+states, DataListTable, drawers/modals/forms, tabs+calendar) ships with consuming feature epics — story files retained at `_bmad-output/implementation-artifacts/1d-{4,5,6,7,8}-*.md` with `Status: deferred-to-feature-epic` and target-epic header notes. Component inventory at [`../component-inventory.md`](../component-inventory.md) tagged with Path B deferrals._
+
+_Epic 1D added 2026-06-07 as a designer-parallelization initiative — pre-builds all `ui/` and `domain/` components from the 93-screen mockup set in Storybook before feature epics consume them. Phase 4 behavior-heavy components (writing editor, grading anchors, Q&A sidebar, exercise attempts, mobile shells) remain in their feature epics where the behavior emerges from feature wiring. Launch slip accepted in exchange for parallel design iteration and a more consistent component foundation. Component inventory in [`../component-inventory.md`](../component-inventory.md)._
