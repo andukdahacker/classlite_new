@@ -1,38 +1,37 @@
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * Playwright config — cross-subdomain auth foundation (Phase 0.4 / A3).
+ * Playwright config.
  *
- * Two main projects:
- *   - `landing`   — visits classlite.app (Astro)
- *   - `dashboard` — visits my.classlite.app (React/Vite)
+ * Two test surface families share this config:
  *
- * Both depend on a `setup` project that performs login ONCE and persists
- * cookies on the `.classlite.app` Domain so the dashboard project picks up
- * the session without a second login.
+ *   A) Cross-subdomain auth foundation (Phase 0.4 / Story 1.5 work)
+ *      - Projects: setup / landing / dashboard / cross-subdomain / mobile-*
+ *      - Test files under `tests/e2e/`
+ *      - Requires dev servers on `*.classlite.localhost` hostnames
+ *      - Auth stub via `auth.setup.ts`
  *
- * Local URLs:
- *   - Landing dev server (Astro):   http://classlite.localhost:4321
- *   - Dashboard dev server (Vite):  http://my.classlite.localhost:5173
+ *   B) Design system contracts (Story 1.7a — theme + typography resolution)
+ *      - Project: `design-system`
+ *      - Test files under `e2e/`
+ *      - Auto-starts vite dev server on plain localhost:5173
+ *      - No auth dependency — exercises a public dev-only route
  *
- * To make `.classlite.localhost` cookies work cross-subdomain, run both
- * dev servers on `*.classlite.localhost` hostnames (browsers treat
- * `*.localhost` as loopback per RFC 6761). The setup project writes a
- * cookie on `.classlite.localhost` so both projects see it.
- *
- * Real environments override BASE_URL_LANDING and BASE_URL_DASHBOARD via
- * env vars (e.g. CI staging).
+ * Run a single surface:
+ *   npx playwright test --project=design-system
+ *   npx playwright test --project=dashboard
  */
 
 const BASE_URL_LANDING =
   process.env.BASE_URL_LANDING ?? 'http://classlite.localhost:4321'
 const BASE_URL_DASHBOARD =
   process.env.BASE_URL_DASHBOARD ?? 'http://my.classlite.localhost:5173'
+const BASE_URL_DESIGN_SYSTEM =
+  process.env.BASE_URL_DESIGN_SYSTEM ?? 'http://localhost:5173'
 
 const STORAGE_STATE = '.playwright/auth.json'
 
 export default defineConfig({
-  testDir: './tests/e2e',
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
@@ -44,6 +43,7 @@ export default defineConfig({
   projects: [
     {
       name: 'setup',
+      testDir: './tests/e2e',
       testMatch: /.*\.setup\.ts/,
       use: {
         baseURL: BASE_URL_DASHBOARD,
@@ -51,6 +51,7 @@ export default defineConfig({
     },
     {
       name: 'landing',
+      testDir: './tests/e2e',
       dependencies: ['setup'],
       testMatch: /landing\/.*\.spec\.ts/,
       use: {
@@ -61,6 +62,7 @@ export default defineConfig({
     },
     {
       name: 'dashboard',
+      testDir: './tests/e2e',
       dependencies: ['setup'],
       testMatch: /dashboard\/.*\.spec\.ts/,
       use: {
@@ -71,18 +73,18 @@ export default defineConfig({
     },
     {
       name: 'cross-subdomain',
+      testDir: './tests/e2e',
       dependencies: ['setup'],
       testMatch: /cross-subdomain\/.*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        // Both base URLs are reachable; tests navigate explicitly via
-        // page.goto(BASE_URL_LANDING) and page.goto(BASE_URL_DASHBOARD).
         baseURL: BASE_URL_DASHBOARD,
         storageState: STORAGE_STATE,
       },
     },
     {
       name: 'mobile-safari',
+      testDir: './tests/e2e',
       dependencies: ['setup'],
       testMatch: /mobile\/.*\.spec\.ts/,
       use: {
@@ -93,6 +95,7 @@ export default defineConfig({
     },
     {
       name: 'mobile-chrome',
+      testDir: './tests/e2e',
       dependencies: ['setup'],
       testMatch: /mobile\/.*\.spec\.ts/,
       use: {
@@ -101,5 +104,34 @@ export default defineConfig({
         storageState: STORAGE_STATE,
       },
     },
+    {
+      // Story 1.7a — design system contract project.
+      // Uses plain localhost:5173 to avoid the cross-subdomain wiring; the
+      // theme-resolution route is dev-only and does not exercise auth.
+      name: 'design-system',
+      testDir: './e2e',
+      testMatch: /.*\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: BASE_URL_DESIGN_SYSTEM,
+      },
+    },
   ],
+  // Auto-start a local vite ONLY when no explicit BASE_URL_DESIGN_SYSTEM
+  // override is provided. An explicit override (CI preview deployments,
+  // staging) always wins; running the server alongside it would race on
+  // port 5173 and never reach the override URL.
+  //
+  // No --host pin: vite defaults to all interfaces, so the same instance
+  // serves localhost AND my.classlite.localhost (which both resolve to
+  // 127.0.0.1) — the cross-subdomain projects can reuse it without a
+  // Host-header rejection.
+  webServer: process.env.BASE_URL_DESIGN_SYSTEM
+    ? undefined
+    : {
+        command: 'npm run dev -- --port 5173',
+        url: BASE_URL_DESIGN_SYSTEM,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      },
 })

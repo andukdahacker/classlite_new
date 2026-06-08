@@ -1,0 +1,34 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "color-no-hex": [true, {
+      "message": "Use a --cl-* design token instead of a raw hex. Tokens live in tokens.css."
+    }],
+    "color-named": ["never", { "ignore": ["inside-function"] }],
+    "declaration-property-value-disallowed-list": {
+      "/^(--|color|background|border|fill|stroke|outline)/": ["/oklch\\(/", "/rgb\\(/", "/rgba\\(/", "/hsl\\(/"]
+    },
+    "at-rule-no-unknown": [true, {
+      "ignoreAtRules": ["theme", "custom-variant", "utility", "layer", "apply", "tailwind", "screen"]
+    }],
+    "no-descending-specificity": null,
+    "alpha-value-notation": null,
+    "color-function-notation": null,
+    "hue-degree-notation": null,
+    "lightness-notation": null,
+    "rule-empty-line-before": null,
+    "comment-empty-line-before": null,
+    "selector-class-pattern": null,
+    "custom-property-empty-line-before": null,
+    "import-notation": null,
+    "at-rule-empty-line-before": null,
+    "font-family-name-quotes": null
+  },
+  "ignoreFiles": [
+    "**/tokens.css",
+    "**/lint-fixtures/**",
+    "node_modules/**",
+    "dist/**",
+    ".astro/**"
+  ]
+}

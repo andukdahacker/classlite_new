@@ -1,0 +1,4 @@
+**/lint-fixtures/**
+node_modules/**
+dist/**
+.astro/**

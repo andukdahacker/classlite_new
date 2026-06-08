@@ -16,15 +16,9 @@ const { title, lang = 'en' } = Astro.props
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="generator" content={Astro.generator} />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&display=swap"
-      rel="stylesheet"
-    />
     <title>{title}</title>
   </head>
-  <body class="bg-[var(--cl-paper)] text-[var(--cl-ink)] font-[var(--cl-font-body)]">
+  <body class="dotted">
     <slot />
   </body>
 </html>

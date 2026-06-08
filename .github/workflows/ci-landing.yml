@@ -2,21 +2,40 @@ name: CI — Landing
 
 on:
   push:
-    paths: ['classlite-landing/**']
+    paths:
+      - 'classlite-landing/**'
+      - 'classlite-web/src/tokens.css'
+      - 'scripts/sync-tokens.sh'
+      - '.github/workflows/ci-landing.yml'
   pull_request:
-    paths: ['classlite-landing/**']
+    paths:
+      - 'classlite-landing/**'
+      - 'classlite-web/src/tokens.css'
+      - 'scripts/sync-tokens.sh'
+      - '.github/workflows/ci-landing.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install
         run: cd classlite-landing && npm ci
-      - name: Lint
+      - name: Verify tokens.css parity (Story 1.7a AC2)
+        run: |
+          bash scripts/sync-tokens.sh
+          if ! git diff --exit-code -- classlite-landing/src/styles/tokens.css; then
+            echo "::error::tokens.css drift detected. Run ./scripts/sync-tokens.sh locally and commit."
+            exit 1
+          fi
+      - name: Lint (Astro check)
         run: cd classlite-landing && npx astro check
+      - name: Lint (Stylelint)
+        run: cd classlite-landing && npm run lint:css
       - name: Build
         run: cd classlite-landing && npm run build

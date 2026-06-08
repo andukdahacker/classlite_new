@@ -1,7 +1,10 @@
 # generated: 2026-05-28
-# last_updated: 2026-06-07 (Epic 1D re-scoped to Path B after party-mode review: 1d-1 foundation rewritten with 3-tier Rolldown kill-switch + preview-side deps + i18n parity CI step (R38 mitigation) + error-on-merge three-state lint; 1d-2 adds Toggle/ToggleGroup primitives + shape-semantic skeleton split; 1d-3 adds full TS Props interfaces; 1d-4 RENAMED from visual-status to phase4-visual-bridge (Sally+Mary synthesis — static visual shells of WriteDocSurface/WritingGradingSurface/SpeakingGradingSurface/AnchoredQuestionCard/MobileWritingSurface/InboxListShell/AnalyticsHomeShell, behavior defers to feature epics); 1d-5/1d-6/1d-7/1d-8 deferred to feature epics 2/3/8/9/10; pre-1d-1 gate: /bmad-tea TD re-run required per Murat)
-# previous_update_1: 2026-06-07 (Epic 1D Component Library Buildout added: 8 stories 1d-1..1d-8 covering Storybook foundation + shadcn primitives + domain components for Phases 1-3 from 93-screen mockup set; Phase 4 behavior-heavy components deferred to feature epics 5/6/7; designer parallelization initiative — launch slip accepted; all 8 stories status=backlog)
-# previous_update_2: 2026-06-07 (story 1-6 → review: Google OAuth init/callback + invite acceptance + force-logout implemented; all ATDD red-phase tests green; full regression + migrate round-trip clean)
+# last_updated: 2026-06-08 (Story 1-7a transitioned in-progress → review: design system + shadcn theme bridge + Fraunces/Geist Mono fontsource + tokens.css sync + stylelint/ESLint raw-hex enforcement + components/ui governance complete. Vitest 67/67 green, Playwright 8/8 green on design-system project, lint + tsc + build clean on both surfaces.)
+# previous_update_-1: 2026-06-08 (Story 1-7a transitioned ready-for-dev → in-progress)
+# previous_update_0: 2026-06-08 (Story 1-7a-design-system-and-component-library scaffolded ready-for-dev + party-mode revision pass: Sally/Winston/Amelia/Murat reviewed, John ruled — AC3 corrected to Tailwind v4 import order with full :root mapping including all *-foreground pairings + .dark block retained per Winston's CQ-1 reread + Playwright 4-primitive theme-resolution matrix (Button/Input/Card/Dialog) replacing jsdom; AC2 swapped SHA-256 for sync + git diff --exit-code + automated counter-fixture; AC4 prescriptive @fontsource-variable Fraunces both surfaces + Vietnamese subset + typography-resolution spec + R39 early-signal note; AC5 integration-level lint-script sandbox test + 3-layer fixture exclusion; AC6 trip-wire escalation + [shadcn] commit-tag allowlist + components/ui/README role/state taxonomy with UX-DR2/UX-DR22 anti-patterns; AC7 --cl-ink-dot token retiring stylelint-disable + docs/lint-exceptions.md governance stub; epic-1c transitioned backlog → in-progress)
+# previous_update_1: 2026-06-07 (Epic 1D re-scoped to Path B after party-mode review: 1d-1 foundation rewritten with 3-tier Rolldown kill-switch + preview-side deps + i18n parity CI step (R38 mitigation) + error-on-merge three-state lint; 1d-2 adds Toggle/ToggleGroup primitives + shape-semantic skeleton split; 1d-3 adds full TS Props interfaces; 1d-4 RENAMED from visual-status to phase4-visual-bridge (Sally+Mary synthesis — static visual shells of WriteDocSurface/WritingGradingSurface/SpeakingGradingSurface/AnchoredQuestionCard/MobileWritingSurface/InboxListShell/AnalyticsHomeShell, behavior defers to feature epics); 1d-5/1d-6/1d-7/1d-8 deferred to feature epics 2/3/8/9/10; pre-1d-1 gate: /bmad-tea TD re-run required per Murat)
+# previous_update_2: 2026-06-07 (Epic 1D Component Library Buildout added: 8 stories 1d-1..1d-8 covering Storybook foundation + shadcn primitives + domain components for Phases 1-3 from 93-screen mockup set; Phase 4 behavior-heavy components deferred to feature epics 5/6/7; designer parallelization initiative — launch slip accepted; all 8 stories status=backlog)
+# previous_update_3: 2026-06-07 (story 1-6 → review: Google OAuth init/callback + invite acceptance + force-logout implemented; all ATDD red-phase tests green; full regression + migrate round-trip clean)
 # project: classlite_new
 # project_key: NOKEY
 # tracking_system: file-system
@@ -71,8 +74,8 @@ development_status:
   epic-1b-retrospective: optional
 
   # Epic 1C: Frontend Foundation & Landing Page
-  epic-1c: backlog
-  1-7a-design-system-and-component-library: backlog
+  epic-1c: in-progress
+  1-7a-design-system-and-component-library: review
   1-7b-app-shell-routing-and-state-management: backlog
   1-7c-shared-layout-components-and-i18n: backlog
   1-8-auth-ui-registration-and-login-screens: backlog

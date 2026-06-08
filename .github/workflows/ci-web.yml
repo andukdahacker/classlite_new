@@ -2,22 +2,68 @@ name: CI — Web Dashboard
 
 on:
   push:
-    paths: ['classlite-web/**']
+    paths:
+      - 'classlite-web/**'
+      - 'classlite-landing/src/styles/tokens.css'
+      - 'scripts/sync-tokens.sh'
+      - '.github/workflows/ci-web.yml'
   pull_request:
-    paths: ['classlite-web/**']
+    paths:
+      - 'classlite-web/**'
+      - 'classlite-landing/src/styles/tokens.css'
+      - 'scripts/sync-tokens.sh'
+      - '.github/workflows/ci-web.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve PR base ref
+        if: ${{ github.event_name == 'pull_request' }}
+        run: git fetch origin ${{ github.base_ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install
         run: cd classlite-web && npm ci
-      - name: Lint
-        run: cd classlite-web && npx eslint .
+      - name: Verify tokens.css parity (Story 1.7a AC2)
+        run: |
+          bash scripts/sync-tokens.sh
+          if ! git diff --exit-code -- classlite-landing/src/styles/tokens.css; then
+            echo "::error::tokens.css drift detected. Run ./scripts/sync-tokens.sh locally and commit."
+            exit 1
+          fi
+      - name: Guard against hand-edits in components/ui (Story 1.7a AC6 — advisory)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          DIFF_RANGE: origin/${{ github.base_ref }}...HEAD
+          LOG_RANGE: origin/${{ github.base_ref }}..HEAD
+        run: |
+          # `git log A..B` (two dots) shows commits in B not in A — PR commits.
+          # Three-dot symmetric difference could match base-only commits on
+          # non-fast-forward branches and silently allowlist a PR.
+          if git log --format='%B' "$LOG_RANGE" | grep -qF '[shadcn]'; then
+            echo "::notice::[shadcn] tag detected — skipping components/ui hand-edit guard."
+            exit 0
+          fi
+          # `:(glob)` enables real recursive ** matching; the default pathspec
+          # treats ** as a single segment and misses nested files. Grep covers
+          # Added/Deleted/Renamed too — new hand-written primitives and sneaky
+          # deletions should also surface, not just modifications.
+          changes=$(git diff --name-status "$DIFF_RANGE" -- ':(glob)classlite-web/src/components/ui/**' | grep -E '^(M|A|D|R)' || true)
+          if [ -n "$changes" ]; then
+            echo "::warning::Changes detected under classlite-web/src/components/ui/ (M/A/D/R):"
+            echo "$changes"
+            echo "::warning::These files are shadcn-generated (FW-7). If this is a legitimate 'npx shadcn add' re-run, add [shadcn] to the commit message and re-push."
+            echo "::warning::If this is a manual edit, FW-7 forbids it. Wrap the change in src/components/domain/ instead, or edit src/index.css for token changes."
+          fi
+      - name: Lint (ESLint)
+        run: cd classlite-web && npm run lint
+      - name: Lint (Stylelint)
+        run: cd classlite-web && npm run lint:css
       - name: Type check
         run: cd classlite-web && npx tsc --noEmit
       - name: Test

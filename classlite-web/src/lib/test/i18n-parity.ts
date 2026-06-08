@@ -23,9 +23,7 @@ import { expect } from 'vitest'
 import en from '@/locales/en.json'
 import vi from '@/locales/vi.json'
 
-const LOCALES = { en, vi } as const
-
-type LocaleCode = keyof typeof LOCALES
+type LocaleCode = 'en' | 'vi'
 
 /**
  * Recursively flatten a nested locale object to dot-notation keys.

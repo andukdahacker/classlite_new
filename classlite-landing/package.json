@@ -8,12 +8,20 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "lint:css": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.2.9",
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
     "@tailwindcss/vite": "^4.3.0",
     "astro": "^6.4.2",
     "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "stylelint": "^17.13.0",
+    "stylelint-config-standard": "^40.0.0"
   }
 }

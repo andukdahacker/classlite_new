@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Story 1.7a integration-rules-active.test.ts sandbox files — written and
+# deleted inside try/finally during the run. If vitest is SIGKILL'd between
+# writeFileSync and finally, the sandbox files stay on disk; this guard
+# prevents accidental `git add .` from shipping bad-hex bait into HEAD.
+src/test/__sandbox-*

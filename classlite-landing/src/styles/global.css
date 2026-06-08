@@ -1,1 +1,27 @@
+/* Story 1.7a AC8 — Astro landing global.css.
+   Import order mirrors the dashboard index.css per AC3 (tailwindcss, tokens,
+   fontsource). Vietnamese subset ships in the base index.css for each
+   fontsource v5+ package, so no separate vietnamese.css entry is imported. */
 @import "tailwindcss";
+@import "./tokens.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/fraunces";
+@import "./font-aliases.css";
+
+@utility bg-dot-grid {
+  background-image: radial-gradient(circle at 1px 1px, var(--cl-ink-dot) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+@layer base {
+  body {
+    background-color: var(--cl-paper);
+    color: var(--cl-ink);
+    font-family: var(--cl-font-body);
+  }
+
+  body.dotted {
+    @apply bg-dot-grid;
+  }
+}
