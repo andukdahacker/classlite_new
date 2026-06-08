@@ -21,12 +21,14 @@ import (
 // io.ReadAll / json.Decode allocation from OOMing the process.
 const maxAuthRequestBodyBytes = 16 * 1024
 
-// Story 1.6 cookie constants.
+// Story 1.6 cookie constants. TTL is derived from the service-layer
+// OAuthStateTTL so a change in one place propagates everywhere.
 const (
 	oauthStateCookieName = "oauth_state"
 	oauthStateCookiePath = "/api/auth"
-	oauthStateCookieTTL  = 600 // 10 min in seconds — mirrors OAuthStateTTL
 )
+
+var oauthStateCookieTTL = int(service.OAuthStateTTL.Seconds())
 
 // CookieConfig drives the attributes the AuthHandler sets on Set-Cookie
 // responses. Production (APP_ENV != "development") MUST set all three to
@@ -432,10 +434,24 @@ func (h *AuthHandler) GoogleInit(w http.ResponseWriter, r *http.Request) {
 		// Pre-Google failure: inline JSON envelope so the SPA can render
 		// the error without round-tripping through the login screen.
 		var inviteNotFound *service.InviteNotFoundError
+		var inviteExpired *service.InviteExpiredError
+		var inviteAlreadyAccepted *service.InviteAlreadyAcceptedError
+		var notConfigured *service.OAuthNotConfiguredError
 		switch {
 		case errors.As(err, &inviteNotFound):
 			WriteError(w, r, http.StatusNotFound,
 				"INVITE_NOT_FOUND", "This invite link is no longer valid.", nil)
+		case errors.As(err, &inviteExpired):
+			WriteError(w, r, http.StatusGone,
+				"INVITE_EXPIRED", "This invite link has expired.",
+				map[string]any{"centerName": inviteExpired.CenterName, "inviterEmail": inviteExpired.InviterEmail})
+		case errors.As(err, &inviteAlreadyAccepted):
+			WriteError(w, r, http.StatusConflict,
+				"INVITE_ALREADY_ACCEPTED", "This invite has already been accepted.",
+				map[string]any{"centerName": inviteAlreadyAccepted.CenterName})
+		case errors.As(err, &notConfigured):
+			WriteError(w, r, http.StatusServiceUnavailable,
+				"OAUTH_NOT_CONFIGURED", "Google sign-in is not configured.", nil)
 		default:
 			slog.Error("oauth init failed", "error", err)
 			WriteError(w, r, http.StatusInternalServerError,
@@ -465,12 +481,16 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	state := q.Get("state")
 	upstreamErr := q.Get("error")
 
-	// Always clear the oauth_state cookie on EVERY exit path (defense
-	// against replay if the same cookie/state pair makes it back).
-	defer h.clearOAuthStateCookie(w)
+	// IMPORTANT: clearOAuthStateCookie MUST be called BEFORE every
+	// http.Redirect — Go's net/http server commits response headers when
+	// http.Redirect calls WriteHeader+Write. A deferred clear runs after
+	// headers are committed and never reaches the wire. Hoisting the
+	// clear into each exit branch is the only way the replay defense
+	// actually works in production.
 
 	// User-cancellation surface: no audit row (it's normal behavior).
 	if upstreamErr == "access_denied" {
+		h.clearOAuthStateCookie(w)
 		http.Redirect(w, r, h.errorRedirect("google_access_denied"), http.StatusFound)
 		return
 	}
@@ -478,6 +498,7 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("google oauth callback upstream error",
 			"event", "oauth_upstream_error",
 			"upstream_error", upstreamErr)
+		h.clearOAuthStateCookie(w)
 		http.Redirect(w, r, h.errorRedirect("google_server_error"), http.StatusFound)
 		return
 	}
@@ -496,15 +517,27 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		RequestHost: r.Host,
 	})
 	if err != nil {
+		// OAuthNotConfiguredError is operator misconfiguration — surface
+		// as a 503 envelope (no redirect), so monitoring picks it up.
+		var notConfigured *service.OAuthNotConfiguredError
+		if errors.As(err, &notConfigured) {
+			h.clearOAuthStateCookie(w)
+			WriteError(w, r, http.StatusServiceUnavailable,
+				"OAUTH_NOT_CONFIGURED", "Google sign-in is not configured.", nil)
+			return
+		}
+		h.clearOAuthStateCookie(w)
 		http.Redirect(w, r, h.errorRedirect(oauthCallbackErrorCode(err, r)), http.StatusFound)
 		return
 	}
 
-	// Success path: emit refresh-token cookie + redirect to post-login URL.
+	// Success path: emit refresh-token cookie + clear oauth_state cookie
+	// (replay defense) + redirect to post-login URL.
 	h.setRefreshCookie(w, &service.LoginResult{
 		RefreshToken: result.RefreshToken,
 		RefreshTTL:   result.RefreshTTL,
 	})
+	h.clearOAuthStateCookie(w)
 
 	dest := h.successRedirect(result)
 	http.Redirect(w, r, dest, http.StatusFound)
@@ -513,11 +546,16 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 // oauthCallbackErrorCode maps a service-layer error to the redirect
 // query-param token. Defaults to "google_server_error" — any unmatched
 // error indicates a logic gap, surface loudly via slog.
+//
+// google_timeout MUST be distinguished from google_userinfo_failed so
+// operators can spot Google availability problems vs spec-compliance
+// bugs (AC10).
 func oauthCallbackErrorCode(err error, r *http.Request) string {
 	var stateMissing *service.OAuthStateMissingError
 	var stateInvalid *service.OAuthStateInvalidError
 	var stateExpired *service.OAuthStateExpiredError
 	var exchange *service.OAuthExchangeError
+	var userinfoTimeout *service.OAuthUserinfoTimeoutError
 	var userinfo *service.OAuthUserinfoError
 	var emailUnverified *service.OAuthEmailUnverifiedError
 	var tenantMismatch *service.OAuthTenantMismatchError
@@ -529,6 +567,8 @@ func oauthCallbackErrorCode(err error, r *http.Request) string {
 		return "csrf_expired"
 	case errors.As(err, &exchange):
 		return "google_exchange_failed"
+	case errors.As(err, &userinfoTimeout):
+		return "google_timeout"
 	case errors.As(err, &userinfo):
 		return "google_userinfo_failed"
 	case errors.As(err, &emailUnverified):
@@ -543,10 +583,21 @@ func oauthCallbackErrorCode(err error, r *http.Request) string {
 }
 
 // successRedirect builds the post-login URL. When the invite succeeded
-// the URL gets ?invited=true&center=<name>; when an invite was
-// attempted but produced a recoverable error (mismatch, expired,
-// already-accepted), the URL gets ?error=<code> with the relevant
-// details echoed in additional params.
+// the URL gets ?invited=true (center name omitted — see below). When an
+// invite produced a recoverable error (mismatch, expired,
+// already-accepted), the URL gets ?error=<code>.
+//
+// Privacy / SEC-11: invited-email and Google-email are NOT echoed in
+// the URL even on mismatch. The URL ends up in browser history, web
+// server access logs, proxy logs, and Referer headers for every
+// outbound resource on the landing page (Sentry beacons, analytics,
+// image loads). Echoing emails there would let an attacker probing
+// random invite tokens via Google sign-in confirm which emails were
+// invited. The SPA fetches details from a tenant-scoped follow-up
+// endpoint after landing instead.
+//
+// `center` name is also NOT echoed — same reason — and to avoid
+// emitting `center=` empty when fetchCenterName lost a race.
 func (h *AuthHandler) successRedirect(result *service.GoogleCallbackResult) string {
 	base := h.svc.AppPostLoginURL()
 	if base == "" {
@@ -559,16 +610,8 @@ func (h *AuthHandler) successRedirect(result *service.GoogleCallbackResult) stri
 	q := u.Query()
 	if result.InviteSurface != nil {
 		q.Set("error", inviteSurfaceErrorCode(result.InviteSurface))
-		var mismatch *service.InviteEmailMismatchError
-		if errors.As(result.InviteSurface, &mismatch) {
-			q.Set("expectedEmail", mismatch.InvitedEmail)
-			q.Set("googleEmail", mismatch.OAuthEmail)
-		}
 	} else if result.InviteAccepted {
 		q.Set("invited", "true")
-		if result.CenterName != "" {
-			q.Set("center", result.CenterName)
-		}
 	}
 	u.RawQuery = q.Encode()
 	return u.String()
@@ -612,6 +655,14 @@ func (h *AuthHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) error
 	var req acceptInviteRequestBody
 	if err := decodeAuthBody(w, r, &req); err != nil {
 		return model.ValidationError{Fields: []model.FieldError{{Field: "body", Message: "invalid JSON"}}}
+	}
+	// Failure-Path AC: over-cap inviteToken returns 400 INVALID_INVITE_TOKEN
+	// at the boundary so the service layer never collapses oversize into a
+	// 404 INVITE_NOT_FOUND (which would be wrong — the request is malformed,
+	// not pointing at a missing row).
+	if len(req.InviteToken) > service.MaxInviteTokenChars {
+		WriteError(w, r, http.StatusBadRequest, "INVALID_INVITE_TOKEN", "Invite token is malformed.", nil)
+		return nil
 	}
 	res, err := h.svc.AcceptInvite(r.Context(), service.AcceptInviteInput{
 		Token:    req.InviteToken,

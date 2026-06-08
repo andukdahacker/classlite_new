@@ -120,11 +120,40 @@ type OAuthExchangeError struct{ UpstreamErr string }
 func (e *OAuthExchangeError) Error() string { return "oauth code exchange failed: " + e.UpstreamErr }
 
 // OAuthUserinfoError → ?error=google_userinfo_failed. The userinfo HTTP
-// call to Google failed (non-2xx, timeout, decode failure). Reason
-// carries the categorical failure mode for logs only.
+// call to Google failed (non-2xx, decode failure, non-timeout transport
+// error). Reason carries the categorical failure mode for logs only.
 type OAuthUserinfoError struct{ Reason string }
 
 func (e *OAuthUserinfoError) Error() string { return "oauth userinfo: " + e.Reason }
+
+// OAuthUserinfoTimeoutError → ?error=google_timeout. Distinct from the
+// generic userinfo failure so operators can spot Google availability
+// problems vs spec-compliance bugs (AC10).
+type OAuthUserinfoTimeoutError struct{}
+
+func (e *OAuthUserinfoTimeoutError) Error() string { return "oauth userinfo timeout" }
+
+// OAuthNotConfiguredError → 503 OAUTH_NOT_CONFIGURED. The Google OAuth
+// client or state signer was never installed (dev parity or operator
+// missed an env var). Distinct from *OAuthExchangeError so the SPA and
+// audit logs don't falsely blame Google.
+type OAuthNotConfiguredError struct{}
+
+func (e *OAuthNotConfiguredError) Error() string { return "oauth not configured" }
+
+// InviteRoleConflictError → 409 INVITE_ROLE_CONFLICT. The user already
+// has a center_members row for the invite's center but under a
+// different role than the invite was sent for. Reserved for the future
+// "reject and surface" UX choice; the current implementation upgrades
+// in place per the Story 1.6 review decision.
+type InviteRoleConflictError struct {
+	CurrentRole string
+	InvitedRole string
+}
+
+func (e *InviteRoleConflictError) Error() string {
+	return "user already has different role in this center"
+}
 
 // OAuthEmailUnverifiedError → ?error=google_email_unverified. Google
 // returned email_verified=false on the profile. Rare (federated identities,

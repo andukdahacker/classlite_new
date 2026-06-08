@@ -255,17 +255,17 @@ func (s *AuthService) acceptInviteAddMembership(ctx context.Context, userID pgty
 	}
 
 	q := generated.New(tx)
-	if _, err := q.CreateCenterMember(ctx, generated.CreateCenterMemberParams{
+	// Story 1.6 review decision (D1): upgrade in place for existing
+	// members. Use an atomic upsert — a try-INSERT-then-UPDATE shape
+	// would break here because Postgres aborts the tx on unique-PK
+	// violation, leaving the surrounding MarkInviteAcceptedGuarded call
+	// in a "current transaction is aborted" state.
+	if _, err := q.UpsertCenterMemberWithRole(ctx, generated.UpsertCenterMemberWithRoleParams{
 		UserID:   userID,
 		CenterID: pgtype.UUID{Bytes: centerID, Valid: true},
 		Role:     role,
 	}); err != nil {
-		// ON CONFLICT not in the query — duplicate PK becomes a real error.
-		// For idempotency we soften unique-violation: same user already
-		// in the center → not an error.
-		if !isUniqueViolation(err) {
-			return fmt.Errorf("create center member: %w", err)
-		}
+		return fmt.Errorf("upsert center member: %w", err)
 	}
 
 	rows, err := q.MarkInviteAcceptedGuarded(ctx, pgtype.UUID{Bytes: inviteID, Valid: true})
@@ -341,7 +341,13 @@ func (s *AuthService) acceptInviteCreateUserAndMember(
 		CenterID: pgtype.UUID{Bytes: centerID, Valid: true},
 		Role:     role,
 	}); err != nil {
-		return generated.User{}, fmt.Errorf("create center member: %w", err)
+		// Soften unique-PK conflicts — the new-user race is vanishingly
+		// rare (CreateUser just succeeded with no prior row) but a
+		// concurrent admin path could race. Mirror the existing-user
+		// branch (acceptInviteAddMembership) for consistency.
+		if !isUniqueViolation(err) {
+			return generated.User{}, fmt.Errorf("create center member: %w", err)
+		}
 	}
 
 	rows, err := q.MarkInviteAcceptedGuarded(ctx, pgtype.UUID{Bytes: inviteID, Valid: true})

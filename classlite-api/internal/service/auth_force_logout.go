@@ -124,9 +124,17 @@ func (s *AuthService) ForceLogout(ctx context.Context, tc model.TenantContext, t
 		return nil, fmt.Errorf("commit force-logout tx: %w", err)
 	}
 
-	// Post-commit audit.
+	// Post-commit audit. The target's actual access-token tail is between
+	// 0 and AccessTokenTTL — we don't persist per-issuance JWT exp
+	// timestamps, so the audit reports the conservative upper bound
+	// (`maxAccessTokenTailWindowSeconds`). Audit consumers should read
+	// this as "the longest the target could still authenticate" not
+	// "the exact remaining time". A precise per-event `ceil(exp - now)`
+	// would require persisting access-token issuance metadata, which
+	// is deferred to a post-launch security-hardening story (same
+	// queue as the refresh-token blocklist per EDGE-2).
 	postCtx := context.WithoutCancel(ctx)
-	accessTail := int(AccessTokenTTL.Seconds())
+	maxAccessTail := int(AccessTokenTTL.Seconds())
 	s.logAuthAuditBestEffort(postCtx, AuthAuditEntry{
 		UserID:      targetUserID,
 		ActorUserID: callerUUID,
@@ -136,8 +144,8 @@ func (s *AuthService) ForceLogout(ctx context.Context, tc model.TenantContext, t
 		Changes: Changes{
 			Before: map[string]any{"sessionsActive": len(families)},
 			After: map[string]any{
-				"sessionsActive":                 0,
-				"accessTokenTailWindowSeconds":   accessTail,
+				"sessionsActive":                  0,
+				"maxAccessTokenTailWindowSeconds": maxAccessTail,
 			},
 		},
 	})

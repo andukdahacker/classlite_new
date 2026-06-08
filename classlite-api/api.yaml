@@ -364,8 +364,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+        "410":
+          description: INVITE_EXPIRED — inviteToken was supplied but the invite has expired. Details carry `{ centerName, inviterEmail }`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: INVITE_ALREADY_ACCEPTED — the invite has already been redeemed. Details carry `{ centerName }`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
         "400":
           description: INVALID_INVITE_TOKEN — supplied token exceeds the 256-char cap.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "503":
+          description: OAUTH_NOT_CONFIGURED — operator left Google credentials empty (dev parity only).
           content:
             application/json:
               schema:
@@ -381,10 +399,12 @@ paths:
         `?error=<code>` for invite-recoverable failures. Failure →
         `APP_LOGIN_ERROR_URL_BASE?error=<code>`. Codes: `csrf_invalid`,
         `csrf_expired`, `google_exchange_failed`, `google_userinfo_failed`,
-        `google_email_unverified`, `google_access_denied`,
+        `google_timeout`, `google_email_unverified`, `google_access_denied`,
         `google_server_error`, `oauth_wrong_tenant`, `google_link_race`,
         `invite_email_mismatch`, `invite_expired`, `invite_already_accepted`.
         The `oauth_state` cookie is cleared on every exit path.
+        OAUTH_NOT_CONFIGURED is the only response that is NOT a 302 — it
+        emits a 503 JSON envelope so operator monitoring picks it up.
       parameters:
         - in: query
           name: code

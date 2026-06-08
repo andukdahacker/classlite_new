@@ -130,9 +130,11 @@ func (s *hmacOAuthStateSigner) Verify(token string) (*OAuthStatePayload, error) 
 		return nil, &OAuthStateInvalidError{}
 	}
 
-	// AC9: TTL check. IssuedAt + TTL > now → still valid.
+	// AC9: TTL check. IssuedAt + TTL >= now → still valid (inclusive
+	// equality at the exact second boundary, matching the godoc claim
+	// "10 min" rather than 9m59s).
 	expiresAt := time.Unix(p.IssuedAt, 0).Add(OAuthStateTTL)
-	if !s.clock.Now().Before(expiresAt) {
+	if s.clock.Now().After(expiresAt) {
 		return nil, &OAuthStateExpiredError{}
 	}
 

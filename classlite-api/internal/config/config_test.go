@@ -141,6 +141,15 @@ func TestValidate_ProductionRejectsHTTPRedirect(t *testing.T) {
 	}
 }
 
+func TestValidate_ProductionRejectsWrongRedirectPath(t *testing.T) {
+	cfg := productionBase()
+	cfg.GoogleRedirectURL = "https://my.classlite.app/wrong/path"
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), config.GoogleRedirectURLPath) {
+		t.Fatalf("expected GOOGLE_REDIRECT_URL suffix requirement, got %v", err)
+	}
+}
+
 func TestValidate_DevelopmentAcceptsEmptyOAuth(t *testing.T) {
 	cfg := config.Config{
 		AppEnv:           "development",

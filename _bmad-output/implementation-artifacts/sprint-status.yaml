@@ -67,7 +67,7 @@ development_status:
   epic-1b: in-progress
   1-4-email-password-registration-and-email-verification-api: done
   1-5-login-session-management-and-password-reset-api: done
-  1-6-google-oauth-and-invite-acceptance-api: review
+  1-6-google-oauth-and-invite-acceptance-api: done
   epic-1b-retrospective: optional
 
   # Epic 1C: Frontend Foundation & Landing Page

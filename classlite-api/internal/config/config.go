@@ -77,6 +77,12 @@ const MinJWTSecretBytes = 32
 // OAuth state HMAC signer.
 const MinOAuthStateSecretBytes = 32
 
+// GoogleRedirectURLPath is the required path suffix on GOOGLE_REDIRECT_URL.
+// A misconfigured redirect like https://foo.classlite.app/anything would
+// otherwise pass validation and cause an opaque Google-side error at
+// callback time.
+const GoogleRedirectURLPath = "/api/auth/google/callback"
+
 // Validate checks that critical configuration values are set.
 // In non-development mode, DATABASE_URL, JWT_SECRET, APP_VERIFY_URL_BASE
 // and APP_RESET_URL_BASE must be non-empty, and JWT_SECRET must be at
@@ -141,9 +147,14 @@ func (c Config) Validate() error {
 			return fmt.Errorf("OAUTH_STATE_SECRET must be ≥ %d bytes for HMAC-SHA256 (got %d)",
 				MinOAuthStateSecretBytes, len([]byte(c.OAuthStateSecret)))
 		}
-		// AC10 — reject http:// redirect URLs in non-dev.
+		// AC10 — reject http:// redirect URLs in non-dev and enforce the
+		// expected callback path so an operator-supplied URL pointing at
+		// the wrong endpoint surfaces at boot instead of at callback time.
 		if !strings.HasPrefix(c.GoogleRedirectURL, "https://") {
 			return fmt.Errorf("GOOGLE_REDIRECT_URL must use https:// in %s (got %q)", c.AppEnv, c.GoogleRedirectURL)
+		}
+		if !strings.HasSuffix(c.GoogleRedirectURL, GoogleRedirectURLPath) {
+			return fmt.Errorf("GOOGLE_REDIRECT_URL must end with %q (got %q)", GoogleRedirectURLPath, c.GoogleRedirectURL)
 		}
 	} else {
 		if c.JWTSecret != "" && len([]byte(c.JWTSecret)) < MinJWTSecretBytes {

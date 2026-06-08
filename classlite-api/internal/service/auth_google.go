@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -126,6 +127,13 @@ func (c *realGoogleOAuthClient) UserInfo(ctx context.Context, token *oauth2.Toke
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		// AC10 — distinguish deadline-exceeded from other transport errors
+		// so the redirect surface (?error=google_timeout vs
+		// ?error=google_userinfo_failed) tells operators whether they're
+		// looking at a Google availability problem or a spec deviation.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+			return nil, &OAuthUserinfoTimeoutError{}
+		}
 		return nil, &OAuthUserinfoError{Reason: "http: " + err.Error()}
 	}
 	defer resp.Body.Close()
@@ -158,7 +166,7 @@ type InitiateGoogleOAuthResult struct {
 // a wasted Google round-trip.
 func (s *AuthService) InitiateGoogleOAuth(ctx context.Context, in InitiateGoogleOAuthInput) (*InitiateGoogleOAuthResult, error) {
 	if s.oauth == nil || s.oauthState == nil {
-		return nil, &OAuthExchangeError{UpstreamErr: "oauth not configured"}
+		return nil, &OAuthNotConfiguredError{}
 	}
 
 	var inviteTokenHash string
@@ -240,7 +248,7 @@ type GoogleCallbackResult struct {
 // ?error=<code> redirect.
 func (s *AuthService) HandleGoogleCallback(ctx context.Context, in GoogleCallbackInput) (*GoogleCallbackResult, error) {
 	if s.oauth == nil || s.oauthState == nil {
-		return nil, &OAuthExchangeError{UpstreamErr: "oauth not configured"}
+		return nil, &OAuthNotConfiguredError{}
 	}
 
 	// 1. Cookie present.
@@ -466,14 +474,31 @@ func (s *AuthService) resolveGoogleIdentity(ctx context.Context, profile *Google
 // assertTenantBinding implements AC3. Apex host → no check (returns nil
 // resolved center). Subdomain host → look up center by slug + assert
 // membership; missing membership → *OAuthTenantMismatchError + audit row.
+//
+// Defense-in-depth: an empty appApexHost would otherwise short-circuit
+// the entire check. Treat that as a misconfiguration and run the
+// membership check anyway — the worst case is that legitimate logins
+// fail loudly until the operator fixes APP_APEX_HOST.
 func (s *AuthService) assertTenantBinding(ctx context.Context, userUUID uuid.UUID, requestHost string) (*generated.Center, error) {
 	host := strings.ToLower(strings.TrimSpace(requestHost))
-	if host == "" || s.appApexHost == "" || host == strings.ToLower(s.appApexHost) {
+	if host == "" {
 		return nil, nil
 	}
-	// Strip port from host (e.g. "tenb.localhost:5173" → "tenb.localhost").
-	if idx := strings.IndexByte(host, ':'); idx >= 0 {
-		host = host[:idx]
+	// Strip port via net.SplitHostPort so IPv6 hosts like "[::1]:8080"
+	// don't get chopped at the first ':' inside the brackets.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	apex := strings.ToLower(strings.TrimSpace(s.appApexHost))
+	if apex != "" {
+		if h, _, err := net.SplitHostPort(apex); err == nil {
+			apex = h
+		}
+		apex = strings.Trim(apex, "[]")
+		if host == apex {
+			return nil, nil
+		}
 	}
 	// Extract the leading label as the slug.
 	dot := strings.IndexByte(host, '.')
@@ -481,11 +506,12 @@ func (s *AuthService) assertTenantBinding(ctx context.Context, userUUID uuid.UUI
 		// No dot — host is a bare label, treat as apex.
 		return nil, nil
 	}
-	slug := host[:dot]
+	slug := strings.ToLower(host[:dot])
 	if slug == "" {
 		return nil, nil
 	}
 
+	// centers is a global (no-RLS) table — safe to query off the bare pool.
 	q := generated.New(s.db)
 	center, err := q.GetCenterByShortCode(ctx, slug)
 	if err != nil {
@@ -504,12 +530,31 @@ func (s *AuthService) assertTenantBinding(ctx context.Context, userUUID uuid.UUI
 		return nil, fmt.Errorf("get center by slug: %w", err)
 	}
 
-	_, err = q.GetCenterMemberByUserAndCenter(ctx, generated.GetCenterMemberByUserAndCenterParams{
+	// center_members is RLS-protected (FORCE ROW LEVEL SECURITY) so the
+	// read MUST run inside a tx with SET LOCAL app.current_tenant_id —
+	// without it, the policy filter is `center_id = NULL::uuid` and every
+	// legitimate member surfaces as 0 rows. Same pattern as auth_admin.go.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tenant-binding tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := tx.Exec(ctx,
+		"SELECT set_config('app.current_tenant_id', $1::text, true)",
+		uuid.UUID(center.ID.Bytes).String(),
+	); err != nil {
+		return nil, fmt.Errorf("set tenant local: %w", err)
+	}
+	txQ := generated.New(tx)
+	_, err = txQ.GetCenterMemberByUserAndCenter(ctx, generated.GetCenterMemberByUserAndCenterParams{
 		UserID:   pgtype.UUID{Bytes: userUUID, Valid: true},
 		CenterID: center.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Roll the read tx back BEFORE the audit write so we don't
+			// hold a connection while writing the audit row.
+			_ = tx.Rollback(context.WithoutCancel(ctx))
 			s.logAuthAuditBestEffort(context.WithoutCancel(ctx), AuthAuditEntry{
 				UserID:     userUUID,
 				Event:      "auth.oauth_tenant_mismatch",

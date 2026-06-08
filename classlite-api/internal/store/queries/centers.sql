@@ -12,6 +12,12 @@ RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_con
 -- Story 1.6 — used by HandleGoogleCallback to resolve a subdomain slug
 -- to a center for the tenant-binding check (AC3). `centers` is a global
 -- table (no RLS), so this runs from the unscoped session safely.
+--
+-- Case-insensitive lookup: Host headers can arrive mixed-case (RFC 3986
+-- §3.2.2 says the host part is case-insensitive) and stored short_codes
+-- may have any case. LOWER() on both sides keeps the comparison stable
+-- regardless of how the operator seeded the row. A functional index
+-- on (LOWER(short_code)) would speed this up if it ever becomes hot.
 SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at
 FROM centers
-WHERE short_code = $1;
+WHERE LOWER(short_code) = LOWER($1);
