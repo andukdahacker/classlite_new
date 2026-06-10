@@ -28,3 +28,8 @@ dist-ssr
 # writeFileSync and finally, the sandbox files stay on disk; this guard
 # prevents accidental `git add .` from shipping bad-hex bait into HEAD.
 src/test/__sandbox-*
+
+# Story 1.7b AC8 integration sandboxes — same SIGKILL guard for the
+# raw-fetch / axios cases. The sandbox lives under src/features/ so the
+# AC8 ESLint rule scope matches; the gitignore catches the leftover file.
+src/features/__sandbox-*.tsx

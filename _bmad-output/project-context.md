@@ -604,15 +604,18 @@ describe('StudentList', () => {
 *Why:* Zustand stores are module-level singletons. State from test N bleeds into test N+1.
 
 ```ts
-// correct — every store exports initialState, reset in beforeEach
-import { useSessionStore, initialState } from '@/stores/sessionStore'
+// correct — every store exports `initialState` AND a `reset()` action.
+// beforeEach calls the action, which set()s back to the initial slice.
+import { useSessionStore } from '@/stores/sessionStore'
 
 beforeEach(() => {
-  useSessionStore.setState(initialState, true) // true = replace entire state
+  useSessionStore.getState().reset()
 })
 ```
 
-Rule: Every Zustand store MUST export `initialState`. `beforeEach` resets with `replace: true`.
+Rule: Every Zustand store MUST export `initialState` AND expose a `reset()` action that sets state back to `initialState`. `beforeEach` calls `reset()`.
+
+**Why a `reset()` action and not `setState(initialState, true)`?** Zustand v5 strict-types the replace overload to require the full state shape (including actions). A data-only `initialState` then fails to compile, and casting through with `setState(initialState as never, true)` wipes the actions at runtime — subsequent `getState().someAction()` calls crash with "is not a function." The `reset()` action sidesteps both: it lives on the store (preserving its action surface) and resets the data slice via a partial `set()`.
 
 #### TEST-FE-4: i18n — test key resolution, never hardcode English strings
 *Why:* Hardcoded English couples tests to one locale and hides missing translation keys.

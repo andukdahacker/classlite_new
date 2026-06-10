@@ -28,6 +28,14 @@ const PROJECT_ROOT = resolve(HERE, '../../../')
 
 const SANDBOX_CSS = resolve(PROJECT_ROOT, 'src/test/__sandbox-bad-hex.css')
 const SANDBOX_TSX = resolve(PROJECT_ROOT, 'src/test/__sandbox-bad-hex.tsx')
+const SANDBOX_FETCH = resolve(
+  PROJECT_ROOT,
+  'src/features/__sandbox-fetch.tsx',
+)
+const SANDBOX_AXIOS = resolve(
+  PROJECT_ROOT,
+  'src/features/__sandbox-axios.tsx',
+)
 
 interface CommandResult {
   exitCode: number
@@ -83,5 +91,57 @@ describe('AC5 lint scripts integration (sandbox)', () => {
       )
       expect(combined, 'sandbox file must be named in the diagnostics').toMatch(/__sandbox-bad-hex\.tsx/)
     })
+  })
+
+  // Story 1.7b AC8 — extend the integration coverage to the raw-fetch /
+  // axios guards. The unit fixtures invoke ESLint directly; this drops a
+  // real file under src/features/ and runs the actual `npm run lint`
+  // script so the silent-skip class of failures (rule configured but not
+  // wired into the script) is caught at the integration boundary too.
+
+  test('npm run lint fails AND fires no-restricted-globals on raw fetch in src/features/', () => {
+    withSandbox(
+      SANDBOX_FETCH,
+      "export function bad() { return fetch('/api/x') }\n",
+      () => {
+        const result = runCommand('npm run lint --silent')
+        expect(
+          result.exitCode,
+          `lint should exit non-zero; stderr=${result.stderr}`,
+        ).not.toBe(0)
+        const combined = `${result.stdout}\n${result.stderr}`
+        expect(
+          combined,
+          'no-restricted-globals rule must surface in the lint output',
+        ).toMatch(/no-restricted-globals/)
+        expect(
+          combined,
+          'sandbox file must be named in the diagnostics',
+        ).toMatch(/__sandbox-fetch\.tsx/)
+      },
+    )
+  })
+
+  test('npm run lint fails AND fires no-restricted-imports on an axios import in src/features/', () => {
+    withSandbox(
+      SANDBOX_AXIOS,
+      "import axios from 'axios'\nexport const c = axios\n",
+      () => {
+        const result = runCommand('npm run lint --silent')
+        expect(
+          result.exitCode,
+          `lint should exit non-zero; stderr=${result.stderr}`,
+        ).not.toBe(0)
+        const combined = `${result.stdout}\n${result.stderr}`
+        expect(
+          combined,
+          'no-restricted-imports rule must surface in the lint output',
+        ).toMatch(/no-restricted-imports/)
+        expect(
+          combined,
+          'sandbox file must be named in the diagnostics',
+        ).toMatch(/__sandbox-axios\.tsx/)
+      },
+    )
   })
 })

@@ -1,0 +1,25 @@
+/**
+ * StudentDashboard — root of the student lazy bundle group.
+ *
+ * Mobile/4G students never need teacher or admin code (architecture line
+ * 253). The router lazy-loads this component as the student chunk entry
+ * so Rolldown can emit a focused bundle for the student surface.
+ *
+ * Story 1-7b ships a single-heading placeholder; the real student dashboard
+ * UI lands per-feature in Epics 2-10.
+ */
+import { useTranslation } from 'react-i18next'
+
+export default function StudentDashboard() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[var(--cl-paper)]">
+      <h1
+        data-testid="student-dashboard-heading"
+        className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]"
+      >
+        {t('app.welcome')}
+      </h1>
+    </div>
+  )
+}

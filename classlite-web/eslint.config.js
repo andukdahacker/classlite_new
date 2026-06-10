@@ -70,4 +70,34 @@ export default defineConfig([
       'no-restricted-syntax': 'off',
     },
   },
+  {
+    // Story 1.7b AC8 — single network entry point. Raw fetch / axios in
+    // features or hooks bypasses the apiFetch envelope-unwrap + 401
+    // silent-refresh contract. The lib/ tier (api-fetch.ts, auth-refresh.ts)
+    // is the only legitimate consumer of raw `fetch`; it lives outside this
+    // scope by construction so no override block is needed.
+    files: ['src/features/**/*.{ts,tsx}', 'src/hooks/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            "Direct fetch is forbidden in features/hooks. Use apiFetch from '@/lib/api-fetch'.",
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'axios',
+              message:
+                "axios is forbidden. Use apiFetch from '@/lib/api-fetch' — TanStack Query owns server state.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

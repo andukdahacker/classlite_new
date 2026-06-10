@@ -1,4 +1,5 @@
 {
   "app.name": "ClassLite",
-  "app.welcome": "Welcome to ClassLite"
+  "app.welcome": "Welcome to ClassLite",
+  "app.errorFallback": "Something went wrong. We've been notified."
 }
