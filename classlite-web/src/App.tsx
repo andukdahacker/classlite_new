@@ -1,25 +1,31 @@
 /**
  * App — top-level mount point.
  *
- * The bespoke `usePathname()` + `useSyncExternalStore` switch from Story
- * 1-7a is retired; React Router v7's `createBrowserRouter` +
- * `RouterProvider` (defined in `routes.tsx`) owns navigation now. The
- * `/__theme-resolution` dev route migrated to a lazy router child without
- * URL or DOM change so the existing 1-7a Playwright theme/typography
- * specs continue to pass.
+ * Three load-bearing pieces composed here:
  *
- * `RootErrorBoundary` wraps the router so render-time errors in any
- * lazy chunk surface a localized fallback (with the error reported to
- * Sentry) instead of unmounting to a blank page.
+ *   - `<ErrorBoundary>` (Story 1-7c) wraps the router so any render-time
+ *     error in a lazy chunk surfaces a localized fallback with a Sentry
+ *     event ID + retry CTA instead of unmounting to a blank page. The
+ *     1-7b minimal `RootErrorBoundary` is retired.
+ *   - `<RouterProvider router={router} />` (Story 1-7b) owns navigation
+ *     via React Router v7 library mode; the dev-only routes (theme +
+ *     multi-tab bait) live behind `import.meta.env.DEV` in `routes.tsx`.
+ *   - `useLanguageInit()` (Story 1-7c) seeds the language store from
+ *     the `lang` cookie on first render and subscribes to subsequent
+ *     `setLanguage` mutations to keep the cookie + react-i18next active
+ *     language in sync (UX-DR17 cross-subdomain handoff — landing site
+ *     half lands with Story 1.10).
  */
 import { RouterProvider } from 'react-router'
-import { RootErrorBoundary } from '@/components/shared/RootErrorBoundary'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
+import { useLanguageInit } from '@/hooks/useLanguageInit'
 import { router } from '@/routes'
 
 export default function App() {
+  useLanguageInit()
   return (
-    <RootErrorBoundary>
+    <ErrorBoundary>
       <RouterProvider router={router} />
-    </RootErrorBoundary>
+    </ErrorBoundary>
   )
 }

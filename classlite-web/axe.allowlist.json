@@ -1,0 +1,4 @@
+{
+  "$schema": "./scripts/axe-allowlist.schema.json",
+  "rules": []
+}

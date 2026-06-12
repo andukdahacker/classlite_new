@@ -12,14 +12,15 @@ import { useTranslation } from 'react-i18next'
 
 export default function StudentDashboard() {
   const { t } = useTranslation()
+  // Story 1-7c wraps the student route in `<AppLayout>` so the heading
+  // now mounts inside the layout's `<main>`. The placeholder no longer
+  // sets its own min-height or background.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--cl-paper)]">
-      <h1
-        data-testid="student-dashboard-heading"
-        className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]"
-      >
-        {t('app.welcome')}
-      </h1>
-    </div>
+    <h1
+      data-testid="student-dashboard-heading"
+      className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]"
+    >
+      {t('app.welcome')}
+    </h1>
   )
 }

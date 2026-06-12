@@ -20,6 +20,48 @@ import {
   redirect,
   type RouteObject,
 } from 'react-router'
+import { useTranslation } from 'react-i18next'
+
+/**
+ * Root-level error fallback for router-layer failures (lazy chunk-load
+ * 404 after a stale deploy, loader throws, navigation errors). The React
+ * `ErrorBoundary` in `App.tsx` only catches render-time errors INSIDE the
+ * router tree; loader / lazy failures bubble up to React Router's
+ * built-in error UI unless `errorElement` is set. Localized via the
+ * existing `app.errorBoundary.*` keys so the user always sees a clean
+ * recovery affordance — even on a chunk that no longer exists.
+ */
+function RouterErrorFallback() {
+  const { t } = useTranslation()
+  return (
+    <div
+      role="alert"
+      className="flex min-h-screen flex-col items-center justify-center bg-[var(--cl-paper)] px-4 text-center"
+    >
+      <h1 className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]">
+        {t('app.errorBoundary.title')}
+      </h1>
+      <p className="mt-3 max-w-md font-[var(--cl-font-body)] text-[var(--cl-ink-soft)]">
+        {t('app.errorBoundary.body')}
+      </p>
+      <div className="mt-6 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-[var(--cl-radius-sm)] bg-[var(--cl-ink)] px-4 py-2 text-sm text-[var(--cl-surface)]"
+        >
+          {t('app.errorBoundary.retryCta')}
+        </button>
+        <a
+          href="/dashboard"
+          className="font-[var(--cl-font-body)] text-sm text-[var(--cl-accent)] underline"
+        >
+          {t('app.errorBoundary.homeLinkCta')}
+        </a>
+      </div>
+    </div>
+  )
+}
 
 const baseRoutes: RouteObject[] = [
   {
@@ -48,27 +90,76 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
-  // Student boundary — only mounted for student users. Route-level role
-  // gating (block teachers, etc.) lands with Story 2-6.
+  // Story 1-7c AC2 — AppLayout pathless route wrapping the authenticated
+  // surfaces. Student / Teacher dashboard placeholders mount inside the
+  // sidebar + topbar shell with the skip-to-content link. Auth routes
+  // stay under AuthLayout above; PermissionDenied / NotFound are
+  // full-screen error states (no shell). When real auth lands in Story
+  // 1-8, role-aware redirect from `/` will choose between
+  // OwnerDashboard / TeacherDashboard / StudentDashboard inside this
+  // same shell.
   {
-    path: '/student',
     lazy: async () => {
-      const { default: StudentDashboard } = await import(
-        '@/features/dashboard/StudentDashboard'
+      const { default: AppLayout } = await import(
+        '@/components/shared/AppLayout'
       )
-      return { Component: StudentDashboard }
+      return { Component: AppLayout }
+    },
+    children: [
+      // Student boundary — only mounted for student users. Route-level
+      // role gating (block teachers, etc.) lands with Story 2-6.
+      {
+        path: '/student',
+        lazy: async () => {
+          const { default: StudentDashboard } = await import(
+            '@/features/dashboard/StudentDashboard'
+          )
+          return { Component: StudentDashboard }
+        },
+      },
+      // Teacher boundary — default landing for authenticated owner /
+      // teacher / admin sessions.
+      {
+        path: '/dashboard',
+        lazy: async () => {
+          const { default: TeacherDashboard } = await import(
+            '@/features/dashboard/TeacherDashboard'
+          )
+          return { Component: TeacherDashboard }
+        },
+      },
+    ],
+  },
+  // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires
+  // per-route `errorElement={<PermissionDenied requiredRoles={[...]} />}`
+  // for role-gated routes; this standalone URL renders the
+  // Owner+Admin variant for direct visits.
+  {
+    path: '/permission-denied',
+    lazy: async () => {
+      const { default: PermissionDenied } = await import(
+        '@/components/shared/PermissionDenied'
+      )
+      return {
+        Component: () => (
+          <PermissionDenied requiredRoles={['owner', 'admin']} />
+        ),
+      }
     },
   },
-  // Teacher boundary — default landing for authenticated owner / teacher
-  // / admin sessions. Real role-aware redirect from `/` lands with
-  // Story 1-8 / Epic 2.
+  // Story 1-7c AC5 — `path: '*'` catch-all. React Router v7 matches by
+  // SPECIFICITY (not declaration order), so the catch-all is naturally
+  // the terminal match — every literal path (`/login`, `/dashboard`,
+  // `/permission-denied`, dev routes) outranks it. We still place it
+  // last as a readability convention so the route table reads top-to-bottom
+  // as a fallback chain.
   {
-    path: '/dashboard',
+    path: '*',
     lazy: async () => {
-      const { default: TeacherDashboard } = await import(
-        '@/features/dashboard/TeacherDashboard'
+      const { default: NotFound } = await import(
+        '@/components/shared/NotFound'
       )
-      return { Component: TeacherDashboard }
+      return { Component: NotFound }
     },
   },
 ]
@@ -96,4 +187,13 @@ const devRoutes: RouteObject[] = import.meta.env.DEV
     ]
   : []
 
-export const router = createBrowserRouter([...baseRoutes, ...devRoutes])
+// Single root pathless layout route owns `errorElement` so router-layer
+// failures (lazy chunk-load 404, loader throws) ALWAYS surface a localized
+// fallback instead of React Router's raw error UI. Render-time errors are
+// caught by `<ErrorBoundary>` in `App.tsx`; this is the loader/lazy seam.
+export const router = createBrowserRouter([
+  {
+    errorElement: <RouterErrorFallback />,
+    children: [...baseRoutes, ...devRoutes],
+  },
+])

@@ -66,6 +66,15 @@ jobs:
         run: cd classlite-web && npm run lint:css
       - name: Type check
         run: cd classlite-web && npx tsc --noEmit
+      - name: i18n parity (Story 1.7c AC9 — R38 mitigation)
+        # Blocks merge when en.json and vi.json key sets diverge or any
+        # locale value is empty. Vietnamese is co-primary; a missing key
+        # or blank value in vi.json ships as a raw `app.x.y` token (or
+        # blank UI) to half the user base — invisible to English-speaking
+        # reviewers without this guard. Runs BEFORE Test so a drift fails
+        # fast with a readable diff instead of surfacing as confusing
+        # missing-key throws inside component tests downstream.
+        run: cd classlite-web && npm run i18n-parity
       - name: Test
         run: cd classlite-web && npx vitest run --passWithNoTests
       - name: Build

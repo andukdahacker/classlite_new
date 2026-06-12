@@ -26,21 +26,27 @@ function fail(code, msg) {
 }
 
 /**
- * Recursively flatten a nested object into dot-notation keys.
- * { a: { b: 1 }, c: 2 } -> ['a.b', 'c']
+ * Recursively flatten a nested object into dot-notation [key, value] pairs.
+ * { a: { b: 1 }, c: 2 } -> [['a.b', 1], ['c', 2]]
  * Handles both nested and flat locale file shapes.
  */
 function flatten(obj, prefix = '') {
-  const keys = []
+  const pairs = []
   for (const [k, v] of Object.entries(obj)) {
     const path = prefix ? `${prefix}.${k}` : k
     if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      keys.push(...flatten(v, path))
+      pairs.push(...flatten(v, path))
     } else {
-      keys.push(path)
+      pairs.push([path, v])
     }
   }
-  return keys
+  return pairs
+}
+
+function isEmptyValue(v) {
+  if (v == null) return true
+  if (typeof v === 'string') return v.trim().length === 0
+  return false
 }
 
 function loadLocale(code) {
@@ -60,26 +66,37 @@ function loadLocale(code) {
   } catch (err) {
     fail(2, `parse ${path}: ${err.message}`)
   }
-  return new Set(flatten(parsed))
+  const pairs = flatten(parsed)
+  return {
+    keys: new Set(pairs.map(([k]) => k)),
+    empty: pairs.filter(([, v]) => isEmptyValue(v)).map(([k]) => k).sort(),
+  }
 }
 
 function diff(setA, setB) {
   return [...setA].filter((k) => !setB.has(k)).sort()
 }
 
-const sets = Object.fromEntries(LOCALES.map((c) => [c, loadLocale(c)]))
+const locales = Object.fromEntries(LOCALES.map((c) => [c, loadLocale(c)]))
 
 const [a, b] = LOCALES
-const missingInB = diff(sets[a], sets[b])
-const missingInA = diff(sets[b], sets[a])
+const missingInB = diff(locales[a].keys, locales[b].keys)
+const missingInA = diff(locales[b].keys, locales[a].keys)
+const emptyA = locales[a].empty
+const emptyB = locales[b].empty
 
-if (missingInA.length === 0 && missingInB.length === 0) {
-  const count = sets[a].size
-  process.stdout.write(`i18n-parity: OK — ${count} keys present in both ${LOCALES.join(', ')}\n`)
+if (
+  missingInA.length === 0 &&
+  missingInB.length === 0 &&
+  emptyA.length === 0 &&
+  emptyB.length === 0
+) {
+  const count = locales[a].keys.size
+  process.stdout.write(`i18n-parity: OK — ${count} keys present in both ${LOCALES.join(', ')} with non-empty values\n`)
   process.exit(0)
 }
 
-process.stderr.write(`i18n-parity: FAIL — locale keysets diverge\n\n`)
+process.stderr.write(`i18n-parity: FAIL — locale keysets diverge or contain empty values\n\n`)
 if (missingInB.length > 0) {
   process.stderr.write(`Keys in ${a}.json missing from ${b}.json (${missingInB.length}):\n`)
   for (const k of missingInB) process.stderr.write(`  - ${k}\n`)
@@ -90,5 +107,15 @@ if (missingInA.length > 0) {
   for (const k of missingInA) process.stderr.write(`  - ${k}\n`)
   process.stderr.write('\n')
 }
-process.stderr.write(`Fix by adding the missing keys to the affected locale file(s).\n`)
+if (emptyA.length > 0) {
+  process.stderr.write(`Keys with empty values in ${a}.json (${emptyA.length}):\n`)
+  for (const k of emptyA) process.stderr.write(`  - ${k}\n`)
+  process.stderr.write('\n')
+}
+if (emptyB.length > 0) {
+  process.stderr.write(`Keys with empty values in ${b}.json (${emptyB.length}):\n`)
+  for (const k of emptyB) process.stderr.write(`  - ${k}\n`)
+  process.stderr.write('\n')
+}
+process.stderr.write(`Fix by adding the missing keys or non-empty values to the affected locale file(s).\n`)
 process.exit(1)
