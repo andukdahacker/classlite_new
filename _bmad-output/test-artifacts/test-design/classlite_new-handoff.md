@@ -1,14 +1,21 @@
 ---
 title: 'TEA Test Design → BMAD Handoff Document'
-version: '1.0'
+version: '1.1'
 workflowType: 'testarch-test-design-handoff'
 inputDocuments:
   - '_bmad-output/test-artifacts/test-design/test-design-architecture.md'
   - '_bmad-output/test-artifacts/test-design/test-design-qa.md'
   - '_bmad-output/test-artifacts/test-design/test-design-progress.md'
+  - '_bmad-output/implementation-artifacts/1d-1-storybook-foundation.md'
+  - '_bmad-output/implementation-artifacts/1d-2-shadcn-primitive-coverage.md'
+  - '_bmad-output/implementation-artifacts/1d-3-app-shell-stack.md'
+  - '_bmad-output/implementation-artifacts/1d-4-phase4-visual-bridge.md'
 sourceWorkflow: 'testarch-test-design'
 generatedBy: 'TEA Master Test Architect (Murat)'
 generatedAt: '2026-06-04'
+lastRefresh:
+  date: '2026-06-15'
+  scope: 'Epic 1D (1d-1..1d-4) story-level AC patterns + risk-to-story mapping additions'
 projectName: 'ClassLite v2'
 ---
 
@@ -38,6 +45,7 @@ The following risks (score ≥6) MUST appear as epic-level quality gates. No epi
 | **Epic 1A (Foundation)** | R1, R2, R3, R49 |
 | **Epic 1B (Auth)** | R4, R5, R6, R7, R8, R13, R15 |
 | **Epic 1C (Frontend Foundation + Landing)** | R38, R46 |
+| **Epic 1D (Component Library Buildout — Path B)** | R38 (discharge via 1d-1 AC4), R39 (promoted monitor→active for Storybook builder), R51 (axe baseline drift), R52 (three-state variant explosion), R53 (designer token churn). See `test-design-architecture.md` § "Epic 1D Refresh (2026-06-15)". |
 | **Epic 2 (Onboarding, Center, Roles)** | R1, R18 |
 | **Epic 3 (Class Management & Scheduling)** | R19 |
 | **Epic 4 (Exercise Authoring, AI Content, Knowledge Hub)** | R9, R23, R30, R49 |
@@ -57,6 +65,7 @@ The following risks (score ≥6) MUST appear as epic-level quality gates. No epi
 | Epic 1A | RLS adversarial suite green; audit append-only invariants enforced at DB layer; log-secret scanner green |
 | Epic 1B | Cross-subdomain cookie auth verified; OAuth tenant-binding negative test green; refresh-token reuse-detection test green |
 | Epic 1C | Landing → dashboard cross-domain E2E green; en + vi bilingual smoke green |
+| Epic 1D | Storybook CI job green within 8-min soft cap (i18n parity + storybook:build + storybook:test all required per 1d-1 AC6); R38 discharge evidence (`assertI18nParity` red-phase + CI step) committed; `SidebarShell` four role variants AND `MobileTabBar` three role variants match `classlite-ia.md` lines 16–19 + Chapter 8 verbatim; static-shell discipline verified (zero `new Date()` calls in `src/components/domain/` 1d-4 files; every 1d-4 component has JSDoc naming feature-epic owner) |
 | Epic 4 | Worker tenant-context harness adversarial tests green per job type; R2 cross-tenant prefix test green; AI credit refund-on-failure test green (depends on A6) |
 | Epic 5 | Writing autosave under flaky-network E2E green; real iOS Safari speaking recorder verified |
 | Epic 6 | Submission immutability test (DB trigger + service + E2E) green; AI grading mock-deterministic + nightly real-Gemini smoke green |
@@ -116,6 +125,63 @@ Every story creator (using `bmad-create-story`) should encode these as acceptanc
 - AC: WCAG 2.1 AA — zero axe violations on the new component
 - AC: Loading / Empty / Error trilogy implemented for every data-fetching component
 
+**Component library stories (1D — Storybook foundation through Phase-4 visual bridge):**
+
+_For full P0–P3 decomposition see `test-design-qa.md` § "Epic 1D Refresh (2026-06-15)". Per-story risk + ATDD inheritance summarized below._
+
+**Story 1d-1 — Storybook Foundation, Decorators & Vite Compat Spike:**
+- AC: **AC4 inheritance contract — CORRECTED 2026-06-15** after `/bmad-tea AT` pre-flight discovered Story 1-7c (shipped 2026-06-12) already delivered the R38 four-layer mitigation. **No new helper / CI step / failing-fixture infrastructure required from 1d-1.** Existing artifacts on the branch: `classlite-web/src/lib/test/i18n-parity.ts` (`assertI18nParity(usedKeys, locales)` Vitest helper); `classlite-web/src/lib/test/i18n-parity.test.ts` (helper raises on missing key with readable diff); `classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts` (ATDD red specimen — `describe('Story 1-7c i18n parity (R38)', ...)`); `classlite-web/scripts/i18n-parity.mjs` (whole-file symmetric-diff CLI); `.github/workflows/ci-web.yml:69–77` (required `npm run i18n-parity` check labeled "Story 1.7c AC9 — R38 mitigation"). Per-story coverage specs (1d-2/1d-3/1d-4) extend the `i18n-parity-coverage.test.ts` file with new `describe('Story 1d-N i18n parity (R38)', ...)` blocks — inline dev work, NOT separate ATDD ceremony.
+- AC: Three-tier Vite/Rolldown ladder records tier outcome in `classlite-web/docs/storybook-rolldown-spike.md` (Tier A preferred, Tier B dual-builder fallback, Tier C deferral requires PM + user re-scope approval) (1D-P0-004, 1D-P0-005, R39 mitigation)
+- AC: Six-layer decorator stack in `preview.tsx` boots in documented composition order (Router outermost → MSW innermost; preview-side deps registered BEFORE decorators run); composition-order regression is a code-review reject (1D-P0-006)
+- AC: `@storybook/test-runner` `postRender` hook enforces three-state required exports for `*Table.stories.tsx`/`*List.stories.tsx`/`*Card.stories.tsx`/`*Hero.stories.tsx`/`*Shell.stories.tsx` — ERROR ON MERGE from day 1; `fixtures/missing-empty-export.stories.tsx` negative fixture asserts the rule FAILS (1D-P0-007, R52 mitigation)
+- AC: `@storybook/test-runner` `prerender` hook enforces FW-7 component placement; misplaced-fixture asserts rule FAILS (1D-P0-008)
+- AC: CI `storybook` job green end-to-end within 8-minute soft cap; shard-by-pattern documented if runtime trends > cap after 100 stories (1D-P0-010, R39 + R51 + R52)
+- AC: Smoke story `Button.stories.tsx` passes all six gates (locale en/vi, role owner/admin/teacher/student, axe zero violations, i18n parity, three-state lint negative-fixture proof, FW-7 placement) (1D-P0-009, 1D-P0-010)
+- **Risk inheritance (CORRECTED 2026-06-15):** Owns R39 (mitigation via three-tier ladder) + R52 (mitigation via mechanical CI lint). **R38 was already discharged at Story 1-7c** (not 1d-1 AC4 as originally documented) — 1d-1 AC4 carries the inheritance contract pointing at 1-7c's artifacts. No WF-8 ATDD red phase required for any Epic 1D story. The R39 + R52 mitigations are foundation-level (one-time work in 1d-1) and inherited by 1d-2/1d-3/1d-4 via CI gates — no per-story ATDD ceremony downstream.
+- **Mock seam:** TEST-FE-1 — MSW handlers wired via `msw-storybook-addon` in `preview.tsx`; `Empty` stories driven by `HttpResponse.json({ data: [] })`, NEVER by mocking `useQuery` (convention shipped in `storybook-conventions.md` § 6).
+
+**Story 1d-2 — Shadcn Primitive Coverage & Token Theming:**
+- AC: All 34 primitives installed at `src/components/ui/<component>.tsx` via `npx shadcn@latest add` and pinned in `components.json` per FW-7; never hand-edited beyond AC7 token-swap pass (XL-1)
+- AC: Per-primitive `*.stories.tsx` exports the variant matrix listed per AC1–AC6 (e.g. `Button` exports 11 variants; `Calendar` exports `LocaleEn`+`LocaleVi`+5 others); each variant renders zero axe violations (1D-P1-001..030, R51)
+- AC: `Form.stories.tsx` `WithRHFAndZodResolver` is the canonical RHF + `zodResolver` wiring story that 1d-7 and every Epic 2–10 form story inherits verbatim (1D-P0-012, 1D-P1-031..035)
+- AC: Overlay primitives (`Dialog`/`AlertDialog`/`Sheet`/`Drawer`) `play` functions assert focus return to trigger on `Escape` (1D-P1-036..040, TEST-UX-2)
+- AC: Menu/command primitives `play` functions assert arrow-key + Enter + Escape keyboard nav (1D-P1-041..044, TEST-UX-2)
+- AC: `Calendar.stories.tsx` does NOT call `new Date()` in render; uses `parameters.now: '2026-06-15T00:00:00Z'`; `LocaleVi` story renders Vietnamese date format via `vi` from `date-fns/locale` (1D-P0-013, 1D-P0-014, TS-6 + UX-2)
+- AC: Token compliance — zero raw hex values, zero default shadcn `slate-*`/`zinc-*`/`neutral-*` Tailwind classes in `src/components/ui/`; Pattern 1 (`:root` CSS-variable override) preferred over Pattern 2 file edits (1D-P0-011, R53 mitigation)
+- AC: All 34 primitive stories pass `en` + `vi` locale toolbar switching with `Tooltip`/`Popover`/`Select`/`Calendar` `LongVietnameseContent` variants verifying ~1.5x overflow behavior (1D-P1-045..048, R38 + UX-2)
+- AC: `Skeleton` + `Progress` honor `prefers-reduced-motion` via `parameters.reducedMotion: 'reduce'` (1D-P1-049..052, TEST-UX-2 a11y)
+- **Risk inheritance:** None owned (R38 discharged at 1d-1 layer, R51/R52 mitigated by 1d-1 CI gates). No score ≥6 ACs — per the story's own AC block, WF-8 ATDD red tests are NOT mandatory; coverage enforced mechanically via Tasks checklist + CI gates.
+- **Mock seam:** TEST-FE-1 — `Form.stories.tsx` fake mutation handler is a documented exception (returns resolved promise, NOT an MSW handler); `Sonner.stories.tsx` triggers via story controls. No MSW needed elsewhere in 1d-2.
+
+**Story 1d-3 — App-Shell Stack (Sidebar, Topbar, Navigation, Mobile Tab Bar):**
+- AC: 10 components in `src/components/domain/` (`AppShell`, `TopbarShell`, `BreadcrumbBar`, `SearchPill`, `UserPill`, `PageHead`, `SidebarNavItem`, `SidebarShell`, `MobileTabBar`, `MobileTab`) each with explicit TS `Props` interfaces (per 1d-3 AC1 + AC2)
+- AC: `SidebarShell` four role variants — `OwnerView` matches `classlite-ia.md` line 16 (9 items), `AdminView` matches line 17 (Owner MINUS `Settings`), `TeacherView` matches line 18 (10 items) AND asserts ABSENCE of `Settings`+`People`, `StudentView` matches line 19 (7 items) AND asserts ABSENCE of `Settings`/`People`/`Knowledge hub`/`Archive`/`Analytics` (1D-P0-015..018, IA fidelity + TEST-FE-6)
+- AC: `MobileTabBar` three role variants — `StudentView`/`TeacherView`/`OwnerView` each render the 5-tab set from `classlite-ia.md` Chapter 8 verbatim; AdminView NOT a separate variant (shares Owner mobile per IA convention) (1D-P0-019, UX-4 + UX-DR32)
+- AC: `AppShell` `Mobile` story asserts `SidebarShell` is ABSENT from the DOM (not just CSS-hidden) at sub-`md` breakpoints — verified in `play` function per TEST-FE-6; `MobileTabBar` renders `position: fixed bottom-0` via Tailwind utilities, never magic-pixel media queries or JS viewport listeners (1D-P0-020)
+- AC: `SidebarNavItem` badge composes 1d-2's `Badge` primitive with amber accent; `aria-label` includes count + item name (`"Inbox, 3 unread"`); active row carries `aria-current="page"` (1D-P1-060..065, a11y contract)
+- AC: `PageHead` is the only data-rendering component in 1d-3 — ships three-state coverage (Default+Loading+Empty+Error) using `EmptyStatePlaceholder`/`ErrorStatePlaceholder` from 1d-1; other 6 shell components are pure layout and ship `Default` only (1D-P1-053..059)
+- AC: Vietnamese rendering at 220px sidebar — no layout breakage; truncation with focus-revealed tooltip is the documented fallback for long Vietnamese labels (1D-P1-089..094, R38 + UX-2)
+- AC: All nav/role/tab labels resolve via i18n keys (`sidebar.owner.dashboard`, `mobileTab.student.home`, etc.); zero hardcoded English in `src/components/domain/` (1D-P1-082..088, UX-2 + TEST-FE-4)
+- AC: Stable `data-testid` selectors (`sidebar-nav-{slug}`, `mobile-tab-{slug}`, `user-pill-role`, `breadcrumb-current`) documented in `storybook-conventions.md` as canonical pattern (1D-P1-109..114)
+- **Risk inheritance:** None owned (R38 inherited from 1d-1 CI gate). No score ≥6 ACs — pure layout, no security/tenant/auth surface; consumers pass role as prop, route layer owns gating per UX-3. WF-8 ATDD red tests NOT mandatory.
+- **Mock seam:** TEST-FE-1 — shell components don't fetch data. `Inbox` badge count is passed as a prop; Epic 2+ stories owning the inbox state machine wire MSW. No MSW handlers in 1d-3.
+
+**Story 1d-4 — Phase 4 Visual Bridge (Static Shells):**
+- AC: 8 components + 2 sub-components (`CommentCard` shared between AC2 and AC3) in `src/components/domain/` ship as STATIC VISUAL SHELLS — every callback prop defaults to a no-op; ZERO autosave timers, ZERO anchor persistence, ZERO Web Audio API, ZERO TanStack Query, ZERO `useMutation` (load-bearing 1d-4 discipline)
+- AC: Each 1d-4 component carries a JSDoc header naming the feature epic + story that will wire behavior (`WriteDocSurface` → Epic 5 Story 5.3; `WritingGradingSurface` → Epic 6 Story 6.1; `SpeakingGradingSurface` → Epic 6 Story 6.3; `AnchoredQuestionCard` → Epic 7 Story 7.4; `MobileWritingSurface` → Epic 5 Story 5.3 mobile; `InboxListShell` → Epic 10 Story 10.1; `AnalyticsHomeShell` → Epic 8 Story 8.2) (1D-P0-023)
+- AC: Three-state coverage on each data-rendering shell using `EmptyStatePlaceholder`/`ErrorStatePlaceholder` from 1d-1 until Epic 10 ships the real `EmptyState`/`ErrorState` (1D-P1-070..081, R51 + R52)
+- AC: `WritingGradingSurface` renders the THREE-color comment taxonomy verbatim (red `--cl-status-danger` errors, green `--cl-status-success` praise, amber `--cl-accent-2` suggestions); band-score typography passes UX-DR22 spec (Geist Mono 28px primary, 14px per-criterion) (1D-P1-095..104, R53 designer-iteration surface)
+- AC: `SpeakingGradingSurface` ships fixture waveform SVG only (NO audio decode, NO Web Audio API); pin chrome uses same taxonomy colors as `WritingGradingSurface`
+- AC: `AnchoredQuestionCard` ships `variant` prop (`teacher-answer` | `student-ask`) — NOT a role-conditional component (the variant is a layout switch like `Tabs`, not a role-rendering decision per UX-3)
+- AC: `MobileWritingSurface` ships at locked `iphone-14` (390×844) viewport via `parameters.viewport.defaultViewport`; is a purpose-designed mobile component, NOT a responsive squish of `WriteDocSurface` (per UX-4 + UX-DR32)
+- AC: `InboxListShell` ships THREE separate role-variant stories (`TeacherView`/`StudentView`/`AdminOwnerView`) — NOT a single conditional component branching on role internally (1D-P0-021, UX-3 + UX-DR29)
+- AC: `AnalyticsHomeShell.ScopeBar` `TeacherView` story renders "Center-wide" scope pill DISABLED (visually + functionally) per UX-DR29; `AdminView`/`OwnerView` render all scope pills enabled (1D-P0-022)
+- AC: Zero `new Date()` calls in any 1d-4 component file (greppable — `src/components/domain/` for 1d-4 files); all ISO strings use `parameters.now: '2026-06-15T00:00:00Z'` pattern (1D-P0-024, TS-6)
+- AC: `assertI18nParity()` passes — every new key added by 1d-4 is in both `en.json` and `vi.json` (1D-P0-025, R38 inheritance from 1d-1 CI gate)
+- AC: Zero axe violations across every 1d-4 story; touch targets ≥ 44×44px on `MobileWritingSurface` per TEST-UX-4 (1D-P1-105..108)
+- **Risk inheritance:** None owned (R38 inherited; R51 mitigated by axe CI gate; R52 mitigated by three-state lint). No score ≥6 ACs — static visual shells, no security/tenant/auth surface. WF-8 ATDD red tests NOT mandatory.
+- **Mock seam:** TEST-FE-1 — static shells don't fetch data. Storybook stories drive every render via fixture props. No MSW handlers in 1d-4. Feature epics inheriting these shells (Epic 5/6/7/8/10) wire MSW at the HTTP boundary per their own ACs.
+
 ### Data-TestId Requirements
 
 ClassLite project-context (TEST-FE-1, TEST-FE-5) prefers `role` queries over `data-testid`. Use `data-testid` only where:
@@ -159,7 +225,11 @@ Required `data-testid` attributes (mandate via lint or design-review):
 | R24 | BUS | 2×3 | 6 | Epic 9 downgrade story | Go service integration + Playwright |
 | R26 | BUS | 2×3 | 6 | Epic 8 search story | Go handler integration + Playwright |
 | R31 | PERF | 2×3 | 6 | Every dashboard endpoint story across Epics 7/8 | Go service integration (query-count) |
-| R38 | TECH | 3×2 | 6 | Epic 1C (i18n setup story) + every component story | Vitest helper + CI step |
+| R38 | TECH | 3×2 | 6 | Epic 1C (i18n setup story) + every component story; **discharge evidence at Story 1-7c (shipped 2026-06-12) — CORRECTED 2026-06-15 after `/bmad-tea AT` pre-flight discovery.** Four-layer mitigation: `assertI18nParity(usedKeys, locales)` Vitest helper (`src/lib/test/i18n-parity.ts`) + helper tests + ATDD red specimen (`i18n-parity-coverage.test.ts`) + `npm run i18n-parity` CI step (ci-web.yml:69-77). Epic 1D inherits via per-story `describe('Story 1d-N i18n parity (R38)', ...)` blocks in `i18n-parity-coverage.test.ts` (inline dev work, no separate ATDD ceremony). | Vitest helper + CI step (both pre-existing) |
+| **R39** | TECH | 2×3 | **6** | **Epic 1D Story 1d-1 AC1** — three-tier Vite/Rolldown compatibility ladder (Tier A Rolldown preferred / Tier B dual-builder fallback / Tier C deferral with PM + user re-scope approval); promoted from MONITOR to MITIGATE for Epic 1D scope | Spike + storybook:build CI gate |
+| **R51** | TECH | 2×2 | 4 | Epic 1D — every Storybook story across 1d-2/1d-3/1d-4 | `@storybook/addon-a11y` + `vitest-axe` `toHaveNoViolations` in `storybook:test` CI |
+| **R52** | TECH | 3×2 | **6** | Epic 1D Story 1d-1 AC3 — three-state required-exports `@storybook/test-runner` `postRender` hook with negative-fixture proof; error on merge from day 1 | CI lint with `missing-empty-export.stories.tsx` negative fixture |
+| **R53** | TECH | 2×2 | 4 | Epic 1D 1d-2 AC7 token discipline — Pattern 1 (`:root` CSS-variable override) preferred over Pattern 2 file edits; designer reviews Storybook artifact from CI | Manual review + grep for raw hex / shadcn neutral classes in `ui/` |
 | R42 | TECH | 2×3 | 6 | Epic 4 writing editor story | Vitest + Playwright |
 | R46 | OPS | 2×3 | 6 | DevOps CI guard story (cross-cutting) | CI step |
 | R48 | OPS | 2×3 | 6 | DevOps story to define SLO + plan replica | Architecture decision |

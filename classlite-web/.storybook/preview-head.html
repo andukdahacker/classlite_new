@@ -1,0 +1,30 @@
+<!--
+  Storybook preview <head> — Story 1d-1 AC2.
+
+  Mobile viewport so any story that renders responsive components (per
+  UX-4) shapes correctly inside the canvas iframe.
+
+  Font loading is handled via the `@fontsource-variable/*` packages
+  imported transitively by `src/index.css` in preview.tsx. That route
+  loads the variable Fraunces / Geist / Geist Mono families with
+  `font-display: swap` baked in, so Vietnamese subset glyphs are
+  available before the first paint inside the iframe — no FOUC, no
+  fallback flash. Inline `<link rel="preload">` tags would need to
+  point at hashed node_modules URLs that don't survive the Vite build,
+  so they are deliberately omitted in favor of the CSS-import path.
+
+  The min-height + dot-grid background mirrors the app body so stories
+  composed against the design system render against a visually-correct
+  paper, not the bare iframe default.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html,
+  body,
+  #storybook-root {
+    min-height: 100%;
+  }
+  body {
+    margin: 0;
+  }
+</style>

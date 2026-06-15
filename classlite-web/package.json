@@ -13,7 +13,12 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
-    "i18n-parity": "node scripts/i18n-parity.mjs"
+    "i18n-parity": "node scripts/i18n-parity.mjs",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build -o storybook-static",
+    "storybook:serve": "http-server storybook-static --port 6006 --silent",
+    "storybook:test": "test-storybook --url http://127.0.0.1:6006",
+    "storybook:test:ci": "npm run storybook:build && concurrently --kill-others --success command-TEST -n SB,TEST -c magenta,blue \"npm:storybook:serve\" \"wait-on http://127.0.0.1:6006/iframe.html && npm run storybook:test\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -27,6 +32,7 @@
     "@tanstack/react-query-devtools": "^5.100.14",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "4.4.0",
     "geist": "^1.7.1",
     "i18next": "^26.3.0",
     "lucide-react": "^1.17.0",
@@ -46,6 +52,10 @@
     "@axe-core/playwright": "^4.11.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.50.0",
+    "@storybook/addon-a11y": "^10.4.4",
+    "@storybook/addon-docs": "^10.4.4",
+    "@storybook/react-vite": "^10.4.4",
+    "@storybook/test-runner": "^0.24.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.3",
@@ -53,18 +63,29 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "axe-core": "^4.12.1",
+    "concurrently": "9.2.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "eslint-plugin-storybook": "^10.4.4",
     "globals": "^17.6.0",
+    "http-server": "14.1.1",
     "jsdom": "^29.1.1",
     "msw": "^2.14.6",
+    "msw-storybook-addon": "^2.0.5",
+    "storybook": "^10.4.4",
     "stylelint": "^17.13.0",
     "stylelint-config-standard": "^40.0.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.7",
-    "vitest-axe": "^0.1.0"
+    "vitest-axe": "^0.1.0",
+    "wait-on": "8.0.5"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

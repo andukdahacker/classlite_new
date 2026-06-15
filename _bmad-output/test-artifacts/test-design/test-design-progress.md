@@ -8,7 +8,21 @@ outputs:
   - '_bmad-output/test-artifacts/test-design/test-design-architecture.md'
   - '_bmad-output/test-artifacts/test-design/test-design-qa.md'
   - '_bmad-output/test-artifacts/test-design/classlite_new-handoff.md'
-lastSaved: '2026-06-04'
+lastSaved: '2026-06-15'
+refreshHistory:
+  - date: '2026-06-15'
+    scope: 'Epic 1D — Component Library Buildout (Path B)'
+    mode: 'System-Level surgical refresh (in-place, no fork)'
+    trigger: 'Pre-dev gate for Story 1d-1: R38 unmitigated across Epic 1D; pre-dev gate written into 1d-1 story file requires this TD refresh before 1d-1 transitions backlog → ready-for-dev'
+    deliverables:
+      - 'test-design-architecture.md § Epic 1D Refresh (2026-06-15) — risk inheritance (R38 discharge mapping, R39 promote monitor→active, R45 confirm unchanged) + new Epic-1D-only risks (R51 axe baseline drift, R52 three-state variant explosion, R53 designer token churn) + WF-8 ATDD applicability table + Epic 1D testability concerns'
+      - 'test-design-qa.md § Epic 1D Refresh (2026-06-15) — component inventory (52 files / 24 matrix rows) + 25 P0 + 114 P1 + 32 P2 + 10 P3 scenarios + CI gate scenario decomposition + mock-seam inheritance for 1d-2/1d-3/1d-4'
+      - 'classlite_new-handoff.md — Epic 1D row added to Risk References + Quality Gates per Epic; per-story AC patterns added for 1d-1..1d-4 (mirroring 1A/1B/1C structure); Risk-to-Story Mapping table extended with R39 + R51 + R52 + R53'
+    explicitlyOutOfScope:
+      - 'Re-running TD for Epics 1A/1B/1C (shipped — gates remain authoritative)'
+      - 'Generating actual test scaffolds (per-story /bmad-tea AT work, post-gate)'
+      - 'Re-scoring global risk register beyond Epic 1D inheritance (R10/R12/R27/R28/R36 etc. remain as written)'
+    exitCriteria: 'Refreshed artifacts committed with R38 → 1d-1 AC4 mapping confirmed in handoff. John (PM) transitions 1d-1 backlog → ready-for-dev in both the story file and sprint-status.yaml.'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prds/prd-classlite_new-2026-05-26/prd.md'
   - '_bmad-output/planning-artifacts/architecture.md'

@@ -2,6 +2,7 @@ import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
+import storybook from 'eslint-plugin-storybook'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
@@ -18,7 +19,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 const RAW_HEX_LITERAL = '#[0-9a-fA-F]{3,8}\\b'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'storybook-static', 'public']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -100,4 +101,11 @@ export default defineConfig([
       ],
     },
   },
+  // Story 1d-1 AC3 — Storybook story-file linting. The plugin's
+  // `flat/recommended` config covers naming conventions, default exports,
+  // and the addon-essentials hook contract. Required-export enforcement
+  // (three-state + role variants) and FW-7 placement enforcement live in
+  // .storybook/test-runner.ts — they need story AST access at runtime,
+  // not lint time.
+  ...storybook.configs['flat/recommended'],
 ])

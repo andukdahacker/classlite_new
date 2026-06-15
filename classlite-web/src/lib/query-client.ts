@@ -34,7 +34,7 @@ import {
 import { ApiError, AuthExpiredError } from './api-fetch'
 import { onAuthFailure } from './auth-refresh'
 
-const DEFAULT_STALE_TIME_MS = 30_000
+export const DEFAULT_STALE_TIME_MS = 30_000
 const MAX_QUERY_RETRIES = 1
 const UNAUTHORIZED_STATUS = 401
 
@@ -44,6 +44,28 @@ export function isAuthError(error: unknown): boolean {
     return true
   }
   return false
+}
+
+/**
+ * Factory for a non-production QueryClient (Storybook + isolated tests).
+ *
+ * Mirrors the production `staleTime` so stories observe the same cache
+ * semantics as the live app — when `DEFAULT_STALE_TIME_MS` is tuned here,
+ * the Storybook decorator and test harnesses pick it up automatically.
+ * `retry: false` keeps story renders deterministic and avoids the
+ * production auth-aware retry function (no AuthExpiredError surface in
+ * the Storybook iframe).
+ */
+export function createTestQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: DEFAULT_STALE_TIME_MS,
+        retry: false,
+      },
+      mutations: { retry: false },
+    },
+  })
 }
 
 export const queryClient = new QueryClient({

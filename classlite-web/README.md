@@ -1,4 +1,30 @@
-# React + TypeScript + Vite
+# classlite-web — dashboard
+
+React 19 + Vite 8 (Rolldown) + TypeScript strict + TanStack Query +
+Zustand + React Router v7 + shadcn primitives.
+
+## Docs
+
+- [Storybook conventions](./docs/storybook-conventions.md) — authoring
+  rules for `*.stories.tsx`: decorator stack, three-state pattern, i18n
+  parity, axe baseline. Read before adding a new story file.
+- [Storybook × Rolldown spike outcome](./docs/storybook-rolldown-spike.md)
+  — Tier A/B/C ladder result from Story 1d-1 AC1.
+- [Lint exceptions](./docs/lint-exceptions.md) — governance for any
+  narrow-scope lint override.
+
+## Storybook quick reference
+
+| Command | Purpose |
+|---|---|
+| `npm run storybook` | Local dev server on port 6006. |
+| `npm run storybook:build` | Static bundle in `storybook-static/`. |
+| `npm run storybook:test` | Run test-runner against a Storybook URL. |
+| `npm run storybook:test:ci` | Build → serve → test orchestrated for CI. |
+
+---
+
+# React + TypeScript + Vite (template notes — kept for reference)
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

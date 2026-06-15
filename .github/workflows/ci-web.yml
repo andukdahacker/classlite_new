@@ -79,3 +79,45 @@ jobs:
         run: cd classlite-web && npx vitest run --passWithNoTests
       - name: Build
         run: cd classlite-web && npm run build
+
+  storybook:
+    # Story 1d-1 AC6 — Storybook foundation gate. All four checks below
+    # are REQUIRED to pass before merge. Soft cap 8 minutes on PR;
+    # shard `test-storybook --shard N/M` once the runtime trend exceeds
+    # the cap (see classlite-web/docs/storybook-conventions.md § 6).
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: cd classlite-web && npm ci
+      - name: Install Playwright browser (chromium only)
+        # The test-runner drives stories via Playwright. Pinning to
+        # chromium-only keeps install time under ~25s on the runner.
+        run: cd classlite-web && npx playwright install --with-deps chromium
+      - name: i18n parity (Story 1.7c AC9 / 1d-1 AC4 — R38 mitigation)
+        # Required by both the `test` job and this `storybook` job. The
+        # duplication is intentional: it lets the storybook job fail fast
+        # on a key drift without waiting on the test job to surface it.
+        run: cd classlite-web && npm run i18n-parity
+      - name: Storybook build + test-runner (AC3 three-state + AC5 axe + AC7 placement + smoke render)
+        # `storybook:test:ci` chains storybook:build → serve → test, so
+        # this single step covers Tier A check 5 AND the test-runner pass.
+        run: cd classlite-web && npm run storybook:test:ci
+      - name: Upload static Storybook artifact
+        # Designer access (AC8 § 10) — preview deployment to Cloudflare
+        # Pages is a follow-up improvement story; for now the static
+        # bundle is downloadable from the Actions run. `if-no-files-found:
+        # error` so a failed build that omits the static dir does NOT
+        # silently upload an empty artifact (designers would download an
+        # empty zip with no obvious cause).
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: classlite-web/storybook-static
+          retention-days: 14
+          if-no-files-found: error

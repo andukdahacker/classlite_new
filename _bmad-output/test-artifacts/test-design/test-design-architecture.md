@@ -4,13 +4,21 @@ totalSteps: 5
 stepsCompleted: ['step-01-detect-mode', 'step-02-load-context', 'step-03-risk-and-testability', 'step-04-coverage-plan', 'step-05-generate-output']
 lastStep: 'step-05-generate-output'
 nextStep: ''
-lastSaved: '2026-06-04'
+lastSaved: '2026-06-15'
 workflowType: 'testarch-test-design'
+lastRefresh:
+  date: '2026-06-15'
+  scope: 'Epic 1D — Component Library Buildout (Path B, post-2026-06-07 rescope)'
+  trigger: 'Pre-dev gate for 1d-1: R38 (i18n parity, score 6) unmitigated across Epic 1D; ladder + decorator + matrix decomposition required before 1d-1 transitions backlog → ready-for-dev'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prds/prd-classlite_new-2026-05-26/prd.md'
   - '_bmad-output/planning-artifacts/architecture.md'
   - '_bmad-output/planning-artifacts/epics.md'
   - '_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-03.md'
+  - '_bmad-output/implementation-artifacts/1d-1-storybook-foundation.md'
+  - '_bmad-output/implementation-artifacts/1d-2-shadcn-primitive-coverage.md'
+  - '_bmad-output/implementation-artifacts/1d-3-app-shell-stack.md'
+  - '_bmad-output/implementation-artifacts/1d-4-phase4-visual-bridge.md'
   - 'docs/project-context.md'
 ---
 
@@ -150,6 +158,66 @@ R37 (migration applied out of order), R41 (shadcn hand-edits), R45 (CF cache wro
 ### Risk Category Legend
 
 TECH = architecture/integration; SEC = security; PERF = performance/scalability; DATA = data integrity; BUS = business logic/revenue; OPS = deployment/operations.
+
+---
+
+## Epic 1D Refresh (2026-06-15)
+
+> **Why this section exists.** The baseline above (2026-06-04) predates Epic 1D — the Component Library Buildout that was added to the sprint on 2026-06-07 (Path B re-scope per `sprint-change-proposal-2026-06-03.md`). Path B trades a launch slip for parallel designer iteration: 1d-1 ships the Storybook foundation + i18n parity CI; 1d-2 ships 34 shadcn primitives; 1d-3 ships the role-variant app-shell stack (`AppShell`/`SidebarShell`/`TopbarShell`/`MobileTabBar`); 1d-4 ships the Phase-4 visual identity bridge (static shells of `WriteDocSurface`/`WritingGradingSurface`/`SpeakingGradingSurface`/`AnchoredQuestionCard`/`MobileWritingSurface`/`InboxListShell`/`AnalyticsHomeShell`). The trade only pays off if the foundation is correct — which makes this refresh load-bearing.
+>
+> **Scope discipline.** This refresh is surgical to Epic 1D. Re-evaluating the global risk register for Epics 1A/1B/1C (already shipped) or Epics 2–10 (no scope change) is OUT — those gates remain authoritative as written above.
+
+### Epic 1D Risk Inheritance & Score Adjustments
+
+| Risk ID | Action | Pre-refresh Score | Post-refresh Score | Rationale |
+|---|---|---|---|---|
+| **R38** (i18n parity, vi.json missing key) | **MAP TO DISCHARGE EVIDENCE — corrected 2026-06-15 after `/bmad-tea AT` pre-flight discovery** | 6 | 6 (DISCHARGED at Story 1-7c, inherited by Epic 1D) | **Correction:** The original 2026-06-15 mapping pointed at 1d-1 AC4 as "the discharge evidence to ship" — wrong. Story 1-7c (shipped 2026-06-12) ALREADY shipped the four-layer R38 mitigation: (1) `assertI18nParity(usedKeys, locales)` Vitest helper at `classlite-web/src/lib/test/i18n-parity.ts`; (2) helper unit tests at `i18n-parity.test.ts` (asserts raises on missing-key with readable diff); (3) ATDD red specimen at `i18n-parity-coverage.test.ts` (the `Story 1-7c i18n parity (R38)` describe block); (4) `npm run i18n-parity` CI step in `.github/workflows/ci-web.yml:69–77` (required check, labeled "Story 1.7c AC9 — R38 mitigation"). 1d-1 AC4 is therefore RE-SCOPED to the **inheritance contract** — no new helper / CI step / failing-fixture infrastructure required. 1d-2/1d-3/1d-4 each extend `i18n-parity-coverage.test.ts` with a new per-story `describe('Story 1d-N i18n parity (R38)', ...)` block listing their keys (inline dev work, not separate ATDD ceremony). **WF-8 ATDD red phase: discharged at 1-7c — no per-story red phase required for any Epic 1D story.** |
+| **R39** (Vite/Rolldown plugin incompat) | **PROMOTE: monitor → active for Epic 1D** | 4 (MONITOR) | **6 (MITIGATE)** | Pre-refresh score assumed plugin issues would surface during routine app builds; Epic 1D introduces a new active surface — Storybook running on Rolldown's builder — that the main-app build does not exercise. Probability 2 (Rolldown + Storybook ecosystem is recent; plugin maturity uneven). Impact 3 (if Storybook cannot run, Path B's parallel designer iteration trade collapses; designer waits until Epic 5/6/7/8 ship — a 3-month slip). **Mitigation:** 1d-1 AC1's three-tier compatibility ladder (Tier A = Storybook on Rolldown preferred; Tier B = Storybook on standard Vite/esbuild while main app stays on Rolldown — dual-builder fallback; Tier C = defer Storybook entirely) with a 2-working-day total timebox across Tier A+B. **Kill switch:** Tier C requires explicit PM (John) + user (Ducdo) re-scope approval before invocation, documented in `classlite-web/docs/storybook-rolldown-spike.md`. **Cascading impact if Tier C invoked:** 1d-2/1d-3/1d-4 lose `*.stories.tsx` requirement and degrade to RTL component tests; the axe + three-state CI gates (1d-1 AC5, AC3) disappear for Epic 1D and must be re-scoped. |
+| **R45** (Cloudflare cache wrong origin) | **CONFIRM: monitor unchanged** | 3 (MONITOR) | 3 (MONITOR) | Epic 1D does not touch CDN config, Cloudflare Pages routing, or the `Vary: Origin` response chain. No status change. |
+
+### New Epic-1D-Only Risks
+
+| Risk ID | Category | Description | P | I | Score | Mitigation | Owner | Timeline |
+|---|---|---|---|---|---|---|---|---|
+| **R51** | TECH | `axe-core` baseline drift across 34 primitives (1d-2) + 18 domain components (1d-3 + 1d-4) — axe rules update independently between Storybook builds, variant explosion increases violation surface, one regression breaks every downstream story consumer. | 2 | 2 | **4** (MONITOR) | `@storybook/addon-a11y` audit panel surfaces in-Storybook violations (1d-1 AC5); `vitest-axe` `toHaveNoViolations()` matcher asserted via `@storybook/test-runner` in CI (zero-violation gate on merge); `axe.allowlist.json` governance carried forward from Story 1-7c — additions require justification comment + PR review. | Frontend lead | Continuous (Epic 1D + every downstream story) |
+| **R52** | TECH | Shadcn primitive variant explosion (~200 stories across 34 primitives) silently misses three-state convention (Default/Loading/Empty/Error) for data-rendering components — story author rework cost compounds across Epic 2–10 consumers. | 3 | 2 | **6** (MITIGATE) | 1d-1 AC3 ships `@storybook/test-runner` `postRender` hook enforcing `requiredExportsByPattern` for `*Table.stories.tsx`/`*List.stories.tsx`/`*Card.stories.tsx`/`*Hero.stories.tsx`/`*Shell.stories.tsx` — **ERROR ON MERGE from day 1** (per Murat — no warning-that-escalates-later). Negative fixture `classlite-web/.storybook/fixtures/missing-empty-export.stories.tsx` is asserted to FAIL the rule; the test for the rule itself uses this fixture and confirms `npm run storybook:test` exits non-zero. Without that fixture and assertion, UX-DR28 has no teeth. | Frontend lead | 1d-1 ships → enforced on every story through Epic 10 |
+| **R53** | TECH | Designer token churn during 1d-2/1d-3/1d-4 iteration loop breaks downstream Storybook stories — designer requests radius / color saturation / font-weight tweaks mid-epic, files in `src/components/ui/` drift from upstream shadcn, visual regression bites Epic 2+. | 2 | 2 | **4** (MONITOR) | Token swaps scoped to Pattern 1 in 1d-2 AC7 (`:root` CSS-variable overrides in `src/styles/tokens.css` from Story 1.7a — install output unmodified); Pattern 2 file edits require `// CL-THEME-SWAP: <reason>` comment + PR-description callout for reviewer approval; designer reviews Storybook artifact downloaded from GitHub Actions (preview deploy is a follow-up improvement per 1d-1 AC6); per-tweak token-file changes re-render every story automatically — no per-component file edits. | Frontend lead + Designer | Continuous (Epic 1D) |
+
+### Epic 1D ATDD Applicability (WF-8 Mandate Check)
+
+| Story | Risk Score ≥6 ACs? | ATDD Red Phase Mandatory? | Rationale |
+|---|---|---|---|
+| **1d-1** | ~~Yes — AC4 owns R38 (score 6) discharge~~ **CORRECTED 2026-06-15: No** — AC4 re-scoped to inheritance contract after `/bmad-tea AT` pre-flight discovery that Story 1-7c already shipped the R38 four-layer mitigation | No (discharged at 1-7c) | The pre-dev gate's R38 mitigation is satisfied by 1-7c's artifacts (`assertI18nParity` helper + helper tests + `i18n-parity-coverage.test.ts` ATDD red specimen + CI step). 1d-1 AC4 is now the **inheritance contract** — no new red phase code from 1d-1. |
+| **1d-2** | No — shadcn install + theme + Storybook scaffold work, no security/tenant/auth surface | No | The story's own AC block calls this out explicitly. Per-primitive coverage enforced mechanically via Tasks checklist + 1d-1's CI gates. R38 inherited via per-story `describe('Story 1d-2 i18n parity (R38)', ...)` block in `i18n-parity-coverage.test.ts` (inline dev work). |
+| **1d-3** | No — pure layout chrome, no data fetching, no role-validation logic (consumers pass role as prop per UX-3) | No | The four role-variant `SidebarShell` ACs (AC2–AC5) cite `classlite-ia.md` lines 16–19 verbatim — high fidelity guaranteed by IA citation, not by red tests. `play` functions asserting absence of disallowed nav items per TEST-FE-6 are written inline by dev, not as ATDD ceremony. R38 inherited via per-story `describe` block in `i18n-parity-coverage.test.ts`. |
+| **1d-4** | No — static visual shells with all behavior deferred to feature epics 5/6/7/8/10 | No | R38 inherited from 1-7c's CI gate + per-story `describe` block (no new red phase needed); the story's load-bearing discipline is "no behavior wiring," not test-first. |
+
+**WF-8 inheritance summary (CORRECTED 2026-06-15):** **No Epic 1D story requires a separate WF-8 ATDD red phase.** R38 was discharged at Story 1-7c (the only true score-6 ATDD trigger across Epic 1C + 1D); the remaining ≥6-risk Epic 1D risk (R52 — three-state variant explosion) is mitigated by 1d-1 AC3's mechanical CI lint, which is a foundation-level gate authored once and inherited downstream — no per-story ATDD required. The pre-flight discovery that `/bmad-tea AT` for 1d-1 AC4 surfaced this is recorded in the AC4 amendment note in the story file.
+
+### Testability Concerns Specific to Epic 1D
+
+1. **Decorator-chain composition order is load-bearing.** 1d-1 AC2 specifies the six-layer decorator stack with explicit outside-in ordering (Router outermost, MSW innermost: `QueryClientProvider` → `I18nextProvider` → `MemoryRouter` → `RoleContext` → MSW handlers, with preview-side dep imports — Tailwind, tokens, fonts, Suspense, `date-fns/locale/vi` — registered before any decorator runs). Any future addition to `preview.tsx` MUST preserve the chain or stories silently render against stale cache / wrong locale / unbound router. Documented at the top of `preview.tsx`; verified by 1d-1 AC9 smoke story passing all six gates.
+2. **MSW-at-HTTP-boundary is non-negotiable for `Empty` stories (TEST-FE-1 inheritance).** `Empty` stories MUST be driven by MSW returning empty arrays/objects (e.g. `HttpResponse.json({ data: [] })`) — NEVER by mocking `useQuery`/`useMutation` directly. The consumer's component handles the empty-render branch; MSW provides the trigger. This convention lands in 1d-1 and is enforced via the conventions doc reference in 1d-2/1d-3/1d-4 dev-pickup checklists. A story file mocking a TanStack Query hook is a test-design violation and a code-review reject.
+3. **FW-7 placement is mechanically enforced.** 1d-1 AC7 + the `@storybook/test-runner` `prerender` hook rejects any `*.stories.tsx` not under `src/components/ui/`, `src/components/domain/`, or `src/features/*/components/`. Error on merge from day 1. Negative fixture pattern (mirrors R52 mitigation): a misplaced story file lives in the fixtures dir and is asserted to FAIL CI.
+4. **`new Date()` in story render is a test-design violation (TS-6).** 1d-2 `Calendar.stories.tsx`, 1d-4 `AnchoredQuestionCard`/`InboxListShell`/`AnalyticsHomeShell` stories — every story with a time-bearing field MUST pass an ISO string via `parameters.now: '2026-06-15T00:00:00Z'` and read through a stable mock. 1d-4 AC8 greps `src/components/domain/` for `new Date()` and asserts zero occurrences. Without this, axe snapshots are non-deterministic and visual reviews drift.
+5. **Mobile is purpose-designed, not responsive squish.** `MobileTabBar` (1d-3 AC7) ships as a dedicated component, not a responsive variant of `SidebarShell`. `MobileWritingSurface` (1d-4 AC5) ships at a locked `iphone-14` viewport, not as a `md:` breakpoint of `WriteDocSurface`. The 1d-3 AC8 mobile `AppShell` story asserts `SidebarShell` is ABSENT from the DOM (not just CSS-hidden) below `md` per TEST-FE-6 — screen-reader pollution from invisible nav is a real failure mode that visual-only review misses.
+6. **Calendar-library decision is deferred (not absent).** 1d-2 ships the shadcn `Calendar` day-picker primitive only; the `SessionScheduleCalendar` library decision (`react-big-calendar` vs `tanstack-virtual` + custom vs `fullcalendar`) is deferred to Epic 3 Story 3.4 with a widened 2-day spike (per Winston + Murat) including RRULE-fit dimension + axe baseline test. This refresh does NOT pre-commit Epic 3 to any library — the spike owns that call.
+
+### Refreshed High-Priority Risk Table — Epic 1D Delta Only
+
+For convenience, the post-refresh score deltas are summarized here:
+
+| Risk ID | Pre-refresh Score | Post-refresh Score | Status Change |
+|---|---|---|---|
+| R38 | 6 (MITIGATE — Frontend lead, "Pre-Epic 1C ships") | 6 (MITIGATE — discharged by 1d-1 AC4 + downstream CI gate) | Discharge evidence locked |
+| R39 | 4-5 (MONITOR) | **6 (MITIGATE)** | **Promoted for Epic 1D** |
+| R45 | 3 (MONITOR) | 3 (MONITOR) | No change |
+| R51 (NEW) | n/a | 4 (MONITOR) | Added |
+| R52 (NEW) | n/a | **6 (MITIGATE)** | Added |
+| R53 (NEW) | n/a | 4 (MONITOR) | Added |
+
+**Total risks identified (post-refresh):** 53 (baseline 50 + R51 + R52 + R53).
+**MITIGATE (score 6-8):** 26 (baseline 25 + R52; R39 moved in, no baseline risk moved out).
 
 ---
 

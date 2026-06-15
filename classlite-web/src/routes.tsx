@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next'
  * existing `app.errorBoundary.*` keys so the user always sees a clean
  * recovery affordance — even on a chunk that no longer exists.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- co-export with `routes` is intentional; this file is the router entry, not a HMR-refreshable component module.
 function RouterErrorFallback() {
   const { t } = useTranslation()
   return (

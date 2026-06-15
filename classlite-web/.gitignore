@@ -33,3 +33,6 @@ src/test/__sandbox-*
 # raw-fetch / axios cases. The sandbox lives under src/features/ so the
 # AC8 ESLint rule scope matches; the gitignore catches the leftover file.
 src/features/__sandbox-*.tsx
+
+*storybook.log
+storybook-static
