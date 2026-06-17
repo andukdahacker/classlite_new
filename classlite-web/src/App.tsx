@@ -20,12 +20,17 @@ import { RouterProvider } from 'react-router'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { useLanguageInit } from '@/hooks/useLanguageInit'
 import { router } from '@/routes'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 export default function App() {
   useLanguageInit()
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <TooltipProvider>
+        <Toaster richColors closeButton />
+        <RouterProvider router={router} />
+      </TooltipProvider>
     </ErrorBoundary>
   )
 }

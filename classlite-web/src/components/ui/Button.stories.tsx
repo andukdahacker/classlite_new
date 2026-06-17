@@ -18,6 +18,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Loader2Icon, ArrowRightIcon, PlusIcon } from 'lucide-react'
 import { Button } from './button'
 
 type ButtonProps = ComponentProps<typeof Button>
@@ -82,4 +83,60 @@ export const Sizes: Story = {
 
 export const Disabled: Story = {
   render: () => <I18nButton disabled />,
+}
+
+/**
+ * Loading state — spinner + `aria-busy`. AC1 contract that downstream
+ * 1d-3 LanguageToggle + 1d-7 form submit consumers inherit.
+ */
+export const Loading: Story = {
+  render: () => <LoadingDemo />,
+}
+
+function LoadingDemo() {
+  const { t } = useTranslation()
+  return (
+    <Button aria-busy="true" disabled>
+      <Loader2Icon className="size-4 animate-spin" />
+      {t('auth.login.submit')}
+    </Button>
+  )
+}
+
+/**
+ * Icon slot variants — leading + trailing.
+ */
+export const WithIcon: Story = {
+  render: () => <WithIconDemo />,
+}
+
+function WithIconDemo() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button>
+        <PlusIcon data-icon="inline-start" />
+        {t('auth.login.submit')}
+      </Button>
+      <Button>
+        {t('auth.login.submit')}
+        <ArrowRightIcon data-icon="inline-end" />
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * Icon-only sizes — `icon-xs` / `icon-sm` / `icon` / `icon-lg`.
+ */
+export const IconSizes: Story = {
+  render: () => (
+    <div className="flex flex-wrap items-center gap-3">
+      {(['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const).map((size) => (
+        <Button key={size} size={size} aria-label="Add">
+          <PlusIcon />
+        </Button>
+      ))}
+    </div>
+  ),
 }

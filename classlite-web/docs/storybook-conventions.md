@@ -91,9 +91,40 @@ that wraps every story in this order (outside → in):
 4. `RoleProvider` — wraps the existing `RoleContext` (Story 1d-1) so
    `useRole()` returns the toolbar-selected role. The **Role** toolbar
    exposes `owner`, `admin`, `teacher`, `student`.
-5. `Suspense` — single top-level boundary with a skeleton fallback so any
+5. `TooltipProvider` (Base UI) — added by Story 1d-2 Task 0.5. Wraps every
+   tooltip-using story without per-story decorator boilerplate. `delay={0}`
+   so hover-to-open is instant in stories.
+6. `Suspense` — single top-level boundary with a skeleton fallback so any
    story that uses `useSuspenseQuery` (FW-1) renders without crashing the
    preview.
+
+After the story renders, the decorator emits two sibling nodes inside the
+provider tree (Story 1d-2 Task 0.5):
+
+- `<div id="storybook-portal-root" />` — portal target for Base UI
+  primitives that render via `<Primitive.Portal>` (Dialog, Sheet, Drawer,
+  Popover, Tooltip, HoverCard, AlertDialog, DropdownMenu, ContextMenu,
+  Command). Default Base UI behavior is to portal to `document.body`,
+  which escapes the decorator subtree and starves portal content of
+  Query / i18n / Role / Tooltip context. The sibling div is mounted
+  *inside* every provider so portal subtrees receive the same context
+  tree as in-tree content. Stories opt-in to the portal target via
+  `parameters.portalContainer = '#storybook-portal-root'` (or by reading
+  the element directly inside a render function).
+  
+  **1d-2 carry-over (code review 2026-06-17).** 1d-2 emits the target div
+  + decorator wiring but does NOT yet route any primitive's
+  `<Primitive.Portal container>` to it — primitive stories all render
+  inside the canvas (focus-trap + axe smoke tests still pass against the
+  document.body fallback, since the providers are available globally in
+  the Storybook preview). 1d-3 wires real consumers when domain wrappers
+  need provider-aware portals (e.g., role-aware DropdownMenu items
+  reading `useRole()` from inside a portaled menu). Until then, the
+  target div is a foundation — not dead code, but not load-bearing for
+  1d-2's primitives.
+- `<Toaster />` — Sonner toaster mounted locally so AC4 Sonner stories
+  surface their toasts inside the Storybook canvas (rather than at
+  `document.body`, which sits outside Storybook's preview iframe).
 
 Preview-side dependencies imported before any decorator runs:
 
@@ -254,6 +285,53 @@ introduces new i18n keys:
 **Why a separate per-story `describe` block?** It tracks accountability:
 when a key is later questioned, `git blame` lands on the introducing
 story rather than a flat top-of-file list that everyone edits.
+
+### 8.1 Pragmatic scope of "no hardcoded English" (1d-2 code review 2026-06-17)
+
+Story copy is i18n-keyed when it represents any of:
+
+- **User-facing status / role / error / empty / help text** — Badge status
+  variants, Form validation messages, Sonner toast bodies, command empty
+  results, label suffixes (`(required)` / `(optional)`).
+- **Long-Vietnamese / diacritic-overflow fixtures** — the
+  `LongVietnameseContent` story branches on Tooltip / Popover / Select /
+  Calendar.
+- **The 9 keys enumerated in 1d-2 AC8** (`storybook.toast.*`,
+  `storybook.command.empty`, `storybook.label.required` / `.optional`,
+  `storybook.placeholder.*`) plus any keys downstream stories formally
+  introduce (form/calendar/popover/tooltip/textarea/input added in the
+  1d-2 code review pass).
+
+Structural placeholder copy that exists only to demonstrate a primitive
+surface — trigger button labels like `Open dialog` / `Cancel`, demo list
+items like `IELTS 7.0 evening`, mock table rows, fake person names —
+**MAY stay literal English** so story authors don't pay a translation
+tax on every demo composition. These strings never ship to users; they
+exist to give a primitive a visible body so its axe + visual surface
+can be evaluated.
+
+When in doubt: if the same copy would appear in real product output
+under the same key, it MUST be keyed; if it's a Storybook-only demo
+literal, it MAY stay literal.
+
+### 8.2 Locale-blind fixture keys (1d-2 code review 2026-06-17)
+
+Some i18n keys exist as test fixtures rather than localized strings —
+the same value appears in both `en.json` and `vi.json` by design. The
+canonical example is `storybook.placeholder.longViText`, a Vietnamese
+sample used to verify diacritic clearance (tone marks ữ / ế / ặ),
+overflow behavior at ~1.5× English length, and Tooltip / Popover /
+Select / Calendar typography. The `en` value is intentionally Vietnamese
+so the overflow test stays calibrated to the same character set when an
+en-locale reviewer flips through stories.
+
+Convention: locale-blind fixture keys live under `storybook.placeholder.*`
+or `storybook.fixtures.*`. The parity test still asserts presence in
+both locales (which guards against an accidental key-only-in-en commit);
+identical values across locales are NOT a parity violation for these
+keys. If a future fixture needs locale-specific copy (an English
+equivalent of the Vietnamese overflow string), promote it to a separate
+key (e.g., `storybook.fixtures.longEnText`).
 
 ## 9. `axe-core` baseline (AC5)
 

@@ -87,6 +87,56 @@ const STORY_1_7C_KEYS = [
   'auth.common.passwordToggleAria',
 ] as const
 
+/**
+ * Story 1d-2 — Storybook placeholder keys introduced by AC8. The
+ * primitive `*.tsx` files do NOT consume i18n strings (presentational
+ * shells); the assertion target is the demo copy rendered inside the
+ * `*.stories.tsx` files (toast bodies, command empty-results text,
+ * label suffixes, form placeholders, long Vietnamese tooltip / popover
+ * fixtures). Per-story discharge of R38 — NOT a separate ATDD ceremony.
+ */
+const STORY_1D_2_KEYS = [
+  'storybook.toast.success',
+  'storybook.toast.error',
+  'storybook.toast.info',
+  'storybook.command.empty',
+  'storybook.label.required',
+  'storybook.label.optional',
+  'storybook.placeholder.email',
+  'storybook.placeholder.name',
+  'storybook.placeholder.longViText',
+  // Code review 2026-06-17 — Form story play asserts locale-correct
+  // validation copy. Schema messages and demo labels live as keys so the
+  // FormMessage component renders the localized copy in both en + vi.
+  'storybook.form.emailInvalid',
+  'storybook.form.nameRequired',
+  'storybook.form.agreedRequired',
+  'storybook.form.emailHelp',
+  'storybook.form.nameLabel',
+  'storybook.form.agreedLabel',
+  // Calendar / Popover / Tooltip — replace hardcoded Vietnamese copy
+  // (`buổi học hôm nay`, `Trạng thái`) with keys so the `en` locale renders
+  // English content instead of Vietnamese.
+  'storybook.calendar.eventToday',
+  'storybook.popover.statusTitle',
+  'storybook.tooltip.statusTrigger',
+  // Input / Textarea — replace `auth.common.email` reuse on non-email
+  // labels and the `storybook.placeholder.longViText` reuse as a fake
+  // error message.
+  'storybook.textarea.label',
+  'storybook.textarea.helper',
+  'storybook.textarea.errorTooLong',
+  'storybook.textarea.readOnlyContents',
+  'storybook.input.hoursLabel',
+  'storybook.input.hoursHelper',
+] as const
+
+describe('Story 1d-2 i18n parity (R38)', () => {
+  test('every Story 1d-2 storybook key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1D_2_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

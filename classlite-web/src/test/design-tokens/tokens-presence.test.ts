@@ -100,6 +100,13 @@ const EXPECTED_TOKENS: Record<string, string> = {
   '--cl-modal-width': '460px',
   '--cl-side-panel': '300px',
   '--cl-detail-panel': '320px',
+
+  // Motion — Story 1d-2 AC4. Skeleton + Progress indeterminate consume
+  // these via the `motion-safe:` Tailwind arbitrary utility in
+  // skeleton.tsx; cubic-bezier(0.4, 0, 0.6, 1) matches the editorial-
+  // paper ink-bleed rhythm Sally signed off on.
+  '--cl-skeleton-pulse-duration': '2.4s',
+  '--cl-skeleton-pulse-easing': 'cubic-bezier(0.4, 0, 0.6, 1)',
 }
 
 function parseRootDeclarations(css: string): Map<string, string> {

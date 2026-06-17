@@ -114,3 +114,16 @@
   }
   html { @apply font-sans; }
 }
+
+/* Story 1d-2 AC4 — Sonner host CSS custom properties.
+   Pattern 2 anchor: shadcn's upstream sonner.tsx sets these via inline
+   `style={{...}}`, which is banned by AC7 grep #5. Moved here to keep the
+   primitive file clean while preserving Sonner's CSS-var API surface
+   (the library reads --normal-bg / --normal-text / --normal-border /
+   --border-radius from the rendered toaster element). */
+.cl-toaster {
+  --normal-bg: var(--popover);
+  --normal-text: var(--popover-foreground);
+  --normal-border: var(--border);
+  --border-radius: var(--radius);
+}

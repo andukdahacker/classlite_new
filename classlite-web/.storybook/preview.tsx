@@ -41,6 +41,8 @@ import i18n from '../src/lib/i18n'
 import { createTestQueryClient } from '../src/lib/query-client'
 import { RoleProvider } from '../src/hooks/RoleContext'
 import type { Role } from '../src/hooks/useRole'
+import { TooltipProvider } from '../src/components/ui/tooltip'
+import { Toaster } from '../src/components/ui/sonner'
 import '../src/index.css'
 
 // Browser-guard MSW init — preview.tsx may be imported by Vitest jsdom
@@ -157,9 +159,24 @@ const ChromeDecorator: Decorator = (Story, context) => {
       <QueryClientProvider client={queryClient}>
         <I18nextProvider i18n={i18n}>
           <RoleProvider value={role}>
-            <Suspense fallback={<SuspenseFallback />}>
-              <Story />
-            </Suspense>
+            <TooltipProvider delay={0}>
+              <Suspense fallback={<SuspenseFallback />}>
+                <Story />
+              </Suspense>
+              {/* Story 1d-2 Task 0.5 — Storybook portal target.
+                  Base UI's portal-rendered primitives (Dialog, Sheet,
+                  Drawer, Popover, Tooltip, HoverCard, AlertDialog,
+                  DropdownMenu, ContextMenu, Command, Sonner Toaster)
+                  default to `document.body`, which escapes the decorator
+                  subtree and starves portal content of Query / i18n /
+                  Role / Suspense context. The sibling div is mounted
+                  *inside* every provider so portal subtrees receive the
+                  same context tree as in-tree content. Per-primitive
+                  Portal usage may opt-in via parameters.portalContainer
+                  on stories that need it. */}
+              <div id="storybook-portal-root" />
+              <Toaster richColors closeButton />
+            </TooltipProvider>
           </RoleProvider>
         </I18nextProvider>
       </QueryClientProvider>

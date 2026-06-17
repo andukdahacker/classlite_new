@@ -28,12 +28,19 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { TestRunnerConfig } from '@storybook/test-runner'
+import { getStoryContext } from '@storybook/test-runner'
 
 import {
   checkRequiredExports,
   extractExportedNames,
 } from '../src/test/storybook-rules/required-exports.ts'
 import { checkFw7Placement } from '../src/test/storybook-rules/fw7-placement.ts'
+
+type ReducedMotionValue = 'reduce' | 'no-preference'
+
+function isReducedMotionValue(value: unknown): value is ReducedMotionValue {
+  return value === 'reduce' || value === 'no-preference'
+}
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(here, '..')
@@ -70,6 +77,32 @@ function collectStoryFiles(): string[] {
 }
 
 const config: TestRunnerConfig = {
+  /**
+   * Story 1d-2 AC8 — reduced-motion emulation.
+   *
+   * Stories opt-in via `parameters.reducedMotion: 'reduce'` (or
+   * `'no-preference'` to assert the opposite branch). The runner calls
+   * Playwright's `page.emulateMedia({ reducedMotion })` BEFORE the story
+   * renders so animated primitives (`Skeleton` pulse, `Progress`
+   * indeterminate) see the correct media query at first paint.
+   *
+   * Without this hook, `parameters.reducedMotion` is decorative and
+   * 1D-P1-049..052 would pass vacuously.
+   */
+  async preVisit(page, context) {
+    const storyContext = await getStoryContext(page, context)
+    const value = storyContext.parameters?.reducedMotion
+    if (isReducedMotionValue(value)) {
+      await page.emulateMedia({ reducedMotion: value })
+    } else {
+      // Reset across stories — Playwright keeps `emulateMedia` state across
+      // navigations on the same page context. After a 'reduce' story, every
+      // subsequent story without the parameter would otherwise inherit the
+      // reduced-motion emulation, masking animation regressions and making
+      // 1D-P1-049..052 ordering-dependent.
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+    }
+  },
   setup() {
     const storyFiles = collectStoryFiles()
 
