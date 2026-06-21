@@ -1,0 +1,11 @@
+# Team-scoped customization for bmad-dev-story.
+# Merges on top of the installer-shipped customize.toml.
+# Story 1d-3 follow-up #21 (party-mode review 2026-06-21, John): codify
+# the completion-notes sibling-file convention so the bmad-dev-story
+# agent (Amelia) reads the rule on every run from 1d-4 onward.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/docs/bmad-story-conventions.md",
+]

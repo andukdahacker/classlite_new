@@ -23,6 +23,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { stripComments } from './lib/strip-comments-and-strings.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const localesDir = resolve(here, '..', 'src', 'locales')
@@ -117,42 +118,17 @@ function loadLocale(code) {
  *   const STORY_1D_3_KEYS = [ 'foo.bar', 'baz' ] as const
  *   export const STORY_1D_3_KEYS = [...] as const
  */
-/**
- * Replace JS-style line and block comments with blank space so apostrophes
- * inside prose (`1-7c's`, `the rule's intent`) don't confuse the array-body
- * string-literal extractor. Spaces preserve column/line counts so anything
- * downstream that cares about positions stays accurate.
- */
-function stripComments(source) {
-  let out = ''
-  let i = 0
-  while (i < source.length) {
-    const two = source.slice(i, i + 2)
-    if (two === '//') {
-      const end = source.indexOf('\n', i)
-      const stop = end === -1 ? source.length : end
-      out += ' '.repeat(stop - i)
-      i = stop
-    } else if (two === '/*') {
-      const end = source.indexOf('*/', i + 2)
-      const stop = end === -1 ? source.length : end + 2
-      for (let j = i; j < stop; j++) {
-        out += source[j] === '\n' ? '\n' : ' '
-      }
-      i = stop
-    } else {
-      out += source[i]
-      i += 1
-    }
-  }
-  return out
-}
-
 function extractClaimedKeys() {
   if (!existsSync(coverageTestPath)) {
     fail(2, `coverage test file not found: ${coverageTestPath}`)
   }
   const raw = readFileSync(coverageTestPath, 'utf8')
+  // Strip comments only — the key names we're hunting for live inside
+  // string literals in the `STORY_*_KEYS` arrays, so we MUST preserve
+  // strings. The earlier hand-rolled stripper missed apostrophes inside
+  // JSDoc and ate real source; the shared util applies block-comment
+  // and line-comment passes sequentially so they can't false-match
+  // across boundaries.
   const content = stripComments(raw)
   const claimed = new Set()
   const arrayPattern = /STORY_[A-Z0-9_]+_KEYS\s*=\s*\[([\s\S]*?)\]\s*as\s*const/g

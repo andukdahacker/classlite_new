@@ -106,6 +106,8 @@ development_status:
   1d-2-shadcn-primitive-coverage: done
   1d-3-app-shell-stack: review
   1d-4-phase4-visual-bridge: backlog
+  # Story 1d-3 follow-ups (party-mode review 2026-06-21):
+  1d-followup-codeowners-and-shell-allowlist-rule: backlog
   # Legacy stories (deferred to feature epics per Path B — files retained as input artifacts):
   1d-4-visual-status-domain: deferred-to-feature-epic # → epic-8 (dashboards/analytics) + epic-9 (billing)
   1d-5-shells-and-states: deferred-to-feature-epic # → epic-2 (onboarding shells) + epic-10 (empty/error states)

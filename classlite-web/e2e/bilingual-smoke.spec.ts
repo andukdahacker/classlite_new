@@ -185,13 +185,29 @@ for (const probe of PROBES) {
       page,
     }) => {
       await page.goto('/dashboard')
-      // Wait for the AppLayout lazy chunk to mount before axe analyzes —
-      // the skip-to-content link is the FIRST element of AppLayout, so its
-      // presence means the dashboard chunk + the layout chunk have both
-      // hydrated. Without this wait, axe occasionally analyzes the
-      // empty-shell HTML and reports `landmark-one-main` / `page-has-heading-one`
-      // violations that disappear on the very next paint (Story 1d-3 made
-      // AppLayout heavier; the race is now more visible).
+      // ─── LOAD-BEARING WAIT — DO NOT REMOVE OR INCREASE THE TIMEOUT ───
+      //
+      // Waits for AppLayout hydration. The skip-to-content link is the
+      // FIRST element AppLayout renders, so its presence means both the
+      // dashboard chunk AND the layout chunk have hydrated. Without this
+      // wait, axe occasionally analyzes the empty-shell HTML and reports
+      // `landmark-one-main` / `page-has-heading-one` violations that
+      // disappear on the very next paint.
+      //
+      // Story 1d-3 (2026-06-19) made AppLayout heavier — 10 new domain
+      // imports — and the hydration race surfaced. Story 1d-3 party-mode
+      // review (Murat, 2026-06-21) flagged this comment-less wait as
+      // tech-debt: a future maintainer would see an opaque `waitFor` and
+      // either delete it or raise the timeout when it flakes again.
+      //
+      // Future-you: if this wait times out, the right move is NOT to
+      // raise the timeout. The right move is to investigate AppLayout
+      // hydration perf. A reasonable budget is <500ms from
+      // `domcontentloaded`; if you find it taking longer, the dashboard
+      // chunk graph has regressed and a fix in the lazy-import topology
+      // is the actual repair. Track this in a follow-up perf-budget
+      // assertion (see Story 1d-3 follow-up tasks #16-#21 backlog).
+      // ────────────────────────────────────────────────────────────────
       await page.locator('a[href="#main-content"]').waitFor({ state: 'attached' })
       await assertNoRawKeysInDom(page)
       const result = await new AxeBuilder({ page }).analyze()

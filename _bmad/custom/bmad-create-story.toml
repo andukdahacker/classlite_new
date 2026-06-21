@@ -1,0 +1,12 @@
+# Team-scoped customization for bmad-create-story.
+# Merges on top of the installer-shipped customize.toml.
+# Story 1d-3 follow-up #21 (party-mode review 2026-06-21, John): codify
+# the completion-notes sibling-file convention so the bmad-create-story
+# workflow scaffolds new stories under the split convention from 1d-4
+# onward (story file stays bounded; sibling file owns dev record).
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/docs/bmad-story-conventions.md",
+]

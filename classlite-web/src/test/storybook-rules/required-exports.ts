@@ -21,6 +21,16 @@
  *     branches). The opt-out is greppable and visible in code review.
  */
 
+/**
+ * Comment + string stripping is shared with `scripts/i18n-parity.mjs`
+ * via `scripts/lib/strip-comments-and-strings.mjs`. The two scanners
+ * used to drift independently — each had its own copy of the same
+ * function and shared the same JSDoc-apostrophe bug (Story 1d-3
+ * party-mode review, Winston 2026-06-21). The shared util is the
+ * single source of truth.
+ */
+import { stripCommentsAndStrings } from '../../../scripts/lib/strip-comments-and-strings.mjs'
+
 export type RequiredExportsCheck = {
   ok: boolean
   /** Required exports that are missing from the story file. */
@@ -157,33 +167,3 @@ export function extractExportedNames(source: string): string[] {
   return [...names]
 }
 
-/** Strip block comments, line comments, and string / template literals
- * sequentially. Each pass operates on the output of the previous one so
- * patterns can't false-match across pass boundaries — e.g. an apostrophe
- * inside a JSDoc block (`don't`, `1d-2's`) used to be picked up by the
- * single-quoted-string pattern and consume everything until the next `'`
- * in the source, wiping out the export declarations the caller is trying
- * to detect (Story 1d-3 regression). Each removed region is replaced
- * with spaces of the same length to preserve line/column positions for
- * any downstream regex anchors. */
-function stripCommentsAndStrings(source: string): string {
-  const passes: RegExp[] = [
-    /\/\*[\s\S]*?\*\//g, // block comment
-    /\/\/[^\n]*/g, // line comment
-    /'(?:\\.|[^'\\])*'/g, // single-quoted string
-    /"(?:\\.|[^"\\])*"/g, // double-quoted string
-    /`(?:\\.|[^`\\])*`/g, // template literal (no nested interpolation handling needed)
-  ]
-  let result = source
-  for (const pattern of passes) {
-    const out = result.split('')
-    let m: RegExpExecArray | null
-    while ((m = pattern.exec(result)) !== null) {
-      for (let i = m.index; i < m.index + m[0].length; i++) {
-        if (out[i] !== '\n') out[i] = ' '
-      }
-    }
-    result = out.join('')
-  }
-  return result
-}
