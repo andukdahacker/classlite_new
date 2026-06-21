@@ -6,9 +6,18 @@
 // (NFR-1, UX-DR17). A missing key in vi.json renders as the raw key
 // string to half the user base — invisible to English-speaking devs.
 //
+// Story 1d-3 — namespace-coverage assertion (Murat, party-mode 2026-06-18;
+// closed 2026-06-18 by Ducdo: ship-now). Every key whose path starts with
+// one of the COVERED_NAMESPACES MUST be claimed by some `STORY_1D_*_KEYS`
+// array in `src/lib/test/__tests__/i18n-parity-coverage.test.ts`. An
+// orphan key (in JSON but not enumerated anywhere) fails with code 1.
+// Closes the vacuous-pass loophole where a new key passes parity (both
+// locales have it) but isn't claimed by any story discharge block, so the
+// per-story coverage matrix silently rots.
+//
 // Exit codes:
 //   0  — keysets match
-//   1  — keysets diverge; report printed to stderr
+//   1  — keysets diverge OR orphan keys exist
 //   2  — usage error (missing file, malformed JSON)
 
 import { readFileSync, existsSync } from 'node:fs'
@@ -17,8 +26,34 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const localesDir = resolve(here, '..', 'src', 'locales')
+const coverageTestPath = resolve(
+  here,
+  '..',
+  'src',
+  'lib',
+  'test',
+  '__tests__',
+  'i18n-parity-coverage.test.ts',
+)
 
 const LOCALES = ['en', 'vi']
+
+/**
+ * Namespaces covered by the per-story discharge contract. Any key whose
+ * path starts with one of these prefixes MUST be claimed by some
+ * `STORY_1D_*_KEYS` array in `i18n-parity-coverage.test.ts`. The
+ * `pageHead.fixture.*` keys are Storybook-only demo copy and stay under
+ * this rule via the `pageHead.` namespace — they ARE claimed in 1d-3's
+ * key list.
+ */
+const COVERED_NAMESPACES = [
+  'sidebar.',
+  'topbar.',
+  'mobileTab.',
+  'pageHead.',
+  'userPill.',
+  'appShell.',
+]
 
 function fail(code, msg) {
   process.stderr.write(`i18n-parity: ${msg}\n`)
@@ -73,8 +108,81 @@ function loadLocale(code) {
   }
 }
 
+/**
+ * Extract every string literal claimed by a `STORY_*_KEYS = [...]` array
+ * in the coverage test file. Cheap text-level extraction so the script
+ * stays plain Node without a TS compile step.
+ *
+ * Recognises:
+ *   const STORY_1D_3_KEYS = [ 'foo.bar', 'baz' ] as const
+ *   export const STORY_1D_3_KEYS = [...] as const
+ */
+/**
+ * Replace JS-style line and block comments with blank space so apostrophes
+ * inside prose (`1-7c's`, `the rule's intent`) don't confuse the array-body
+ * string-literal extractor. Spaces preserve column/line counts so anything
+ * downstream that cares about positions stays accurate.
+ */
+function stripComments(source) {
+  let out = ''
+  let i = 0
+  while (i < source.length) {
+    const two = source.slice(i, i + 2)
+    if (two === '//') {
+      const end = source.indexOf('\n', i)
+      const stop = end === -1 ? source.length : end
+      out += ' '.repeat(stop - i)
+      i = stop
+    } else if (two === '/*') {
+      const end = source.indexOf('*/', i + 2)
+      const stop = end === -1 ? source.length : end + 2
+      for (let j = i; j < stop; j++) {
+        out += source[j] === '\n' ? '\n' : ' '
+      }
+      i = stop
+    } else {
+      out += source[i]
+      i += 1
+    }
+  }
+  return out
+}
+
+function extractClaimedKeys() {
+  if (!existsSync(coverageTestPath)) {
+    fail(2, `coverage test file not found: ${coverageTestPath}`)
+  }
+  const raw = readFileSync(coverageTestPath, 'utf8')
+  const content = stripComments(raw)
+  const claimed = new Set()
+  const arrayPattern = /STORY_[A-Z0-9_]+_KEYS\s*=\s*\[([\s\S]*?)\]\s*as\s*const/g
+  let arrayMatch
+  while ((arrayMatch = arrayPattern.exec(content)) !== null) {
+    const body = arrayMatch[1]
+    const stringPattern = /'([^']+)'/g
+    let strMatch
+    while ((strMatch = stringPattern.exec(body)) !== null) {
+      claimed.add(strMatch[1])
+    }
+  }
+  return claimed
+}
+
 function diff(setA, setB) {
   return [...setA].filter((k) => !setB.has(k)).sort()
+}
+
+function findOrphans(localeKeys, claimedKeys) {
+  const orphans = []
+  for (const key of localeKeys) {
+    for (const ns of COVERED_NAMESPACES) {
+      if (key.startsWith(ns) && !claimedKeys.has(key)) {
+        orphans.push({ key, namespace: ns })
+        break
+      }
+    }
+  }
+  return orphans.sort((a, b) => a.key.localeCompare(b.key))
 }
 
 const locales = Object.fromEntries(LOCALES.map((c) => [c, loadLocale(c)]))
@@ -85,18 +193,26 @@ const missingInA = diff(locales[b].keys, locales[a].keys)
 const emptyA = locales[a].empty
 const emptyB = locales[b].empty
 
+// Namespace coverage check — run against `en.json` keys (locales are
+// already parity-checked above; orphan detection on one locale suffices).
+const claimedKeys = extractClaimedKeys()
+const orphans = findOrphans(locales[a].keys, claimedKeys)
+
 if (
   missingInA.length === 0 &&
   missingInB.length === 0 &&
   emptyA.length === 0 &&
-  emptyB.length === 0
+  emptyB.length === 0 &&
+  orphans.length === 0
 ) {
   const count = locales[a].keys.size
-  process.stdout.write(`i18n-parity: OK — ${count} keys present in both ${LOCALES.join(', ')} with non-empty values\n`)
+  process.stdout.write(
+    `i18n-parity: OK — ${count} keys present in both ${LOCALES.join(', ')} with non-empty values; namespace coverage clean (${claimedKeys.size} claimed)\n`,
+  )
   process.exit(0)
 }
 
-process.stderr.write(`i18n-parity: FAIL — locale keysets diverge or contain empty values\n\n`)
+process.stderr.write(`i18n-parity: FAIL — locale keysets diverge, contain empty values, or have orphan namespace coverage\n\n`)
 if (missingInB.length > 0) {
   process.stderr.write(`Keys in ${a}.json missing from ${b}.json (${missingInB.length}):\n`)
   for (const k of missingInB) process.stderr.write(`  - ${k}\n`)
@@ -117,5 +233,16 @@ if (emptyB.length > 0) {
   for (const k of emptyB) process.stderr.write(`  - ${k}\n`)
   process.stderr.write('\n')
 }
-process.stderr.write(`Fix by adding the missing keys or non-empty values to the affected locale file(s).\n`)
+if (orphans.length > 0) {
+  process.stderr.write(
+    `Orphan keys in covered namespaces — not claimed by any STORY_1D_*_KEYS array (${orphans.length}):\n`,
+  )
+  for (const { key, namespace } of orphans) {
+    process.stderr.write(`  - ORPHAN: ${key} belongs to namespace ${namespace} but isn't claimed by any STORY_1D_*_KEYS\n`)
+  }
+  process.stderr.write(
+    `Fix by adding the orphan key(s) to the appropriate STORY_1D_*_KEYS array in src/lib/test/__tests__/i18n-parity-coverage.test.ts.\n\n`,
+  )
+}
+process.stderr.write(`Fix by addressing the failures above.\n`)
 process.exit(1)

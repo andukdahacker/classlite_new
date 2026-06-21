@@ -34,17 +34,18 @@ import { assertI18nParity } from '@/lib/test/i18n-parity'
  * story — the grouping is the documentation.
  */
 const STORY_1_7C_KEYS = [
-  // AppLayout — sidebar + topbar chrome
-  'app.layout.sidebar.brand',
-  'app.layout.sidebar.collapseToggle',
-  'app.layout.sidebar.nav.aria',
-  'app.layout.topbar.breadcrumb',
-  'app.layout.topbar.search',
-  'app.layout.topbar.searchHint',
-  'app.layout.userPill.roleLabel.owner',
-  'app.layout.userPill.roleLabel.admin',
-  'app.layout.userPill.roleLabel.teacher',
-  'app.layout.userPill.roleLabel.student',
+  // AppLayout — sidebar + topbar chrome.
+  // Story 1d-3 migrated:
+  //   app.layout.sidebar.brand          → sidebar.brand
+  //   app.layout.sidebar.collapseToggle → sidebar.collapseToggle
+  //   app.layout.sidebar.nav.aria       → sidebar.nav.primary
+  //   app.layout.topbar.breadcrumb      → topbar.breadcrumb.label
+  //   app.layout.topbar.search          → topbar.search.placeholder
+  //   app.layout.topbar.searchHint      → topbar.search.hint
+  //   app.layout.userPill.roleLabel.*   → userPill.role.*
+  // Migrated keys now appear in STORY_1D_3_KEYS below. The keys retained
+  // here are still consumed by 1-7c's own surfaces (`AppLayout`, language
+  // toggle, sign-out CTA).
   'app.layout.userPill.signOut',
   'app.layout.languageToggle.aria',
   'app.layout.languageToggle.en',
@@ -134,6 +135,120 @@ const STORY_1D_2_KEYS = [
 describe('Story 1d-2 i18n parity (R38)', () => {
   test('every Story 1d-2 storybook key exists in both en.json and vi.json', () => {
     assertI18nParity(STORY_1D_2_KEYS)
+  })
+})
+
+/**
+ * Story 1d-3 — app-shell stack keys. Per-story discharge of R38 for the
+ * domain components: AppShell, SidebarShell (× 4 role variants),
+ * SidebarNavItem, UserPill, TopbarShell, BreadcrumbBar, SearchPill,
+ * PageHead, MobileTabBar (× 3 role variants), MobileTab.
+ *
+ * Grouped by namespace for readability. Namespace coverage is enforced by
+ * `scripts/i18n-parity.mjs` — every `sidebar.*` / `topbar.*` /
+ * `mobileTab.*` / `pageHead.*` / `userPill.*` / `appShell.*` key MUST
+ * appear in some `STORY_1D_*_KEYS` array exported below. An orphan key
+ * (in JSON but not enumerated anywhere) fails the script.
+ */
+export const STORY_1D_3_KEYS = [
+  // AppShell
+  'appShell.root',
+
+  // Sidebar chrome + aria templates
+  'sidebar.brand',
+  'sidebar.nav.primary',
+  'sidebar.nav.unreadAria',
+  'sidebar.collapseToggle',
+  'sidebar.section.workspace',
+  'sidebar.section.resources',
+  'sidebar.section.settings',
+
+  // Sidebar — Owner nav
+  'sidebar.owner.dashboard',
+  'sidebar.owner.people',
+  'sidebar.owner.classes',
+  'sidebar.owner.schedule',
+  'sidebar.owner.analytics',
+  'sidebar.owner.inbox',
+  'sidebar.owner.knowledgeHub',
+  'sidebar.owner.archive',
+  'sidebar.owner.settings',
+
+  // Sidebar — Admin nav (Owner MINUS Settings)
+  'sidebar.admin.dashboard',
+  'sidebar.admin.people',
+  'sidebar.admin.classes',
+  'sidebar.admin.schedule',
+  'sidebar.admin.analytics',
+  'sidebar.admin.inbox',
+  'sidebar.admin.knowledgeHub',
+  'sidebar.admin.archive',
+
+  // Sidebar — Teacher nav
+  'sidebar.teacher.dashboard',
+  'sidebar.teacher.classes',
+  'sidebar.teacher.schedule',
+  'sidebar.teacher.exercises',
+  'sidebar.teacher.questions',
+  'sidebar.teacher.students',
+  'sidebar.teacher.analytics',
+  'sidebar.teacher.inbox',
+  'sidebar.teacher.knowledgeHub',
+  'sidebar.teacher.archive',
+
+  // Sidebar — Student nav (student-tone labels)
+  'sidebar.student.dashboard',
+  'sidebar.student.myClasses',
+  'sidebar.student.assignments',
+  'sidebar.student.mySchedule',
+  'sidebar.student.questions',
+  'sidebar.student.myPerformance',
+  'sidebar.student.inbox',
+
+  // Topbar
+  'topbar.breadcrumb.label',
+  'topbar.breadcrumb.more',
+  'topbar.search.placeholder',
+  'topbar.search.hint',
+
+  // UserPill role labels
+  'userPill.role.owner',
+  'userPill.role.admin',
+  'userPill.role.teacher',
+  'userPill.role.student',
+
+  // MobileTabBar chrome (nav landmark label distinct from desktop sidebar's)
+  'mobileTab.nav.primary',
+
+  // MobileTabBar — Student tabs (per IA `s74–s81`)
+  'mobileTab.student.home',
+  'mobileTab.student.assignments',
+  'mobileTab.student.inbox',
+  'mobileTab.student.classes',
+  'mobileTab.student.me',
+
+  // MobileTabBar — Teacher tabs (per IA `s82–s85`)
+  'mobileTab.teacher.home',
+  'mobileTab.teacher.classes',
+  'mobileTab.teacher.inbox',
+  'mobileTab.teacher.schedule',
+  'mobileTab.teacher.me',
+
+  // MobileTabBar — Owner tabs (extrapolated; per `s86`)
+  'mobileTab.owner.home',
+  'mobileTab.owner.people',
+  'mobileTab.owner.inbox',
+  'mobileTab.owner.analytics',
+  'mobileTab.owner.me',
+
+  // PageHead fixture (storybook demo only)
+  'pageHead.fixture.title',
+  'pageHead.fixture.subtitle',
+] as const
+
+describe('Story 1d-3 i18n parity (R38)', () => {
+  test('every Story 1d-3 key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1D_3_KEYS)
   })
 })
 

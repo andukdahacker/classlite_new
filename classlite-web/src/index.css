@@ -60,6 +60,14 @@
   --radius-2xl: var(--cl-radius-2xl);
 }
 
+/* Token bridge governance (Story 1d-3, Winston 2026-06-18).
+   Edit `--cl-*` raw tokens (in tokens.css) to rebrand.
+   NEVER edit the bridge variables below (`--background` / `--foreground`
+   / `--card` / `--sidebar*` / `--ring` / `--color-*`) directly — they are
+   bridge aliases that propagate `--cl-*` to shadcn semantics and Tailwind
+   v4 utilities. Direct edits silently desync the brand layer: shadcn
+   primitives keep reading `--sidebar`, Tailwind keeps reading `--color-sidebar`,
+   but `--cl-sidebar-bg` no longer matches. Use `tokens.css` exclusively. */
 :root {
   --background:                  var(--cl-paper);
   --foreground:                  var(--cl-ink);

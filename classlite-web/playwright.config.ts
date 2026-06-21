@@ -28,6 +28,8 @@ const BASE_URL_DASHBOARD =
   process.env.BASE_URL_DASHBOARD ?? 'http://my.classlite.localhost:5173'
 const BASE_URL_DESIGN_SYSTEM =
   process.env.BASE_URL_DESIGN_SYSTEM ?? 'http://localhost:5173'
+const BASE_URL_STORYBOOK =
+  process.env.BASE_URL_STORYBOOK ?? 'http://127.0.0.1:6006'
 
 const STORAGE_STATE = '.playwright/auth.json'
 
@@ -111,9 +113,31 @@ export default defineConfig({
       name: 'design-system',
       testDir: './e2e',
       testMatch: /.*\.spec\.ts/,
+      // The `storybook/` subdir hosts the storybook-a11y project's specs;
+      // exclude here so design-system doesn't try to run them against the
+      // vite dev server (they expect Storybook static at :6006).
+      testIgnore: /storybook\//,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL_DESIGN_SYSTEM,
+      },
+    },
+    {
+      // Story 1d-3 — Storybook a11y runtime contracts (party-mode review
+      // 2026-06-21). The Storybook test-runner asserts attribute-presence
+      // and axe-static; these specs assert runtime browser behavior that
+      // test-runner can't reach: real keyboard focus + tooltip in a11y
+      // tree (AC9 — Vietnamese truncation reveal path), real bounding
+      // boxes at 375×667 (AC7 + AC8 — touch target + mobile-hides-sidebar).
+      // Runs against Storybook static at http://127.0.0.1:6006 — `npm run
+      // storybook:build && npm run storybook:serve` pre-flight required, OR
+      // the storybook webServer entry below builds + serves automatically.
+      name: 'storybook-a11y',
+      testDir: './e2e/storybook',
+      testMatch: /.*\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: BASE_URL_STORYBOOK,
       },
     },
   ],
@@ -126,12 +150,31 @@ export default defineConfig({
   // serves localhost AND my.classlite.localhost (which both resolve to
   // 127.0.0.1) — the cross-subdomain projects can reuse it without a
   // Host-header rejection.
-  webServer: process.env.BASE_URL_DESIGN_SYSTEM
-    ? undefined
-    : {
-        command: 'npm run dev -- --port 5173',
-        url: BASE_URL_DESIGN_SYSTEM,
-        reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
-      },
+  webServer: [
+    ...(process.env.BASE_URL_DESIGN_SYSTEM
+      ? []
+      : [
+          {
+            command: 'npm run dev -- --port 5173',
+            url: BASE_URL_DESIGN_SYSTEM,
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+          },
+        ]),
+    // Storybook static build + serve for the storybook-a11y project.
+    // `reuseExistingServer` lets local dev pre-build once and iterate
+    // quickly; CI does a fresh build every run. The build is slow
+    // (~25s) so timeout is generous.
+    ...(process.env.BASE_URL_STORYBOOK
+      ? []
+      : [
+          {
+            command:
+              'npm run storybook:build && npx http-server storybook-static --port 6006 --silent',
+            url: `${BASE_URL_STORYBOOK}/iframe.html`,
+            reuseExistingServer: !process.env.CI,
+            timeout: 180_000,
+          },
+        ]),
+  ],
 })

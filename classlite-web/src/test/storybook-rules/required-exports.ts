@@ -35,6 +35,47 @@ export const PRIMITIVE_EXEMPTION = /\/components\/ui\//
 const THREE_STATE_REQUIRED = ['Default', 'Loading', 'Empty', 'Error'] as const
 const OPT_OUT_DIRECTIVE = 'storybook-rule: no-three-state'
 
+/**
+ * Pure-layout shell allowlist — Story 1d-3 (closed 2026-06-18 by Ducdo:
+ * Option A — predicate-gated closed set).
+ *
+ * `*Shell.stories.tsx` files normally require the three-state set
+ * (`Default` / `Loading` / `Empty` / `Error`) because the rule was
+ * authored anticipating data-rendering shells (`GradingShell`,
+ * `EditorShell`). Pure-layout shells — `AppShell`, `SidebarShell`,
+ * `TopbarShell` — own no fetches and therefore have no Loading / Empty /
+ * Error branches to render. Forcing contrived stub stories on them adds
+ * noise without catching anything.
+ *
+ * Predicate (Winston + Murat, party-mode 2026-06-18):
+ *   1. Component owns NO data fetching — no `useQuery` /
+ *      `useSuspenseQuery` / `useMutation` / `fetch` / `apiFetch`.
+ *   2. Component exposes ONLY slot props + role-variant props + UI-state
+ *      props (e.g., `collapsed`). NEVER render-from-fetched-data.
+ *   3. Component renders NO conditional branches on user data.
+ *   4. Every addition is justified inline in `storybook-conventions.md` §3
+ *      citing this predicate.
+ *
+ * CODEOWNERS rule on this file makes TEA (Murat) a required reviewer; a
+ * standalone allowlist-only PR is auto-rejected so additions land in the
+ * same PR as the exempt component. Future `*Shell` components that ARE
+ * data-rendering (`OnboardingShell`, `GradingQueueShell`, `InboxListShell`,
+ * etc.) WILL ship the three-state set — the allowlist is not a dumping
+ * ground.
+ */
+export const PURE_LAYOUT_SHELL_ALLOWLIST: ReadonlySet<string> = new Set([
+  'AppShell',
+  'SidebarShell',
+  'TopbarShell',
+])
+
+function isAllowlistedShell(storyFilePath: string): boolean {
+  const normalized = normalizePath(storyFilePath)
+  const match = normalized.match(/\/([A-Za-z0-9_]+)\.stories\.tsx?$/)
+  if (!match) return false
+  return PURE_LAYOUT_SHELL_ALLOWLIST.has(match[1])
+}
+
 /** Normalize path separators so callers don't need to. */
 function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/')
@@ -59,6 +100,12 @@ export function checkRequiredExports(
     return { ok: true, missing: [], enforced: false }
   }
   if (source && source.includes(OPT_OUT_DIRECTIVE)) {
+    return { ok: true, missing: [], enforced: false }
+  }
+  if (isAllowlistedShell(normalized)) {
+    // Pure-layout shells (AppShell / SidebarShell / TopbarShell — closed
+    // 2026-06-18 by Ducdo) are exempt from the three-state requirement.
+    // See `PURE_LAYOUT_SHELL_ALLOWLIST` above + storybook-conventions.md § 3.
     return { ok: true, missing: [], enforced: false }
   }
   const missing = THREE_STATE_REQUIRED.filter((name) => !exportedNames.includes(name))
@@ -110,30 +157,33 @@ export function extractExportedNames(source: string): string[] {
   return [...names]
 }
 
-/** Strip block comments, line comments, and string / template
- * literals. Replaces each removed region with spaces of the same length
- * to preserve line/column positions for any downstream regex anchors. */
+/** Strip block comments, line comments, and string / template literals
+ * sequentially. Each pass operates on the output of the previous one so
+ * patterns can't false-match across pass boundaries — e.g. an apostrophe
+ * inside a JSDoc block (`don't`, `1d-2's`) used to be picked up by the
+ * single-quoted-string pattern and consume everything until the next `'`
+ * in the source, wiping out the export declarations the caller is trying
+ * to detect (Story 1d-3 regression). Each removed region is replaced
+ * with spaces of the same length to preserve line/column positions for
+ * any downstream regex anchors. */
 function stripCommentsAndStrings(source: string): string {
-  const replacements: Array<{ start: number; end: number }> = []
-  const patterns: RegExp[] = [
+  const passes: RegExp[] = [
     /\/\*[\s\S]*?\*\//g, // block comment
     /\/\/[^\n]*/g, // line comment
     /'(?:\\.|[^'\\])*'/g, // single-quoted string
     /"(?:\\.|[^"\\])*"/g, // double-quoted string
     /`(?:\\.|[^`\\])*`/g, // template literal (no nested interpolation handling needed)
   ]
-  for (const pattern of patterns) {
+  let result = source
+  for (const pattern of passes) {
+    const out = result.split('')
     let m: RegExpExecArray | null
-    while ((m = pattern.exec(source)) !== null) {
-      replacements.push({ start: m.index, end: m.index + m[0].length })
+    while ((m = pattern.exec(result)) !== null) {
+      for (let i = m.index; i < m.index + m[0].length; i++) {
+        if (out[i] !== '\n') out[i] = ' '
+      }
     }
+    result = out.join('')
   }
-  if (replacements.length === 0) return source
-  const chars = source.split('')
-  for (const { start, end } of replacements) {
-    for (let i = start; i < end; i++) {
-      if (chars[i] !== '\n') chars[i] = ' '
-    }
-  }
-  return chars.join('')
+  return result
 }

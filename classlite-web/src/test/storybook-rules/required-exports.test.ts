@@ -14,6 +14,7 @@ import {
   checkRequiredExports,
   extractExportedNames,
   PRIMITIVE_EXEMPTION,
+  PURE_LAYOUT_SHELL_ALLOWLIST,
 } from './required-exports'
 
 const NEGATIVE_FIXTURE = resolve(
@@ -154,6 +155,37 @@ describe('extractExportedNames — story-file export parser', () => {
   test('deduplicates names when both a declaration and re-export appear', () => {
     const source = `export const Default = {}\nexport { Default }`
     expect(extractExportedNames(source)).toEqual(['Default'])
+  })
+})
+
+describe('Pure-layout shell allowlist (Story 1d-3 — closed 2026-06-18)', () => {
+  test.each(['AppShell', 'SidebarShell', 'TopbarShell'])(
+    '%s.stories.tsx is exempt from the three-state requirement',
+    (componentName) => {
+      const result = checkRequiredExports(
+        `src/components/domain/${componentName}.stories.tsx`,
+        ['Default'],
+      )
+      expect(result).toEqual({ ok: true, missing: [], enforced: false })
+    },
+  )
+
+  test('the closed set is the exact triple {AppShell, SidebarShell, TopbarShell}', () => {
+    expect([...PURE_LAYOUT_SHELL_ALLOWLIST].sort()).toEqual([
+      'AppShell',
+      'SidebarShell',
+      'TopbarShell',
+    ])
+  })
+
+  test('a non-allowlisted *Shell file is still enforced', () => {
+    const result = checkRequiredExports(
+      'src/components/domain/OnboardingShell.stories.tsx',
+      ['Default'],
+    )
+    expect(result.enforced).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.missing).toEqual(['Loading', 'Empty', 'Error'])
   })
 })
 

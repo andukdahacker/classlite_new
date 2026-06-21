@@ -185,6 +185,14 @@ for (const probe of PROBES) {
       page,
     }) => {
       await page.goto('/dashboard')
+      // Wait for the AppLayout lazy chunk to mount before axe analyzes —
+      // the skip-to-content link is the FIRST element of AppLayout, so its
+      // presence means the dashboard chunk + the layout chunk have both
+      // hydrated. Without this wait, axe occasionally analyzes the
+      // empty-shell HTML and reports `landmark-one-main` / `page-has-heading-one`
+      // violations that disappear on the very next paint (Story 1d-3 made
+      // AppLayout heavier; the race is now more visible).
+      await page.locator('a[href="#main-content"]').waitFor({ state: 'attached' })
       await assertNoRawKeysInDom(page)
       const result = await new AxeBuilder({ page }).analyze()
       // If a violation is found, the result includes node selectors + a

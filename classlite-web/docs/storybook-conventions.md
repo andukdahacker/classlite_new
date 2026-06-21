@@ -61,6 +61,41 @@ Primitives under `src/components/ui/` are exempt. They export `Default`
 plus the variant exports relevant to their own API (per Story 1d-2's
 shadcn-primitive coverage).
 
+### 3.1 Pure-layout `*Shell` allowlist (Story 1d-3 — closed 2026-06-18)
+
+Three pure-layout shells are EXEMPT from the three-state requirement:
+
+| Component | Why exempt |
+|---|---|
+| `AppShell` | Three-slot layout (sidebar / topbar / main). Owns no data; no fetch path; no conditional branches on user data. |
+| `SidebarShell` | Role-variant layout. Owns no fetch. The badge count is a prop populated by feature stories upstream; `SidebarShell` itself never queries. |
+| `TopbarShell` | Three-slot layout (breadcrumb / search / cta). Owns no fetch. |
+
+**Predicate for additions.** A `*Shell` component qualifies for the
+allowlist ONLY when ALL four conditions hold:
+
+1. Owns NO data fetching — no `useQuery` / `useSuspenseQuery` /
+   `useMutation` / `fetch` / `apiFetch`.
+2. Exposes ONLY slot props + role-variant props + UI-state props
+   (e.g., `collapsed`). NEVER renders from fetched data.
+3. Renders NO conditional branches on user data.
+4. The addition is justified inline in this doc citing this predicate.
+
+Future `*Shell` components that ARE data-rendering (e.g.,
+`OnboardingShell`, `GradingQueueShell`, `InboxListShell`) WILL ship the
+three-state set — the allowlist is not a dumping ground.
+
+**CODEOWNERS rule.** `src/test/storybook-rules/required-exports.ts` has
+TEA (Murat) as a required reviewer. A standalone allowlist-only PR is
+auto-rejected; additions land in the same PR as the exempt component so
+the predicate can be evaluated against the actual code.
+
+Implementation: `PURE_LAYOUT_SHELL_ALLOWLIST` in
+`src/test/storybook-rules/required-exports.ts`. The closed-set test in
+`required-exports.test.ts` ("the closed set is the exact triple") will
+fail loudly if a future dev expands the allowlist without updating both
+the implementation AND this doc.
+
 **Role variants (UX-DR29).** Components that branch on `useRole()`
 additionally export `OwnerView`, `AdminView`, `TeacherView`,
 `StudentView`. The role-variant requirement is enforced by code review
@@ -356,6 +391,42 @@ key (e.g., `storybook.fixtures.longEnText`).
 **If Tier C is ever invoked** (no Storybook), this gate disappears for
 Epic 1D and TEA must re-scope the epic's a11y plan. See AC5 / spike
 doc.
+
+## 9.1 Stable `data-testid` selectors for the app-shell stack (Story 1d-3)
+
+Domain components ship stable `data-testid` selectors so downstream
+component tests + Storybook `play` functions can pick out elements
+without coupling to i18n string resolution. The discipline (Murat,
+party-mode 2026-06-18): use `data-testid` for negative assertions;
+`queryByRole('navigation', { name: t('sidebar.nav.primary') })` couples
+the test to i18n string resolution, so if the i18n key is renamed the
+test silently flips from "absent" to "couldn't find anyway" (false
+green).
+
+| Selector | Element | Owner |
+|---|---|---|
+| `app-shell-root` | `AppShell` root `<div>` | `domain/AppShell.tsx` |
+| `app-shell-banner` | `AppShell` banner slot wrapper | `domain/AppShell.tsx` |
+| `sidebar-nav-primary` | `SidebarShell` root `<aside>` (negative-assertion target for 1D-P0-020) | `domain/SidebarShell.tsx` |
+| `sidebar-nav-{slug}` | Each `SidebarNavItem` (slug derived from `labelKey` tail, kebab-cased) | `domain/SidebarNavItem.tsx` |
+| `user-pill-role` | `UserPill` role-label `<span>` | `domain/UserPill.tsx` |
+| `topbar-shell` | `TopbarShell` root `<header>` | `domain/TopbarShell.tsx` |
+| `breadcrumb-current` | The current (non-clickable) breadcrumb item | `domain/BreadcrumbBar.tsx` |
+| `search-pill` | `SearchPill` root `<button>` | `domain/SearchPill.tsx` |
+| `page-head` | `PageHead` root `<header>` | `domain/PageHead.tsx` |
+| `mobile-tab-bar` | `MobileTabBar` root `<nav>` | `domain/MobileTabBar.tsx` |
+| `mobile-tab-{slug}` | Each `MobileTab` (slug = `testIdSlug` prop) | `domain/MobileTab.tsx` |
+
+**Slug rule.** `SidebarNavItem`'s slug is derived from the tail segment
+of `labelKey` (`sidebar.owner.knowledgeHub` → `knowledgehub`,
+`sidebar.student.myClasses` → `my-classes`). `MobileTab` uses an explicit
+`testIdSlug` prop because the `mobileTab.{role}.home` keys collide
+across roles — the parent `MobileTabBar` supplies the per-role slug.
+
+**Adding a new selector.** Extend the table above in the same PR that
+introduces it. Re-using an existing selector across components is a
+defect, not a feature — tests depending on a slug for component A will
+silently match component B.
 
 ## 10. Designer access
 
