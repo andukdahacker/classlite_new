@@ -49,7 +49,14 @@ export function AppShell({
           id="main-content"
           role="main"
           tabIndex={-1}
-          className="flex-1 overflow-auto p-6 pb-24 md:pb-6"
+          // Reserve 96px at the bottom on mobile ONLY when a tab bar is
+          // mounted. Guest shell (no tab bar) gets the default 24px,
+          // otherwise we'd ship a dead 96px gap below content.
+          className={
+            mobileTabBar
+              ? 'flex-1 overflow-auto p-6 pb-24 md:pb-6'
+              : 'flex-1 overflow-auto p-6'
+          }
         >
           {children}
         </main>

@@ -25,21 +25,32 @@
  *     to land the real auth flow.
  *
  * Story 1-8 onwards mounts AppLayout under a real auth wrapper that resolves
- * the role from the authenticated user. Until then, every consuming route is
- * still under the "Story 1-7c placeholder routes" comment in `routes.tsx`
- * and renders the guest shell.
+ * the role + display name from the authenticated user. Until then, every
+ * consuming route is still under the "Story 1-7c placeholder routes" comment
+ * in `routes.tsx` and renders the guest shell.
  *
  * Single uiStore subscription discipline (Winston, party-mode 2026-06-18):
- * AppLayout is the SOLE consumer of `useUIStore((s) => s.sidebarCollapsed)`
- * in the dev-shell scope. `AppShell` / `SidebarShell` receive the boolean
- * via the `collapsed` prop; re-subscribing inside the domain stack causes
+ * AppLayout is the SOLE consumer of `useUIStore` — both `sidebarCollapsed`
+ * and `setSidebarCollapsed`. `AppShell` / `SidebarShell` receive the boolean
+ * via the `collapsed` prop; `TopbarShell` receives the hamburger as a
+ * `collapseToggle` slot. Re-subscribing inside the domain stack causes
  * double renders that React DevTools shows but the test suite misses.
+ *
+ * Active-route highlighting (1d-3 code-review D6 + P1). Sidebar
+ * `activeHref` is resolved by longest-prefix-matching `location.pathname`
+ * against every href in the role's nav config. Deep routes like
+ * `/classes/123` highlight the `/classes` tab; `/classes-archived` does
+ * NOT collide with `/classes`. `MobileTabBar` receives raw
+ * `location.pathname` and does the same match internally against its own
+ * tab set.
  */
 import { useEffect } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
+import { Menu } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
-import { useRole } from '@/hooks/useRole'
+import { useRole, type Role } from '@/hooks/useRole'
+import { matchLongestHrefPrefix } from '@/lib/match-route'
 import { AppShell } from '@/components/domain/AppShell'
 import { BreadcrumbBar } from '@/components/domain/BreadcrumbBar'
 import { MobileTabBar } from '@/components/domain/MobileTabBar'
@@ -47,25 +58,53 @@ import { SearchPill } from '@/components/domain/SearchPill'
 import { SidebarShell } from '@/components/domain/SidebarShell'
 import { SIDEBAR_NAV_BY_ROLE } from '@/components/domain/sidebarNavConfig'
 import { TopbarShell } from '@/components/domain/TopbarShell'
+import { Button } from '@/components/ui/button'
+import { warnIfFirstNoRoleResolution } from './AppLayout-warn-tracking'
 import LanguageToggle from './LanguageToggle'
+
+function sidebarHrefs(role: Role): readonly string[] {
+  return SIDEBAR_NAV_BY_ROLE[role].flatMap((group) =>
+    group.items.map((item) => item.href),
+  )
+}
 
 export default function AppLayout() {
   const { t } = useTranslation()
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
   const role = useRole()
+  const location = useLocation()
 
   useEffect(() => {
     if (role === null && import.meta.env.DEV) {
-      // Dev-only hint. React strict-mode runs effects twice; two warns are
-      // acceptable in exchange for the safety guarantee.
-
-      console.warn(
+      warnIfFirstNoRoleResolution(
         '[AppLayout] No session role resolved — rendering guest shell ' +
           '(topbar only, no nav). Wrap your route under a `RoleProvider` ' +
           "or wait for Story 1-8's auth wiring to see role-aware chrome.",
       )
     }
   }, [role])
+
+  const sidebarActiveHref =
+    role !== null
+      ? (matchLongestHrefPrefix(location.pathname, sidebarHrefs(role)) ?? location.pathname)
+      : location.pathname
+
+  const collapseToggle = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={t(
+        sidebarCollapsed ? 'topbar.sidebarToggle.expand' : 'topbar.sidebarToggle.collapse',
+      )}
+      aria-pressed={sidebarCollapsed}
+      data-testid="sidebar-collapse-toggle"
+      onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+    >
+      <Menu aria-hidden="true" className="size-5" />
+    </Button>
+  )
 
   return (
     <>
@@ -81,8 +120,13 @@ export default function AppLayout() {
             <SidebarShell
               role={role}
               groups={SIDEBAR_NAV_BY_ROLE[role]}
+              // TODO(1-8): replace `t(userPill.role.${role})` with the
+              // authenticated user's display name from the auth wrapper.
+              // Until then, every dev user sees their role label as the
+              // user name (Owner shows "Owner / Owner") — clearly a
+              // placeholder, not a leak.
               user={{ name: t(`userPill.role.${role}`), avatarUrl: null }}
-              activeHref="/dashboard"
+              activeHref={sidebarActiveHref}
               collapsed={sidebarCollapsed}
             />
           ) : null
@@ -92,10 +136,13 @@ export default function AppLayout() {
             breadcrumb={<BreadcrumbBar items={[]} />}
             search={<SearchPill placeholderKey="topbar.search.placeholder" />}
             cta={<LanguageToggle />}
+            collapseToggle={role !== null ? collapseToggle : null}
           />
         }
         mobileTabBar={
-          role !== null ? <MobileTabBar role={role} activeHref="/dashboard" /> : null
+          role !== null ? (
+            <MobileTabBar role={role} activeHref={location.pathname} />
+          ) : null
         }
       >
         <Outlet />

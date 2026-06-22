@@ -56,6 +56,45 @@ describe('stripComments — preserves string literals (used by i18n-parity)', ()
   })
 })
 
+describe('stripComments — supports both quote styles for the i18n-parity extractor', () => {
+  // Regression for the i18n-parity `extractClaimedKeys` bug: the original
+  // string-pattern only matched single-quoted strings, so a reviewer running
+  // Prettier with quoteStyle="double" would silently drop every claimed key
+  // and turn the namespace-coverage guard into a vacuity.
+  test('double-quoted keys inside STORY_KEYS arrays survive comment strip', () => {
+    const input = `
+      const STORY_KEYS = [
+        "sidebar.owner.dashboard",
+        "sidebar.owner.inbox",
+      ] as const
+    `
+    const out = stripComments(input)
+    expect(out).toContain('"sidebar.owner.dashboard"')
+    expect(out).toContain('"sidebar.owner.inbox"')
+  })
+
+  test('mixed single + double-quoted keys both survive', () => {
+    const input = `
+      const STORY_KEYS = [
+        'a.b',
+        "c.d",
+      ] as const
+    `
+    const out = stripComments(input)
+    expect(out).toContain("'a.b'")
+    expect(out).toContain('"c.d"')
+  })
+
+  test('escaped quotes inside strings are not treated as terminators', () => {
+    // Real-world: a key shouldn't contain quotes, but if it ever does
+    // (or if some string literal anywhere in the file does), the extractor
+    // must not corrupt subsequent strings.
+    const input = `const s = "she said \\"hi\\""\nconst other = 'safe'`
+    const out = stripComments(input)
+    expect(out).toContain("'safe'")
+  })
+})
+
 describe('stripCommentsAndStrings — strips both (used by required-exports)', () => {
   test('strings ARE blanked alongside comments', () => {
     const input = `const x = 'export const Empty = {}'`

@@ -18,7 +18,8 @@
 // Exit codes:
 //   0  — keysets match
 //   1  — keysets diverge OR orphan keys exist
-//   2  — usage error (missing file, malformed JSON)
+//   2  — usage error (missing locale file, malformed JSON)
+//   4  — config error (coverage test file missing — namespace check can't run)
 
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
@@ -116,11 +117,18 @@ function loadLocale(code) {
  *
  * Recognises:
  *   const STORY_1D_3_KEYS = [ 'foo.bar', 'baz' ] as const
+ *   const STORY_1D_3_KEYS = [ "foo.bar", "baz" ] as const   // double quotes too
  *   export const STORY_1D_3_KEYS = [...] as const
+ *
+ * Spread / computed values (e.g. `[...COMMON, 'extra']`) are NOT
+ * resolved — convention is a flat string-array literal. Computed
+ * values surface as orphans, which is the correct failure mode.
  */
 function extractClaimedKeys() {
   if (!existsSync(coverageTestPath)) {
-    fail(2, `coverage test file not found: ${coverageTestPath}`)
+    // Config error, not usage error — the script can't perform the
+    // namespace-coverage assertion without the source-of-truth file.
+    fail(4, `coverage test file not found: ${coverageTestPath}`)
   }
   const raw = readFileSync(coverageTestPath, 'utf8')
   // Strip comments only — the key names we're hunting for live inside
@@ -135,10 +143,14 @@ function extractClaimedKeys() {
   let arrayMatch
   while ((arrayMatch = arrayPattern.exec(content)) !== null) {
     const body = arrayMatch[1]
-    const stringPattern = /'([^']+)'/g
+    // Match single OR double-quoted strings. Without the double-quoted
+    // branch, a reviewer running Prettier with quoteStyle="double"
+    // silently drops every claimed key — turning the guard into either
+    // a deny-all (orphan flood) or silent vacuity.
+    const stringPattern = /'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"/g
     let strMatch
     while ((strMatch = stringPattern.exec(body)) !== null) {
-      claimed.add(strMatch[1])
+      claimed.add(strMatch[1] ?? strMatch[2])
     }
   }
   return claimed
@@ -169,10 +181,13 @@ const missingInA = diff(locales[b].keys, locales[a].keys)
 const emptyA = locales[a].empty
 const emptyB = locales[b].empty
 
-// Namespace coverage check — run against `en.json` keys (locales are
-// already parity-checked above; orphan detection on one locale suffices).
+// Namespace coverage check — scan the UNION of all locale keys, not
+// just en. If parity itself diverges (vi has a key en lacks), the en-only
+// scan would miss it and bail only after the orphan check already ran.
+// Scanning the union catches vi-only orphans even when parity fails.
 const claimedKeys = extractClaimedKeys()
-const orphans = findOrphans(locales[a].keys, claimedKeys)
+const unionKeys = new Set([...locales[a].keys, ...locales[b].keys])
+const orphans = findOrphans(unionKeys, claimedKeys)
 
 if (
   missingInA.length === 0 &&

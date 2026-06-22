@@ -101,20 +101,12 @@ export const Mobile: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Mobile path: the SidebarShell `<aside>` carries `hidden md:flex` so
-    // at sub-md viewports it is `display: none` (absent from the AT tree
-    // per TEST-FE-6 + 1D-P0-020). Storybook's test-runner ignores
-    // `parameters.viewport`, so we assert the CSS contract via class
-    // names rather than `getComputedStyle` — at default browser viewport
-    // the iframe is wider than md so display would resolve to `flex`,
-    // masking the mobile contract. The class assertion is stable.
-    const sidebar = canvas.queryByTestId('sidebar-nav-primary')
-    if (sidebar) {
-      await expect(sidebar.className).toMatch(/hidden/)
-      await expect(sidebar.className).toMatch(/md:flex/)
-    }
-    // Mobile tab bar IS in the DOM; its own `md:hidden` utility hides it
-    // at desktop viewports — we just verify it mounted, not that it paints.
+    // Smoke check: the mobile tab bar mounts. The original className-regex
+    // assertions ("does the rendered class string contain 'hidden md:flex'")
+    // were tautological — they reread the source string instead of testing
+    // runtime layout (1d-3 code-review P20). Real CSS-cascade verification
+    // lives in `e2e/storybook/app-shell-mobile-viewport.spec.ts` which
+    // measures `boundingBox()` at a real 375×667 viewport.
     await expect(canvas.getByTestId('mobile-tab-bar')).toBeInTheDocument()
   },
 }

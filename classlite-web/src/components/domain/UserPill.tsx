@@ -28,24 +28,37 @@ export interface UserPillProps {
   role: Role
 }
 
+/**
+ * Build avatar initials from a user-facing display name. Trims whitespace,
+ * splits on any whitespace run, drops empty parts, and reads the first
+ * codepoint of each remaining word with `Array.from(part)` so surrogate
+ * pairs (emoji, supplementary-plane characters) stay intact. Falls back
+ * to `?` so the Avatar never renders an empty bubble.
+ */
 function deriveInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((part) => part[0] ?? '')
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => Array.from(part)[0] ?? '')
     .slice(0, 2)
     .join('')
     .toUpperCase()
+  return initials.length > 0 ? initials : '?'
 }
 
 export function UserPill({ name, avatarUrl, role }: UserPillProps) {
   const { t } = useTranslation()
   const initials = deriveInitials(name)
   const roleLabel = t(ROLE_LABEL_KEYS[role])
+  // Empty string is truthy — passing `src=""` triggers a redundant request
+  // to the current page URL and renders the broken-image placeholder.
+  const safeAvatarUrl = avatarUrl?.trim() ? avatarUrl : null
 
   return (
     <div className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground">
       <Avatar size="sm" className="ring-2 ring-sidebar-primary">
-        {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
+        {safeAvatarUrl ? <AvatarImage src={safeAvatarUrl} alt="" /> : null}
         <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
           {initials}
         </AvatarFallback>

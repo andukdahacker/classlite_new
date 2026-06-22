@@ -48,17 +48,15 @@ export const StudentView: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    // Smoke check: all five student tabs mount with stable testids. The
+    // original `expect(tab.className).toMatch(/min-h-\[44px\]/)` assertions
+    // were tautological — they reread the source class string rather than
+    // verifying runtime touch-target size (1d-3 code-review P20). Real
+    // 44×44 verification lives in
+    // `e2e/storybook/app-shell-mobile-viewport.spec.ts` which measures
+    // `boundingBox()` at a real 375×667 viewport.
     for (const slug of ['home', 'assignments', 'inbox', 'classes', 'me']) {
-      const tab = await canvas.findByTestId(`mobile-tab-${slug}`)
-      // Touch-target ≥44×44px (TEST-UX-4 / 1D-P1-105..108) — verified via
-      // the min-h-[44px] / min-w-[44px] utility classes on the MobileTab
-      // link rather than `getBoundingClientRect`. The Storybook test-runner
-      // ignores `parameters.viewport`, so the tab bar renders inside its
-      // own `md:hidden` constraint at the default browser viewport (where
-      // the row collapses to height 0). Class-name assertion is the
-      // stable contract.
-      await expect(tab.className).toMatch(/min-h-\[44px\]/)
-      await expect(tab.className).toMatch(/min-w-\[44px\]/)
+      await expect(canvas.getByTestId(`mobile-tab-${slug}`)).toBeInTheDocument()
     }
   },
 }

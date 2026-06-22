@@ -61,10 +61,35 @@ describe('MobileTabBar — role-to-tabs derivation', () => {
   })
 })
 
+describe('MobileTabBar — longest-prefix active match (D6)', () => {
+  test('deep route /classes/123 highlights the /classes tab', () => {
+    renderTabBar('teacher', '/classes/123')
+    const classesTab = screen.getByTestId('mobile-tab-classes')
+    expect(classesTab.getAttribute('aria-current')).toBe('page')
+  })
+
+  test('sibling /classes-archived does NOT match /classes', () => {
+    renderTabBar('teacher', '/classes-archived')
+    const classesTab = screen.getByTestId('mobile-tab-classes')
+    expect(classesTab.getAttribute('aria-current')).toBeNull()
+  })
+
+  test('exact dashboard route highlights only the home tab', () => {
+    renderTabBar('teacher', '/dashboard')
+    expect(
+      screen.getByTestId('mobile-tab-home').getAttribute('aria-current'),
+    ).toBe('page')
+    expect(
+      screen.getByTestId('mobile-tab-classes').getAttribute('aria-current'),
+    ).toBeNull()
+  })
+})
+
 describe('MobileTabBar — i18n parity (R38 inheritance)', () => {
-  test('every tab labelKey + the nav landmark key resolves in en + vi', () => {
+  test('every tab labelKey + the nav landmark + unreadAria template resolves in en + vi', () => {
     assertI18nParity([
       'mobileTab.nav.primary',
+      'mobileTab.unreadAria',
       'mobileTab.student.home',
       'mobileTab.student.assignments',
       'mobileTab.student.inbox',

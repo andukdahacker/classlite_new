@@ -46,21 +46,14 @@ test.describe('SidebarNavItem — Vietnamese truncation keyboard reveal', () => 
     // covers the screen-reader path.
     await expect(link).toHaveAttribute('aria-label', 'Trung tâm kiến thức')
 
-    // Tab through the body until focus lands on the link. The body has
-    // no other tabbables in this story, so one Tab from `<body>` should
-    // do it; if base-ui inserts a focusable shim we'll keep tabbing up
-    // to a sensible cap.
-    let attempts = 0
-    while (attempts < 5) {
-      await page.keyboard.press('Tab')
-      const focused = await page.evaluate(
-        (testId) => document.activeElement?.getAttribute('data-testid') === testId,
-        'sidebar-nav-knowledge-hub',
-      )
-      if (focused) break
-      attempts += 1
-    }
-    expect(attempts).toBeLessThan(5)
+    // Programmatically focus the link (1d-3 code-review P13). The
+    // previous Tab-loop with a 5-iteration cap conflated "didn't reach
+    // focus" with "reached on the 5th press" — both produced a passing
+    // `expect(attempts).toBeLessThan(5)` and the subsequent tooltip
+    // assertion would race. `locator.focus()` is deterministic in
+    // Playwright; we still assert the focus landed on the right element.
+    await link.focus()
+    await expect(link).toBeFocused()
 
     // The tooltip is portaled out of the link to `<body>`. base-ui's
     // Popup does NOT set `role="tooltip"`; instead it carries

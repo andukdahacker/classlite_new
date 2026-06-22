@@ -10,6 +10,7 @@
  * fallback for future fixture sweeps.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BreadcrumbBar } from './BreadcrumbBar'
 import { SearchPill } from './SearchPill'
@@ -37,5 +38,61 @@ export const Default: Story = {
     ),
     search: <SearchPill placeholderKey="topbar.search.placeholder" />,
     cta: <Button>+ New class</Button>,
+  },
+}
+
+/**
+ * Story 1d-3 code-review D1 — TopbarShell exposes a `collapseToggle?`
+ * slot for a desktop-only hamburger button. The actual `useUIStore`
+ * subscription lives in the consumer (AppLayout) so TopbarShell stays
+ * free of store reads.
+ */
+export const WithCollapseToggle: Story = {
+  args: {
+    breadcrumb: (
+      <BreadcrumbBar
+        items={[
+          { label: 'Workspace', href: '/' },
+          { label: 'Classes', href: '/classes' },
+        ]}
+      />
+    ),
+    search: <SearchPill placeholderKey="topbar.search.placeholder" />,
+    cta: <Button>+ New class</Button>,
+    collapseToggle: (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="Collapse sidebar"
+        data-testid="sidebar-collapse-toggle"
+      >
+        <Menu aria-hidden="true" className="size-5" />
+      </Button>
+    ),
+  },
+}
+
+/**
+ * Story 1d-3 code-review D2 — mobile eyebrow + title pattern. The story
+ * docs the slot shape; runtime layout at 375×667 is verified by
+ * `e2e/storybook/topbar-mobile-pattern.spec.ts` (the test-runner ignores
+ * `parameters.viewport`, so a desktop-viewport play assertion can't
+ * exercise the breakpoint swap).
+ */
+export const WithMobileTitle: Story = {
+  args: {
+    breadcrumb: (
+      <BreadcrumbBar
+        items={[
+          { label: 'Workspace', href: '/' },
+          { label: 'Classes', href: '/classes' },
+        ]}
+        truncateAt={2}
+      />
+    ),
+    search: <SearchPill placeholderKey="topbar.search.placeholder" />,
+    cta: <Button size="icon" aria-label="New class">+</Button>,
+    mobileTitle: 'IELTS 7.0 evening',
   },
 }

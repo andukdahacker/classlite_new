@@ -44,15 +44,15 @@ export interface SidebarShellProps {
   /** Active href for highlighting; consumer derives from router match. */
   activeHref: string
   /**
-   * Collapsed UI state. Prop-drilled from `AppShell` / `AppLayout` —
-   * `AppShell` is the SOLE consumer of `useUIStore((s) => s.sidebarCollapsed)`.
-   * Do NOT subscribe to `uiStore` inside this component or its
-   * descendants; double-subscription causes double renders that React
-   * DevTools shows but the test suite misses (Winston, party-mode
-   * 2026-06-18). Single-subscription discipline.
+   * Collapsed UI state. Prop-drilled from `AppLayout` — `AppLayout` is
+   * the SOLE consumer of `useUIStore((s) => s.sidebarCollapsed)`. Do NOT
+   * subscribe to `uiStore` inside this component or its descendants;
+   * double-subscription causes double renders that React DevTools shows
+   * but the test suite misses (Winston, party-mode 2026-06-18). The
+   * toggle button itself lives in `TopbarShell` (see `TopbarShell.collapseToggle`
+   * slot) — `SidebarShell` is the passive recipient of the boolean.
    */
   collapsed?: boolean
-  onCollapseToggle?: () => void
 }
 
 export function SidebarShell({
@@ -89,40 +89,50 @@ export function SidebarShell({
         className="flex-1 overflow-y-auto px-2"
       >
         {groups.map((group, groupIndex) => {
-          const groupLabelId = group.labelKey
-            ? `sidebar-group-${groupIndex}-${group.labelKey.replace(/\./g, '-')}`
-            : undefined
-          return (
-            <section
-              key={group.labelKey ?? `group-${groupIndex}`}
-              aria-labelledby={groupLabelId}
-              className={cn(
-                'space-y-1 py-2',
-                groupIndex > 0 && 'mt-2 border-t border-sidebar-border pt-3',
-              )}
-            >
-              {group.labelKey && groupLabelId ? (
+          const groupClassName = cn(
+            'space-y-1 py-2',
+            groupIndex > 0 && 'mt-2 border-t border-sidebar-border pt-3',
+          )
+          const items = (
+            <ul className="space-y-1">
+              {group.items.map((item) => (
+                <li key={item.href}>
+                  <SidebarNavItem
+                    labelKey={item.labelKey}
+                    icon={item.icon}
+                    href={item.href}
+                    active={item.href === activeHref}
+                    badgeCount={item.badgeCount}
+                  />
+                </li>
+              ))}
+            </ul>
+          )
+          if (group.labelKey) {
+            const groupLabelId = `sidebar-group-${groupIndex}-${group.labelKey.replace(/[^a-zA-Z0-9-]/g, '-')}`
+            return (
+              <section
+                key={group.labelKey}
+                aria-labelledby={groupLabelId}
+                className={groupClassName}
+              >
                 <h3
                   id={groupLabelId}
                   className="px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70"
                 >
                   {t(group.labelKey)}
                 </h3>
-              ) : null}
-              <ul className="space-y-1">
-                {group.items.map((item) => (
-                  <li key={item.href}>
-                    <SidebarNavItem
-                      labelKey={item.labelKey}
-                      icon={item.icon}
-                      href={item.href}
-                      active={item.href === activeHref}
-                      badgeCount={item.badgeCount}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
+                {items}
+              </section>
+            )
+          }
+          // No labelKey → render as a plain <div>, NOT a `<section
+          // aria-labelledby={undefined}>` which would surface as an
+          // unnamed `region` / `section` landmark in the AT tree.
+          return (
+            <div key={`group-${groupIndex}`} className={groupClassName}>
+              {items}
+            </div>
           )
         })}
       </nav>

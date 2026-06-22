@@ -27,6 +27,16 @@ function slugFromKey(labelKey: string): string {
   return tail.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()
 }
 
+/**
+ * Convert a raw unread count into the capped string both the visual
+ * badge and the SR announcement use. Single source of truth: sighted
+ * users see "9+" while screen readers used to hear the literal `12` —
+ * the mismatch confused users and split the contract.
+ */
+function clampUnreadCount(count: number): string {
+  return count >= 10 ? '9+' : String(count)
+}
+
 function renderUnreadBadge(unread: boolean | number | undefined) {
   if (!unread) return null
   if (unread === true) {
@@ -37,13 +47,12 @@ function renderUnreadBadge(unread: boolean | number | undefined) {
       />
     )
   }
-  const text = unread >= 10 ? '9+' : String(unread)
   return (
     <span
       aria-hidden="true"
       className="absolute top-1 right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-mono text-[10px] leading-none text-destructive-foreground"
     >
-      {text}
+      {clampUnreadCount(unread)}
     </span>
   )
 }
@@ -59,10 +68,19 @@ export function MobileTab({
 }: MobileTabProps) {
   const { t } = useTranslation()
   const label = t(labelKey)
-  const unreadCount = typeof hasUnread === 'number' ? hasUnread : undefined
-  const ariaLabel = unreadCount && unreadCount > 0
-    ? t('sidebar.nav.unreadAria', { item: label, count: unreadCount })
-    : label
+  const unreadCount =
+    typeof hasUnread === 'number' && Number.isFinite(hasUnread) && hasUnread > 0
+      ? hasUnread
+      : undefined
+  // Aria label uses the `mobileTab.unreadAria` key (NOT `sidebar.*`) so
+  // the namespace-coverage guard isn't crossed by a component in the
+  // mobileTab namespace. The announced count matches the visual cap so
+  // SR users hear "9+ unread" instead of "12 unread" while the badge
+  // shows "9+" — single source of truth.
+  const ariaLabel =
+    unreadCount !== undefined
+      ? t('mobileTab.unreadAria', { item: label, count: clampUnreadCount(unreadCount) })
+      : label
   const slug = testIdSlug || slugFromKey(labelKey)
 
   return (

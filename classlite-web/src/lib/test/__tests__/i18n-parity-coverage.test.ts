@@ -151,16 +151,10 @@ describe('Story 1d-2 i18n parity (R38)', () => {
  * (in JSON but not enumerated anywhere) fails the script.
  */
 export const STORY_1D_3_KEYS = [
-  // AppShell
-  'appShell.root',
-
   // Sidebar chrome + aria templates
   'sidebar.brand',
   'sidebar.nav.primary',
   'sidebar.nav.unreadAria',
-  'sidebar.collapseToggle',
-  'sidebar.section.workspace',
-  'sidebar.section.resources',
   'sidebar.section.settings',
 
   // Sidebar — Owner nav
@@ -210,6 +204,8 @@ export const STORY_1D_3_KEYS = [
   'topbar.breadcrumb.more',
   'topbar.search.placeholder',
   'topbar.search.hint',
+  'topbar.sidebarToggle.collapse',
+  'topbar.sidebarToggle.expand',
 
   // UserPill role labels
   'userPill.role.owner',
@@ -219,6 +215,7 @@ export const STORY_1D_3_KEYS = [
 
   // MobileTabBar chrome (nav landmark label distinct from desktop sidebar's)
   'mobileTab.nav.primary',
+  'mobileTab.unreadAria',
 
   // MobileTabBar — Student tabs (per IA `s74–s81`)
   'mobileTab.student.home',

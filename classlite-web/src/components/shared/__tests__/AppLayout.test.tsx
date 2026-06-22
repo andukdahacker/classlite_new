@@ -20,6 +20,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { axe } from 'vitest-axe'
 import AppLayout from '@/components/shared/AppLayout'
+import { __resetWarnTrackingForTests } from '@/components/shared/AppLayout-warn-tracking'
 import { RoleProvider } from '@/hooks/RoleContext'
 import type { Role } from '@/hooks/useRole'
 import { useUIStore } from '@/stores/uiStore'
@@ -54,6 +55,9 @@ describe('AppLayout', () => {
   beforeEach(() => {
     useUIStore.getState().reset()
     useLanguageStore.getState().reset()
+    // Reset the once-per-session warn flag so the guest-shell warn test
+    // can exercise the warn path even when other tests ran first.
+    __resetWarnTrackingForTests()
   })
 
   describe('guest shell (role=null) — least-privilege default', () => {
@@ -70,14 +74,17 @@ describe('AppLayout', () => {
       expect(screen.queryByTestId('mobile-tab-bar')).toBeNull()
     })
 
-    test('logs a dev-only warn so developers notice the degradation', () => {
+    test('logs a dev-only warn exactly once per session (P11 single-warn flag)', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       renderAppLayout(null)
-      // React strict-mode may double-fire effects; assert at least one call.
-      const matched = warn.mock.calls.find((c) =>
+      // Re-render to exercise the dedup. Without the module flag, React
+      // StrictMode double-effects + a second mount would emit two warns;
+      // the flag clamps to one.
+      renderAppLayout(null)
+      const matches = warn.mock.calls.filter((c) =>
         String(c[0]).includes('No session role resolved'),
       )
-      expect(matched).toBeDefined()
+      expect(matches.length).toBe(1)
       warn.mockRestore()
     })
   })
@@ -130,6 +137,23 @@ describe('AppLayout', () => {
       const results = await axe(container)
       expect(results).toHaveNoViolations()
     })
+
+    test('sidebar collapse toggle is wired to useUIStore (D1)', () => {
+      renderAppLayout('owner')
+      const toggle = screen.getByTestId('sidebar-collapse-toggle')
+      // Initial state: not collapsed → button label is "Collapse sidebar"
+      expect(toggle.getAttribute('aria-label')).toBe(
+        i18n.t('topbar.sidebarToggle.collapse'),
+      )
+      expect(toggle.getAttribute('aria-pressed')).toBe('false')
+      // Click → flip the store + label swaps.
+      fireEvent.click(toggle)
+      expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+      expect(toggle.getAttribute('aria-label')).toBe(
+        i18n.t('topbar.sidebarToggle.expand'),
+      )
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    })
   })
 
   describe('language toggle (both paths)', () => {
@@ -158,6 +182,8 @@ describe('AppLayout', () => {
         'topbar.breadcrumb.label',
         'topbar.search.placeholder',
         'topbar.search.hint',
+        'topbar.sidebarToggle.collapse',
+        'topbar.sidebarToggle.expand',
         'userPill.role.owner',
       ])
     })

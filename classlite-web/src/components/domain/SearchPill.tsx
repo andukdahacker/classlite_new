@@ -16,11 +16,12 @@ export interface SearchPillProps {
 
 export function SearchPill({ placeholderKey, onActivate }: SearchPillProps) {
   const { t } = useTranslation()
+  // No `aria-label` — the visible placeholder text is the accessible name.
+  // The kbd hint is `aria-hidden` so it doesn't duplicate audibly.
   return (
     <button
       type="button"
       onClick={onActivate}
-      aria-label={t(placeholderKey)}
       data-testid="search-pill"
       className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >

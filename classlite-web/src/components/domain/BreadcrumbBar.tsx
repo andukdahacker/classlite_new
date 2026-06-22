@@ -9,6 +9,12 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 /**
  * BreadcrumbBar — `s06` breadcrumb chrome.
@@ -25,22 +31,33 @@ import {
  *     item as a plain `<span aria-current="page">` instead — semantics
  *     match WAI-ARIA breadcrumb pattern without the spurious link role.
  *
- * Overflow strategy: when `items.length > truncateAt` the middle
- * segments collapse to a single ellipsis. First + last items always
- * render. Default `truncateAt = 4`.
+ * Overflow strategy (1d-3 code-review D3): when `items.length >
+ * truncateAt` the middle segments collapse into an interactive
+ * `DropdownMenu` whose trigger is the more-icon and whose items are the
+ * skipped middle segments (Link entries that navigate when clicked).
+ * First + last items always render visibly. Default `truncateAt = 4`.
+ * The previous decorative-icon implementation lost the skipped segments
+ * entirely — keyboard and pointer users had no way to reach them.
  */
 export interface BreadcrumbBarProps {
   items: ReadonlyArray<{ label: string; href?: string }>
-  /** When item count exceeds this, middle segments collapse to ellipsis. Default 4. */
+  /** When item count exceeds this, middle segments collapse to an ellipsis menu. Default 4. */
   truncateAt?: number
 }
 
 export function BreadcrumbBar({ items, truncateAt = 4 }: BreadcrumbBarProps) {
   const { t } = useTranslation()
+  if (items.length === 0) {
+    // An empty `<Breadcrumb>` would render an unlabeled, structurally
+    // empty navigation landmark. Skip the whole landmark instead.
+    return null
+  }
   const shouldTruncate = items.length > truncateAt
+  const skippedMiddle = shouldTruncate ? items.slice(1, -1) : []
   const visibleItems = shouldTruncate
     ? [items[0], items[items.length - 1]]
     : items
+  const moreLabel = t('topbar.breadcrumb.more')
 
   return (
     <Breadcrumb aria-label={t('topbar.breadcrumb.label')}>
@@ -48,9 +65,9 @@ export function BreadcrumbBar({ items, truncateAt = 4 }: BreadcrumbBarProps) {
         {visibleItems.map((item, index) => {
           const isFirst = index === 0
           const isLast = index === visibleItems.length - 1
-          const insertEllipsis = shouldTruncate && isFirst
+          const insertEllipsisMenu = shouldTruncate && isFirst
           return (
-            <Fragment key={`${item.label}-${index}`}>
+            <Fragment key={`${item.href ?? 'no-href'}|${item.label}|${index}`}>
               <BreadcrumbItem>
                 {isLast ? (
                   <span
@@ -67,17 +84,36 @@ export function BreadcrumbBar({ items, truncateAt = 4 }: BreadcrumbBarProps) {
                 )}
               </BreadcrumbItem>
               {!isLast ? <BreadcrumbSeparator /> : null}
-              {insertEllipsis ? (
+              {insertEllipsisMenu ? (
                 <>
                   <BreadcrumbItem>
-                    <span
-                      role="presentation"
-                      aria-hidden="true"
-                      className="flex size-5 items-center justify-center"
-                    >
-                      <MoreHorizontalIcon className="size-4" />
-                    </span>
-                    <span className="sr-only">{t('topbar.breadcrumb.more')}</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        aria-label={moreLabel}
+                        data-testid="breadcrumb-more-trigger"
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                        <span className="sr-only">{moreLabel}</span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {skippedMiddle.map((skipped, skippedIndex) =>
+                          skipped.href ? (
+                            <DropdownMenuItem
+                              key={`${skipped.href}-${skippedIndex}`}
+                              render={<Link to={skipped.href}>{skipped.label}</Link>}
+                            />
+                          ) : (
+                            <DropdownMenuItem
+                              key={`${skipped.label}-${skippedIndex}`}
+                              disabled
+                            >
+                              {skipped.label}
+                            </DropdownMenuItem>
+                          ),
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator />
                 </>

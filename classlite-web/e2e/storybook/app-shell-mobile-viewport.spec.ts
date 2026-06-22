@@ -44,11 +44,16 @@ test.describe('AppShell at 375×667 — mobile runtime contract', () => {
     // exist in the DOM (hidden is structural, not removal), but its
     // boundingBox should be null OR have zero width — either signals
     // "not painted." Both are acceptable AT contracts.
+    //
+    // Single assertion that counts BOTH branches (1d-3 code-review P12):
+    // a stray null bounding box would previously pass with zero assertions
+    // executed, masking a real layout regression.
     const sidebar = page.getByTestId('sidebar-nav-primary')
     const box = await sidebar.boundingBox()
-    if (box !== null) {
-      expect(box.width).toBe(0)
-    }
+    expect(
+      box === null || box.width === 0,
+      `SidebarShell should not be painted on mobile (got box=${JSON.stringify(box)})`,
+    ).toBe(true)
   })
 
   test('MobileTabBar tabs meet the 44×44 touch-target minimum (AC7)', async ({
