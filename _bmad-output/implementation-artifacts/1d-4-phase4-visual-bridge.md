@@ -4,7 +4,7 @@ baseline_commit: a90010732057148b3c4e930c7c7b234aa4686378
 
 # Story 1d-4: Phase 4 Visual Bridge — Static Shells
 
-Status: backlog
+Status: done
 
 <!-- Validation is optional. Run `validate-create-story` for a quality second pass before `dev-story`. -->
 
@@ -31,7 +31,7 @@ so that the designer can iterate on the editorial-paper aesthetic, the comment-a
 **Then** the component renders the **static visual chrome** matching the `s34` mockup:
 - Centered paper-surface container (max-width 768px, `--cl-paper` background, `--cl-line-soft` 1px border) on the `--cl-surface` canvas.
 - Top strip: title input (Fraunces 32px) with a placeholder "Untitled essay" + autosave **indicator chrome only** ("Saved 2 mins ago" / "Saving…" / "Offline" pill — driven by a `saveState` prop, not a real timer).
-- Toolbar: bold/italic/heading/list buttons composed from 1d-2's `Toggle` + `Button` primitives. The buttons render visual states; clicking them does NOT modify the canvas content.
+- Toolbar: bold/italic/heading/list buttons composed from 1d-2's `Toggle` primitive (Toggle is the semantically correct primitive for pressed/unpressed B/I/H/L state — the prior spec also listed `Button`, but pairing both produced redundant chrome with no semantic benefit; resolved 2026-06-24 via code-review D3). The buttons render visual states; clicking them does NOT modify the canvas content.
 - Body: a single `contentEditable={false}` div rendered with sample paragraph text (Geist 16px, line-height 1.6, max 65-char measure) — the body content is fixture-driven via a `content` prop.
 - Footer strip: word count + time-on-task chrome (both fixture-driven via props).
 
@@ -250,7 +250,7 @@ export interface MobileWritingSurfaceProps {
 **Then** the components render the **static visual chrome** matching the role-scoped inbox mockups:
 
 `InboxListShell` — the container:
-- Top filter chip bar (composed from 1d-2's `Badge` `Removable` variant + `ToggleGroup` from AC1).
+- Top filter chip bar — bespoke multi-select toggle chip (`<button aria-pressed>` + optional `<Badge>` count + decorative dismiss `<X aria-hidden>`). `ToggleGroup` was considered but its radio-like exclusive-select semantics do not match multi-select inbox filters; `Badge.Removable` covers tag-style dismissal, not toggling. Resolved 2026-06-24 via code-review D5.
 - Vertically stacked list of `InboxRow` children.
 - Right-side actions strip per row (Resolve / Reply / Archive — chrome only).
 
@@ -295,15 +295,30 @@ export interface InboxRowProps {
   onArchive?: () => void
 }
 
+export interface InboxFilterChip {
+  /** Stable key — also the i18n key used as the chip label. */
+  key: string
+  /** Optional count rendered alongside the label. */
+  count?: number
+}
+
 export interface InboxListShellProps {
   rows: ReadonlyArray<InboxRowData>
   role: Role
-  /** Active filter chip keys — chrome only, no actual filtering. */
+  /** Filter chip definitions — chrome only, no actual filtering. */
+  filters: ReadonlyArray<InboxFilterChip>
+  /** Active filter chip keys — chrome only. */
   activeFilters: ReadonlyArray<string>
   /** Filter chip toggle — chrome only. */
   onToggleFilter?: (key: string) => void
+  /** Per-row primary action — chrome only; consumer wires in Epic 10. */
+  onRowPrimaryAction?: (rowId: string) => void
+  /** Per-row archive action — chrome only; consumer wires in Epic 10. */
+  onRowArchive?: (rowId: string) => void
 }
 ```
+
+> **Props widening from prior spec.** `filters` is now a required prop and the per-row action callbacks are added optional surface — both resolved 2026-06-24 via code-review D4. The Epic 10 consumer colocates chip definitions with the inbox query, so internal-const chip lists would require a fork or extension; the row callbacks document the contract Epic 10 will wire.
 
 **And** the Storybook stories cover:
 - `TeacherView` — `s50` mockup parity: 8 rows across question / submission / mention types.
@@ -391,14 +406,76 @@ export interface AnalyticsHomeShellProps {
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 (AC1):** Build `WriteDocSurface` static shell + 6 stories. Verify Vietnamese diacritic rendering + Fraunces typography rhythm.
-- [ ] **Task 2 (AC2):** Build `WritingGradingSurface` static shell + 6 stories. Verify three-color anchor taxonomy (red/green/amber) and band-score Geist Mono typography per UX-DR22.
-- [ ] **Task 3 (AC3):** Build `SpeakingGradingSurface` static shell + 4 stories. Ship the fixture waveform SVG (no audio decode).
-- [ ] **Task 4 (AC4):** Build `AnchoredQuestionCard` static shell + 6 stories. Verify teacher (`s18`) and student (`s36`) variants render with correct authorship chrome.
-- [ ] **Task 5 (AC5):** Build `MobileWritingSurface` static shell + 4 stories at locked 390x844 viewport. Verify NOT a responsive squish.
-- [ ] **Task 6 (AC6):** Build `InboxListShell` + `InboxRow` static shells + per-role stories matching `s50`/`s51`/`s52`. Verify three distinct role-variant stories per UX-3.
-- [ ] **Task 7 (AC7):** Build `AnalyticsHomeShell` + `ScopeBar` static shells + per-role stories matching `s45`/`s48`. Verify scope-pill disablement chrome for teacher role per UX-DR29.
-- [ ] **Task 8 (AC8):** Verify axe-core + i18n parity + FW-7 placement + `data-testid` selectors + no `new Date()` in render across all 8 components.
+- [x] **Task 1 (AC1):** Build `WriteDocSurface` static shell + 6 stories. Verify Vietnamese diacritic rendering + Fraunces typography rhythm.
+- [x] **Task 2 (AC2):** Build `WritingGradingSurface` static shell + 6 stories. Verify three-color anchor taxonomy (red/green/amber) and band-score Geist Mono typography per UX-DR22.
+- [x] **Task 3 (AC3):** Build `SpeakingGradingSurface` static shell + 4 stories. Ship the fixture waveform SVG (no audio decode).
+- [x] **Task 4 (AC4):** Build `AnchoredQuestionCard` static shell + 6 stories. Verify teacher (`s18`) and student (`s36`) variants render with correct authorship chrome.
+- [x] **Task 5 (AC5):** Build `MobileWritingSurface` static shell + 4 stories at locked 390x844 viewport. Verify NOT a responsive squish.
+- [x] **Task 6 (AC6):** Build `InboxListShell` + `InboxRow` static shells + per-role stories matching `s50`/`s51`/`s52`. Verify three distinct role-variant stories per UX-3.
+- [x] **Task 7 (AC7):** Build `AnalyticsHomeShell` + `ScopeBar` static shells + per-role stories matching `s45`/`s48`. Verify scope-pill disablement chrome for teacher role per UX-DR29.
+- [x] **Task 8 (AC8):** Verify axe-core + i18n parity + FW-7 placement + `data-testid` selectors + no `new Date()` in render across all 8 components.
+
+### Review Findings
+
+_Code review 2026-06-24 — Blind Hunter + Edge Case Hunter + Acceptance Auditor (3 parallel layers). 7 `decision-needed`, 22 `patch`, 12 `defer`, 13 dismissed._
+
+#### Decision-needed (resolve before patching)
+
+- [x] [Review][Decision] **D1 — `dangerouslySetInnerHTML` accepts arbitrary string with no sanitization contract (HIGH)** — `WritingGradingSurface.tsx` declares `essayHtml: string` and renders via `dangerouslySetInnerHTML`. JSDoc says "Pre-rendered fixture HTML with `<mark>` wrappers" but the prop type does not encode that. Epic 6 wiring of real consumer data is a direct XSS vector unless every caller remembers to sanitize. **Options:** (a) brand the prop as `SafeHtml` with explicit consumer-sanitization contract; (b) accept `ReactNode` and let consumer build marked spans; (c) sanitize via DOMPurify inline at the component boundary.
+- [x] [Review][Decision] **D2 — `AnchoredQuestionCard.onSubmitReply` always called with `''` (HIGH)** — `AnchoredQuestionCard.tsx:onSubmitReply?.('')` is hard-wired; the textarea has no ref/state. The prop signature `(text: string) => void` advertises a payload the component cannot produce. **Options:** (a) drop `onSubmitReply` from the static shell and defer wiring to Epic 7 Story 7-4; (b) capture textarea value via `useState`/uncontrolled ref and pass through; (c) keep current behavior, amend JSDoc to "fires with empty string in static shell".
+- [x] [Review][Decision] **D3 — AC1 toolbar `Button` primitive missing (only `Toggle` used)** — Spec line 34: "Toolbar: bold/italic/heading/list buttons composed from 1d-2's `Toggle` + `Button` primitives." Implementation uses only `Toggle` (which is semantically correct for B/I/H/L pressed-state). **Options:** (a) accept current `Toggle`-only as pragmatic and amend the spec one-liner; (b) wrap each Toggle in a Button for spec-literal compliance.
+- [x] [Review][Decision] **D4 — AC6 `InboxListShellProps` widened beyond spec** — Spec listed only `rows`/`role`/`activeFilters`/`onToggleFilter`. Implementation adds required `filters`, plus optional `onRowPrimaryAction`/`onRowArchive`. The widening matches Epic 10 needs but is undocumented. **Options:** (a) accept and amend the spec Props block; (b) move chip definitions to internal const + drop the row callbacks (return to spec literal).
+- [x] [Review][Decision] **D5 — AC6 filter chip not composed from `Badge Removable` + `ToggleGroup`** — Spec line 253: filter chips composed from those primitives. Implementation uses a raw `<button>` with inline `<X>` icon + embedded `<Badge>` count. **Options:** (a) accept current bespoke chip and amend spec; (b) rebuild from `Badge.Removable` + `ToggleGroup` for primitive coverage.
+- [x] [Review][Decision] **D6 — `ScopeBar.onDateRangeChange` prop is dead (no `onClick` wired)** — The date-range Button receives no handler; `onDateRangeChange` is an unused prop in the static shell (Calendar Range integration deferred to Epic 8 per completion notes). **Options:** (a) keep the prop for Epic 8 forward-compat (current); (b) drop the prop until Calendar Range is mounted (matches "static shell" stance).
+- [x] [Review][Decision] **D7 — `InboxRow` unread row `bg-[color:var(--cl-tint-blue)]/40` contrast not re-audited** — The Debug Log explicitly fixed `CommentCard` `opacity-60` for the same contrast-shift class but the unread row's translucent tint background was not re-checked. **Options:** (a) re-run axe specifically on `data-unread="true"` and accept current if pass; (b) preemptively switch to `bg-muted/40` matching the `CommentCard` remediation pattern; (c) drop row-wide tint and use a 1px left-border accent instead.
+
+#### Patches (apply after decisions resolve)
+
+- [x] [Review][Patch] **P1 — Raw ISO timestamps rendered to users (multi-site)** [WriteDocSurface.tsx:117-121; AnchoredQuestionCard.tsx:1377,1451; InboxRow.tsx:2298-2301] — `<time>{savedAt}</time>` / `{askedAtLabel ?? askedAt}` fallback / `<time>{teacherReply.timestamp}</time>` / `<time>{row.occurredAt}</time>` all render bare ISO strings. Pattern: add `*Label` companion props matching the `askedAtLabel` precedent (`savedAtLabel`, `teacherReply.timestampLabel`, `row.occurredAtLabel`). For WriteDocSurface, also update or remove the misleading JSDoc claim about `Intl.DateTimeFormat`.
+- [x] [Review][Patch] **P2 — `MobileWritingSurface` SAVE_TONE.saving reintroduces axe-failing `text-muted-foreground`** [MobileWritingSurface.tsx:47] — Team explicitly removed this class on `text-xs` chrome elsewhere in 1d-4 for axe contrast failures. Replace with `text-foreground animate-pulse`.
+- [x] [Review][Patch] **P3 — `InboxListShell` filter chip lacks `aria-pressed`** [InboxListShell.tsx:2077-2089] — Toggle-state is `data-active` only. Add `aria-pressed={active}` for consistency with `ScopeBar.tsx:2714`.
+- [x] [Review][Patch] **P4 — `InboxListShell` X icon double-announces filter chip** [InboxListShell.tsx:2103-2107] — Add `aria-hidden="true"` on the inner `<X>`; let `aria-pressed` (P3) carry the toggle semantics.
+- [x] [Review][Patch] **P5 — `InboxListShell.activeFilters` orphan keys diverge silently** [InboxListShell.tsx:2061] — `const activeSet = new Set(activeFilters.filter((k) => filters.some((f) => f.key === k)))`.
+- [x] [Review][Patch] **P6 — `InboxListShell` filter chip renders empty Badge when count=0** [InboxListShell.tsx:2090-2101] — Guard with `typeof filter.count === 'number' && filter.count > 0`.
+- [x] [Review][Patch] **P7 — `ScopeBar` `selectedClassId=''` triggers controlled/uncontrolled warning** [ScopeBar.tsx:2731] — `value={selectedClassId || undefined}`.
+- [x] [Review][Patch] **P8 — `ScopeBar` empty `classOptions` opens to blank dropdown** [ScopeBar.tsx:2740-2746] — Render a disabled `<SelectItem>` with `t('scopeBar.classPicker.noOptions')` when length 0.
+- [x] [Review][Patch] **P9 — `SpeakingGradingSurface` axis degenerates at `durationSec=0`** [SpeakingGradingSurface.tsx:3046-3052,3110-3113] — Hide tick axis AND swap the waveform aria-label to a "no recording" key when `durationSec <= 0`.
+- [x] [Review][Patch] **P10 — `SpeakingGradingSurface` `durationSec` NaN/Infinity propagates** [SpeakingGradingSurface.tsx:3046] — `const safeDuration = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 1`.
+- [x] [Review][Patch] **P11 — `CommentCard` empty body + `resolved=true` renders bare line-through bar** [CommentCard.tsx:1574-1581] — `{body ? <p className={cn(resolved && 'line-through')}>{body}</p> : null}`.
+- [x] [Review][Patch] **P12 — `AnchoredQuestionCard.asker.role` outside Role union → undefined Badge variant** [AnchoredQuestionCard.tsx:1329-1334] — `?? 'outline'` fallback on `ROLE_BADGE_VARIANT[asker.role]`.
+- [x] [Review][Patch] **P13 — `AnchoredQuestionCard` inner `data-testid` collides when multiple instances on one page** [AnchoredQuestionCard.tsx:1352,1377,1380,1417,1451] — Suffix every nested `data-testid` with `question.id` (currently only outer wrapper carries the id).
+- [x] [Review][Patch] **P14 — `formatBand` returns `NaN`/`-1.0` on bad input** [WritingGradingSurface.tsx:3826; SpeakingGradingSurface.tsx:3036] — Guard with `Number.isFinite(v) && v >= 0` and fall back to `'—'`.
+- [x] [Review][Patch] **P15 — `MobileWritingSurface` long Vietnamese title has no a11y full-text reveal** [MobileWritingSurface.tsx:title-span] — Add `aria-label={resolvedTitle}` or wrap in Tooltip matching the `SidebarNavItem` 1d-3 precedent.
+- [x] [Review][Patch] **P16 — `MobileWritingSurface` body `contentEditable={false}` on read-only div is confusing semantics** [MobileWritingSurface.tsx:2575-2581] — Drop the attribute (the body is a fixture-driven static read-only div; advertising an inert edit affordance to AT is wrong).
+- [x] [Review][Patch] **P17 — `InboxRow` archive `aria-label` is bare 'Archive' on every row** [InboxRow.tsx:2312-2320] — Interpolate row context: `${t('inboxRow.action.archive')}: ${t(row.mainTextKey, row.mainTextVars)}`.
+- [x] [Review][Patch] **P18 — `wordCount` i18n keys lack ICU plural form** [en.json:writeDocSurface.footer.wordCount, mobileWriting.footer.wordCount + vi.json mirror] — Replace `"{{count}} words"` with `"{{count, plural, one {# word} other {# words}}}"` (en) and Vietnamese counterpart (Vietnamese has no plural inflection but the same key shape for consistency).
+- [x] [Review][Patch] **P19 — `inboxRow.admin.billing.main` / `integration.main` interpolation leaks untranslated status/action** [en.json + vi.json] — Route `{{status}}` / `{{action}}` through `t(\`inboxRow.billingStatus.${status}\`)` etc. so Vietnamese never renders mixed-language strings like "Thanh toán succeeded cho gói Pro annual".
+- [x] [Review][Patch] **P20 — AC1 — `WriteDocSurface` Default story lacks Vietnamese sample text** [WriteDocSurface.stories.tsx:Default] — Spec line 60: "Default — populated essay, `saveState: 'saved'`, realistic Vietnamese sample text." Implementation Default uses `SAMPLE_ESSAY_EN`. Swap Default body to `SAMPLE_ESSAY_VI`, or rename `Default → Default_En` and add a separate `Default_Vi` matching the spec literal.
+- [x] [Review][Patch] **P21 — AC4 — `AnchoredQuestionCard` `asker.name` whitespace-only → empty initials** [AnchoredQuestionCard.tsx:1336-1341] — `deriveInitials` should `.filter(Boolean)` after split and fall back to `'?'` when the parts array is empty (defensive guard matching the existing surrogate-pair handling).
+- [x] [Review][Patch] **P22 — `stripCommentsAndStrings` pass-order reorder (carry-over from 1d-4) needs follow-up tracking** [strip-comments-and-strings.mjs:103-124] — Completion notes claim "acorn migration tracked separately" but no follow-up bullet exists in `sprint-status.yaml` or `deferred-work.md`. Add an explicit `1d-followup-tokenizer-migration` entry so the deferral is not a verbal promise.
+
+#### Deferred (pre-existing, theoretical, or out-of-scope)
+
+- [x] [Review][Defer] **InboxRow `row.type` runtime drift fallbacks (PRIMARY_ACTION_KEY, ROW_TONE)** [InboxRow.tsx:2259-2260] — TS `Record<InboxRowType, ...>` is exhaustive; runtime drift would need an unsafe cast. Deferred until API contract allows expansion.
+- [x] [Review][Defer] **InboxRow `mainTextVars` missing interpolation key** [InboxRow.tsx:2292] — Consumer responsibility; static shell relies on caller passing complete vars.
+- [x] [Review][Defer] **ScopeBar `dateRange.startIso`/`endIso` malformed → garbage label** [ScopeBar.tsx:2685-2689] — Fixture-driven; consumer must pass valid ISO per `Props` contract.
+- [x] [Review][Defer] **ScopeBar `activeScope` ∈ `disabledScopes` contradictory state** [ScopeBar.tsx:2704-2727] — Consumer must avoid the contradictory pair; rare.
+- [x] [Review][Defer] **SpeakingGradingSurface multi-comment overlap at 100% when `timestamp > duration`** [SpeakingGradingSurface.tsx:3124-3138] — Real-comment validation lives in Epic 6 grading service.
+- [x] [Review][Defer] **WritingGradingSurface duplicate `criterionKey` in `score.criteria` triggers React key warning** [WritingGradingSurface.tsx:3860-3870] — Consumer responsibility; duplicate criterion keys are a data error upstream.
+- [x] [Review][Defer] **CommentCard `testIdSlug` collision risk across surfaces** [CommentCard.tsx:1538-1539] — Consumer responsibility; surface-prefix on `testIdSlug` is a callsite concern.
+- [x] [Review][Defer] **`.cl-anchor-*` nested `<mark>` compounding** [index.css:170-199] — Fixture-side constraint; document at the fixture-build layer in Epic 6.
+- [x] [Review][Defer] **AnchoredQuestionCard textarea no `maxLength`** [AnchoredQuestionCard.tsx:1399-1404] — Epic 7 Story 7-4 will wire input limits.
+- [x] [Review][Defer] **InboxListShell stories LocaleVi `string.replace('h ago', ' giờ trước')` is brittle** [InboxListShell.stories.tsx:1992-1997] — Story-side fixture munging only; real relative-time formatter lands with Epic 10 inbox consumer.
+- [x] [Review][Defer] **WriteDocSurface `timeOnTaskSec >= 3600` formats as `77:30`** [WriteDocSurface.tsx:3436-3442] — Epic 5 Story 5-3 wires real timer + format selection.
+- [x] [Review][Defer] **CommentCard `'✎'` glyph tofu fallback on Windows font stacks** [CommentCard.tsx:1554-1561] — Designer call; swapping to a lucide icon is a visual change that needs Figma sign-off.
+
+### Review-related decisions in completion notes (already documented — dismissed as noise)
+
+- ScopeBar Calendar Range deferred to Epic 8 (TS-6 + AC8 no-`new Date()` collision) — explicit pragmatic interpretation in completion notes.
+- SidebarNavItem play test 1d-3 carry-over — explicitly documented in completion notes.
+- `Default` story exports beyond spec — required by 1d-1 three-state lint.
+- `askedAtLabel` / `dateRangeLabel` added props — pragmatic interpretation of TS-6 documented.
+- Loading stories use bespoke skeleton — no spec requirement for shared Loading placeholder.
 
 ## Dev Notes
 
@@ -431,16 +508,16 @@ export interface AnalyticsHomeShellProps {
 
 ## Definition of Done
 
-- [ ] Murat's `/bmad-tea TD` gate is passed for Epic 1D (R38 mitigation from 1d-1 in place).
-- [ ] All 8 ACs discharged.
-- [ ] 8 components (9 files counting `InboxRow` and `ScopeBar` as separate files; CommentCard sub-component shared between AC2 and AC3) live at `src/components/domain/`.
-- [ ] Every component ships its full Storybook story matrix (Default + variants + LocaleEn/Vi + Empty/Error placeholders where applicable).
-- [ ] Zero `axe-core` violations across all stories via `npm run storybook:test`.
-- [ ] `assertI18nParity()` passes — every new key in both `en.json` and `vi.json`.
-- [ ] Zero `new Date()` calls in any 1d-4 component file (greppable).
-- [ ] Every component has a JSDoc note naming the feature epic + story that will wire behavior.
-- [ ] CI `storybook` job from 1d-1's AC6 stays green within the 8-minute soft cap.
-- [ ] Designer notified that the Phase 4 visual bridge is ready for review — the visual identity of the writing canvas, grading rail, Q&A card, mobile writing surface, inbox rows, and analytics chrome can now be iterated on in Storybook.
+- [x] Murat's `/bmad-tea TD` gate is passed for Epic 1D (R38 mitigation from 1d-1 in place).
+- [x] All 8 ACs discharged.
+- [x] 8 components (10 files counting `InboxRow`, `ScopeBar`, and shared `CommentCard` sub-component) live at `src/components/domain/`.
+- [x] Every component ships its full Storybook story matrix (Default + variants + LocaleEn/Vi + Empty/Error placeholders where applicable).
+- [x] Zero `axe-core` violations across all stories via `npm run storybook:test` (283/283 axe-clean, 55 suites).
+- [x] `assertI18nParity()` passes — every new key in both `en.json` and `vi.json` (233 keys parity-clean).
+- [x] Zero `new Date()` calls in any 1d-4 component file (greppable — only JSDoc references remain).
+- [x] Every component has a JSDoc note naming the feature epic + story that will wire behavior.
+- [x] CI `storybook` job from 1d-1's AC6 stays green within the 8-minute soft cap (full storybook test-runner ~16s locally).
+- [ ] Designer notified that the Phase 4 visual bridge is ready for review — the visual identity of the writing canvas, grading rail, Q&A card, mobile writing surface, inbox rows, and analytics chrome can now be iterated on in Storybook. _(non-code follow-up — assign after PR merges)_
 
 ## Out of Scope
 
@@ -453,3 +530,10 @@ export interface AnalyticsHomeShellProps {
 - `BandScoreChart` — deferred with old 1d-4 to Epic 8 Story 8.3. (1d-4 ships the static band-score *strip* visual in AC2/AC3; the *chart* is Epic 8.)
 - `WritingGradingSurface` keyboard-shortcut comment-cycling — Epic 6 Story 6.1 (TEST-UX-2 covers it there).
 - Performance benchmarks — not in MVP scope.
+
+## Change Log
+
+| Date | Author | Note |
+|---|---|---|
+| 2026-06-22 | Amelia | Status backlog → ready-for-dev → in-progress; baseline `a900107`. |
+| 2026-06-23 | Amelia | All 8 ACs implemented (10 new domain components + stories). Implementation record lives in [`1d-4-phase4-visual-bridge-completion-notes.md`](./1d-4-phase4-visual-bridge-completion-notes.md). Status in-progress → review. Storybook test-runner 283/283 axe-clean across 55 suites; vitest 251/251; i18n-parity 233 keys both locales; tsc / lint / lint:css / build / storybook:build all clean. |

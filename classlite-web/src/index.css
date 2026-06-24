@@ -135,3 +135,40 @@
   --normal-border: var(--border);
   --border-radius: var(--radius);
 }
+
+/* Story 1d-4 AC2 / AC3 — anchored comment taxonomy highlights.
+   `<mark>` wrappers in fixture essay HTML / waveform pin chrome map to
+   three semantic tones (error / praise / suggest). Tint backgrounds use
+   existing --cl-tint-* tokens so contrast against the `--cl-paper`
+   reading canvas stays within WCAG AA on the underline text-foreground.
+   Underline reinforces the highlight for color-blind users. */
+.cl-anchor-error {
+  background-color: var(--cl-tint-red);
+  color: var(--cl-red);
+  text-decoration: underline;
+  text-decoration-color: var(--cl-red);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  padding-inline: 2px;
+  border-radius: 2px;
+}
+.cl-anchor-praise {
+  background-color: var(--cl-tint-green);
+  color: var(--cl-green);
+  text-decoration: underline;
+  text-decoration-color: var(--cl-green);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  padding-inline: 2px;
+  border-radius: 2px;
+}
+.cl-anchor-suggest {
+  background-color: var(--cl-tint-gold);
+  color: var(--cl-accent-2-text);
+  text-decoration: underline;
+  text-decoration-color: var(--cl-amber);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  padding-inline: 2px;
+  border-radius: 2px;
+}

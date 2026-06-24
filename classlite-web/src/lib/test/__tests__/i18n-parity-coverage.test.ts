@@ -249,6 +249,161 @@ describe('Story 1d-3 i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1d-4 — Phase 4 visual bridge keys. Per-story discharge of R38
+ * for the static visual shells: WriteDocSurface, CommentCard,
+ * WritingGradingSurface, SpeakingGradingSurface, AnchoredQuestionCard,
+ * MobileWritingSurface, InboxRow, InboxListShell, ScopeBar,
+ * AnalyticsHomeShell. None of these namespaces are under the
+ * `COVERED_NAMESPACES` enforcement (sidebar / topbar / mobileTab /
+ * pageHead / userPill / appShell), so the orphan-key script does NOT
+ * gate them — this block is the per-story traceability discharge so a
+ * 1d-4 audit can grep the list of new keys in one place.
+ */
+export const STORY_1D_4_KEYS = [
+  // Shared criterion labels (writing + speaking band breakdowns)
+  'criterion.taskAchievement',
+  'criterion.coherenceCohesion',
+  'criterion.lexicalResource',
+  'criterion.grammar',
+  'criterion.fluency',
+  'criterion.lexical',
+  'criterion.pronunciation',
+
+  // WriteDocSurface (AC1)
+  'writeDocSurface.regionLabel',
+  'writeDocSurface.titlePlaceholder',
+  'writeDocSurface.toolbar.label',
+  'writeDocSurface.toolbar.bold',
+  'writeDocSurface.toolbar.italic',
+  'writeDocSurface.toolbar.heading',
+  'writeDocSurface.toolbar.list',
+  'writeDocSurface.save.saved',
+  'writeDocSurface.save.saving',
+  'writeDocSurface.save.offline',
+  'writeDocSurface.save.error',
+  'writeDocSurface.footer.wordCount_one',
+  'writeDocSurface.footer.wordCount_other',
+  'writeDocSurface.footer.timeOnTask',
+
+  // CommentCard (shared by AC2 + AC3)
+  'commentCard.action.resolve',
+  'commentCard.action.reopen',
+  'commentCard.action.edit',
+
+  // WritingGradingSurface (AC2)
+  'writingGrading.regionLabel',
+  'writingGrading.score.label',
+  'writingGrading.essay.label',
+  'writingGrading.rail.label',
+  'writingGrading.rail.empty',
+  'writingGrading.action.submit',
+  'writingGrading.action.saveDraft',
+
+  // SpeakingGradingSurface (AC3)
+  'speakingGrading.regionLabel',
+  'speakingGrading.score.label',
+  'speakingGrading.action.play',
+  'speakingGrading.waveform.label',
+  'speakingGrading.waveform.noRecording',
+  'speakingGrading.rail.label',
+  'speakingGrading.rail.empty',
+
+  // AnchoredQuestionCard (AC4)
+  'anchoredQuestion.replyInput.label',
+  'anchoredQuestion.replyInput.placeholder',
+  'anchoredQuestion.action.aiSuggest',
+  'anchoredQuestion.action.submitReply',
+  'anchoredQuestion.student.awaiting',
+
+  // MobileWritingSurface (AC5)
+  'mobileWriting.regionLabel',
+  'mobileWriting.titlePlaceholder',
+  'mobileWriting.action.back',
+  'mobileWriting.toolbar.label',
+  'mobileWriting.toolbar.bold',
+  'mobileWriting.toolbar.italic',
+  'mobileWriting.toolbar.heading',
+  'mobileWriting.toolbar.list',
+  'mobileWriting.save.saved',
+  'mobileWriting.save.saving',
+  'mobileWriting.save.offline',
+  'mobileWriting.save.error',
+  'mobileWriting.footer.wordCount_one',
+  'mobileWriting.footer.wordCount_other',
+
+  // InboxRow + InboxListShell (AC6)
+  'inboxRow.unread.aria',
+  'inboxRow.action.reply',
+  'inboxRow.action.grade',
+  'inboxRow.action.view',
+  'inboxRow.action.open',
+  'inboxRow.action.review',
+  'inboxRow.action.archive',
+  'inboxRow.teacher.question.main',
+  'inboxRow.teacher.submission.main',
+  'inboxRow.teacher.mention.main',
+  'inboxRow.student.reply.main',
+  'inboxRow.student.grade.main',
+  'inboxRow.student.assignment.main',
+  'inboxRow.student.schedule.main',
+  'inboxRow.student.mention.main',
+  'inboxRow.admin.enrolment.main',
+  'inboxRow.admin.staff.main',
+  'inboxRow.admin.billing.main',
+  'inboxRow.admin.integration.main',
+  'inboxRow.billingStatus.succeeded',
+  'inboxRow.billingStatus.failed',
+  'inboxRow.integrationAction.connected',
+  'inboxRow.meta.classTime',
+  'inboxRow.meta.time',
+  'inboxList.regionLabel',
+  'inboxList.filters.label',
+  'inboxList.filters.remove',
+  'inboxList.rows.label',
+  'inboxList.empty',
+  'inboxList.filter.all',
+  'inboxList.filter.questions',
+  'inboxList.filter.submissions',
+  'inboxList.filter.mentions',
+  'inboxList.filter.replies',
+  'inboxList.filter.grades',
+  'inboxList.filter.assignments',
+  'inboxList.filter.enrolments',
+  'inboxList.filter.staff',
+  'inboxList.filter.billing',
+  'inboxList.filter.integrations',
+
+  // ScopeBar + AnalyticsHomeShell (AC7)
+  'scopeBar.label',
+  'scopeBar.scope.label',
+  'scopeBar.scope.mine',
+  'scopeBar.scope.all',
+  'scopeBar.scope.centerWide',
+  'scopeBar.classPicker.label',
+  'scopeBar.classPicker.placeholder',
+  'scopeBar.classPicker.noOptions',
+  'scopeBar.dateRange.label',
+  'scopeBar.dateRange.aria',
+  'analyticsHome.title.teacher',
+  'analyticsHome.title.admin',
+  'analyticsHome.title.owner',
+  'analyticsHome.subtitle.teacher',
+  'analyticsHome.subtitle.admin',
+  'analyticsHome.subtitle.owner',
+  'analyticsHome.classOption.ielts65SecA',
+  'analyticsHome.classOption.ielts65SecB',
+  'analyticsHome.classOption.ielts70SecA',
+  'analyticsHome.classOption.ielts70SecB',
+  'analyticsHome.classOption.ielts60SecC',
+] as const
+
+describe('Story 1d-4 i18n parity (R38)', () => {
+  test('every Story 1d-4 key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1D_4_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

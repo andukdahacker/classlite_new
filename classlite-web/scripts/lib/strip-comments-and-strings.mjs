@@ -60,11 +60,24 @@ export function stripComments(source) {
 }
 
 export function stripCommentsAndStrings(source) {
+  // Order matters: TEMPLATE → DOUBLE_QUOTE → SINGLE_QUOTE.
+  //
+  // TEMPLATE first so an apostrophe inside a backtick template literal
+  // (e.g. `` `I'm trying to ...` ``) doesn't false-open a single-quoted
+  // string and eat trailing code. DOUBLE_QUOTE before SINGLE_QUOTE so an
+  // apostrophe inside a double-quoted string (a JSX attribute like
+  // `message="couldn't load"`) doesn't false-open a single-quoted string
+  // and eat across the next legitimate `'` literal — Story 1d-4 dev
+  // surfaced this in both AnchoredQuestionCard.stories.tsx's
+  // `LongQuestion` template and InboxListShell.stories.tsx's Error /
+  // Empty render attributes. Same class of bug as the JSDoc-apostrophe
+  // one above; this reorder is the targeted in-place fix until a tokenizer
+  // (acorn / @babel/parser) replaces the regex strip in a follow-up.
   return applyPasses(source, [
     BLOCK_COMMENT,
     LINE_COMMENT,
-    SINGLE_QUOTE,
-    DOUBLE_QUOTE,
     TEMPLATE,
+    DOUBLE_QUOTE,
+    SINGLE_QUOTE,
   ])
 }

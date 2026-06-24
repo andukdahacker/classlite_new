@@ -119,4 +119,46 @@ describe('stripCommentsAndStrings — strips both (used by required-exports)', (
     expect(out).toContain('export const Default')
     expect(out).toContain('export const Loading')
   })
+
+  test('apostrophe inside backtick template does not break export parsing', () => {
+    // Story 1d-4 regression — AnchoredQuestionCard's LongQuestion fixture
+    // template had `I'm` and `author's`, which previously false-opened a
+    // single-quoted string before TEMPLATE matched. Result: the extractor
+    // lost every `export const` after the template.
+    const input = [
+      "const body = `I'm trying to understand the author's intent.`",
+      'export const Default = {}',
+      'export const Loading = {}',
+      'export const Empty = {}',
+      'export const Error = {}',
+    ].join('\n')
+    const out = stripCommentsAndStrings(input)
+    expect(out).toContain('export const Default')
+    expect(out).toContain('export const Loading')
+    expect(out).toContain('export const Empty')
+    expect(out).toContain('export const Error')
+  })
+
+  test('apostrophe inside JSX double-quoted attribute does not break parsing', () => {
+    // Story 1d-4 regression — InboxListShell.stories.tsx's Error render
+    // used `message="We couldn't load your inbox."`, where SINGLE_QUOTE
+    // running before DOUBLE_QUOTE false-opened a string at `'t` and
+    // ate trailing exports. The reorder pins DOUBLE_QUOTE ahead of
+    // SINGLE_QUOTE so JSX attribute apostrophes can't false-open.
+    const input = [
+      'const x = <Comp message="We couldn\'t load your inbox." retry="ok" />',
+      "const y = { locale: 'en' }",
+      'export const Default = {}',
+      'export const Loading = {}',
+      'export const Empty = {}',
+      'export const Error = {}',
+      'export const LocaleEn = {}',
+    ].join('\n')
+    const out = stripCommentsAndStrings(input)
+    expect(out).toContain('export const Default')
+    expect(out).toContain('export const Loading')
+    expect(out).toContain('export const Empty')
+    expect(out).toContain('export const Error')
+    expect(out).toContain('export const LocaleEn')
+  })
 })

@@ -90,10 +90,12 @@ export const Disabled: Story = {
 
 /**
  * LongVietnameseLabel — exercises the 220px truncation recipe with
- * Vietnamese diacritics. Verifies WCAG 2.1.1: aria-label preserves full
- * text, tooltip opens on focus (keyboard reveal), native `title` attr
- * present as no-JS fallback. The visible span is `aria-hidden`. Axe
- * scenario 1D-P1-094a covers truncation a11y end-to-end.
+ * Vietnamese diacritics. Verifies WCAG 2.1.1: aria-label preserves the
+ * full text and the Tooltip primitive owns the hover/focus reveal. The
+ * native `title` attribute was deliberately dropped during 1d-3 code
+ * review (P23) to avoid three independent accessible-name sources
+ * stuttering on assistive tech — the visible span stays aria-hidden.
+ * Axe scenario 1D-P1-094a covers truncation a11y end-to-end.
  */
 export const LongVietnameseLabel: Story = {
   args: {
@@ -109,6 +111,6 @@ export const LongVietnameseLabel: Story = {
     // (a) aria-label preserves the full string regardless of visual truncation.
     const fullLabel = 'Trung tâm kiến thức'
     await expect(link).toHaveAttribute('aria-label', fullLabel)
-    await expect(link).toHaveAttribute('title', fullLabel)
+    await expect(link).not.toHaveAttribute('title')
   },
 }
