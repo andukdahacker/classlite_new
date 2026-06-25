@@ -74,6 +74,14 @@ export const ReducedMotion: Story = {
   parameters: { reducedMotion: 'reduce' },
   render: () => <Skeleton className="h-12 w-48" data-testid="reduced-skeleton" />,
   play: async ({ canvasElement }) => {
+    // Reduced-motion emulation is wired through `preVisit` in
+    // `.storybook/test-runner.ts`, which only `@storybook/test-runner` runs.
+    // Chromatic's interaction runner does NOT honor that hook, so the browser
+    // stays at default media settings and `motion-safe:animate-pulse` fires.
+    // Skip the assertion there — local + CI test-runner still enforces it.
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('chromatic.com')) {
+      return
+    }
     const skeleton = await within(canvasElement).findByTestId('reduced-skeleton')
     await waitFor(() => {
       const style = window.getComputedStyle(skeleton)
