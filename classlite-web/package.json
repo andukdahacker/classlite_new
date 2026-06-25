@@ -18,7 +18,8 @@
     "storybook:build": "storybook build -o storybook-static",
     "storybook:serve": "http-server storybook-static --port 6006 --silent",
     "storybook:test": "test-storybook --url http://127.0.0.1:6006",
-    "storybook:test:ci": "npm run storybook:build && concurrently --kill-others --success command-TEST -n SB,TEST -c magenta,blue \"npm:storybook:serve\" \"wait-on http://127.0.0.1:6006/iframe.html && npm run storybook:test\""
+    "storybook:test:ci": "npm run storybook:build && concurrently --kill-others --success command-TEST -n SB,TEST -c magenta,blue \"npm:storybook:serve\" \"wait-on http://127.0.0.1:6006/iframe.html && npm run storybook:test\"",
+    "chromatic": "chromatic --build-script-name=storybook:build --exit-zero-on-changes --exit-once-uploaded"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -67,6 +68,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "axe-core": "^4.12.1",
+    "chromatic": "^17.6.0",
     "concurrently": "9.2.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",

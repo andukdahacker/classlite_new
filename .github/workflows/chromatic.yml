@@ -1,0 +1,46 @@
+name: Chromatic — Storybook publish
+
+# Publishes Storybook to Chromatic so the designer gets a stable per-branch
+# URL with visual-regression diffs. Separate from ci-web.yml because:
+#  - the CHROMATIC_PROJECT_TOKEN secret only needs to be exposed here
+#  - a pending visual review should not block the gating CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'classlite-web/**'
+      - '.github/workflows/chromatic.yml'
+  pull_request:
+    paths:
+      - 'classlite-web/**'
+      - '.github/workflows/chromatic.yml'
+
+jobs:
+  chromatic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Chromatic needs full git history to compute baselines against
+          # ancestor commits. fetch-depth: 0 is required.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: cd classlite-web && npm ci
+      - name: Publish to Chromatic
+        uses: chromaui/action@latest
+        with:
+          workingDir: classlite-web
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          # Don't fail the run when stories render with visual changes — those
+          # are designer-review state, not CI failures. Build/error failures
+          # still exit non-zero.
+          exitZeroOnChanges: true
+          # Speed: once the bundle is uploaded, exit without waiting for the
+          # Chromatic build to finish processing. The result still appears in
+          # GitHub via the Chromatic check.
+          exitOnceUploaded: true
