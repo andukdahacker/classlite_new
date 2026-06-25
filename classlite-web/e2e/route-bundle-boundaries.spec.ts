@@ -33,15 +33,15 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     const sawAuthLayout = requests.some((url) =>
       /\/AuthLayout-[\w-]+\.js/.test(url),
     )
-    const sawLoginPlaceholder = requests.some((url) =>
-      /\/LoginPagePlaceholder-[\w-]+\.js/.test(url),
+    const sawLoginPage = requests.some((url) =>
+      /\/LoginPage-[\w-]+\.js/.test(url),
     )
     expect(sawAuthLayout, 'auth layout chunk leaked into /dashboard').toBe(
       false,
     )
     expect(
-      sawLoginPlaceholder,
-      'login placeholder chunk leaked into /dashboard',
+      sawLoginPage,
+      'login page chunk leaked into /dashboard',
     ).toBe(false)
   })
 

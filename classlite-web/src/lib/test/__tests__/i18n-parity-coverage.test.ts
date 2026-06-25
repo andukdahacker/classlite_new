@@ -404,6 +404,87 @@ describe('Story 1d-4 i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1-8 — auth UI registration + login. Per-story discharge of R38
+ * for the polished /register and /login surfaces + the five shared
+ * components in `src/features/auth/components/`. The 1-7c-seeded keys
+ * (auth.login.title / auth.login.submit / auth.login.googleCta /
+ * auth.login.emailCollapse / auth.register.title / auth.register.submit /
+ * auth.common.email / auth.common.password / auth.common.passwordToggleAria)
+ * stay in STORY_1_7C_KEYS — this block ONLY enumerates the keys added
+ * by Story 1-8.
+ *
+ * Four ★ REVIEWER-MANDATORY keys (login error variants + oauthGeneric)
+ * must get a Vietnamese-fluent reviewer pass before merge — see story
+ * AC2 for the contract.
+ */
+export const STORY_1_8_KEYS = [
+  // Register-screen Google + email collapse copy
+  'auth.register.googleCta',
+  'auth.register.emailCollapse',
+
+  // Register form fields + cross-screen link + terms
+  'auth.register.fullName',
+  'auth.register.fullNamePlaceholder',
+  'auth.register.signInLink',
+  'auth.register.terms',
+
+  // Login-only copy that pairs with the register additions above
+  'auth.login.signUpLink',
+  'auth.login.rememberMe',
+  'auth.login.forgotPassword',
+
+  // Shared auth-form chrome (divider + placeholders)
+  'auth.common.dividerOr',
+  'auth.common.emailPlaceholder',
+  'auth.common.passwordPlaceholder',
+  'auth.common.loginPasswordPlaceholder',
+
+  // PasswordStrengthBar aria-live announcement keys (5 levels per UX-DR8;
+  // `empty` is the no-input baseline so the helper has full coverage even
+  // when the visual bar renders nothing)
+  'auth.common.passwordStrength.empty',
+  'auth.common.passwordStrength.weak',
+  'auth.common.passwordStrength.fair',
+  'auth.common.passwordStrength.strong',
+  'auth.common.passwordStrength.veryStrong',
+
+  // Field-level validation messages (consumed by useRegisterSchema +
+  // useLoginSchema builder hooks; login uses passwordRequired, register
+  // uses passwordMin per AC4 schema rationale — never leak min-length on
+  // login per SEC-1). passwordMax / fullNameMax / passwordNotBlank land
+  // with code-review P9 + P10 (2026-06-25) so localized copy reaches the
+  // vi locale on the rare max-length and all-whitespace hits.
+  'auth.common.validation.emailRequired',
+  'auth.common.validation.emailFormat',
+  'auth.common.validation.passwordMin',
+  'auth.common.validation.passwordMax',
+  'auth.common.validation.passwordRequired',
+  'auth.common.validation.passwordNotBlank',
+  'auth.common.validation.fullNameRequired',
+  'auth.common.validation.fullNameMax',
+
+  // Register-screen error envelopes (409 / 429 / generic / email-delivery)
+  'auth.register.error.emailTaken',
+  'auth.register.error.rateLimited',
+  'auth.register.error.generic',
+  'auth.register.emailDelivery.failedToast',
+
+  // Login-screen error envelopes — accountLocked / rateLimited / generic /
+  // oauthGeneric are the 4 ★ REVIEWER-MANDATORY keys
+  'auth.login.error.invalidCredentials',
+  'auth.login.error.accountLocked',
+  'auth.login.error.rateLimited',
+  'auth.login.error.generic',
+  'auth.login.error.oauthGeneric',
+] as const
+
+describe('Story 1-8 i18n parity (R38)', () => {
+  test('every Story 1-8 key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1_8_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

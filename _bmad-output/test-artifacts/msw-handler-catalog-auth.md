@@ -1,22 +1,31 @@
 ---
-name: msw-handler-catalog-1-5
-description: MSW v2 handler stubs for the 5 Story 1.5 auth endpoints — drop-in for Story 1.8/1.9b component tests
+name: msw-handler-catalog-auth
+description: MSW v2 handler stubs for the 6 auth endpoints (Stories 1.4 + 1.5) — drop-in for Story 1.8/1.9a/1.9b/1.9c/1.9d component tests
 authoritative_source: classlite-api/api.yaml#paths
-target_stories: ['1-8-auth-ui-registration-and-login-screens', '1-9b-password-reset-ui']
+target_stories: ['1-8-auth-ui-registration-and-login-screens', '1-9a-email-verification-ui', '1-9b-password-reset-ui', '1-9c-invite-acceptance-ui', '1-9d-auth-error-and-recovery-states']
 created: 2026-06-06
 created_by: Murat (TEA)
 test_seam: HTTP boundary (TEST-FE-1)
+last_updated: 2026-06-25
 ---
 
-# MSW Handler Catalog — Story 1.5 endpoints
+# MSW Handler Catalog — Auth endpoints (Stories 1.4 + 1.5)
 
-This catalog is the canonical MSW handler contract for the five Story 1.5
-endpoints (`/login`, `/refresh`, `/logout`, `/forgot-password`, `/reset-password`).
-Story 1.8 (login/registration UI) and Story 1.9b (password reset UI) will
-copy these handlers into their `src/test/mocks/handlers.ts`. The catalog
-sits in the test-artifacts tree so backend changes to the envelope shape
-update the contract atomically — frontend devs ALWAYS read from here
-before adding a fresh interceptor.
+This catalog is the canonical MSW handler contract for the six auth
+endpoints (`/register`, `/login`, `/refresh`, `/logout`,
+`/forgot-password`, `/reset-password`). Story 1.8 (login/registration UI),
+1.9a (verify-email), 1.9b (password reset), 1.9c (invite acceptance), and
+1.9d (auth error/recovery states) all copy from these defaults into
+`src/test/mocks/handlers.ts`. The catalog sits in the test-artifacts tree
+so backend changes to the envelope shape update the contract atomically
+— frontend devs ALWAYS read from here before adding a fresh interceptor.
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-06-25 | Renamed `msw-handler-catalog-1-5.md` → `msw-handler-catalog-auth.md`; appended `POST /api/auth/register` section (Story 1.8 consumer); broadened `target_stories` to all of 1-9a..d. Murat #4 amendment via Story 1-8 party-mode review. |
+| 2026-06-06 | Initial catalog covering 5 Story 1.5 endpoints. |
 
 ## Why MSW, not vi.mock(useQuery)?
 
@@ -76,6 +85,75 @@ type UserSummary = {
   emailVerified: boolean;
 };
 ```
+
+---
+
+## POST /api/auth/register
+
+### Happy path — `201 Created`
+
+```typescript
+http.post(`${API}/api/auth/register`, async ({ request }) => {
+  const body = (await request.json()) as { email: string; password: string; fullName: string };
+  return HttpResponse.json<Envelope<{ user: UserSummary; verifyPollId: string; emailDelivery: 'sent' | 'delayed' | 'failed' }>>(
+    {
+      data: {
+        user: {
+          id: '00000000-0000-0000-0000-000000msw01',
+          email: body.email,
+          fullName: body.fullName,
+          emailVerified: false,
+        },
+        verifyPollId: '00000000-0000-0000-0000-poll00000001',
+        emailDelivery: 'sent',
+      },
+    },
+    { status: 201 }
+  );
+});
+```
+
+### Variants
+
+| Variant                       | Status | Code                           | Notes |
+| ----------------------------- | ------ | ------------------------------ | --- |
+| Duplicate email               | 409   | `EMAIL_ALREADY_REGISTERED`      | Body envelope is the same regardless of whether the prior account is verified — anti-enumeration (api.yaml line 44) |
+| Validation failure            | 422   | `VALIDATION_ERROR`              | `details: [{field, message}]` array. Story 1.8 iterates and calls `setError(field, ...)` per field |
+| Per-IP rate limit             | 429   | `RATE_LIMIT_EXCEEDED`           | Token bucket — burst 5, replenishment 1/2min |
+| Email delivery failed         | 201   | (envelope `emailDelivery: 'failed'`) | Happy 201, but the body signals the verification email send was rejected. Story 1.8 must surface a non-blocking toast prompting "Resend" on the next screen |
+
+```typescript
+// 409 EMAIL_ALREADY_REGISTERED variant
+http.post(`${API}/api/auth/register`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'Email already registered', requestId: 'msw', details: null } },
+    { status: 409 }
+  )
+);
+
+// 422 VALIDATION_ERROR with per-field details
+http.post(`${API}/api/auth/register`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        requestId: 'msw',
+        details: [
+          { field: 'password', message: 'password must be at least 8 characters' },
+        ],
+      },
+    },
+    { status: 422 }
+  )
+);
+```
+
+> The `emailDelivery: 'failed'` case is the most easily missed branch in
+> Story 1.8 tests — backend deliberately returns 201 (registration
+> succeeded; the user exists, just no verification email went out) and
+> the frontend renders a soft warning. Tests covering "happy path" MUST
+> additionally cover the `emailDelivery: 'failed'` branch.
 
 ---
 

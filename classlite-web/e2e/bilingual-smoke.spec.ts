@@ -72,9 +72,12 @@ type Locale = 'en' | 'vi'
 interface LocaleProbe {
   lang: Locale
   loginTitle: string
+  registerTitle: string
   permissionDeniedTitle: string
   notFoundTitle: string
   errorBoundaryRetry: string
+  emailLabel: string
+  passwordLabel: string
 }
 
 const PROBES: readonly LocaleProbe[] = [
@@ -84,6 +87,7 @@ const PROBES: readonly LocaleProbe[] = [
     // src/lib/test/__tests__/i18n-parity-coverage.test.ts asserts every key
     // in this probe exists in en.json before this spec runs in CI.
     loginTitle: (enLocale as Record<string, string>)['auth.login.title'],
+    registerTitle: (enLocale as Record<string, string>)['auth.register.title'],
     permissionDeniedTitle: (enLocale as Record<string, string>)[
       'app.permissionDenied.title'
     ],
@@ -91,10 +95,13 @@ const PROBES: readonly LocaleProbe[] = [
     errorBoundaryRetry: (enLocale as Record<string, string>)[
       'app.errorBoundary.retryCta'
     ],
+    emailLabel: (enLocale as Record<string, string>)['auth.common.email'],
+    passwordLabel: (enLocale as Record<string, string>)['auth.common.password'],
   },
   {
     lang: 'vi',
     loginTitle: (viLocale as Record<string, string>)['auth.login.title'],
+    registerTitle: (viLocale as Record<string, string>)['auth.register.title'],
     permissionDeniedTitle: (viLocale as Record<string, string>)[
       'app.permissionDenied.title'
     ],
@@ -102,6 +109,8 @@ const PROBES: readonly LocaleProbe[] = [
     errorBoundaryRetry: (viLocale as Record<string, string>)[
       'app.errorBoundary.retryCta'
     ],
+    emailLabel: (viLocale as Record<string, string>)['auth.common.email'],
+    passwordLabel: (viLocale as Record<string, string>)['auth.common.password'],
   },
 ]
 
@@ -122,15 +131,39 @@ for (const probe of PROBES) {
       page,
     }) => {
       await page.goto('/login')
-      // The auth/login surface itself ships with Story 1-8. For 1-7c the
-      // visible expectation is the route is reachable AND the i18n keys
-      // resolve. The H1 assertion will pass once Story 1-8 lands the real
-      // LoginPage; until then the placeholder route from 1-7b is rendered
-      // and this assertion fails — that's the RED signal for downstream
-      // sequencing. If Story 1-8 is sequenced ahead of activating this
-      // scaffold, swap the locator to whatever the LoginPage H1 actually
-      // resolves to.
       await expect(page.locator('h1')).toContainText(probe.loginTitle)
+      await assertNoRawKeysInDom(page)
+      const result = await new AxeBuilder({ page }).analyze()
+      expect(result.violations).toEqual([])
+    })
+
+    test('/login form labels (email + password) resolve via i18n in both locales — Story 1-8 AC8', async ({
+      page,
+    }) => {
+      await page.goto('/login')
+      // Expand the collapsible email form before the labels exist in the
+      // accessibility tree — collapsed state hides the fields.
+      await page
+        .getByRole('button', { name: /Sign in with email|Đăng nhập bằng email/ })
+        .click()
+      await expect(
+        page.getByRole('textbox', { name: probe.emailLabel }),
+      ).toBeVisible()
+      // Password field — `getByLabel(..., { exact: true })` is required
+      // because the eye-toggle button carries an aria-label "Show or
+      // hide password" / "Hiện hoặc ẩn mật khẩu" that partial-matches
+      // the bare "Password" / "Mật khẩu" label without the strict flag.
+      await expect(
+        page.getByLabel(probe.passwordLabel, { exact: true }),
+      ).toBeVisible()
+      await assertNoRawKeysInDom(page)
+    })
+
+    test('/register renders localized title in both locales — Story 1-8 AC8', async ({
+      page,
+    }) => {
+      await page.goto('/register')
+      await expect(page.locator('h1')).toContainText(probe.registerTitle)
       await assertNoRawKeysInDom(page)
       const result = await new AxeBuilder({ page }).analyze()
       expect(result.violations).toEqual([])

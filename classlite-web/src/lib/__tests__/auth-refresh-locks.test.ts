@@ -87,15 +87,56 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     }
   })
 
-  test('refresh-succeeded broadcast triggers queryClient.invalidateQueries', async () => {
-    const invalidateSpy = vi
-      .spyOn(queryClient, 'invalidateQueries')
-      .mockImplementation(() => Promise.resolve())
+  test('refresh-succeeded broadcast with data hydrates session cache via setQueryData', async () => {
+    // Story 1-8 contract switch: invalidateQueries → setQueryData(literal
+    // ['auth','session'] key). invalidate would clobber the cache because
+    // the queryFn returns null (enabled: false). Assert setQueryData fires
+    // and the cache reads back the payload.
+    const setSpy = vi.spyOn(queryClient, 'setQueryData')
     const sender = new BroadcastChannel('classlite_auth')
-    sender.postMessage({ type: 'refresh-succeeded', timestamp: Date.now() })
+    const payload = {
+      user: {
+        id: 'user-sibling',
+        email: 'sibling@example.com',
+        fullName: 'Sibling',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.sibling',
+    }
+    sender.postMessage({
+      type: 'refresh-succeeded',
+      timestamp: Date.now(),
+      data: payload,
+    })
     // Allow microtasks + message-bus delivery to drain.
     await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(invalidateSpy).toHaveBeenCalled()
+    expect(setSpy).toHaveBeenCalledWith(['auth', 'session'], payload)
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+    sender.close()
+  })
+
+  test('refresh-succeeded broadcast WITHOUT data leaves cache untouched (debounce-hit path)', async () => {
+    // A sibling tab on the debounce-hit path broadcasts `data: null`. The
+    // listener stamps lastRefreshedAt but MUST NOT write the cache with
+    // null — that would clobber the previously-hydrated session.
+    queryClient.setQueryData(['auth', 'session'], {
+      user: {
+        id: 'existing',
+        email: 'existing@example.com',
+        fullName: 'Existing',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.existing',
+    })
+    const before = queryClient.getQueryData(['auth', 'session'])
+    const sender = new BroadcastChannel('classlite_auth')
+    sender.postMessage({
+      type: 'refresh-succeeded',
+      timestamp: Date.now(),
+      data: null,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(before)
     sender.close()
   })
 
@@ -112,12 +153,67 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     // timestamp. The subsequent refreshAccessToken call must observe
     // the debounce window and skip the network refresh entirely.
     const sender = new BroadcastChannel('classlite_auth')
-    sender.postMessage({ type: 'refresh-succeeded', timestamp: Date.now() })
+    sender.postMessage({
+      type: 'refresh-succeeded',
+      timestamp: Date.now(),
+      data: null,
+    })
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     const result = await refreshAccessToken()
     expect(result.ok).toBe(true)
     expect(count).toBe(0)
     sender.close()
+  })
+
+  test('200 with valid EnvelopeLoginResult body hydrates the local cache (Story 1-8 AC5 success path)', async () => {
+    const payload = {
+      user: {
+        id: 'user-fresh',
+        email: 'fresh@example.com',
+        fullName: 'Fresh User',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.fresh',
+    }
+    server.use(
+      http.post('/api/auth/refresh', () =>
+        HttpResponse.json({ data: payload }, { status: 200 }),
+      ),
+    )
+    const result = await refreshAccessToken()
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data).toEqual(payload)
+    }
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+  })
+
+  test('200 with malformed body still resolves ok and does NOT clobber the existing cache', async () => {
+    // Seed an existing session so we can prove the cache is untouched.
+    queryClient.setQueryData(['auth', 'session'], {
+      user: {
+        id: 'pre',
+        email: 'pre@example.com',
+        fullName: 'Pre',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.pre',
+    })
+    server.use(
+      http.post('/api/auth/refresh', () => new HttpResponse('not-json-at-all', { status: 200 })),
+    )
+    const result = await refreshAccessToken()
+    expect(result.ok).toBe(true)
+    // Cache stays as we seeded it — malformed body does NOT wipe the user out.
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual({
+      user: {
+        id: 'pre',
+        email: 'pre@example.com',
+        fullName: 'Pre',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.pre',
+    })
   })
 })

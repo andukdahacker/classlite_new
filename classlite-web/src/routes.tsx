@@ -70,8 +70,8 @@ const baseRoutes: RouteObject[] = [
     loader: () => redirect('/login'),
   },
   // Auth boundary — pre-auth UI under a single layout. Rolldown emits
-  // AuthLayout + LoginPagePlaceholder as a tightly-coupled chunk pair
-  // that pre-auth visits load and authenticated visits never see.
+  // AuthLayout + LoginPage + RegisterPage as a tightly-coupled chunk
+  // group that pre-auth visits load and authenticated visits never see.
   {
     lazy: async () => {
       const { default: AuthLayout } = await import(
@@ -83,10 +83,19 @@ const baseRoutes: RouteObject[] = [
       {
         path: 'login',
         lazy: async () => {
-          const { default: LoginPagePlaceholder } = await import(
-            '@/features/auth/LoginPagePlaceholder'
+          const { default: LoginPage } = await import(
+            '@/features/auth/LoginPage'
           )
-          return { Component: LoginPagePlaceholder }
+          return { Component: LoginPage }
+        },
+      },
+      {
+        path: 'register',
+        lazy: async () => {
+          const { default: RegisterPage } = await import(
+            '@/features/auth/RegisterPage'
+          )
+          return { Component: RegisterPage }
         },
       },
     ],

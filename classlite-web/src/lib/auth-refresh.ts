@@ -23,9 +23,20 @@
  *      sees Tab 1's completed timestamp before Tab 2 enters its body.
  *
  * A `BroadcastChannel('classlite_auth')` carries the outcome to sibling
- * tabs: `refresh-succeeded` updates `lastRefreshedAt` and invalidates the
- * Query cache so their pending queries refetch; `refresh-failed` triggers
+ * tabs: `refresh-succeeded` updates `lastRefreshedAt` AND hydrates the
+ * `['auth', 'session']` cache via `setQueryData` (NOT
+ * `invalidateQueries` — the queryFn returns `null` so an invalidate
+ * would clobber the just-written session). `refresh-failed` triggers
  * the same `onAuthFailure` redirect every tab.
+ *
+ * Story 1-8 refactor (Winston #1 + Amelia #1): `performNetworkRefresh`
+ * now parses the `EnvelopeLoginResult` body so the success path hydrates
+ * `useAuth` directly (no second protected request needed to populate the
+ * cache). `RefreshResult` carries `data` on success. Cache writes use
+ * the LITERAL `['auth', 'session']` key array because importing
+ * `authKeys.session()` would land a third edge on the existing
+ * query-client ↔ api-fetch import cycle. The duplicated literal is
+ * locked by `authKeys.test.ts`'s contract assertion.
  *
  * Module-load order forms a cycle with api-fetch.ts and query-client.ts;
  * the cross-references resolve inside callbacks (not at top level), which
@@ -34,20 +45,37 @@
 import * as Sentry from '@sentry/react'
 import { queryClient } from './query-client'
 import { AuthExpiredError } from './api-fetch'
+import type { components } from '@/lib/api/client'
+
+type EnvelopeLoginResult = components['schemas']['EnvelopeLoginResult']
+type UserSummary = components['schemas']['UserSummary']
 
 const CHANNEL_NAME = 'classlite_auth'
 const LOCK_NAME = 'classlite_token_refresh'
 const LAST_REFRESHED_STORAGE_KEY = 'classlite_last_refreshed_at'
 const REFRESH_DEBOUNCE_MS = 5_000
 const SESSION_EXPIRED_PATH = '/login?session_expired=1'
+// Literal `['auth', 'session']` — duplicates `authKeys.session()` from
+// `src/features/auth/api/authKeys.ts`. See JSDoc above for the cycle
+// rationale; the contract test `authKeys.test.ts` locks the literal.
+const SESSION_QUERY_KEY = ['auth', 'session'] as const
 
-export interface RefreshResult {
-  ok: boolean
+export interface RefreshSessionData {
+  user: UserSummary
+  accessToken: string
 }
+
+export type RefreshResult =
+  | { ok: true; data: RefreshSessionData | null }
+  | { ok: false }
 
 interface RefreshSucceededSignal {
   type: 'refresh-succeeded'
   timestamp: number
+  // Sibling tabs use the payload to hydrate their own caches without a
+  // second network round trip. `null` indicates a debounce-hit or
+  // malformed-body success path (see performNetworkRefresh).
+  data: RefreshSessionData | null
 }
 
 interface RefreshFailedSignal {
@@ -62,6 +90,53 @@ const channel: BroadcastChannel | null =
     : null
 
 let refreshPromise: Promise<RefreshResult> | null = null
+
+// Boot-probe state (code-review D2 2026-06-25).
+//
+// `useAuth().isLoading` must reflect "boot refresh in flight" so a future
+// router guard (`if (!isAuthenticated && !isLoading) navigate('/login')`)
+// can wait for the probe to resolve before deciding the user is logged
+// out. The probe is async — without this signal, a returning user with a
+// valid refresh cookie gets bounced to /login BEFORE the silent-refresh
+// success path hydrates the cache (the same regression Winston #4 was
+// lifted to fix at the App.tsx level).
+//
+// Subscribers (useAuth's useSyncExternalStore) get notified on transitions
+// to/from `true`. The flag does NOT change for in-tab token-refresh calls
+// triggered by 401s on protected requests — only for the explicit boot
+// probe wrapper below.
+let bootProbeInFlight = false
+const bootProbeListeners = new Set<() => void>()
+
+function notifyBootProbeChange(): void {
+  for (const listener of bootProbeListeners) listener()
+}
+
+export function getBootProbeInFlight(): boolean {
+  return bootProbeInFlight
+}
+
+export function subscribeBootProbe(listener: () => void): () => void {
+  bootProbeListeners.add(listener)
+  return () => bootProbeListeners.delete(listener)
+}
+
+/**
+ * Boot-time refresh probe wrapper — sets `bootProbeInFlight = true` for
+ * the duration of `refreshAccessToken()` so `useAuth().isLoading`
+ * observes the in-flight state. Resolves to the same `RefreshResult` as
+ * the underlying primitive; the App.tsx caller `void`s it.
+ */
+export async function runBootProbe(): Promise<RefreshResult> {
+  bootProbeInFlight = true
+  notifyBootProbeChange()
+  try {
+    return await refreshAccessToken()
+  } finally {
+    bootProbeInFlight = false
+    notifyBootProbeChange()
+  }
+}
 
 // Module-level idempotency latch for `onAuthFailure`. Multiple callers
 // (apiFetch direct, QueryCache.onError safety net, BroadcastChannel
@@ -105,26 +180,52 @@ function hasWebLocks(): boolean {
 
 async function performNetworkRefresh(): Promise<RefreshResult> {
   if (Date.now() - readLastRefreshedAt() < REFRESH_DEBOUNCE_MS) {
-    return { ok: true }
+    // Debounce hit — a sibling tab just refreshed. The cache is already
+    // populated by that tab's BroadcastChannel write (or by the sibling's
+    // own success path in this tab). Return ok without data; the caller
+    // (apiFetch retry path) only checks `ok`.
+    return { ok: true, data: null }
   }
   try {
     const response = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
     })
-    if (response.ok) {
-      const stamp = Date.now()
-      writeLastRefreshedAt(stamp)
+    if (!response.ok) {
       channel?.postMessage({
-        type: 'refresh-succeeded',
-        timestamp: stamp,
-      } satisfies RefreshSucceededSignal)
-      return { ok: true }
+        type: 'refresh-failed',
+      } satisfies RefreshFailedSignal)
+      return { ok: false }
+    }
+    // Parse the envelope. A 200 with malformed body must NOT downgrade
+    // to refresh-failed (that would log the user out on a flaky gateway).
+    // Treat parse failure as refresh-succeeded-without-data — the next
+    // protected request will hit 401 again and retry the refresh cleanly.
+    let data: RefreshSessionData | null = null
+    try {
+      const envelope = (await response.json()) as EnvelopeLoginResult
+      data = {
+        user: envelope.data.user,
+        accessToken: envelope.data.accessToken,
+      }
+    } catch {
+      Sentry.captureMessage('auth-refresh: 200 with unparseable body', {
+        level: 'warning',
+      })
+    }
+    const stamp = Date.now()
+    writeLastRefreshedAt(stamp)
+    if (data) {
+      // Hydrate the session cache so useAuth re-renders. Literal key —
+      // see SESSION_QUERY_KEY rationale.
+      queryClient.setQueryData(SESSION_QUERY_KEY, data)
     }
     channel?.postMessage({
-      type: 'refresh-failed',
-    } satisfies RefreshFailedSignal)
-    return { ok: false }
+      type: 'refresh-succeeded',
+      timestamp: stamp,
+      data,
+    } satisfies RefreshSucceededSignal)
+    return { ok: true, data }
   } catch {
     channel?.postMessage({
       type: 'refresh-failed',
@@ -207,7 +308,14 @@ function handleChannelMessage(event: MessageEvent<unknown>): void {
   const msg = event.data
   if (msg.type === 'refresh-succeeded') {
     writeLastRefreshedAt(msg.timestamp)
-    void queryClient.invalidateQueries()
+    // Sibling tab broadcast the parsed session — hydrate this tab's
+    // cache directly. `invalidateQueries` would clobber (the cache key
+    // has `queryFn: () => null` + `enabled: false`, so an invalidate
+    // resolves to `null`). `setQueryData` skips that and writes the
+    // payload straight in.
+    if (msg.data) {
+      queryClient.setQueryData(SESSION_QUERY_KEY, msg.data)
+    }
   } else if (msg.type === 'refresh-failed') {
     onAuthFailure(new AuthExpiredError())
   }
@@ -241,6 +349,8 @@ attachChannelListener()
 export function __resetAuthRefreshStateForTests(): void {
   refreshPromise = null
   isRedirecting = false
+  bootProbeInFlight = false
+  bootProbeListeners.clear()
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       window.localStorage.removeItem(LAST_REFRESHED_STORAGE_KEY)

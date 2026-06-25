@@ -38,6 +38,15 @@ export class ApiError extends Error {
   readonly code: string
   readonly requestId: string | null
   readonly details: unknown
+  /**
+   * `Retry-After` header in seconds when present on a 429 ACCOUNT_LOCKED
+   * or RATE_LIMIT_EXCEEDED response. `null` for all other errors. Lives
+   * as a SIBLING readonly property to keep `details` untouched — Story
+   * 1-8 RegisterPage iterates `details` as `[{field, message}]` for 422
+   * VALIDATION_ERROR, and spreading retryAfter into `details` would
+   * corrupt the array (Winston #3 amendment).
+   */
+  readonly retryAfterSeconds: number | null
 
   constructor(
     status: number,
@@ -45,6 +54,7 @@ export class ApiError extends Error {
     message: string,
     requestId: string | null,
     details?: unknown,
+    retryAfterSeconds: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -52,7 +62,26 @@ export class ApiError extends Error {
     this.code = code
     this.requestId = requestId
     this.details = details
+    this.retryAfterSeconds = retryAfterSeconds
   }
+}
+
+/**
+ * Parse RFC 9110 § 10.2.3 `Retry-After` — delta-seconds OR HTTP-date.
+ * Returns `null` for missing / malformed values.
+ */
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null
+  const trimmed = header.trim()
+  if (trimmed === '') return null
+  // Delta-seconds (integer).
+  const seconds = Number(trimmed)
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds
+  // HTTP-date (RFC 7231 IMF-fixdate).
+  const dateMs = Date.parse(trimmed)
+  if (Number.isNaN(dateMs)) return null
+  const delta = Math.max(0, Math.round((dateMs - Date.now()) / 1000))
+  return delta
 }
 
 export class AuthExpiredError extends Error {
@@ -63,7 +92,21 @@ export class AuthExpiredError extends Error {
 }
 
 export interface ApiFetchOptions extends RequestInit {
+  /**
+   * When true, a 401 response throws `AuthExpiredError` immediately
+   * (no refresh attempt). Used by the refresh module itself to break
+   * the recursion.
+   */
   skipAuthRefresh?: boolean
+  /**
+   * When true, a 401 surfaces as the parsed `ApiError(401, code, ...)`
+   * — the refresh coordinator is bypassed AND the error is NOT
+   * translated to `AuthExpiredError`. Story 1-8 LoginPage uses this
+   * because a 401 from `/api/auth/login` means "wrong credentials"
+   * (not "session expired") and the page needs the
+   * `INVALID_CREDENTIALS` error code to render the inline copy.
+   */
+  surfaceAuthError?: boolean
 }
 
 interface ErrorEnvelope {
@@ -82,10 +125,15 @@ export async function apiFetch<T = unknown>(
   path: string,
   opts: ApiFetchOptions = {},
 ): Promise<T> {
-  const { skipAuthRefresh, ...rest } = opts
+  const { skipAuthRefresh, surfaceAuthError, ...rest } = opts
   let response = await performFetch(path, rest)
 
   if (response.status === UNAUTHORIZED_STATUS) {
+    if (surfaceAuthError) {
+      // Fall through to parseEnvelope — the caller wants the raw
+      // ApiError(401, code, ...) not the AuthExpiredError translation.
+      return parseEnvelope<T>(response)
+    }
     if (skipAuthRefresh) {
       throw new AuthExpiredError()
     }
@@ -183,12 +231,22 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
   const errorBody = (await response
     .json()
     .catch(() => ({}) as ErrorEnvelope)) as ErrorEnvelope
+  const code = errorBody.error?.code ?? 'UNKNOWN'
+  // Surface Retry-After ONLY for the rate-limit / account-lock cases —
+  // every other error gets `null`. Pinned by Story 1-8 LoginPage which
+  // reads `error.retryAfterSeconds` directly for the
+  // `ACCOUNT_LOCKED` countdown copy (`{{minutes}}` interpolation).
+  const retryAfterSeconds =
+    code === 'ACCOUNT_LOCKED' || code === 'RATE_LIMIT_EXCEEDED'
+      ? parseRetryAfter(response.headers.get('retry-after'))
+      : null
   const apiError = new ApiError(
     response.status,
-    errorBody.error?.code ?? 'UNKNOWN',
+    code,
     errorBody.error?.message ?? response.statusText,
     requestId,
     errorBody.error?.details,
+    retryAfterSeconds,
   )
   Sentry.captureException(apiError, {
     tags: { requestId, errorCode: apiError.code },

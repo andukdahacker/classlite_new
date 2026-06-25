@@ -134,3 +134,24 @@
 - `InboxListShell` LocaleVi stories use `string.replace('h ago', ' giờ trước')` — story-side fixture munging; real relative-time formatter lands with Epic 10 inbox consumer.
 - `WriteDocSurface` `timeOnTaskSec >= 3600` formats as `77:30` — Epic 5 Story 5-3 wires the real timer and selects the right format band.
 - `CommentCard` `'✎'` glyph (U+270E) may render as tofu on Windows font stacks — designer call; lucide swap requires Figma sign-off.
+
+## Deferred from: code review of story 1-8-auth-ui-registration-and-login-screens (2026-06-25)
+
+- W1 PasswordInput toggle breaks 1Password/LastPass autofill heuristics when toggled mid-fill — industry-standard pattern, password managers handle it gracefully. Tracking only.
+- W2 GoogleOAuthButton `isNavigating` state stuck after back-cancelled top-level nav (bg-muted persists). Reset via `pageshow` listener.
+- W3 BroadcastChannel `auth-refresh.ts` has no signature/origin check on incoming `refresh-succeeded` payload; hostile same-origin code (browser extension) could poison the session cache. Different threat level; acceptable for now.
+- W4 Password client `.max(72)` counts UTF-16 code units; backend bcrypt 72-byte limit counts UTF-8 bytes. Multi-byte unicode (emoji) passwords can pass client validation but lose data at the bcrypt boundary.
+- W5 `useAuth` `useSyncExternalStore` subscribes to the entire QueryCache; subscription overhead grows with #queries app-wide. React bails on stable snapshot reference so re-renders are O(1) in practice. Track for future perf audit.
+- W6 AC8 stable testid `data-testid="google-oauth-cta"` is shipped on GoogleOAuthButton but the corresponding entry in `classlite-web/docs/storybook-conventions.md § stable testids appendix` is not in the diff. Doc-only follow-up.
+- W7 `/login` and `/register` accessible while already authenticated — no router-level auth guard. Route gating explicitly deferred to Story 2.6.
+- W8 AC pinned test contract enumerates "(isPending / isError / isSuccess)" trilogy by name; per-error-code tests cover the behavior but the literal `isError`-named test is absent. Naming pedantry only.
+- W9 `RegisterPage` thumb-zone JSDoc is "see LoginPage JSDoc" rather than inline copy; Dev Notes mandates the full block in both files.
+- W10 `PasswordInput.test.tsx` uses literal `aria-label="Password"` rather than `t('auth.common.password')`; the test exercises the wrapper not the i18n contract. Per TEST-FE-4.
+- W11 MSW register handler always returns `emailDelivery: 'sent'`; the `failed` branch in RegisterPage `onSuccess` has no MSW default coverage. Tests can opt-in via `server.use(...)`.
+- W12 `AuthExpiredError` doesn't invoke `Error.captureStackTrace` (pre-existing class in `lib/api-fetch.ts`; older Safari stack-trace loss).
+- W13 No test exercises 422 VALIDATION_ERROR with `details=null` / `details=[]` / all-unknown-fields branch. Add when P2 patch lands.
+- W14 `auth-refresh.ts` `refresh-succeeded` with `data: null` on debounce-hit can extend the cross-tab debounce window indefinitely under specific timing races. Existing lock + per-tab promise coalesce make this very unlikely.
+
+## Deferred from: 1-8 D1 (PasswordStrengthBar warning-token bridge)
+
+- 1-8-followup-warning-token-bridge: add `--cl-status-warning` token to `tokens.css` and corresponding `bg-warning` shadcn-semantic alias in `index.css @theme inline`, then migrate `PasswordStrengthBar.tsx` `bg-amber-500` (score 2, "fair") to `bg-warning` (or the arbitrary-value escape `bg-[color:var(--cl-status-warning)]`). Today the amber Tailwind utility is the pragmatic stand-in — the visual is correct, but it bypasses the token bridge AC1 mandates. Owner: any subsequent Epic 1 design-token PR.

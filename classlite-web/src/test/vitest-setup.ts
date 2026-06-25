@@ -45,3 +45,21 @@ afterEach(() => {
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
+
+// Story 1-8 — global QueryClient cache-clear safety net (Murat #1 mandate).
+// The new `useAuth` + auth mutations write to the singleton `queryClient`
+// from `@/lib/query-client`. Without this hook, test N "logs in" by writing
+// the session cache and test N+1 starts authenticated — a silent cross-test
+// state leak. Per-test files should still use `createTestQueryClient()` +
+// their own `<QueryClientProvider>` (the belt); this is the suspenders.
+//
+// The dynamic import is intentional — eager-importing `query-client` at
+// the top of this setup file would pre-resolve its module graph (which
+// includes `auth-refresh.ts` and `@sentry/react`) before any individual
+// test file's `vi.mock('@sentry/react', ...)` hoist can apply. That broke
+// `sentry-breadcrumb.test.ts`. The dynamic import resolves at first-hook
+// fire — after the test file's mocks are in place.
+afterEach(async () => {
+  const { queryClient } = await import('@/lib/query-client')
+  queryClient.clear()
+})
