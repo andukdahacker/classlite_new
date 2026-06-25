@@ -165,4 +165,42 @@ describe('useLogin (Story 1-8 AC5)', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(globalQueryClient.getQueryData(authKeys.session())).toBeUndefined()
   })
+
+  test('Story 1-9a Layer B — onSuccess posts a login-succeeded BroadcastChannel message with the session payload', async () => {
+    // Sibling-tab listener fixture: a fresh BroadcastChannel subscribed
+    // to the same `classlite_auth` channel name as the production module.
+    // The production module's `channel.postMessage(...)` should fire the
+    // message AND this fixture's listener should receive it.
+    type Signal = {
+      type: string
+      timestamp: number
+      data: { user: { email: string }; accessToken: string }
+    }
+    const received: Signal[] = []
+    const sibling = new BroadcastChannel('classlite_auth')
+    const messagePromise = new Promise<Signal>((resolve) => {
+      sibling.addEventListener('message', (event) => {
+        const data = event.data as Signal
+        if (data?.type === 'login-succeeded') {
+          received.push(data)
+          resolve(data)
+        }
+      })
+    })
+
+    const client = createTestQueryClient()
+    const { result } = renderHook(() => useLogin(), { wrapper: wrap(client) })
+    result.current.mutate({
+      email: 'broadcast@example.com',
+      password: 'p',
+      rememberMe: false,
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    const msg = await messagePromise
+    expect(msg.type).toBe('login-succeeded')
+    expect(msg.data.user.email).toBe('broadcast@example.com')
+    expect(msg.data.accessToken).toBe('msw.jwt.signature')
+    sibling.close()
+  })
 })

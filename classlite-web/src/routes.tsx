@@ -98,6 +98,15 @@ const baseRoutes: RouteObject[] = [
           return { Component: RegisterPage }
         },
       },
+      {
+        path: 'verify-email',
+        lazy: async () => {
+          const { default: VerifyEmailPage } = await import(
+            '@/features/auth/VerifyEmailPage'
+          )
+          return { Component: VerifyEmailPage }
+        },
+      },
     ],
   },
   // Story 1-7c AC2 — AppLayout pathless route wrapping the authenticated

@@ -21,6 +21,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { apiFetch } from '@/lib/api-fetch'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
+import { broadcastLoginSucceeded } from '@/lib/auth-refresh'
 import type { components } from '@/lib/api/client'
 
 type LoginRequest = components['schemas']['LoginRequest']
@@ -53,6 +54,14 @@ export function useLogin() {
         accessToken: result.accessToken,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
+      // Story 1-9a Layer B — broadcast the login to sibling tabs so a
+      // 3-tabs-polling-for-verification user doesn't sit on stale
+      // login forms after they finish in one tab. The local cache
+      // write above covers THIS tab; the broadcast hydrates siblings.
+      broadcastLoginSucceeded({
+        user: result.user,
+        accessToken: result.accessToken,
+      })
       // `replace: true` — submitting again via back+refresh would
       // double-trigger the lockout counter; replace pops the form off
       // the history stack entirely.

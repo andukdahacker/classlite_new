@@ -37,9 +37,9 @@
  * form-level error slot + clear the query param so a refresh doesn't
  * re-trigger.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
@@ -60,6 +60,7 @@ import GoogleOAuthButton from '@/features/auth/components/GoogleOAuthButton'
 import PasswordInput from '@/features/auth/components/PasswordInput'
 import { useLogin } from '@/features/auth/api/login'
 import { useLoginSchema, type LoginFormValues } from '@/features/auth/lib/loginSchema'
+import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api-fetch'
 
 const SECONDS_PER_MINUTE = 60
@@ -67,24 +68,57 @@ const SECONDS_PER_MINUTE = 60
 export default function LoginPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { isAuthenticated, isLoading } = useAuth()
   const [emailFormOpen, setEmailFormOpen] = useState(false)
   // Form-level error displayed in an <div role="alert"> beneath the
   // submit button. Per-field errors flow through RHF setError +
   // FormMessage. OAuth transient errors share the same visual slot.
   const [formError, setFormError] = useState<string | null>(null)
-  // OAuth transient is derived ONCE at mount via the lazy initializer
-  // (P12 amendment 2026-06-25). Reading searchParams inside useState's
-  // initializer avoids the `set-state-in-effect` cascade lint rule —
-  // the URL is the input, the alert is the derived state. The effect
-  // below only fires the side-effect (clear the URL param so a refresh
-  // doesn't re-trigger) and never touches React state. A `useRef`
-  // latch keeps StrictMode's double-mount to a single side-effect run.
+  // OAuth transient is initialized via the lazy initializer (P12
+  // amendment 2026-06-25) so the banner paints in the FIRST render
+  // without a flash. A follow-up effect below (`[searchParams]`)
+  // re-derives the banner if a same-page SPA navigation lands new
+  // params on the SAME component instance — without it, the lazy
+  // initializer only fires once at mount and a subsequent
+  // /login?error=... visit would silently drop the alert.
   const [oauthError, setOauthError] = useState<string | null>(() =>
     searchParams.get('error')
       ? t('auth.login.error.oauthGeneric')
       : null,
   )
-  const oauthErrorHandled = useRef(false)
+  // Story 1-9a Layer A — `/login?verified=1` lands here from the
+  // verify-email redirect. The success banner shares the SAME form-level
+  // <div role="alert"> slot as the OAuth transient error; success wins
+  // on collision per the AC6 priority contract.
+  const [verifiedBanner, setVerifiedBanner] = useState<string | null>(() =>
+    searchParams.get('verified') === '1'
+      ? t('auth.login.banner.verified')
+      : null,
+  )
+
+  // Re-derive banner state when searchParams change AFTER initial
+  // mount (e.g. same-page SPA navigation back to /login?error=...
+  // after the user already landed and the params were cleared). The
+  // lazy initializer above handles the first paint; this effect handles
+  // re-entries. Calling setState with the same value is a React no-op,
+  // so the initial-mount run is harmless.
+  //
+  // set-state-in-effect is justified: the URL is the external input
+  // (the URL changes from outside React's render cycle on SPA
+  // navigation); the banner state is the React projection of that URL
+  // state at any point in time. useMemo cannot subscribe to the
+  // searchParams object's identity for an externally-triggered route
+  // change; an effect is the correct synchronization primitive.
+  useEffect(() => {
+    if (searchParams.get('error') !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOauthError(t('auth.login.error.oauthGeneric'))
+    }
+    if (searchParams.get('verified') === '1') {
+      setVerifiedBanner(t('auth.login.banner.verified'))
+    }
+  }, [searchParams, t])
 
   const schema = useLoginSchema()
   const form = useForm<LoginFormValues>({
@@ -95,16 +129,38 @@ export default function LoginPage() {
   const login = useLogin()
   const isPending = login.isPending
 
+  // Story 1-9a Layer A — already-authenticated guard. A user landing
+  // on `/login` (with OR without ?verified=1) who is already signed in
+  // (via this tab, a sibling-tab broadcast, or a still-valid refresh
+  // cookie that the boot-probe just hydrated) goes straight to
+  // /dashboard with replace:true. The isLoading guard short-circuits
+  // the effect during the boot-probe so a returning user doesn't get
+  // bounced to the form for an instant before hydrating.
   useEffect(() => {
-    if (oauthErrorHandled.current) return
-    oauthErrorHandled.current = true
-    if (!searchParams.get('error')) return
-    // Clear so a refresh / sibling navigation doesn't re-fire the alert.
+    if (isLoading) return
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAuthenticated, isLoading, navigate])
+
+  useEffect(() => {
+    // If the Layer A guard is about to redirect away (already
+    // authenticated), skip the URL clear entirely — the navigate to
+    // /dashboard supersedes /login?... so a racing setSearchParams
+    // here would clobber that redirect.
+    if (isAuthenticated) return
+    const hasError = searchParams.get('error') !== null
+    const hasVerified = searchParams.get('verified') !== null
+    if (!hasError && !hasVerified) return
+    // Clear so a refresh / sibling navigation doesn't re-fire the
+    // alert. The effect re-runs on the next searchParams change
+    // (after this clear lands) but short-circuits at the
+    // hasError/hasVerified guard — no infinite loop.
     const next = new URLSearchParams(searchParams)
     next.delete('error')
+    next.delete('verified')
     setSearchParams(next, { replace: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isAuthenticated, searchParams, setSearchParams])
 
   const onSubmit = (values: LoginFormValues) => {
     // (P6 amendment 2026-06-25) Enter key while pending bypasses the
@@ -114,6 +170,7 @@ export default function LoginPage() {
     if (isPending) return
     setFormError(null)
     setOauthError(null)
+    setVerifiedBanner(null)
     login.mutate(values, {
       onError: (error) => {
         if (!(error instanceof ApiError)) {
@@ -147,7 +204,9 @@ export default function LoginPage() {
 
   // Form-level error has priority over the OAuth transient — once the
   // user submits credentials, that flow's outcome supersedes the prior
-  // OAuth landing alert.
+  // OAuth landing alert. Verified banner displays in a separate
+  // success-styled slot at the top of the body (above the email form),
+  // so the destructive slot here stays error-only.
   const displayedError = formError ?? oauthError
 
   return (
@@ -165,7 +224,17 @@ export default function LoginPage() {
         <div className="grid gap-4">
           <GoogleOAuthButton label={googleLabel} disabled={isPending} />
 
-          {oauthError && !emailFormOpen && (
+          {!isAuthenticated && verifiedBanner && !emailFormOpen && (
+            <div
+              role="alert"
+              data-testid="login-form-banner"
+              className="rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
+            >
+              {verifiedBanner}
+            </div>
+          )}
+
+          {!isAuthenticated && !verifiedBanner && oauthError && !emailFormOpen && (
             <div
               role="alert"
               data-testid="login-form-error"

@@ -52,4 +52,19 @@ export const authKeys = {
   session: () => [...authKeys.all, 'session'] as const,
   loginMutation: () => [...authKeys.all, 'mutation', 'login'] as const,
   registerMutation: () => [...authKeys.all, 'mutation', 'register'] as const,
+  /**
+   * Story 1-9a — query key for the GET /api/auth/verify-status poller.
+   * One key per pollId so distinct polling sessions stay isolated in the
+   * QueryCache. The poller (`useVerificationPoller`) does NOT consume
+   * this key via `useQuery` — `usePolling` owns the lifecycle — but the
+   * key exists so future cache-inspection / devtools surface attaches
+   * a stable label.
+   */
+  verifyStatus: (pollId: string) =>
+    [...authKeys.all, 'verify-status', pollId] as const,
+  /** Story 1-9a — mutation key for the resend-verification mutation. */
+  resendMutation: () => [...authKeys.all, 'mutation', 'resend'] as const,
+  /** Story 1-9a — mutation key for the verify-email click-through mutation. */
+  verifyEmailMutation: () =>
+    [...authKeys.all, 'mutation', 'verify-email'] as const,
 }

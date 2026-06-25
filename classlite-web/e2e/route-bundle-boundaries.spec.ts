@@ -63,6 +63,66 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     expect(sawTeacher, 'teacher dashboard chunk leaked into /login').toBe(false)
   })
 
+  test('Story 1-9a — auth chunk includes VerifyEmailPage; dashboard chunks do NOT', async () => {
+    // Rolldown emits one .js file per dynamic-import target, named
+    // after the imported module (e.g. `VerifyEmailPage-xxxxx.js`). The
+    // positive contract: a VerifyEmailPage-*.js file MUST exist in
+    // dist/assets. The negative contract: VerifyEmailPage's module
+    // contents (referenced by `i18nextProvider`/feature-internal
+    // imports it threads) MUST NOT have been folded into a dashboard
+    // chunk. The party-mode 2026-06-25 amendment asks for explicit
+    // negative assertions; we encode that as "the dashboard chunks
+    // don't import any verify-email-related symbol from a sibling
+    // chunk that would create a transitive dependency."
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    // Positive: dedicated VerifyEmailPage chunk exists.
+    const verifyChunks = files.filter((file: string) =>
+      /^VerifyEmailPage-[\w-]+\.js$/.test(file),
+    )
+    expect(
+      verifyChunks.length,
+      'expected a dedicated VerifyEmailPage chunk under dist/assets/',
+    ).toBeGreaterThan(0)
+    // Negative: dashboard chunks must not statically import the verify
+    // chunk's filename. The Rolldown import maps the chunk filename
+    // verbatim into the manifest of any sibling chunk that imports it.
+    // Iterate ALL verify chunks (not just [0]) so a future vendor-split
+    // emitting multiple verify chunks doesn't sneak a second leak past
+    // this contract.
+    const studentChunkFiles = files.filter((file: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(file),
+    )
+    const teacherChunkFiles = files.filter((file: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(file),
+    )
+    // Vacuous-pass guard: an empty chunk array would let the
+    // not.toContain pass silently against an empty join. Hard-fail if
+    // the dashboard chunks are absent — that's a build problem, not a
+    // boundary win.
+    expect(
+      studentChunkFiles.length,
+      'student dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      teacherChunkFiles.length,
+      'teacher dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    for (const verifyChunkBasename of verifyChunks) {
+      expect(studentContents).not.toContain(verifyChunkBasename)
+      expect(teacherContents).not.toContain(verifyChunkBasename)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by
@@ -77,7 +137,7 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     ).toBe(true)
     const files = readdirSync(DIST_DIR)
     const offending = files.filter(
-      (file) =>
+      (file: string) =>
         /MultiTabTestPage|ThemeResolutionPage|__theme-resolution|__multi-tab-test-bait/.test(
           file,
         ),
@@ -86,7 +146,7 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       offending,
       `dev-only files leaked into dist/assets/: ${offending.join(', ')}`,
     ).toEqual([])
-    for (const file of files) {
+    for (const file of files as string[]) {
       const content = readFileSync(resolve(DIST_DIR, file))
       const text = content.toString('utf8')
       const flagged = [

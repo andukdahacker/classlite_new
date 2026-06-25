@@ -6,7 +6,7 @@ target_stories: ['1-8-auth-ui-registration-and-login-screens', '1-9a-email-verif
 created: 2026-06-06
 created_by: Murat (TEA)
 test_seam: HTTP boundary (TEST-FE-1)
-last_updated: 2026-06-25
+last_updated: 2026-06-25 (Story 1-9a — appended verify-email + resend-verification + verify-status sections)
 ---
 
 # MSW Handler Catalog — Auth endpoints (Stories 1.4 + 1.5)
@@ -24,6 +24,7 @@ so backend changes to the envelope shape update the contract atomically
 
 | Date | Change |
 |---|---|
+| 2026-06-25 | Appended verify-email + resend-verification + verify-status sections (Story 1-9a consumer). Sourced verbatim from api.yaml lines 74–157 + 543–572. |
 | 2026-06-25 | Renamed `msw-handler-catalog-1-5.md` → `msw-handler-catalog-auth.md`; appended `POST /api/auth/register` section (Story 1.8 consumer); broadened `target_stories` to all of 1-9a..d. Murat #4 amendment via Story 1-8 party-mode review. |
 | 2026-06-06 | Initial catalog covering 5 Story 1.5 endpoints. |
 
@@ -335,6 +336,161 @@ http.post(`${API}/api/auth/reset-password`, () =>
   )
 );
 ```
+
+---
+
+## POST /api/auth/verify-email
+
+### Happy path — `200 OK`
+
+```typescript
+http.post(`${API}/api/auth/verify-email`, async ({ request }) => {
+  const body = (await request.json()) as { token: string };
+  return HttpResponse.json<Envelope<{ verified: boolean; email: string }>>(
+    {
+      data: {
+        verified: true,
+        email: 'msw@example.com',
+      },
+    },
+    { status: 200 }
+  );
+});
+```
+
+### Variants
+
+| Variant                | Status | Code                            | Notes |
+| ---------------------- | ------ | ------------------------------- | --- |
+| Token does not exist   | 404    | `VERIFICATION_TOKEN_INVALID`    | Unknown / never-issued token |
+| Token expired (>24h)   | 410    | `VERIFICATION_TOKEN_EXPIRED`    | Link is older than the 24h TTL and the user has not verified yet |
+| Validation failure     | 422    | `VALIDATION_ERROR`              | Missing token / malformed body |
+
+```typescript
+// 410 VERIFICATION_TOKEN_EXPIRED variant
+http.post(`${API}/api/auth/verify-email`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'VERIFICATION_TOKEN_EXPIRED', message: 'Verification link expired', requestId: 'msw', details: null } },
+    { status: 410 }
+  )
+);
+
+// 404 VERIFICATION_TOKEN_INVALID variant
+http.post(`${API}/api/auth/verify-email`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'VERIFICATION_TOKEN_INVALID', message: 'Invalid verification link', requestId: 'msw', details: null } },
+    { status: 404 }
+  )
+);
+```
+
+> The operation is **idempotent at the network level** — replaying a
+> prior-issued token after the user is already verified returns 200 with
+> `verified: true`. Component tests must NOT branch on a "fresh vs
+> replayed" signal — there isn't one.
+
+---
+
+## POST /api/auth/resend-verification
+
+### Happy path — `200 OK`
+
+```typescript
+http.post(`${API}/api/auth/resend-verification`, async ({ request }) => {
+  const body = (await request.json()) as { email: string };
+  // Anti-enumeration: a 200 with `verifyPollId: null` is returned when
+  // the email is unknown OR already verified. Story 1-9a's UI must NOT
+  // branch on null vs non-null for the success toast — same anti-
+  // enumeration discipline as /forgot-password.
+  return HttpResponse.json<Envelope<{ verifyPollId: string | null }>>(
+    {
+      data: {
+        verifyPollId: '00000000-0000-0000-0000-poll00000099',
+      },
+    },
+    { status: 200 }
+  );
+});
+```
+
+### Variants
+
+| Variant                   | Status | Code                  | Notes |
+| ------------------------- | ------ | --------------------- | --- |
+| Email unknown / already verified | 200 | (envelope `verifyPollId: null`) | Anti-enumeration — same 200 envelope shape, but the poll ID is null because no new token was issued |
+| Validation failure        | 422    | `VALIDATION_ERROR`     | Invalid email format / malformed body |
+| Per-IP / per-email rate limit | 429 | `RATE_LIMIT_EXCEEDED`  | Per-IP token bucket (burst 5, 1/2 min) OR per-email bucket (1/60 s). Must include `Retry-After` header. |
+
+```typescript
+// 429 RATE_LIMIT_EXCEEDED variant (per-email)
+http.post(`${API}/api/auth/resend-verification`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Please wait before requesting another email.', requestId: 'msw', details: null } },
+    { status: 429, headers: { 'Retry-After': '60' } }
+  )
+);
+
+// 200 anti-enumeration null variant
+http.post(`${API}/api/auth/resend-verification`, () =>
+  HttpResponse.json<Envelope<{ verifyPollId: string | null }>>(
+    { data: { verifyPollId: null } },
+    { status: 200 }
+  )
+);
+```
+
+---
+
+## GET /api/auth/verify-status
+
+### Happy path — `200 OK` with `verified: false`
+
+```typescript
+http.get(`${API}/api/auth/verify-status`, ({ request }) => {
+  const url = new URL(request.url);
+  const pollId = url.searchParams.get('pollId');
+  return HttpResponse.json<Envelope<{ verified: boolean; email: string }>>(
+    {
+      data: {
+        verified: false,
+        email: 'msw@example.com',
+      },
+    },
+    { status: 200 }
+  );
+});
+```
+
+### Variants
+
+| Variant                          | Status | Code                | Notes |
+| -------------------------------- | ------ | ------------------- | --- |
+| Verified (poller terminal state) | 200    | (envelope `verified: true`) | Poller's terminal "success" branch |
+| Poll ID not found / expired      | 404    | `POLL_ID_NOT_FOUND`  | Unknown, malformed, OR expired (>24h). Poller's terminal "expired" branch |
+
+```typescript
+// 200 with verified: true
+http.get(`${API}/api/auth/verify-status`, () =>
+  HttpResponse.json<Envelope<{ verified: boolean; email: string }>>(
+    { data: { verified: true, email: 'msw@example.com' } },
+    { status: 200 }
+  )
+);
+
+// 404 POLL_ID_NOT_FOUND variant
+http.get(`${API}/api/auth/verify-status`, () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'POLL_ID_NOT_FOUND', message: 'Poll ID not found, malformed, or expired', requestId: 'msw', details: null } },
+    { status: 404 }
+  )
+);
+```
+
+> Story 1-9a's poller MUST treat the 404 path as **terminal**, NOT as a
+> retry-and-hope condition. Backend has already rotated the token (24h
+> TTL elapsed); subsequent polls will return the same 404. The component
+> swaps to the "Verification link expired" inline state and stops the
+> poller via `enabled=false`.
 
 ---
 

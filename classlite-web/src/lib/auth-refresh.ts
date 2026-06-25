@@ -82,7 +82,25 @@ interface RefreshFailedSignal {
   type: 'refresh-failed'
 }
 
-type RefreshSignal = RefreshSucceededSignal | RefreshFailedSignal
+/**
+ * Story 1-9a Layer B amendment (party-mode 2026-06-25). Sibling tabs
+ * holding /verify-email pollers need to learn that THIS tab just logged
+ * in, so their cached `useAuth().isAuthenticated` flips to `true` and
+ * the LoginPage's Layer-A already-auth guard redirects them away. Same
+ * BroadcastChannel + same hydration helper as `refresh-succeeded` — the
+ * payload is non-nullable because a successful login always carries a
+ * fresh session (unlike refresh, which can debounce-hit to `null`).
+ */
+interface LoginSucceededSignal {
+  type: 'login-succeeded'
+  timestamp: number
+  data: RefreshSessionData
+}
+
+type RefreshSignal =
+  | RefreshSucceededSignal
+  | RefreshFailedSignal
+  | LoginSucceededSignal
 
 const channel: BroadcastChannel | null =
   typeof BroadcastChannel !== 'undefined'
@@ -109,7 +127,11 @@ let bootProbeInFlight = false
 const bootProbeListeners = new Set<() => void>()
 
 function notifyBootProbeChange(): void {
-  for (const listener of bootProbeListeners) listener()
+  // forEach over Set is downlevel-safe across every TypeScript target
+  // configuration; for-of would require `--downlevelIteration` or a
+  // modern target. The defensive form keeps IDE diagnostics quiet
+  // regardless of how the consumer's tsconfig is wired.
+  bootProbeListeners.forEach((listener) => listener())
 }
 
 export function getBootProbeInFlight(): boolean {
@@ -296,11 +318,40 @@ export function onAuthFailure(error: Error): void {
 
 function isRefreshSignal(value: unknown): value is RefreshSignal {
   if (!value || typeof value !== 'object') return false
-  const candidate = value as { type?: unknown }
-  return (
-    candidate.type === 'refresh-succeeded' ||
-    candidate.type === 'refresh-failed'
-  )
+  const candidate = value as { type?: unknown; data?: unknown }
+  if (candidate.type === 'refresh-failed') return true
+  if (candidate.type === 'refresh-succeeded') {
+    // `data` may be null on the debounce-hit path; only reject if it
+    // is something other than null/object (e.g. number, string).
+    return (
+      candidate.data === null ||
+      candidate.data === undefined ||
+      (typeof candidate.data === 'object' && candidate.data !== null)
+    )
+  }
+  if (candidate.type === 'login-succeeded') {
+    // login-succeeded MUST carry a non-null session payload. Reject
+    // malformed broadcasts (extension injection, stale tabs, polyfill
+    // echoes) so `hydrateSessionCache(undefined)` cannot land in cache.
+    if (!candidate.data || typeof candidate.data !== 'object') return false
+    const data = candidate.data as { user?: unknown; accessToken?: unknown }
+    return (
+      typeof data.user === 'object' &&
+      data.user !== null &&
+      typeof data.accessToken === 'string'
+    )
+  }
+  return false
+}
+
+function hydrateSessionCache(data: RefreshSessionData): void {
+  // `invalidateQueries` would clobber (the cache key has
+  // `queryFn: () => null` + `enabled: false`, so an invalidate resolves
+  // to `null`). `setQueryData` skips that and writes the payload
+  // straight in. Same hydration helper as the refresh-succeeded branch
+  // (Story 1-9a Layer B — refactored into a helper so the two
+  // listener arms can't drift apart).
+  queryClient.setQueryData(SESSION_QUERY_KEY, data)
 }
 
 function handleChannelMessage(event: MessageEvent<unknown>): void {
@@ -308,17 +359,30 @@ function handleChannelMessage(event: MessageEvent<unknown>): void {
   const msg = event.data
   if (msg.type === 'refresh-succeeded') {
     writeLastRefreshedAt(msg.timestamp)
-    // Sibling tab broadcast the parsed session — hydrate this tab's
-    // cache directly. `invalidateQueries` would clobber (the cache key
-    // has `queryFn: () => null` + `enabled: false`, so an invalidate
-    // resolves to `null`). `setQueryData` skips that and writes the
-    // payload straight in.
     if (msg.data) {
-      queryClient.setQueryData(SESSION_QUERY_KEY, msg.data)
+      hydrateSessionCache(msg.data)
     }
+  } else if (msg.type === 'login-succeeded') {
+    hydrateSessionCache(msg.data)
   } else if (msg.type === 'refresh-failed') {
     onAuthFailure(new AuthExpiredError())
   }
+}
+
+/**
+ * Story 1-9a Layer B — broadcast a successful login to sibling tabs.
+ * Called from `useLogin.onSuccess` AFTER the local-tab cache write so
+ * THIS tab is authenticated before the broadcast triggers any sibling
+ * effects. Guarded by the `channel != null` capability check for Safari
+ * private mode (where BroadcastChannel is undefined).
+ */
+export function broadcastLoginSucceeded(data: RefreshSessionData): void {
+  if (!channel) return
+  channel.postMessage({
+    type: 'login-succeeded',
+    timestamp: Date.now(),
+    data,
+  } satisfies LoginSucceededSignal)
 }
 
 let listenerAttached = false

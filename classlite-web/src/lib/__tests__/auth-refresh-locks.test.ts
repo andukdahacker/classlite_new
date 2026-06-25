@@ -216,4 +216,32 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
       accessToken: 'jwt.pre',
     })
   })
+
+  test('Story 1-9a Layer B — BroadcastChannel listener handles login-succeeded by hydrating the session cache (same path as refresh-succeeded)', async () => {
+    queryClient.removeQueries({ queryKey: ['auth', 'session'] })
+    expect(queryClient.getQueryData(['auth', 'session'])).toBeUndefined()
+    const payload = {
+      user: {
+        id: 'sibling',
+        email: 'sibling@example.com',
+        fullName: 'Sibling',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.sibling',
+    }
+    // Simulate a sibling-tab broadcast hitting the production module's
+    // listener. Posting on a separate channel instance with the SAME
+    // name routes to every other subscriber on the same origin —
+    // including the production module's `handleChannelMessage`.
+    const sibling = new BroadcastChannel('classlite_auth')
+    sibling.postMessage({
+      type: 'login-succeeded',
+      timestamp: Date.now(),
+      data: payload,
+    })
+    // Drain microtasks so the listener runs.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+    sibling.close()
+  })
 })

@@ -46,4 +46,48 @@ describe('authKeys factory', () => {
       authKeys.all,
     )
   })
+
+  test('Story 1-9a — verifyStatus(pollId), resendMutation(), verifyEmailMutation() shapes', () => {
+    expect(authKeys.verifyStatus('poll-uuid-1')).toEqual([
+      'auth',
+      'verify-status',
+      'poll-uuid-1',
+    ])
+    expect(authKeys.resendMutation()).toEqual(['auth', 'mutation', 'resend'])
+    expect(authKeys.verifyEmailMutation()).toEqual([
+      'auth',
+      'mutation',
+      'verify-email',
+    ])
+  })
+
+  test('Story 1-9a — verifyStatus keys for distinct pollIds are distinct (no cache collision)', () => {
+    expect(authKeys.verifyStatus('A')).not.toEqual(authKeys.verifyStatus('B'))
+  })
+
+  test('Story 1-9a — verify mutation keys are distinct from each other AND from login/register mutations', () => {
+    const all = [
+      authKeys.loginMutation(),
+      authKeys.registerMutation(),
+      authKeys.resendMutation(),
+      authKeys.verifyEmailMutation(),
+    ]
+    for (let i = 0; i < all.length; i += 1) {
+      for (let j = i + 1; j < all.length; j += 1) {
+        expect(all[i]).not.toEqual(all[j])
+      }
+    }
+  })
+
+  test('Story 1-9a — verify keys are hierarchical under all', () => {
+    expect(
+      authKeys.verifyStatus('x').slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+    expect(
+      authKeys.resendMutation().slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+    expect(
+      authKeys.verifyEmailMutation().slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+  })
 })

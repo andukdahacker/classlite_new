@@ -485,6 +485,68 @@ describe('Story 1-8 i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1-9a — email verification UI keys. Per-story discharge of R38
+ * for the polished /verify-email surface + the LoginPage success banner.
+ *
+ * 5 ★ REVIEWER-MANDATORY Vietnamese keys (flagged in the story AC2):
+ *   - auth.verify.resendSentToast
+ *   - auth.verify.spamHint
+ *   - auth.verify.googleFallbackCta (also gated by Winston architecture
+ *     confirmation that Google OAuth auto-links same-email accounts)
+ *   - auth.verify.expiredBody
+ *   - auth.verify.error.generic
+ *
+ * The LoginPage banner key (auth.login.banner.verified) lives outside the
+ * auth.verify.* namespace because the success banner is shown on the
+ * /login surface, not the /verify-email surface — see story AC6.
+ */
+export const STORY_1_9A_KEYS = [
+  // Polling-mode envelope screen (AC3)
+  'auth.verify.title',
+  'auth.verify.bodyPrefix',
+  'auth.verify.bodySuffix',
+  'auth.verify.resendCta',
+  'auth.verify.resendCountdown',
+  'auth.verify.resendSentToast',
+  'auth.verify.spamHint',
+  'auth.verify.wrongEmailPrompt',
+  'auth.verify.wrongEmailCta',
+  'auth.verify.googleFallbackPrompt',
+  'auth.verify.googleFallbackCta',
+
+  // 10-minute polling cap + manual recheck (AC5)
+  'auth.verify.timeoutHeading',
+  'auth.verify.timeoutBody',
+  'auth.verify.recheckCta',
+
+  // Expired state — 404 polling result + 410 click-through (AC5b)
+  'auth.verify.expiredHeading',
+  'auth.verify.expiredBody',
+  'auth.verify.expiredResendCta',
+
+  // Invalid state — neither query param + 404 click-through (AC7)
+  'auth.verify.invalidHeading',
+  'auth.verify.invalidBody',
+
+  // Error envelopes — 422 / 5xx / network + 429 (AC4 + AC6)
+  'auth.verify.error.generic',
+  'auth.verify.error.rateLimited',
+
+  // Click-through transient announcements (AC6)
+  'auth.verify.checkingNow',
+  'auth.verify.successRedirecting',
+
+  // LoginPage success banner — the post-verify landing on /login?verified=1 (AC6)
+  'auth.login.banner.verified',
+] as const
+
+describe('Story 1-9a i18n parity (R38)', () => {
+  test('every Story 1-9a key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1_9A_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

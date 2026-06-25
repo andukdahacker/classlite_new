@@ -325,3 +325,118 @@ describe('LoginPage (Story 1-8 AC4)', () => {
     return expect(await axe(container)).toHaveNoViolations()
   })
 })
+
+describe('LoginPage Story 1-9a — three-part amendment', () => {
+  test('renders verified banner when /login?verified=1 lands', async () => {
+    renderLogin({ initialEntries: ['/login?verified=1'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.verified'))
+  })
+
+  test('clears the ?verified=1 query param after mount', async () => {
+    renderLogin({ initialEntries: ['/login?verified=1'] })
+    await screen.findByTestId('login-form-banner')
+    await waitFor(() => {
+      expect(screen.getByTestId('url-error-param').textContent).toBe('')
+    })
+  })
+
+  test('redirects to /dashboard with replace:true when already authenticated on mount (Layer A)', async () => {
+    const client = createTestQueryClient()
+    client.setQueryData(authKeys.session(), {
+      user: {
+        id: 'u1',
+        email: 'a@b.co',
+        fullName: 'A',
+        emailVerified: true,
+      },
+      accessToken: 'jwt',
+    })
+    renderLogin({ client })
+    await screen.findByText(/dashboard reached/i)
+  })
+
+  test('does NOT render the verified banner when already authenticated (collision: success vs already-auth)', async () => {
+    const client = createTestQueryClient()
+    client.setQueryData(authKeys.session(), {
+      user: {
+        id: 'u1',
+        email: 'a@b.co',
+        fullName: 'A',
+        emailVerified: true,
+      },
+      accessToken: 'jwt',
+    })
+    renderLogin({ client, initialEntries: ['/login?verified=1'] })
+    // Either we never paint the banner OR we redirect away before
+    // the user can read it. Either way: the banner element is absent
+    // by the time the test asserts.
+    await screen.findByText(/dashboard reached/i)
+    expect(screen.queryByTestId('login-form-banner')).toBeNull()
+  })
+
+  test('verified banner does NOT collide with OAuth error: success wins when BOTH ?verified=1 and ?error= land together', async () => {
+    renderLogin({ initialEntries: ['/login?verified=1&error=csrf_invalid'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.verified'))
+    expect(screen.queryByTestId('login-form-error')).toBeNull()
+  })
+
+  test('S4 — does NOT redirect to /dashboard during boot-probe in-flight (isLoading guard via subscribeBootProbe)', async () => {
+    // Layer A guard contract: `if (isLoading) return` short-circuits
+    // the redirect while the boot-probe is in flight, so a returning
+    // user doesn't see a flash of the login form before hydration.
+    //
+    // We assert the isLoading-true window directly: kick off
+    // runBootProbe with a stalled /refresh; mount LoginPage with the
+    // session ALREADY in the test cache. Without the isLoading guard,
+    // the redirect would fire on first render. With the guard, the
+    // login form stays until isLoading flips false — proven by the
+    // 100ms quiet window.
+    const { runBootProbe } = await import('@/lib/auth-refresh')
+    let resolveRefresh!: () => void
+    const refreshFinished = new Promise<void>((r) => {
+      resolveRefresh = r
+    })
+    server.use(
+      http.post('/api/auth/refresh', async () => {
+        await refreshFinished
+        return HttpResponse.json(
+          {
+            data: {
+              accessToken: 'jwt',
+              user: {
+                id: 'u1',
+                email: 'a@b.co',
+                fullName: 'A',
+                emailVerified: true,
+              },
+            },
+          },
+          { status: 200 },
+        )
+      }),
+    )
+    const client = createTestQueryClient()
+    client.setQueryData(authKeys.session(), {
+      user: {
+        id: 'u1',
+        email: 'a@b.co',
+        fullName: 'A',
+        emailVerified: true,
+      },
+      accessToken: 'jwt',
+    })
+    void runBootProbe()
+    renderLogin({ client })
+    // Quiet window: during isLoading=true, the redirect is suppressed
+    // even though isAuthenticated is true via the seeded cache.
+    await new Promise((r) => setTimeout(r, 100))
+    expect(screen.queryByText(/dashboard reached/i)).toBeNull()
+    // Resolve the probe — useAuth's bootProbeInFlight subscription
+    // flips isLoading to false, the Layer A effect re-fires with
+    // isLoading=false AND isAuthenticated=true, navigate runs.
+    resolveRefresh()
+    await screen.findByText(/dashboard reached/i)
+  })
+})
