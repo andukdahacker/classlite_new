@@ -24,12 +24,26 @@ import { Toaster } from '@/components/ui/sonner'
 
 // Read-only probe so the test can assert MemoryRouter's URL state
 // without going through window.location (MemoryRouter doesn't update it).
+//
+// Emits each banner-signal query param into its own testid so callers
+// can assert against the specific param without inviting vacuous passes
+// — the prior single `url-error-param` made the `?reset=1` clear test
+// pass even when only the `error` branch of the URL-clear effect ran
+// ([Review][Patch] P6 — code-review 2026-06-26).
 function UrlProbe() {
   const [searchParams] = useSearchParams()
   return (
-    <span data-testid="url-error-param">
-      {searchParams.get('error') ?? ''}
-    </span>
+    <>
+      <span data-testid="url-error-param">
+        {searchParams.get('error') ?? ''}
+      </span>
+      <span data-testid="url-verified-param">
+        {searchParams.get('verified') ?? ''}
+      </span>
+      <span data-testid="url-reset-param">
+        {searchParams.get('reset') ?? ''}
+      </span>
+    </>
   )
 }
 
@@ -337,7 +351,9 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     renderLogin({ initialEntries: ['/login?verified=1'] })
     await screen.findByTestId('login-form-banner')
     await waitFor(() => {
-      expect(screen.getByTestId('url-error-param').textContent).toBe('')
+      // Same vacuous-pass fix as the `?reset=1` test below
+      // ([Review][Patch] P6 — code-review 2026-06-26).
+      expect(screen.getByTestId('url-verified-param').textContent).toBe('')
     })
   })
 
@@ -380,6 +396,62 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     const banner = await screen.findByTestId('login-form-banner')
     expect(banner.textContent).toBe(i18n.t('auth.login.banner.verified'))
     expect(screen.queryByTestId('login-form-error')).toBeNull()
+  })
+
+  // ===== Story 1-9b — `?reset=1` banner contracts (+4 tests per AC7) =====
+
+  test('renders reset banner with checkmark glyph when /login?reset=1 lands', async () => {
+    renderLogin({ initialEntries: ['/login?reset=1'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.reset'))
+    // Inline checkmark SVG is the visual signal of "success completed" —
+    // aria-hidden so screen readers read the alert copy only.
+    const svg = banner.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  test('clears the ?reset=1 query param after mount', async () => {
+    renderLogin({ initialEntries: ['/login?reset=1'] })
+    await screen.findByTestId('login-form-banner')
+    await waitFor(() => {
+      // Probe the `reset` param directly — the prior assertion against
+      // `url-error-param` was vacuous (the URL never set `?error=`)
+      // ([Review][Patch] P6 — code-review 2026-06-26).
+      expect(screen.getByTestId('url-reset-param').textContent).toBe('')
+    })
+  })
+
+  test('prefers reset banner over verified banner when both ?verified=1&reset=1 land together (priority: reset > verified)', async () => {
+    renderLogin({ initialEntries: ['/login?verified=1&reset=1'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.reset'))
+  })
+
+  test('session cache is invalidated on ?reset=1 landing (Murat addition — closes stale-sibling-tab flash)', async () => {
+    const client = createTestQueryClient()
+    // Pre-seed a stale session from a sibling tab (the user reset
+    // their password elsewhere; the backend wiped refresh tokens but
+    // this tab still has the cached LoginResult in memory).
+    client.setQueryData(authKeys.session(), {
+      user: {
+        id: 'u1',
+        email: 'a@b.co',
+        fullName: 'A',
+        emailVerified: true,
+      },
+      accessToken: 'stale',
+    })
+    renderLogin({ client, initialEntries: ['/login?reset=1'] })
+    // The wipe lives in a post-commit `useEffect` (moved out of the
+    // lazy initializer to keep render pure — [Review][Patch] P3 /
+    // [Review][Patch] P4 from code-review 2026-06-26 — guarded on
+    // `!isAuthenticated && !isLoading` so an already signed-in user
+    // doesn't get their session yanked). useAuth's next read sees
+    // `undefined` once the effect commits.
+    await waitFor(() => {
+      expect(client.getQueryData(authKeys.session())).toBeUndefined()
+    })
   })
 
   test('S4 — does NOT redirect to /dashboard during boot-probe in-flight (isLoading guard via subscribeBootProbe)', async () => {

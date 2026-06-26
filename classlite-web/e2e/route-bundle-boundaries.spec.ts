@@ -123,6 +123,66 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     }
   })
 
+  test('Story 1-9b — auth chunk includes ForgotPasswordPage + ResetPasswordPage; dashboard chunks do NOT', async () => {
+    // Mirrors the Story 1-9a contract above with explicit iteration shape
+    // per AC1 (Murat BLOCKER fix): 4 vacuous-pass guards + 2 iterated
+    // negative loops covering each forgot/reset chunk × each dashboard
+    // chunk = 4 cross-chunk leak checks.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    const forgotChunks = files.filter((f: string) =>
+      /^ForgotPasswordPage-[\w-]+\.js$/.test(f),
+    )
+    const resetChunks = files.filter((f: string) =>
+      /^ResetPasswordPage-[\w-]+\.js$/.test(f),
+    )
+    const studentChunkFiles = files.filter((f: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(f),
+    )
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+
+    // FOUR vacuous-pass guards — hard-fail if any input array is empty
+    // (catches missing builds rather than silently passing on empty .join).
+    expect(
+      forgotChunks.length,
+      'ForgotPasswordPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      resetChunks.length,
+      'ResetPasswordPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      studentChunkFiles.length,
+      'student dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      teacherChunkFiles.length,
+      'teacher dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // TWO iterated negative assertions × 2 dashboards = 4 leak checks.
+    for (const forgotChunkBasename of forgotChunks) {
+      expect(studentContents).not.toContain(forgotChunkBasename)
+      expect(teacherContents).not.toContain(forgotChunkBasename)
+    }
+    for (const resetChunkBasename of resetChunks) {
+      expect(studentContents).not.toContain(resetChunkBasename)
+      expect(teacherContents).not.toContain(resetChunkBasename)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by

@@ -547,6 +547,83 @@ describe('Story 1-9a i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1-9b — password reset UI keys. Per-story discharge of R38 for the
+ * new /forgot-password and /reset-password surfaces + the LoginPage
+ * `?reset=1` success banner.
+ *
+ * 4 ★ REVIEWER-MANDATORY Vietnamese keys (flagged in story AC2 for
+ * VN-fluent reviewer pass before merge):
+ *   - auth.forgotPassword.sentBody (Sally rewrite — lead-with-action)
+ *   - auth.forgotPassword.error.generic
+ *   - auth.resetPassword.body (Sally — "chưa từng dùng" native phrasing)
+ *   - auth.login.banner.reset (Sally — active voice replaces passive-victim)
+ *
+ * Pragmatic-scope deviation (Winston framing fix 2026-06-26): the Epic 1c
+ * AC for "pre-fill email on expired-CTA" is rejected on security grounds
+ * (anti-enum attack surface + email leak via preview tooling). John has
+ * filed an Epic AC amendment removing the requirement; no `auth.resetPassword.expiredCta.prefilledEmail`
+ * key is added.
+ */
+export const STORY_1_9B_KEYS = [
+  // ForgotPasswordPage form mode (AC3)
+  'auth.forgotPassword.title',
+  'auth.forgotPassword.body',
+  'auth.forgotPassword.emailLabel',
+  'auth.forgotPassword.submit',
+
+  // ForgotPasswordPage anti-enum confirmation mode (AC3 + Sally typo-escape addition)
+  'auth.forgotPassword.sentHeading',
+  'auth.forgotPassword.sentBody',
+  'auth.forgotPassword.spamHint',
+  'auth.forgotPassword.wrongEmail',
+  'auth.forgotPassword.resendCta',
+  'auth.forgotPassword.resendCountdown',
+
+  // ForgotPasswordPage footer
+  'auth.forgotPassword.backToLogin',
+
+  // ForgotPasswordPage error envelopes (AC4 — 429 / 422 / 5xx)
+  'auth.forgotPassword.error.rateLimited',
+  'auth.forgotPassword.error.generic',
+
+  // ResetPasswordPage form mode (AC5)
+  'auth.resetPassword.title',
+  'auth.resetPassword.body',
+  'auth.resetPassword.newPasswordLabel',
+  'auth.resetPassword.confirmPasswordLabel',
+  'auth.resetPassword.submit',
+
+  // ResetPasswordPage 410 expired state (AC6 — UX-DR16 three-part)
+  'auth.resetPassword.expiredHeading',
+  'auth.resetPassword.expiredBody',
+  'auth.resetPassword.expiredCta',
+
+  // ResetPasswordPage 409 consumed state (AC6)
+  'auth.resetPassword.consumedHeading',
+  'auth.resetPassword.consumedBody',
+  // Added [Review][Patch] P10 — code-review 2026-06-26 — consumed-state
+  // secondary CTA copy that doesn't imply the prior reset failed.
+  'auth.resetPassword.consumedForgotCta',
+
+  // ResetPasswordPage 404 / no-token invalid state (AC6 — DRY)
+  'auth.resetPassword.invalidHeading',
+  'auth.resetPassword.invalidBody',
+
+  // ResetPasswordPage error envelopes (AC5 refine + AC6 422 / 5xx)
+  'auth.resetPassword.error.passwordMismatch',
+  'auth.resetPassword.error.generic',
+
+  // LoginPage success banner — `/login?reset=1` landing (AC7)
+  'auth.login.banner.reset',
+] as const
+
+describe('Story 1-9b i18n parity (R38)', () => {
+  test('every Story 1-9b key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1_9B_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

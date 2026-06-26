@@ -1,5 +1,34 @@
 # Deferred Work
 
+## Deferred from: code review of story-1-9b (2026-06-26)
+
+- Burned reset token persists in URL after consumed/expired/invalid landing (`ResetPasswordPage.tsx`) — low-leak surface; consider `setSearchParams({}, {replace:true})` on terminal-state set during a future polish pass.
+- oauth-error banner not dismissible without leaving the page (`LoginPage.tsx`) — fold into Story 1-9d `useLoginBanner` discriminated-union refactor (already on its punch-list per story-1-9b Out of Scope block).
+- Asymmetric countdown gate in `fireMutation` (countdown only checked when `isResend`) (`ForgotPasswordPage.tsx:73-75`) — defense-in-depth nit; the submit button's disabled prop is the live gate; harden if a programmatic-submit path is ever added.
+- Clamped `MAX_COUNTDOWN_SECONDS` countdown vs unclamped server `Retry-After` display (`ForgotPasswordPage.tsx`) — related to the patched alert-freeze fix; clamping the displayed value to the local countdown is a UX-honest version.
+- Reused `data-testid="login-form-banner"` across reset/verified banner variants (`LoginPage.tsx`) — add `data-banner-key={bannerKey}` when 1-9d refactors banner coordination, so structural-variant assertions don't rely on `textContent`.
+- Reused `data-testid="forgot-back-link"` across form-mode + sent-mode footers (`ForgotPasswordPage.tsx`) — modes are mutually exclusive today; split testids if a future bug allows both modes simultaneously.
+- `onResend` invariant (`submittedEmail` matches last successful submit) implicit in mode-pair coupling (`ForgotPasswordPage.tsx`) — encode as discriminated-union state (`{kind: 'sent', email} | {kind: 'form'}`) when "edit email in confirmation" is requested.
+- Wrong-email click during in-flight resend → orphan `onSuccess` re-mounts sent state (`ForgotPasswordPage.tsx:108-123`) — low probability; guard with `if (isPending) return` in `onWrongEmail` if observed in production.
+- Wrong-email click while countdown still active → countdown traps the new flow (`ForgotPasswordPage.tsx:114-123`) — low probability; needs `countdown.reset()` API on `useResendCountdown`.
+- Component unmount mid-submit React warning (`ForgotPasswordPage.tsx`, `ResetPasswordPage.tsx`) — React 19 handles most cases; add `isMountedRef` if RUM warnings surface.
+- Translator dropping `{{email}}` placeholder in `sentBody` silently omits email (`ForgotPasswordPage.tsx:140-145`) — translator hygiene; out of story scope; consider a `parity-sentinel-check.test.ts` lint guard in a future hygiene pass.
+- Sentinel `'EMAIL'` literal collides if a future translator embeds the string in body copy (`ForgotPasswordPage.tsx:140`) — swap to Unicode PUA sentinel (e.g., `''`) when next touched.
+- Multiple `?token=A&token=B` URL params — `URLSearchParams.get('token')` returns the first, may not match user intent (`ResetPasswordPage.tsx:92`) — malformed input; backend will reject either way.
+- Locale switch mid-flow on expired/consumed/invalid states (`ResetPasswordPage.tsx`) — `AuthCard` regionLabel re-renders via `t()`; verify when language-switch UX lands in the shell.
+- `useResendCountdown.start()` called twice in same tick — brief two-interval overlap (`useResendCountdown.ts:51-56`) — very narrow race; harden if observed.
+- Tab backgrounded throttles `setInterval` — countdown drifts behind real wall-clock (`useResendCountdown.ts`) — switch to `Date.now() + duration` end-timestamp on next refactor.
+- System clock jump desyncs countdown (`useResendCountdown.ts`) — same fix as the background-throttle drift.
+- Double-click submit during RHF validation (`ResetPasswordPage.tsx:121-154`) — RHF `handleSubmit` awaits validation; race window is tight; `isPending` flips synchronously.
+- Server returns 200 with `{reset: false}` / `{sent: false}` — defensive client guard absent (`ResetPasswordPage.tsx`, `ForgotPasswordPage.tsx`) — backend contract enforces; would require defensive guard only if backend semantics change.
+- 72-byte bcrypt cap with multi-byte UTF-8 passwords (`resetPasswordSchema.ts:36-49`) — server catches; consider `new TextEncoder().encode(s).length <= 72` client check for UX-immediate feedback.
+- Back-button after invalid-state CTA returns to form-mode with stale token (`ResetPasswordPage.tsx`) — router state nit; the stale-`errorState` patch already addresses the related re-entry path.
+- `?token=%00` null bytes / control chars sent to backend, wastes a rate-limit slot (`ResetPasswordPage.tsx`) — backend rejects; consider regex sanity-check (`/^[A-Za-z0-9_-]+$/`) before submit.
+- Stale `dist/` directory makes bundle-boundary test pass against old chunks (`route-bundle-boundaries.spec.ts`) — CI does fresh builds; local-dev runs are best-effort; document `rm -rf dist` before running the spec locally.
+- Retry storm under flaky network — generic-error path has no client-side submit throttle (`ForgotPasswordPage.tsx:85-99`) — backend rate-limits, so blast radius is bounded.
+- Frontend ignores 410/409/404 if `error.code` differs from expected literal — falls through to generic alert (`ResetPasswordPage.tsx:138-149`) — defensive relaxation (status-only check) would simplify but couples to backend contract drift.
+- Frontend ignores 429 if `error.code !== 'RATE_LIMIT_EXCEEDED'` — countdown not started for other 429-code shapes (`ForgotPasswordPage.tsx:85-99`) — same as above.
+
 ## Deferred from: code review of 1d-2-shadcn-primitive-coverage (2026-06-17)
 
 - Primitive-level hardcoded English aria-labels / sr-only text in `pagination.tsx:72,90` (`Go to previous page` / `Go to next page`), `breadcrumb.tsx:112` (`More`), `dialog.tsx:73` + `sheet.tsx:73` (`Close`) — known leak per spec Dev Notes line 384 ("primitives are presentational shells and do NOT consume i18n strings"). Vietnamese-locale screen-reader users will hear English on every overlay close + every pagination nav. 1d-3 domain wrappers (e.g., `BreadcrumbBar`, `PaginationBar`) override at the consumer layer; primitives themselves stay shadcn-stock per XL-1.

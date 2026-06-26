@@ -43,6 +43,20 @@ const MSW_USER: UserSummary = {
 // literal that would silently drift if the handler is ever updated.
 export const MSW_RESEND_NEW_POLL_ID = '00000000-0000-0000-0000-poll00000099'
 
+// Story 1-9b — MSW default response bodies for forgot-password and
+// reset-password. The `satisfies` clause forces a typecheck against the
+// openapi-generated schema; if codegen ever evolves the response shape
+// (renames `sent` / `reset`, adds a field), THIS constant fails to
+// compile and a human reads the diff before tests run with a stale
+// mock. Tests import these constants directly so test-side expected
+// values move in lock-step with the wire contract.
+export const MSW_FORGOT_PASSWORD_DEFAULT = {
+  sent: true,
+} as const satisfies ForgotPasswordResult
+export const MSW_RESET_PASSWORD_DEFAULT = {
+  reset: true,
+} as const satisfies ResetPasswordResult
+
 export const handlers = [
   http.post('/api/auth/register', async ({ request }) => {
     const body = (await request.json()) as { email: string }
@@ -115,14 +129,14 @@ export const handlers = [
   http.post('/api/auth/forgot-password', () => {
     // Anti-enumeration — same body shape regardless of email status.
     return HttpResponse.json<Envelope<ForgotPasswordResult>>(
-      { data: { sent: true } },
+      { data: MSW_FORGOT_PASSWORD_DEFAULT },
       { status: 200 },
     )
   }),
 
   http.post('/api/auth/reset-password', () => {
     return HttpResponse.json<Envelope<ResetPasswordResult>>(
-      { data: { reset: true } },
+      { data: MSW_RESET_PASSWORD_DEFAULT },
       { status: 200 },
     )
   }),

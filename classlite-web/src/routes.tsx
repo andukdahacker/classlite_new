@@ -107,6 +107,28 @@ const baseRoutes: RouteObject[] = [
           return { Component: VerifyEmailPage }
         },
       },
+      // Story 1-9b — password reset entry point. Lazy chunk so the auth
+      // boundary stays minimal for users who only sign in.
+      {
+        path: 'forgot-password',
+        lazy: async () => {
+          const { default: ForgotPasswordPage } = await import(
+            '@/features/auth/ForgotPasswordPage'
+          )
+          return { Component: ForgotPasswordPage }
+        },
+      },
+      // Story 1-9b — landing for the reset-password email link
+      // (`{base}?token={raw}` query-param form per auth_reset.go:102).
+      {
+        path: 'reset-password',
+        lazy: async () => {
+          const { default: ResetPasswordPage } = await import(
+            '@/features/auth/ResetPasswordPage'
+          )
+          return { Component: ResetPasswordPage }
+        },
+      },
     ],
   },
   // Story 1-7c AC2 — AppLayout pathless route wrapping the authenticated

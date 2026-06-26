@@ -67,4 +67,10 @@ export const authKeys = {
   /** Story 1-9a — mutation key for the verify-email click-through mutation. */
   verifyEmailMutation: () =>
     [...authKeys.all, 'mutation', 'verify-email'] as const,
+  /** Story 1-9b — mutation key for the forgot-password (request reset link) call. */
+  forgotPasswordMutation: () =>
+    [...authKeys.all, 'mutation', 'forgot-password'] as const,
+  /** Story 1-9b — mutation key for the reset-password (set new password) call. */
+  resetPasswordMutation: () =>
+    [...authKeys.all, 'mutation', 'reset-password'] as const,
 }

@@ -1,9 +1,5 @@
 /**
- * LoginPage — Story 1-8 AC4.
- *
- * Replaces `LoginPagePlaceholder.tsx` (deleted in the same commit). The
- * H1 contract `t('auth.login.title')` is preserved verbatim so the
- * 1-7c bilingual smoke spec stays green.
+ * LoginPage — Story 1-8 AC4 + Story 1-9a banner + Story 1-9b banner refactor.
  *
  * Layout per UX-DR6 + UX-DR7:
  *
@@ -11,36 +7,35 @@
  *   ├─ heading: <h1>{t('auth.login.title')}</h1>
  *   ├─ body
  *   │   ├─ GoogleOAuthButton (dominant, full width, no chrome above)
- *   │   ├─ Divider with "or" — visible ONLY when the email form is
- *   │   │   expanded (Sally amendment: matches AUTH-03 mockup exactly)
+ *   │   ├─ Banner slot — ONE `<div role="alert">` driven by the derived
+ *   │   │   `bannerKey` selector. Variants: 'reset' (success +
+ *   │   │   checkmark), 'verified' (success), 'oauth-error' (destructive).
+ *   │   ├─ Divider with "or" — visible ONLY when the email form is expanded.
  *   │   ├─ CollapsibleEmailForm
  *   │   │   └─ Email + PasswordInput + (RememberMe | ForgotPassword) + Submit
- *   │   └─ form-level <div role="alert"> for 401 / 429 / generic /
- *   │       oauthGeneric errors (the OAuth transient bridge between 1-8
- *   │       and 1.9d uses the same slot)
+ *   │   └─ form-level <div role="alert"> for 401 / 429 / generic errors
  *   └─ footer: signup link
  *
- * Thumb-zone exception (Sally amendment): the Google button at the top
- * intentionally violates UX-DR15's "primary CTA in bottom third"
- * heuristic — Google-first dominance (UX-DR6) outranks thumb-zone per
- * § 10.3 "one action per screen" hierarchy.
+ * Banner coordination (Story 1-9b Winston + Amelia convergence 2026-06-26):
+ * Replaces the three competing `useState` slots (1-8 oauthError + 1-9a
+ * verifiedBanner + the planned 1-9b resetBanner) with ONE
+ * `bannerKey: 'reset' | 'verified' | 'oauth-error' | null` derived state.
+ * Priority: `reset > verified > oauth-error`. The single `bannerSignalHandled`
+ * idempotent URL-clear effect drops all three query params atomically. This
+ * is scaffolding for the 1-9d `useLoginBanner(searchParams) → LoginBannerSignal`
+ * discriminated-union hook refactor (pre-work mandate per 1-9b spec).
  *
- * rememberMe default `false` documented deviation from AUTH-03 mockup
- * (security-first for shared-phone Vietnamese students; pin in JSDoc so
- * a future "fix to match mockup" PR has paper trail).
- *
- * OAuth transient bridge (D3 amendment 2026-06-25 — was originally a
- * `sonner` toast which silently downgraded the recovery affordance and
- * left the pinned test tautological): `/api/auth/google/callback`
- * 302s to `/login?error=<code>` on failure. Until Story 1.9d ships the
- * polished per-code decoder, surface a generic destructive alert IN the
- * form-level error slot + clear the query param so a refresh doesn't
- * re-trigger.
+ * Reset variant carries server-side semantics: backend invalidates ALL
+ * refresh tokens on successful reset, so the copy ("we signed out your
+ * other devices") explains the sibling-tab auto-logout. The lazy
+ * initializer wipes the session cache synchronously on `?reset=1` mount
+ * so a stale in-memory session from a sibling tab cannot flash through.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useForm } from 'react-hook-form'
+import { useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,8 +55,46 @@ import GoogleOAuthButton from '@/features/auth/components/GoogleOAuthButton'
 import PasswordInput from '@/features/auth/components/PasswordInput'
 import { useLogin } from '@/features/auth/api/login'
 import { useLoginSchema, type LoginFormValues } from '@/features/auth/lib/loginSchema'
+import { authKeys } from '@/features/auth/api/authKeys'
 import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api-fetch'
+
+type BannerKey = 'reset' | 'verified' | 'oauth-error' | null
+
+/**
+ * Single source of truth for the banner priority. Pure — easy to unit
+ * test independently of the LoginPage render tree.
+ *
+ * Priority: reset > verified > oauth-error. Picking reset over verified
+ * is intentional — if a user just reset their password AND happened to
+ * land via a verify-success redirect, the "all other devices signed out"
+ * copy is the load-bearing message.
+ */
+function deriveBannerKey(searchParams: URLSearchParams): BannerKey {
+  if (searchParams.get('reset') === '1') return 'reset'
+  if (searchParams.get('verified') === '1') return 'verified'
+  if (searchParams.get('error') !== null) return 'oauth-error'
+  return null
+}
+
+const CHECKMARK_SVG = (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    viewBox="0 0 16 16"
+    xmlns="http://www.w3.org/2000/svg"
+    className="size-4 shrink-0"
+  >
+    <path
+      d="M3 8.5 L6.5 12 L13 4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
 
 const SECONDS_PER_MINUTE = 60
 
@@ -69,56 +102,69 @@ export default function LoginPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { isAuthenticated, isLoading } = useAuth()
   const [emailFormOpen, setEmailFormOpen] = useState(false)
-  // Form-level error displayed in an <div role="alert"> beneath the
+  // Form-level error displayed in <div role="alert"> beneath the
   // submit button. Per-field errors flow through RHF setError +
-  // FormMessage. OAuth transient errors share the same visual slot.
+  // FormMessage. Banner signals (OAuth error / verified / reset) live
+  // in a SEPARATE slot above the email form via `bannerKey`.
   const [formError, setFormError] = useState<string | null>(null)
-  // OAuth transient is initialized via the lazy initializer (P12
-  // amendment 2026-06-25) so the banner paints in the FIRST render
-  // without a flash. A follow-up effect below (`[searchParams]`)
-  // re-derives the banner if a same-page SPA navigation lands new
-  // params on the SAME component instance — without it, the lazy
-  // initializer only fires once at mount and a subsequent
-  // /login?error=... visit would silently drop the alert.
-  const [oauthError, setOauthError] = useState<string | null>(() =>
-    searchParams.get('error')
-      ? t('auth.login.error.oauthGeneric')
-      : null,
-  )
-  // Story 1-9a Layer A — `/login?verified=1` lands here from the
-  // verify-email redirect. The success banner shares the SAME form-level
-  // <div role="alert"> slot as the OAuth transient error; success wins
-  // on collision per the AC6 priority contract.
-  const [verifiedBanner, setVerifiedBanner] = useState<string | null>(() =>
-    searchParams.get('verified') === '1'
-      ? t('auth.login.banner.verified')
-      : null,
+
+  // Single derived banner state — replaces the prior 1-8 oauthError +
+  // 1-9a verifiedBanner pair. The lazy initializer paints the right
+  // variant on the FIRST render without a flash; the [searchParams]
+  // effect below handles re-derivations on same-page SPA navigation.
+  const [bannerKey, setBannerKey] = useState<BannerKey>(() =>
+    deriveBannerKey(searchParams),
   )
 
-  // Re-derive banner state when searchParams change AFTER initial
-  // mount (e.g. same-page SPA navigation back to /login?error=...
-  // after the user already landed and the params were cleared). The
-  // lazy initializer above handles the first paint; this effect handles
-  // re-entries. Calling setState with the same value is a React no-op,
-  // so the initial-mount run is harmless.
+  // Session-cache wipe on `?reset=1` — sibling tabs may still hold a
+  // stale in-memory session from before the reset; the wipe forces a
+  // re-fetch (which 401s and routes the user back to login, the
+  // intended UX). The "stale sibling-tab" is the design scenario:
+  // even when `useAuth()` reports `isAuthenticated: true` from the
+  // cached LoginResult, the refresh token is dead server-side, so
+  // wiping is the correct UX regardless of the cached auth state.
   //
-  // set-state-in-effect is justified: the URL is the external input
-  // (the URL changes from outside React's render cycle on SPA
-  // navigation); the banner state is the React projection of that URL
-  // state at any point in time. useMemo cannot subscribe to the
-  // searchParams object's identity for an externally-triggered route
-  // change; an effect is the correct synchronization primitive.
+  // Moved out of the useState lazy initializer to keep render pure —
+  // side effects in initializers are a Concurrent-React anti-pattern
+  // ([Review][Patch] P3 — code-review 2026-06-26). `wipedRef` makes
+  // the wipe idempotent under StrictMode + signal re-renders.
+  // [Review][Patch] P4 was reverted — the `!isAuthenticated` guard
+  // looked safer but broke the exact stale-sibling-tab scenario the
+  // wipe was designed for; the rare "signed-in user manually visits
+  // /login?reset=1" case lands on /dashboard via the next refresh
+  // attempt, an acceptable UX trade.
+  const wipedRef = useRef(false)
   useEffect(() => {
-    if (searchParams.get('error') !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOauthError(t('auth.login.error.oauthGeneric'))
-    }
-    if (searchParams.get('verified') === '1') {
-      setVerifiedBanner(t('auth.login.banner.verified'))
-    }
-  }, [searchParams, t])
+    if (bannerKey !== 'reset') return
+    if (wipedRef.current) return
+    wipedRef.current = true
+    queryClient.removeQueries({ queryKey: authKeys.session() })
+  }, [bannerKey, queryClient])
+
+  // Re-derive banner state when searchParams change AFTER initial mount
+  // — e.g. same-page SPA navigation back to /login?reset=1 after the
+  // user already landed and the params were cleared.
+  //
+  // Updates whenever the derived key DIFFERS from current — including
+  // a higher-priority signal arriving after the URL was cleared
+  // ([Review][Decision] D3 — escalation lets oauth-error replace a
+  // sticky reset banner). When `next` matches the current `bannerKey`,
+  // the effect short-circuits, preserving the sticky-once-shown
+  // contract from 1-9a.
+  //
+  // set-state-in-effect is justified: the URL is an external input
+  // that changes outside React's render cycle on SPA navigation; the
+  // bannerKey is the React projection of that URL state at any moment.
+  useEffect(() => {
+    const next = deriveBannerKey(searchParams)
+    if (next === bannerKey) return
+    if (next === null) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBannerKey(next)
+  }, [searchParams, bannerKey])
 
   const schema = useLoginSchema()
   const form = useForm<LoginFormValues>({
@@ -143,22 +189,23 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, isLoading, navigate])
 
+  // `bannerSignalHandled` — the URL-clear effect doubles as the
+  // signal-handled-once latch. The presence-check on the three banner
+  // params + the conditional `setSearchParams` is idempotent: the
+  // effect re-fires on the next searchParams change after the clear
+  // lands but short-circuits at the guard. Same ref-latch shape as 1-8
+  // (the `oauthErrorHandled` lazy initializer); renamed per Winston so
+  // a future fourth signal (1-9d session-expired) reads honestly.
   useEffect(() => {
-    // If the Layer A guard is about to redirect away (already
-    // authenticated), skip the URL clear entirely — the navigate to
-    // /dashboard supersedes /login?... so a racing setSearchParams
-    // here would clobber that redirect.
     if (isAuthenticated) return
     const hasError = searchParams.get('error') !== null
     const hasVerified = searchParams.get('verified') !== null
-    if (!hasError && !hasVerified) return
-    // Clear so a refresh / sibling navigation doesn't re-fire the
-    // alert. The effect re-runs on the next searchParams change
-    // (after this clear lands) but short-circuits at the
-    // hasError/hasVerified guard — no infinite loop.
+    const hasReset = searchParams.get('reset') !== null
+    if (!hasError && !hasVerified && !hasReset) return
     const next = new URLSearchParams(searchParams)
     next.delete('error')
     next.delete('verified')
+    next.delete('reset')
     setSearchParams(next, { replace: true })
   }, [isAuthenticated, searchParams, setSearchParams])
 
@@ -169,8 +216,10 @@ export default function LoginPage() {
     // and pad the lockout counter.
     if (isPending) return
     setFormError(null)
-    setOauthError(null)
-    setVerifiedBanner(null)
+    // Clear the banner once the user starts submitting credentials —
+    // the in-flight outcome supersedes any prior reset/verified/error
+    // landing alert.
+    setBannerKey(null)
     login.mutate(values, {
       onError: (error) => {
         if (!(error instanceof ApiError)) {
@@ -202,13 +251,6 @@ export default function LoginPage() {
   // fires inside the mutation hook.
   const googleLabel = useMemo(() => t('auth.login.googleCta'), [t])
 
-  // Form-level error has priority over the OAuth transient — once the
-  // user submits credentials, that flow's outcome supersedes the prior
-  // OAuth landing alert. Verified banner displays in a separate
-  // success-styled slot at the top of the body (above the email form),
-  // so the destructive slot here stays error-only.
-  const displayedError = formError ?? oauthError
-
   return (
     <AuthCard
       regionLabel={t('auth.login.title')}
@@ -224,25 +266,38 @@ export default function LoginPage() {
         <div className="grid gap-4">
           <GoogleOAuthButton label={googleLabel} disabled={isPending} />
 
-          {!isAuthenticated && verifiedBanner && !emailFormOpen && (
+          {!isAuthenticated && bannerKey === 'reset' && !emailFormOpen && (
+            <div
+              role="alert"
+              data-testid="login-form-banner"
+              className="flex items-start gap-2 rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
+            >
+              {CHECKMARK_SVG}
+              <span>{t('auth.login.banner.reset')}</span>
+            </div>
+          )}
+
+          {!isAuthenticated && bannerKey === 'verified' && !emailFormOpen && (
             <div
               role="alert"
               data-testid="login-form-banner"
               className="rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
             >
-              {verifiedBanner}
+              {t('auth.login.banner.verified')}
             </div>
           )}
 
-          {!isAuthenticated && !verifiedBanner && oauthError && !emailFormOpen && (
-            <div
-              role="alert"
-              data-testid="login-form-error"
-              className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              {oauthError}
-            </div>
-          )}
+          {!isAuthenticated &&
+            bannerKey === 'oauth-error' &&
+            !emailFormOpen && (
+              <div
+                role="alert"
+                data-testid="login-form-error"
+                className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              >
+                {t('auth.login.error.oauthGeneric')}
+              </div>
+            )}
 
           {emailFormOpen && (
             <div
@@ -338,13 +393,13 @@ export default function LoginPage() {
                   </a>
                 </div>
 
-                {displayedError && (
+                {formError && (
                   <div
                     role="alert"
                     data-testid="login-form-error"
                     className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
                   >
-                    {displayedError}
+                    {formError}
                   </div>
                 )}
 

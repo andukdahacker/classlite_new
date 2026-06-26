@@ -90,4 +90,42 @@ describe('authKeys factory', () => {
       authKeys.verifyEmailMutation().slice(0, authKeys.all.length),
     ).toEqual(authKeys.all)
   })
+
+  test('Story 1-9b — forgotPasswordMutation() + resetPasswordMutation() shapes', () => {
+    expect(authKeys.forgotPasswordMutation()).toEqual([
+      'auth',
+      'mutation',
+      'forgot-password',
+    ])
+    expect(authKeys.resetPasswordMutation()).toEqual([
+      'auth',
+      'mutation',
+      'reset-password',
+    ])
+  })
+
+  test('Story 1-9b — password reset mutation keys are distinct from each other AND from all earlier mutations', () => {
+    const all = [
+      authKeys.loginMutation(),
+      authKeys.registerMutation(),
+      authKeys.resendMutation(),
+      authKeys.verifyEmailMutation(),
+      authKeys.forgotPasswordMutation(),
+      authKeys.resetPasswordMutation(),
+    ]
+    for (let i = 0; i < all.length; i += 1) {
+      for (let j = i + 1; j < all.length; j += 1) {
+        expect(all[i]).not.toEqual(all[j])
+      }
+    }
+  })
+
+  test('Story 1-9b — password reset mutation keys are hierarchical under all', () => {
+    expect(
+      authKeys.forgotPasswordMutation().slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+    expect(
+      authKeys.resetPasswordMutation().slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+  })
 })

@@ -6,7 +6,7 @@ target_stories: ['1-8-auth-ui-registration-and-login-screens', '1-9a-email-verif
 created: 2026-06-06
 created_by: Murat (TEA)
 test_seam: HTTP boundary (TEST-FE-1)
-last_updated: 2026-06-25 (Story 1-9a — appended verify-email + resend-verification + verify-status sections)
+last_updated: 2026-06-26 (Story 1-9b — consumer added. MSW response constants extracted into MSW_FORGOT_PASSWORD_DEFAULT + MSW_RESET_PASSWORD_DEFAULT with satisfies-typecheck against the openapi-generated ForgotPasswordResult / ResetPasswordResult schemas.)
 ---
 
 # MSW Handler Catalog — Auth endpoints (Stories 1.4 + 1.5)
@@ -24,6 +24,7 @@ so backend changes to the envelope shape update the contract atomically
 
 | Date | Change |
 |---|---|
+| 2026-06-26 | Consumer added: Story 1-9b-password-reset-ui. forgot-password + reset-password sections (already documented from Story 1-5) referenced verbatim. MSW response constants extracted into `MSW_FORGOT_PASSWORD_DEFAULT` + `MSW_RESET_PASSWORD_DEFAULT` with `satisfies` typecheck so an openapi-codegen change that evolves the response shape fails to compile and a human reads the diff. |
 | 2026-06-25 | Appended verify-email + resend-verification + verify-status sections (Story 1-9a consumer). Sourced verbatim from api.yaml lines 74–157 + 543–572. |
 | 2026-06-25 | Renamed `msw-handler-catalog-1-5.md` → `msw-handler-catalog-auth.md`; appended `POST /api/auth/register` section (Story 1.8 consumer); broadened `target_stories` to all of 1-9a..d. Murat #4 amendment via Story 1-8 party-mode review. |
 | 2026-06-06 | Initial catalog covering 5 Story 1.5 endpoints. |
