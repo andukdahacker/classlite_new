@@ -706,9 +706,10 @@ describe('Story 1-9c i18n parity (R38)', () => {
  *   - auth.login.banner.sessionExpiredDataLossHint (honest framing about lost work)
  */
 export const STORY_1_9D_KEYS = [
-  // Lockout state (AC1) — 5 keys
+  // Lockout state (AC1) — 6 keys (body has _one/_other plural pair — code review P4)
   'auth.login.lockout.heading',
-  'auth.login.lockout.body',
+  'auth.login.lockout.body_one',
+  'auth.login.lockout.body_other',
   'auth.login.lockout.thresholdOneMinute',
   'auth.login.lockout.thresholdThirtySeconds',
   'auth.login.lockout.resetCta',

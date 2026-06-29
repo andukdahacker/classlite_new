@@ -19,9 +19,12 @@
  *   1. "Try a personal Google account" — `prompt=select_account` re-OAuth
  *   2. "Sign up with email instead" — `/register` (NOT invite-anchored)
  *
- * A11y: heading takes `tabIndex={-1}` + focuses on mount.
+ * A11y: container is `role="alert"` — the live-region announce IS the
+ * mode-change acknowledgment. We do NOT also steal focus to the heading
+ * (resolved D1 from code review 2026-06-29 — focus-steal on top of
+ * role="alert" caused SR double-announce).
  */
-import { useEffect, useRef, type JSX } from 'react'
+import type { JSX } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { buttonVariants } from '@/components/ui/button'
@@ -65,11 +68,6 @@ export default function WorkspaceBlockedState({
   reason,
 }: WorkspaceBlockedStateProps): JSX.Element {
   const { t } = useTranslation()
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
-
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
 
   const bodyKey =
     reason === 'google_userinfo_failed'
@@ -84,10 +82,8 @@ export default function WorkspaceBlockedState({
     >
       <div className="flex justify-center">{BLOCK_SVG}</div>
       <h1
-        tabIndex={-1}
-        ref={headingRef}
         data-testid="login-workspace-blocked-heading"
-        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)] outline-none"
+        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)]"
       >
         {t('auth.login.workspaceBlocked.heading')}
       </h1>

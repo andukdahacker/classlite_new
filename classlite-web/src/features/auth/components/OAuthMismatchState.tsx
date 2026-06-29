@@ -20,9 +20,12 @@
  *   `reopenInviteHint` copy line covers the UX-DR16 "what next" beat
  *   without the dead-end fallback.
  *
- * A11y: heading takes `tabIndex={-1}` + focuses on mount.
+ * A11y: container is `role="alert"` — the live-region announce IS the
+ * mode-change acknowledgment. We do NOT also steal focus to the heading
+ * (resolved D1 from code review 2026-06-29 — focus-steal on top of
+ * role="alert" caused SR double-announce).
  */
-import { useEffect, useRef, type JSX } from 'react'
+import type { JSX } from 'react'
 import { useTranslation } from 'react-i18next'
 import GoogleOAuthButton from '@/features/auth/components/GoogleOAuthButton'
 
@@ -53,11 +56,6 @@ const WARNING_TRIANGLE_SVG = (
 
 export default function OAuthMismatchState(): JSX.Element {
   const { t } = useTranslation()
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
-
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
 
   return (
     <div
@@ -67,10 +65,8 @@ export default function OAuthMismatchState(): JSX.Element {
     >
       <div className="flex justify-center">{WARNING_TRIANGLE_SVG}</div>
       <h1
-        tabIndex={-1}
-        ref={headingRef}
         data-testid="login-oauth-mismatch-heading"
-        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)] outline-none"
+        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)]"
       >
         {t('auth.login.oauthMismatch.heading')}
       </h1>

@@ -184,6 +184,15 @@ const CLOCK_BANNER_SVG = (
  */
 const LOCKOUT_FALLBACK_SECONDS = 900
 
+/**
+ * Defensive ceiling on backend-supplied Retry-After. Without it, a malicious
+ * or buggy backend value (e.g. accidental ms-instead-of-seconds, or 4xx-XX
+ * "year") writes a multi-year `lockoutUntilMs` that breaks the mm:ss display
+ * layout and persists indefinitely across sessions. 24h is well past the
+ * 15-min backend window with comfortable headroom for future tuning.
+ */
+const MAX_LOCKOUT_SECONDS = 86_400
+
 export default function LoginPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -380,7 +389,14 @@ export default function LoginPage() {
           // Mode replacement supersedes the form-error rendering. Persist
           // lockoutUntilMs to localStorage + local state; useLockoutCountdown
           // flips isActive=true; mode flips to 'lockout'; the form unmounts.
-          const seconds = error.retryAfterSeconds ?? LOCKOUT_FALLBACK_SECONDS
+          // Positive-value guard catches Retry-After: 0 (`?? FALLBACK` only
+          // handles null/undefined); upper clamp catches malicious / overflow
+          // values that would break the mm:ss display + persist indefinitely.
+          const raw = error.retryAfterSeconds
+          const seconds =
+            raw !== null && raw > 0
+              ? Math.min(raw, MAX_LOCKOUT_SECONDS)
+              : LOCKOUT_FALLBACK_SECONDS
           const target = Date.now() + seconds * 1000
           writeLockoutUntilMs(target)
           setLockoutUntilMs(target)

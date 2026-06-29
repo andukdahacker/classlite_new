@@ -32,8 +32,16 @@ interface BannerProps {
   message: string
   /** Optional inline glyph rendered before the message. */
   icon?: ReactNode
-  /** Test seam — matches the existing LoginPage testids. */
+  /**
+   * Test seam — matches the existing LoginPage testids. When omitted, the
+   * default is derived from variant so the `oauth-error` destructive variant
+   * can never silently match the success/warning testid via a forgotten prop.
+   */
   testId?: string
+}
+
+function defaultTestId(variant: BannerVariant): string {
+  return variant === 'oauth-error' ? 'login-form-error' : 'login-form-banner'
 }
 
 interface VariantStyle {
@@ -75,13 +83,13 @@ export default function Banner({
   variant,
   message,
   icon,
-  testId = 'login-form-banner',
+  testId,
 }: BannerProps): JSX.Element {
   const style = VARIANT_STYLES[variant]
   return (
     <div
       role={style.ariaRole}
-      data-testid={testId}
+      data-testid={testId ?? defaultTestId(variant)}
       data-variant={variant}
       className={style.containerClass}
     >

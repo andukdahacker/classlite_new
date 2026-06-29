@@ -6,17 +6,26 @@
  */
 import { type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'vitest-axe'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { MemoryRouter, Routes, Route, useSearchParams } from 'react-router'
+import {
+  MemoryRouter,
+  Routes,
+  Route,
+  useParams,
+  useSearchParams,
+} from 'react-router'
 import { HttpResponse, http } from 'msw'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import LoginPage from '@/features/auth/LoginPage'
-import { createTestQueryClient } from '@/lib/query-client'
+import {
+  createTestQueryClient,
+  queryClient as moduleQueryClient,
+} from '@/lib/query-client'
 import { authKeys } from '@/features/auth/api/authKeys'
 import { stubLocation, type StubbedLocation } from '@/test/location-stub'
 import { __resetAuthRefreshStateForTests } from '@/lib/auth-refresh'
@@ -56,6 +65,18 @@ function UrlProbe() {
   )
 }
 
+/**
+ * Test route element for `/classes/:id` — embeds `useParams().id` into the
+ * data-testid (`test-route-classes-<id>`) so navigation assertions pin the
+ * exact param value. Without this, a future bug rewriting `/classes/42` to
+ * `/classes/0` would still match a bare `test-route-classes` testid.
+ * (Code review P5.)
+ */
+function ClassesProbe() {
+  const { id } = useParams()
+  return <p data-testid={`test-route-classes-${id ?? 'noid'}`}>classes reached</p>
+}
+
 function renderLogin({
   client = createTestQueryClient(),
   initialEntries = ['/login'],
@@ -78,13 +99,15 @@ function renderLogin({
                 </>
               }
             />
-            <Route path="/dashboard" element={<p>dashboard reached</p>} />
+            <Route
+              path="/dashboard"
+              element={
+                <p data-testid="test-route-dashboard">dashboard reached</p>
+              }
+            />
             <Route path="/forgot-password" element={<p>forgot</p>} />
             <Route path="/register" element={<p>register</p>} />
-            <Route
-              path="/classes/:id"
-              element={<p data-testid="test-route-classes">classes reached</p>}
-            />
+            <Route path="/classes/:id" element={<ClassesProbe />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -195,7 +218,7 @@ describe('LoginPage (Story 1-8 AC4)', () => {
     )
     await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
     await user.click(screen.getByTestId('login-submit'))
-    await screen.findByText('dashboard reached')
+    await screen.findByTestId('test-route-dashboard')
     const cached = client.getQueryData(authKeys.session()) as {
       user: { email: string }
       accessToken: string | null
@@ -395,7 +418,7 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
       accessToken: 'jwt',
     })
     renderLogin({ client })
-    await screen.findByText(/dashboard reached/i)
+    await screen.findByTestId('test-route-dashboard')
   })
 
   test('does NOT render the verified banner when already authenticated (collision: success vs already-auth)', async () => {
@@ -413,7 +436,7 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     // Either we never paint the banner OR we redirect away before
     // the user can read it. Either way: the banner element is absent
     // by the time the test asserts.
-    await screen.findByText(/dashboard reached/i)
+    await screen.findByTestId('test-route-dashboard')
     expect(screen.queryByTestId('login-form-banner')).toBeNull()
   })
 
@@ -572,12 +595,12 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     // Quiet window: during isLoading=true, the redirect is suppressed
     // even though isAuthenticated is true via the seeded cache.
     await new Promise((r) => setTimeout(r, 100))
-    expect(screen.queryByText(/dashboard reached/i)).toBeNull()
+    expect(screen.queryByTestId('test-route-dashboard')).toBeNull()
     // Resolve the probe — useAuth's bootProbeInFlight subscription
     // flips isLoading to false, the Layer A effect re-fires with
     // isLoading=false AND isAuthenticated=true, navigate runs.
     resolveRefresh()
-    await screen.findByText(/dashboard reached/i)
+    await screen.findByTestId('test-route-dashboard')
   })
 })
 
@@ -647,16 +670,19 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     expect(screen.getByTestId('google-oauth-cta')).toBeTruthy()
   })
 
-  test('AC1: lockout heading receives focus on mount (Sally a11y pin)', async () => {
+  test('AC1: lockout region announces as role="alert" on mount (D1 / P11 — no focus-steal)', async () => {
+    // D1 resolution: drop heading focus-steal; lean on role="alert" live-region
+    // announce as the mode-change acknowledgment. Prior assertion checked
+    // document.activeElement === heading; replaced with role contract.
     window.localStorage.setItem(
       'classlite_login_lockout_until',
       JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
     )
     renderLogin()
-    const heading = await screen.findByTestId('login-lockout-heading')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(heading)
-    })
+    const region = await screen.findByTestId('login-lockout')
+    expect(region.getAttribute('role')).toBe('alert')
+    // Heading is still present + accessible by testid; just not focus-stolen.
+    expect(screen.getByTestId('login-lockout-heading')).toBeTruthy()
   })
 
   test('AC1: Murat ATDD ratchet — submit button NOT mounted during lockout', async () => {
@@ -668,6 +694,107 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     await screen.findByTestId('login-lockout')
     expect(screen.queryByTestId('login-submit')).toBeNull()
     expect(screen.queryByTestId('login-form')).toBeNull()
+  })
+
+  // ===== AC1 — Page-level fake-timer suite (code review P8 / P9 / P10) =====
+  //
+  // These cover spec-pinned contracts that previously only had hook-level
+  // coverage. We isolate fake timers per-test (the outer suite uses real
+  // timers + userEvent for everything else).
+
+  describe('AC1 — page-level countdown integration (P8 / P9 / P10)', () => {
+    beforeEach(() => {
+      // `shouldAdvanceTime: true` lets testing-library polling-based queries
+      // (`getBy*`/`queryBy*`/`findBy*` indirectly) still resolve while we
+      // explicitly advance the per-second interval via `vi.advanceTimersByTime`.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.setSystemTime(new Date('2026-06-29T12:00:00Z'))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    // P10 — spec line 75: page-level countdown tick contract.
+    test('AC1 (P10): lockout countdown renders mm:ss and decrements once per second', () => {
+      const target = Date.now() + 65_000
+      window.localStorage.setItem(
+        'classlite_login_lockout_until',
+        JSON.stringify({ lockoutUntilMs: target, version: 1 }),
+      )
+      renderLogin()
+      // Synchronous getBy — lazy useState init paints the lockout region on
+      // first render; no async wait needed.
+      const countdown = screen.getByTestId('login-lockout-countdown')
+      expect(countdown.textContent).toBe('1:05')
+      act(() => {
+        vi.advanceTimersByTime(1_000)
+      })
+      expect(countdown.textContent).toBe('1:04')
+      act(() => {
+        vi.advanceTimersByTime(4_000)
+      })
+      expect(countdown.textContent).toBe('1:00')
+    })
+
+    // P8 — spec line 76: Sally a11y BLOCKER threshold-announce contract.
+    // "Fires exactly twice as the countdown crosses 60s and 30s remaining."
+    test('AC1 (P8): threshold-announce fires at 60s and 30s edge-crossings — exactly once each (Sally a11y pin)', () => {
+      const target = Date.now() + 75_000
+      window.localStorage.setItem(
+        'classlite_login_lockout_until',
+        JSON.stringify({ lockoutUntilMs: target, version: 1 }),
+      )
+      renderLogin()
+      const announce = screen.getByTestId('login-lockout-threshold-announce')
+      // Initial: empty (no threshold crossed yet at 75s remaining).
+      expect(announce.textContent).toBe('')
+      // Advance to 60s remaining → 60s-threshold fires.
+      act(() => {
+        vi.advanceTimersByTime(15_000)
+      })
+      expect(announce.textContent).toBe(
+        i18n.t('auth.login.lockout.thresholdOneMinute'),
+      )
+      // Advance to 30s remaining → flips to 30s-threshold copy.
+      act(() => {
+        vi.advanceTimersByTime(30_000)
+      })
+      expect(announce.textContent).toBe(
+        i18n.t('auth.login.lockout.thresholdThirtySeconds'),
+      )
+      // Advance past 30s → no third announce; textContent unchanged.
+      act(() => {
+        vi.advanceTimersByTime(20_000)
+      })
+      expect(announce.textContent).toBe(
+        i18n.t('auth.login.lockout.thresholdThirtySeconds'),
+      )
+    })
+
+    // P9 — spec line 78: Amelia BLOCKER mode-derive race ratchet at page level.
+    // Mode flips lockout → default via hook.isActive WITHOUT a searchParams change.
+    test('AC1 (P9): lockout expires via hook isActive flip — page mode flips to default + storage cleared (Amelia BLOCKER ratchet)', () => {
+      const target = Date.now() + 2_000
+      window.localStorage.setItem(
+        'classlite_login_lockout_until',
+        JSON.stringify({ lockoutUntilMs: target, version: 1 }),
+      )
+      renderLogin()
+      expect(screen.getByTestId('login-lockout')).toBeTruthy()
+      expect(screen.queryByTestId('google-oauth-cta')).toBeTruthy()
+      // Tick past the target.
+      act(() => {
+        vi.advanceTimersByTime(3_000)
+      })
+      // Mode flipped to 'default' — lockout region unmounted, default UI back.
+      expect(screen.queryByTestId('login-lockout')).toBeNull()
+      expect(screen.getByTestId('collapsible-email-trigger')).toBeTruthy()
+      // Storage cleared by the hook on the expiry tick.
+      expect(
+        window.localStorage.getItem('classlite_login_lockout_until'),
+      ).toBeNull()
+    })
   })
 
   // ===== AC2 — OAuth Email Mismatch =====
@@ -699,12 +826,11 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     ).toBeNull()
   })
 
-  test('AC2: OAuth mismatch heading receives focus on mount', async () => {
+  test('AC2: OAuth mismatch region announces as role="alert" on mount (D1 / P11)', async () => {
     renderLogin({ initialEntries: ['/login?error=invite_email_mismatch'] })
-    const heading = await screen.findByTestId('login-oauth-mismatch-heading')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(heading)
-    })
+    const region = await screen.findByTestId('login-oauth-mismatch')
+    expect(region.getAttribute('role')).toBe('alert')
+    expect(screen.getByTestId('login-oauth-mismatch-heading')).toBeTruthy()
   })
 
   test('AC2: Murat M6 DOM-wide privacy ratchet — no email / query-param echo', async () => {
@@ -755,12 +881,11 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     expect(cta.getAttribute('href') ?? '').toContain('prompt=select_account')
   })
 
-  test('AC3: workspace blocked heading receives focus on mount', async () => {
+  test('AC3: workspace blocked region announces as role="alert" on mount (D1 / P11)', async () => {
     renderLogin({ initialEntries: ['/login?error=google_userinfo_failed'] })
-    const heading = await screen.findByTestId('login-workspace-blocked-heading')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(heading)
-    })
+    const region = await screen.findByTestId('login-workspace-blocked')
+    expect(region.getAttribute('role')).toBe('alert')
+    expect(screen.getByTestId('login-workspace-blocked-heading')).toBeTruthy()
   })
 
   test('AC3: Murat M6 query-param echo privacy ratchet', async () => {
@@ -830,7 +955,8 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     )
     await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
     await user.click(screen.getByTestId('login-submit'))
-    await screen.findByTestId('test-route-classes')
+    // P5 — assert the testid carries the exact :id (`42`), not just the route.
+    await screen.findByTestId('test-route-classes-42')
   })
 
   test('AC4: rejected next= falls back to /dashboard (open-redirect ratchet)', async () => {
@@ -845,7 +971,7 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     )
     await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
     await user.click(screen.getByTestId('login-submit'))
-    await screen.findByText(/dashboard reached/i)
+    await screen.findByTestId('test-route-dashboard')
   })
 
   test('AC4: already-auth navigate respects next= (site c — Winston W2 / Murat M3)', async () => {
@@ -858,7 +984,55 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
       client,
       initialEntries: ['/login?session_expired=1&next=%2Fclasses%2F42'],
     })
-    await screen.findByTestId('test-route-classes')
+    // P5 — assert :id=42 specifically (not just the bare `test-route-classes`).
+    await screen.findByTestId('test-route-classes-42')
+  })
+
+  test('AC4: sibling-tab broadcast → next= consumer (P12 — Winston W2 / Murat M3 regression guard)', async () => {
+    // Backfills the deferral noted in completion notes — exercises the
+    // BroadcastChannel('classlite_auth') path explicitly. Without this
+    // test, a future refactor moving `navigate()` back into
+    // `useLogin.onSuccess` silently breaks the cross-tab `next=` consumer
+    // while the in-tab tests stay green.
+    //
+    // The auth-refresh handler hydrates the module-level singleton
+    // queryClient, so we render LoginPage against that same singleton
+    // instance (instead of createTestQueryClient) so the hydration is
+    // visible in the rendered tree. Clear it first to avoid pollution
+    // from any prior test that may have written to it.
+    moduleQueryClient.clear()
+    try {
+      renderLogin({
+        client: moduleQueryClient,
+        initialEntries: ['/login?next=%2Fclasses%2F42'],
+      })
+      // Wait for the LoginPage to mount in its default (not-authed) state.
+      // login-form is gated behind the collapsible-email-form expand, so we
+      // anchor on the always-present heading instead.
+      await screen.findByTestId('login-heading')
+      // Sibling tab logged in — post the broadcast.
+      const channel = new BroadcastChannel('classlite_auth')
+      channel.postMessage({
+        type: 'login-succeeded',
+        timestamp: Date.now(),
+        data: {
+          user: {
+            id: 'u-sibling',
+            email: 'sibling@example.com',
+            fullName: 'Sibling',
+            emailVerified: true,
+          },
+          accessToken: 'jwt-sibling',
+        },
+      })
+      channel.close()
+      // Handler hydrates session cache → useAuth flips to authenticated →
+      // already-auth guard navigates to sanitizeNextParam('/classes/42').
+      // Assert the SPECIFIC :id, not just the route.
+      await screen.findByTestId('test-route-classes-42')
+    } finally {
+      moduleQueryClient.clear()
+    }
   })
 
   test('AC4: Murat M5 cookie-clear StrictMode spy — exactly ONE invocation', async () => {
@@ -894,7 +1068,9 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
                 />
                 <Route
                   path="/dashboard"
-                  element={<p>dashboard reached</p>}
+                  element={
+                    <p data-testid="test-route-dashboard">dashboard reached</p>
+                  }
                 />
               </Routes>
             </MemoryRouter>
@@ -903,16 +1079,24 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
       )
       const { rerender } = render(ui)
       await screen.findByTestId('login-form-banner')
-      // Exactly ONE cookie-set call — NOT 2 from StrictMode double-invoke.
-      const matchingCalls = setSpy.mock.calls.filter((call) =>
-        typeof call[0] === 'string' && call[0].startsWith('logged_in='),
-      )
+      // Tightened predicate — the call must be the EXACT clear-cookie shape
+      // (empty value + Max-Age=0 + .classlite.app domain). A future typo
+      // like `Max-Age=86400` (SET instead of CLEAR) or a wrong-domain
+      // refactor would no longer slip through the loose `startsWith` filter.
+      const isLoggedInClear = (call: unknown[]): boolean => {
+        const raw = call[0]
+        if (typeof raw !== 'string') return false
+        if (!raw.startsWith('logged_in=;')) return false
+        if (!raw.includes('Max-Age=0')) return false
+        if (!raw.includes('Domain=.classlite.app')) return false
+        return true
+      }
+      // Exactly ONE cookie-clear call — NOT 2 from StrictMode double-invoke.
+      const matchingCalls = setSpy.mock.calls.filter(isLoggedInClear)
       expect(matchingCalls.length).toBe(1)
       // Re-render with same searchParams; setter call count unchanged.
       rerender(ui)
-      const matchingCallsAfter = setSpy.mock.calls.filter((call) =>
-        typeof call[0] === 'string' && call[0].startsWith('logged_in='),
-      )
+      const matchingCallsAfter = setSpy.mock.calls.filter(isLoggedInClear)
       expect(matchingCallsAfter.length).toBe(1)
     } finally {
       if (originalDescriptor) {

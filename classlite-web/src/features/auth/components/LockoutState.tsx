@@ -7,10 +7,13 @@
  * `useLockoutCountdown` hook stays single-instance at the page level
  * (Amelia A2 BLOCKER pin — the hook owns `isActive` for mode-derive).
  *
- * A11y contract (Sally pins):
- *   - Heading takes `tabIndex={-1}` + receives focus on mount via
- *     `useEffect` (cross-cutting focus-management — same shape across AC2/3/4
- *     state regions).
+ * A11y contract:
+ *   - Container is `role="alert"` — screen readers announce the region
+ *     contents on mount as a live-region utterance of the mode change.
+ *     The announce IS the acknowledgment; we do NOT also steal focus to
+ *     the heading (resolved D1 from code review 2026-06-29 — the prior
+ *     Sally focus-mgmt pin caused SR double-announce on top of the
+ *     region's own live-region utterance).
  *   - Per-second countdown ticks via `aria-live="off"` — announcing every
  *     second is hostile to screen-reader users.
  *   - Threshold-announce region (`aria-live="polite" role="status"`) fires
@@ -68,13 +71,8 @@ export default function LockoutState({
   formatted,
 }: LockoutStateProps): JSX.Element {
   const { t } = useTranslation()
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
   const previousRemainingRef = useRef<number>(remainingSeconds)
   const [thresholdMessage, setThresholdMessage] = useState<string>('')
-
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
 
   // Edge-triggered threshold-announce: fire once as the countdown crosses
   // 60s, again as it crosses 30s. The ref carries the previous remaining
@@ -107,15 +105,13 @@ export default function LockoutState({
     >
       <div className="flex justify-center">{CLOCK_SVG}</div>
       <h1
-        tabIndex={-1}
-        ref={headingRef}
         data-testid="login-lockout-heading"
-        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)] outline-none"
+        className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)]"
       >
         {t('auth.login.lockout.heading')}
       </h1>
       <p className="text-sm text-[var(--cl-ink)]">
-        {t('auth.login.lockout.body', { minutes })}
+        {t('auth.login.lockout.body', { count: minutes })}
       </p>
       <p
         data-testid="login-lockout-countdown"
