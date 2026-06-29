@@ -46,6 +46,12 @@ function UrlProbe() {
       <span data-testid="url-invited-param">
         {searchParams.get('invited') ?? ''}
       </span>
+      <span data-testid="url-session-expired-param">
+        {searchParams.get('session_expired') ?? ''}
+      </span>
+      <span data-testid="url-next-param">
+        {searchParams.get('next') ?? ''}
+      </span>
     </>
   )
 }
@@ -75,6 +81,10 @@ function renderLogin({
             <Route path="/dashboard" element={<p>dashboard reached</p>} />
             <Route path="/forgot-password" element={<p>forgot</p>} />
             <Route path="/register" element={<p>register</p>} />
+            <Route
+              path="/classes/:id"
+              element={<p data-testid="test-route-classes">classes reached</p>}
+            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -93,11 +103,16 @@ let locationStub: StubbedLocation
 beforeEach(() => {
   locationStub = stubLocation()
   __resetAuthRefreshStateForTests()
+  // Story 1-9d: LoginPage rehydrates lockoutUntilMs from localStorage on
+  // mount. Any test that triggers 429 ACCOUNT_LOCKED writes to storage;
+  // clear between every case so lockout state doesn't bleed across tests.
+  window.localStorage.clear()
 })
 
 afterEach(() => {
   locationStub.restore()
   vi.restoreAllMocks()
+  window.localStorage.clear()
 })
 
 describe('LoginPage (Story 1-8 AC4)', () => {
@@ -217,7 +232,7 @@ describe('LoginPage (Story 1-8 AC4)', () => {
     expect(alert.textContent).toBe(i18n.t('auth.login.error.invalidCredentials'))
   })
 
-  test('429 ACCOUNT_LOCKED with Retry-After:900 renders accountLocked copy with {{minutes: 15}} interpolation', async () => {
+  test('429 ACCOUNT_LOCKED with Retry-After:900 transitions LoginPage to lockout mode (Story 1-9d AC1)', async () => {
     server.use(
       http.post('/api/auth/login', () =>
         HttpResponse.json(
@@ -241,10 +256,18 @@ describe('LoginPage (Story 1-8 AC4)', () => {
     )
     await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
     await user.click(screen.getByTestId('login-submit'))
-    const alert = await screen.findByTestId('login-form-error')
-    expect(alert.textContent).toBe(
-      i18n.t('auth.login.error.accountLocked', { minutes: 15 }),
-    )
+    // Lockout region IN DOM; form UNMOUNTED; submit button NOT present
+    // (Murat ATDD ratchet — verbatim from Story 1-9d AC1).
+    await screen.findByTestId('login-lockout')
+    expect(screen.queryByTestId('login-form')).toBeNull()
+    expect(screen.queryByTestId('login-submit')).toBeNull()
+    // localStorage envelope persisted; lockoutUntilMs ≈ Date.now() + 900_000 (±2s).
+    const raw = window.localStorage.getItem('classlite_login_lockout_until')
+    expect(raw).not.toBeNull()
+    const envelope = JSON.parse(raw!) as { lockoutUntilMs: number; version: 1 }
+    expect(envelope.version).toBe(1)
+    const expected = Date.now() + 900_000
+    expect(Math.abs(envelope.lockoutUntilMs - expected)).toBeLessThan(2_000)
   })
 
   test('429 RATE_LIMIT_EXCEEDED renders rateLimited copy', async () => {
@@ -555,5 +578,346 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     // isLoading=false AND isAuthenticated=true, navigate runs.
     resolveRefresh()
     await screen.findByText(/dashboard reached/i)
+  })
+})
+
+describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
+  // ===== AC1 — Lockout state (mode replacement + localStorage rehydrate) =====
+
+  test('AC1: 429 ACCOUNT_LOCKED with missing Retry-After falls back to 900s', async () => {
+    server.use(
+      http.post('/api/auth/login', () =>
+        HttpResponse.json(
+          { error: { code: 'ACCOUNT_LOCKED', message: 'locked', details: null } },
+          { status: 429 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderLogin()
+    await user.click(screen.getByTestId('collapsible-email-trigger'))
+    await user.type(
+      screen.getByRole('textbox', { name: i18n.t('auth.common.email') }),
+      'a@a.com',
+    )
+    await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
+    await user.click(screen.getByTestId('login-submit'))
+    await screen.findByTestId('login-lockout')
+    const raw = window.localStorage.getItem('classlite_login_lockout_until')
+    expect(raw).not.toBeNull()
+    const envelope = JSON.parse(raw!) as { lockoutUntilMs: number }
+    const expected = Date.now() + 900_000
+    expect(Math.abs(envelope.lockoutUntilMs - expected)).toBeLessThan(2_000)
+  })
+
+  test('AC1: lockout state rehydrates from localStorage on mount (zero MSW calls)', async () => {
+    window.localStorage.setItem(
+      'classlite_login_lockout_until',
+      JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
+    )
+    let postCount = 0
+    server.use(
+      http.post('/api/auth/login', () => {
+        postCount++
+        return HttpResponse.json({}, { status: 200 })
+      }),
+    )
+    renderLogin()
+    await screen.findByTestId('login-lockout')
+    expect(postCount).toBe(0)
+  })
+
+  test('AC1: password reset CTA inside lockout region routes to /forgot-password', async () => {
+    window.localStorage.setItem(
+      'classlite_login_lockout_until',
+      JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
+    )
+    renderLogin()
+    const cta = await screen.findByTestId('login-lockout-reset-cta')
+    expect(cta.getAttribute('href')).toBe('/forgot-password')
+  })
+
+  test('AC1: Google OAuth button remains MOUNTED during lockout', async () => {
+    window.localStorage.setItem(
+      'classlite_login_lockout_until',
+      JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
+    )
+    renderLogin()
+    await screen.findByTestId('login-lockout')
+    expect(screen.getByTestId('google-oauth-cta')).toBeTruthy()
+  })
+
+  test('AC1: lockout heading receives focus on mount (Sally a11y pin)', async () => {
+    window.localStorage.setItem(
+      'classlite_login_lockout_until',
+      JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
+    )
+    renderLogin()
+    const heading = await screen.findByTestId('login-lockout-heading')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(heading)
+    })
+  })
+
+  test('AC1: Murat ATDD ratchet — submit button NOT mounted during lockout', async () => {
+    window.localStorage.setItem(
+      'classlite_login_lockout_until',
+      JSON.stringify({ lockoutUntilMs: Date.now() + 30_000, version: 1 }),
+    )
+    renderLogin()
+    await screen.findByTestId('login-lockout')
+    expect(screen.queryByTestId('login-submit')).toBeNull()
+    expect(screen.queryByTestId('login-form')).toBeNull()
+  })
+
+  // ===== AC2 — OAuth Email Mismatch =====
+
+  test('AC2: ?error=invite_email_mismatch transitions LoginPage to oauthMismatch mode', async () => {
+    renderLogin({ initialEntries: ['/login?error=invite_email_mismatch'] })
+    await screen.findByTestId('login-oauth-mismatch')
+    expect(screen.queryByTestId('login-form')).toBeNull()
+    expect(screen.queryByTestId('login-form-banner')).toBeNull()
+    expect(screen.queryByTestId('login-form-error')).toBeNull()
+    // Mode × Banner negative coverage matrix (Murat M4 STRONG pin)
+    expect(screen.queryByTestId('login-lockout')).toBeNull()
+    expect(screen.queryByTestId('login-workspace-blocked')).toBeNull()
+    expect(screen.queryByTestId('login-submit')).toBeNull()
+  })
+
+  test('AC2: OAuth mismatch retry CTA threads prompt=select_account', async () => {
+    renderLogin({ initialEntries: ['/login?error=invite_email_mismatch'] })
+    const cta = await screen.findByTestId('login-oauth-mismatch-retry-cta')
+    const href = cta.getAttribute('href') ?? ''
+    expect(href).toContain('prompt=select_account')
+  })
+
+  test('AC2: OAuth mismatch screen does NOT render a register CTA (Sally STRONG ratchet)', async () => {
+    renderLogin({ initialEntries: ['/login?error=invite_email_mismatch'] })
+    await screen.findByTestId('login-oauth-mismatch')
+    expect(
+      screen.queryByTestId('login-oauth-mismatch-register-cta'),
+    ).toBeNull()
+  })
+
+  test('AC2: OAuth mismatch heading receives focus on mount', async () => {
+    renderLogin({ initialEntries: ['/login?error=invite_email_mismatch'] })
+    const heading = await screen.findByTestId('login-oauth-mismatch-heading')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(heading)
+    })
+  })
+
+  test('AC2: Murat M6 DOM-wide privacy ratchet — no email / query-param echo', async () => {
+    const { container } = renderLogin({
+      initialEntries: [
+        '/login?error=invite_email_mismatch&invitedEmail=leak%40example.com&oauthEmail=leak2%40example.com',
+      ],
+    })
+    await screen.findByTestId('login-oauth-mismatch')
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('@')
+    expect(text).not.toContain('leak@example.com')
+    expect(text).not.toContain('leak2@example.com')
+    expect(text).not.toContain('invitedEmail=leak')
+  })
+
+  // ===== AC3 — Workspace Blocked (forked body) =====
+
+  test('AC3: ?error=google_userinfo_failed renders userinfo-failed body copy', async () => {
+    renderLogin({ initialEntries: ['/login?error=google_userinfo_failed'] })
+    await screen.findByTestId('login-workspace-blocked')
+    expect(screen.queryByTestId('login-form')).toBeNull()
+    const body = screen.getByTestId('login-workspace-blocked-body')
+    expect(body.textContent).toBe(
+      i18n.t('auth.login.workspaceBlocked.bodyUserinfoFailed'),
+    )
+    // Mode × Banner negative coverage matrix
+    expect(screen.queryByTestId('login-lockout')).toBeNull()
+    expect(screen.queryByTestId('login-oauth-mismatch')).toBeNull()
+    expect(screen.queryByTestId('login-submit')).toBeNull()
+  })
+
+  test('AC3: ?error=google_email_unverified renders email-unverified body copy (distinct from userinfo)', async () => {
+    renderLogin({ initialEntries: ['/login?error=google_email_unverified'] })
+    await screen.findByTestId('login-workspace-blocked')
+    const body = screen.getByTestId('login-workspace-blocked-body')
+    expect(body.textContent).toBe(
+      i18n.t('auth.login.workspaceBlocked.bodyEmailUnverified'),
+    )
+    expect(body.textContent).not.toBe(
+      i18n.t('auth.login.workspaceBlocked.bodyUserinfoFailed'),
+    )
+  })
+
+  test('AC3: workspace blocked retry CTA threads prompt=select_account', async () => {
+    renderLogin({ initialEntries: ['/login?error=google_userinfo_failed'] })
+    const cta = await screen.findByTestId('login-workspace-blocked-retry-cta')
+    expect(cta.getAttribute('href') ?? '').toContain('prompt=select_account')
+  })
+
+  test('AC3: workspace blocked heading receives focus on mount', async () => {
+    renderLogin({ initialEntries: ['/login?error=google_userinfo_failed'] })
+    const heading = await screen.findByTestId('login-workspace-blocked-heading')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(heading)
+    })
+  })
+
+  test('AC3: Murat M6 query-param echo privacy ratchet', async () => {
+    const { container } = renderLogin({
+      initialEntries: ['/login?error=google_userinfo_failed&hint=leak%40example.com'],
+    })
+    await screen.findByTestId('login-workspace-blocked')
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('@')
+    expect(text).not.toContain('hint=leak')
+  })
+
+  // ===== AC4 — Session Expiry + next= consumer =====
+
+  test('AC4: session-expired banner + form both mounted', async () => {
+    renderLogin({ initialEntries: ['/login?session_expired=1'] })
+    await screen.findByTestId('login-form-banner')
+    // Form region is still mounted (banner is acknowledgment, not replacement).
+    // We open the form to verify the form-tree mounts cleanly alongside.
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('collapsible-email-trigger'))
+    expect(screen.getByTestId('login-form')).toBeTruthy()
+    // Mode × Banner negative coverage matrix
+    expect(screen.queryByTestId('login-lockout')).toBeNull()
+    expect(screen.queryByTestId('login-oauth-mismatch')).toBeNull()
+    expect(screen.queryByTestId('login-workspace-blocked')).toBeNull()
+  })
+
+  test('AC4: session-expired banner does NOT steal focus from form (Sally a11y pin)', async () => {
+    renderLogin({ initialEntries: ['/login?session_expired=1'] })
+    await screen.findByTestId('login-form-banner')
+    // Focus stays on document body or first focusable; banner.heading is NOT focused.
+    const banner = screen.getByTestId('login-form-banner')
+    expect(document.activeElement).not.toBe(banner)
+  })
+
+  test('AC4: session-expired data-loss hint copy renders', async () => {
+    renderLogin({ initialEntries: ['/login?session_expired=1'] })
+    const hint = await screen.findByTestId('login-session-expired-data-loss')
+    expect(hint.textContent).toBe(
+      i18n.t('auth.login.banner.sessionExpiredDataLossHint'),
+    )
+  })
+
+  test('AC4: URL-clear effect drops session_expired but PRESERVES next= (Amelia A6 pin)', async () => {
+    renderLogin({
+      initialEntries: ['/login?session_expired=1&next=%2Fclasses%2F42'],
+    })
+    await screen.findByTestId('login-form-banner')
+    await waitFor(() => {
+      expect(screen.getByTestId('url-session-expired-param').textContent).toBe('')
+      expect(screen.getByTestId('url-next-param').textContent).toBe(
+        '/classes/42',
+      )
+    })
+  })
+
+  test('AC4: successful login navigates to whitelisted next= via password submit (site b)', async () => {
+    const user = userEvent.setup()
+    renderLogin({
+      initialEntries: ['/login?session_expired=1&next=%2Fclasses%2F42'],
+    })
+    await user.click(screen.getByTestId('collapsible-email-trigger'))
+    await user.type(
+      screen.getByRole('textbox', { name: i18n.t('auth.common.email') }),
+      'a@a.com',
+    )
+    await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
+    await user.click(screen.getByTestId('login-submit'))
+    await screen.findByTestId('test-route-classes')
+  })
+
+  test('AC4: rejected next= falls back to /dashboard (open-redirect ratchet)', async () => {
+    const user = userEvent.setup()
+    renderLogin({
+      initialEntries: ['/login?session_expired=1&next=%2F%2Fevil.example.com'],
+    })
+    await user.click(screen.getByTestId('collapsible-email-trigger'))
+    await user.type(
+      screen.getByRole('textbox', { name: i18n.t('auth.common.email') }),
+      'a@a.com',
+    )
+    await user.type(screen.getByLabelText(i18n.t('auth.common.password')), 'pw')
+    await user.click(screen.getByTestId('login-submit'))
+    await screen.findByText(/dashboard reached/i)
+  })
+
+  test('AC4: already-auth navigate respects next= (site c — Winston W2 / Murat M3)', async () => {
+    const client = createTestQueryClient()
+    client.setQueryData(authKeys.session(), {
+      user: { id: 'u1', email: 'a@b.co', fullName: 'A', emailVerified: true },
+      accessToken: 'jwt',
+    })
+    renderLogin({
+      client,
+      initialEntries: ['/login?session_expired=1&next=%2Fclasses%2F42'],
+    })
+    await screen.findByTestId('test-route-classes')
+  })
+
+  test('AC4: Murat M5 cookie-clear StrictMode spy — exactly ONE invocation', async () => {
+    // Spy on `document.cookie` setter; StrictMode would double-invoke effects
+    // in dev mode, so without the useRef latch the cookie would be set twice.
+    const setSpy = vi.fn()
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      Document.prototype,
+      'cookie',
+    )
+    Object.defineProperty(document, 'cookie', {
+      configurable: true,
+      set: setSpy,
+      get: () => '',
+    })
+    try {
+      const { StrictMode } = await import('react')
+      const client = createTestQueryClient()
+      const ui: ReactNode = (
+        <I18nextProvider i18n={i18n}>
+          <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={['/login?session_expired=1']}>
+              <Toaster />
+              <Routes>
+                <Route
+                  path="/login"
+                  element={
+                    <StrictMode>
+                      <UrlProbe />
+                      <LoginPage />
+                    </StrictMode>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={<p>dashboard reached</p>}
+                />
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </I18nextProvider>
+      )
+      const { rerender } = render(ui)
+      await screen.findByTestId('login-form-banner')
+      // Exactly ONE cookie-set call — NOT 2 from StrictMode double-invoke.
+      const matchingCalls = setSpy.mock.calls.filter((call) =>
+        typeof call[0] === 'string' && call[0].startsWith('logged_in='),
+      )
+      expect(matchingCalls.length).toBe(1)
+      // Re-render with same searchParams; setter call count unchanged.
+      rerender(ui)
+      const matchingCallsAfter = setSpy.mock.calls.filter((call) =>
+        typeof call[0] === 'string' && call[0].startsWith('logged_in='),
+      )
+      expect(matchingCallsAfter.length).toBe(1)
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(Document.prototype, 'cookie', originalDescriptor)
+      }
+    }
   })
 })

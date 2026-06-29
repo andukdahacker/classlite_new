@@ -40,9 +40,16 @@ export interface GoogleOAuthButtonProps {
    * Story 1.9c will pass `{ inviteToken: '...' }` so the OAuth init
    * endpoint can thread the invite through the callback. Not consumed
    * by Story 1-8; ships in the type signature for downstream
-   * stability.
+   * stability. Story 1-9d threads `{ prompt: 'select_account' }` from
+   * the OAuthMismatch + WorkspaceBlocked retry CTAs.
    */
   searchParams?: Record<string, string>
+  /**
+   * Optional test-id override. Defaults to `google-oauth-cta` so existing
+   * Story 1-8 / 1-9c selectors stay green. Story 1-9d's recovery-state
+   * retry CTAs pass distinct ids (e.g. `login-oauth-mismatch-retry-cta`).
+   */
+  testId?: string
 }
 
 // Google brand color literals — REQUIRED by Google's Sign-in branding
@@ -91,6 +98,7 @@ export default function GoogleOAuthButton({
   label,
   disabled = false,
   searchParams,
+  testId = 'google-oauth-cta',
 }: GoogleOAuthButtonProps) {
   const [isNavigating, setIsNavigating] = useState(false)
   const href =
@@ -109,7 +117,7 @@ export default function GoogleOAuthButton({
   return (
     <a
       href={href}
-      data-testid="google-oauth-cta"
+      data-testid={testId}
       data-slot="google-oauth-button"
       onClick={handleClick}
       aria-disabled={disabled || undefined}

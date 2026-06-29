@@ -1,11 +1,19 @@
 /**
- * useLogin — Story 1-8 AC5.
+ * useLogin — Story 1-8 AC5 (Story 1-9d AC4 amendment: dropped internal
+ * navigate; LoginPage owns the destination via `mutate(..., { onSuccess })`).
  *
  * Mutation hook for `POST /api/auth/login`. On success, populates the
  * `authKeys.session()` cache with the parsed `{ user, accessToken }` so
  * the dashboard's `useAuth()` flips to authenticated on the next render
- * tick, then navigates to `/dashboard` with `replace: true` (UX-DR15
- * mobile hygiene — the back button must NOT return to the login form).
+ * tick, then broadcasts to sibling tabs. **Navigation is the caller's
+ * concern** — the hook stays destination-agnostic so any consumer
+ * (LoginPage, future RegisterPage post-success auto-login, an admin
+ * re-auth modal) can pass its own `onSuccess` that calls `navigate(...)`
+ * with a context-appropriate URL.
+ *
+ * The Story 1-9d AC4 `?next=` whitelist consumer lives on LoginPage
+ * (`sanitizeNextParam(searchParams.get('next'))`); moving the navigate
+ * here would force every other caller to inherit the same URL semantics.
  *
  * Error UX is OWNED BY THE PAGE — `useLogin` doesn't carry an `onError`
  * because the page-level component needs typed access to the `ApiError`
@@ -18,7 +26,6 @@
  */
 import { useMutation } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router'
 import { apiFetch } from '@/lib/api-fetch'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { broadcastLoginSucceeded } from '@/lib/auth-refresh'
@@ -29,7 +36,6 @@ type LoginResult = components['schemas']['LoginResult']
 
 export function useLogin() {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   return useMutation<LoginResult, Error, LoginRequest>({
     // Distinct from the cache key — see authKeys.ts JSDoc (P5
     // amendment 2026-06-25). The session-cache write below uses
@@ -62,10 +68,10 @@ export function useLogin() {
         user: result.user,
         accessToken: result.accessToken,
       })
-      // `replace: true` — submitting again via back+refresh would
-      // double-trigger the lockout counter; replace pops the form off
-      // the history stack entirely.
-      navigate('/dashboard', { replace: true })
+      // Navigation is the caller's concern (Story 1-9d AC4 amendment).
+      // LoginPage runs `navigate(sanitizeNextParam(searchParams.get('next')))`
+      // via its own `mutate(values, { onSuccess })` after this hook's
+      // onSuccess fires.
     },
     // NO onError — the page-level component handles error → setError /
     // Alert rendering so error UX is co-located with the form (TS-5 /
