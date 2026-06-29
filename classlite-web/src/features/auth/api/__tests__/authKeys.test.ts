@@ -128,4 +128,36 @@ describe('authKeys factory', () => {
       authKeys.resetPasswordMutation().slice(0, authKeys.all.length),
     ).toEqual(authKeys.all)
   })
+
+  test('Story 1-9c — acceptInviteMutation() shape', () => {
+    expect(authKeys.acceptInviteMutation()).toEqual([
+      'auth',
+      'mutation',
+      'accept-invite',
+    ])
+  })
+
+  test('Story 1-9c — acceptInviteMutation is distinct from all earlier mutation keys + session', () => {
+    const all = [
+      authKeys.session(),
+      authKeys.loginMutation(),
+      authKeys.registerMutation(),
+      authKeys.resendMutation(),
+      authKeys.verifyEmailMutation(),
+      authKeys.forgotPasswordMutation(),
+      authKeys.resetPasswordMutation(),
+      authKeys.acceptInviteMutation(),
+    ]
+    for (let i = 0; i < all.length; i += 1) {
+      for (let j = i + 1; j < all.length; j += 1) {
+        expect(all[i]).not.toEqual(all[j])
+      }
+    }
+  })
+
+  test('Story 1-9c — acceptInviteMutation key is hierarchical under all', () => {
+    expect(
+      authKeys.acceptInviteMutation().slice(0, authKeys.all.length),
+    ).toEqual(authKeys.all)
+  })
 })

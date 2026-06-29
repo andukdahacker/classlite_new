@@ -30,6 +30,7 @@ type ResetPasswordResult = components['schemas']['ResetPasswordResult']
 type VerifyEmailResult = components['schemas']['VerifyEmailResult']
 type ResendResult = components['schemas']['ResendResult']
 type VerifyStatusResult = components['schemas']['VerifyStatusResult']
+type AcceptInviteResult = components['schemas']['AcceptInviteResult']
 
 const MSW_USER: UserSummary = {
   id: '00000000-0000-0000-0000-00000000msw1',
@@ -56,6 +57,23 @@ export const MSW_FORGOT_PASSWORD_DEFAULT = {
 export const MSW_RESET_PASSWORD_DEFAULT = {
   reset: true,
 } as const satisfies ResetPasswordResult
+
+// Story 1-9c — MSW default response body for accept-invite. The
+// `satisfies` clause forces a typecheck against the openapi-generated
+// schema; if codegen ever evolves the response shape (renames center.id,
+// adds a field, changes role enum), THIS constant fails to compile and a
+// human reads the diff before tests run with a stale mock. Tests import
+// this constant directly so test-side expected values move in lock-step
+// with the wire contract.
+export const MSW_ACCEPT_INVITE_DEFAULT = {
+  accessToken: 'msw.invite.jwt',
+  user: { ...MSW_USER, emailVerified: true },
+  center: {
+    id: '00000000-0000-0000-0000-000000000001',
+    name: 'MSW Center',
+  },
+  role: 'teacher',
+} as const satisfies AcceptInviteResult
 
 export const handlers = [
   http.post('/api/auth/register', async ({ request }) => {
@@ -179,6 +197,24 @@ export const handlers = [
     return HttpResponse.json<Envelope<VerifyStatusResult>>(
       { data: result },
       { status: 200 },
+    )
+  }),
+
+  // Story 1-9c — accept-invite. Default returns 200 with the typed
+  // MSW_ACCEPT_INVITE_DEFAULT body + the refresh_token cookie that the
+  // backend sets alongside the membership-insert commit (mirrors the
+  // login handler so the silent-refresh chain works post-acceptance).
+  // Tests that need the terminal error states override per case.
+  http.post('/api/auth/accept-invite', () => {
+    return HttpResponse.json<Envelope<AcceptInviteResult>>(
+      { data: MSW_ACCEPT_INVITE_DEFAULT },
+      {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            'refresh_token=msw-invite-refresh-token; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax',
+        },
+      },
     )
   }),
 ]

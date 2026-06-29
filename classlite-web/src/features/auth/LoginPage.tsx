@@ -59,18 +59,27 @@ import { authKeys } from '@/features/auth/api/authKeys'
 import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api-fetch'
 
-type BannerKey = 'reset' | 'verified' | 'oauth-error' | null
+type BannerKey = 'invited' | 'reset' | 'verified' | 'oauth-error' | null
 
 /**
  * Single source of truth for the banner priority. Pure — easy to unit
  * test independently of the LoginPage render tree.
  *
- * Priority: reset > verified > oauth-error. Picking reset over verified
- * is intentional — if a user just reset their password AND happened to
- * land via a verify-success redirect, the "all other devices signed out"
- * copy is the load-bearing message.
+ * Priority: invited > reset > verified > oauth-error.
+ *  - `invited` wins because it's the highest-value conversion node
+ *    (UX-DR10). If a user lands with both `?invited=true&error=...` (e.g.
+ *    a stale link hand-typed alongside an OAuth bounce), the invited
+ *    banner is the load-bearing message.
+ *  - `reset` over `verified`: a fresh password reset's "all other devices
+ *    signed out" copy is more urgent than a verify-success acknowledgment.
+ *
+ * NOTE (Winston party-mode 2026-06-26 — 1-9d gate): if 1-9d adds a 5th
+ * BannerKey variant (session-expired), the chain MUST be refactored to a
+ * `<Banner variant={...}>` discriminated-union component PRE-MERGE. Four
+ * branches in a function is a smell; five is a defect.
  */
 function deriveBannerKey(searchParams: URLSearchParams): BannerKey {
+  if (searchParams.get('invited') === 'true') return 'invited'
   if (searchParams.get('reset') === '1') return 'reset'
   if (searchParams.get('verified') === '1') return 'verified'
   if (searchParams.get('error') !== null) return 'oauth-error'
@@ -201,11 +210,13 @@ export default function LoginPage() {
     const hasError = searchParams.get('error') !== null
     const hasVerified = searchParams.get('verified') !== null
     const hasReset = searchParams.get('reset') !== null
-    if (!hasError && !hasVerified && !hasReset) return
+    const hasInvited = searchParams.get('invited') !== null
+    if (!hasError && !hasVerified && !hasReset && !hasInvited) return
     const next = new URLSearchParams(searchParams)
     next.delete('error')
     next.delete('verified')
     next.delete('reset')
+    next.delete('invited')
     setSearchParams(next, { replace: true })
   }, [isAuthenticated, searchParams, setSearchParams])
 
@@ -265,6 +276,17 @@ export default function LoginPage() {
       body={
         <div className="grid gap-4">
           <GoogleOAuthButton label={googleLabel} disabled={isPending} />
+
+          {!isAuthenticated && bannerKey === 'invited' && !emailFormOpen && (
+            <div
+              role="alert"
+              data-testid="login-form-banner"
+              className="flex items-start gap-2 rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
+            >
+              {CHECKMARK_SVG}
+              <span>{t('auth.login.banner.invited')}</span>
+            </div>
+          )}
 
           {!isAuthenticated && bannerKey === 'reset' && !emailFormOpen && (
             <div

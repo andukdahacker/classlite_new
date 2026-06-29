@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:check": "node scripts/check-chunk-size.mjs",
     "lint": "eslint .",
     "lint:css": "stylelint \"src/**/*.css\"",
     "preview": "vite preview",

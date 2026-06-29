@@ -18,6 +18,7 @@
 import {
   createBrowserRouter,
   redirect,
+  type LoaderFunctionArgs,
   type RouteObject,
 } from 'react-router'
 import { useTranslation } from 'react-i18next'
@@ -64,10 +65,27 @@ function RouterErrorFallback() {
   )
 }
 
+// Exported so the routes-seam unit test imports the exact loader the router
+// runs — guards against drift between the production loader and any harness
+// copy (Murat BLOCKER). The function MUST stay pure (no React imports / no
+// closure over render-only state) so the test can call it without booting
+// the router lazy chunks.
+export function indexLoader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url)
+  // Story 1-9c — forward `location.search` AND `location.hash` so Story
+  // 1-6's OAuth-success redirect to `APP_POST_LOGIN_URL?invited=true`
+  // (= `/?invited=true` per `config.go:68`) survives the bounce to
+  // `/login?invited=true` and triggers LoginPage's `bannerKey === 'invited'`
+  // branch. Hash is forwarded for the same anti-silent-flatten reason —
+  // a future surface that anchors into a section after redirect would
+  // otherwise lose its fragment.
+  return redirect('/login' + url.search + url.hash)
+}
+
 const baseRoutes: RouteObject[] = [
   {
     index: true,
-    loader: () => redirect('/login'),
+    loader: indexLoader,
   },
   // Auth boundary — pre-auth UI under a single layout. Rolldown emits
   // AuthLayout + LoginPage + RegisterPage as a tightly-coupled chunk
@@ -127,6 +145,17 @@ const baseRoutes: RouteObject[] = [
             '@/features/auth/ResetPasswordPage'
           )
           return { Component: ResetPasswordPage }
+        },
+      },
+      // Story 1-9c — invite acceptance entry point. Path-param routing
+      // (`/invite/:token`) per Epic 1C AC line 330 + AUTH-05 wireframe.
+      {
+        path: 'invite/:token',
+        lazy: async () => {
+          const { default: InviteAcceptancePage } = await import(
+            '@/features/auth/InviteAcceptancePage'
+          )
+          return { Component: InviteAcceptancePage }
         },
       },
     ],

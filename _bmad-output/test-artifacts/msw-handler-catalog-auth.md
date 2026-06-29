@@ -6,7 +6,7 @@ target_stories: ['1-8-auth-ui-registration-and-login-screens', '1-9a-email-verif
 created: 2026-06-06
 created_by: Murat (TEA)
 test_seam: HTTP boundary (TEST-FE-1)
-last_updated: 2026-06-26 (Story 1-9b — consumer added. MSW response constants extracted into MSW_FORGOT_PASSWORD_DEFAULT + MSW_RESET_PASSWORD_DEFAULT with satisfies-typecheck against the openapi-generated ForgotPasswordResult / ResetPasswordResult schemas.)
+last_updated: 2026-06-26 (Story 1-9c — consumer added. POST /api/auth/accept-invite section appended with 10 variants (1 happy + 9 error). MSW response constant extracted into MSW_ACCEPT_INVITE_DEFAULT with satisfies-typecheck against the openapi-generated AcceptInviteResult schema.)
 ---
 
 # MSW Handler Catalog — Auth endpoints (Stories 1.4 + 1.5)
@@ -24,6 +24,7 @@ so backend changes to the envelope shape update the contract atomically
 
 | Date | Change |
 |---|---|
+| 2026-06-26 | Consumer added: Story 1-9c-invite-acceptance-ui. Added `POST /api/auth/accept-invite` section with 10 variants (1 happy + 9 error). MSW response constant `MSW_ACCEPT_INVITE_DEFAULT` extracted with `satisfies AcceptInviteResult` typecheck. |
 | 2026-06-26 | Consumer added: Story 1-9b-password-reset-ui. forgot-password + reset-password sections (already documented from Story 1-5) referenced verbatim. MSW response constants extracted into `MSW_FORGOT_PASSWORD_DEFAULT` + `MSW_RESET_PASSWORD_DEFAULT` with `satisfies` typecheck so an openapi-codegen change that evolves the response shape fails to compile and a human reads the diff. |
 | 2026-06-25 | Appended verify-email + resend-verification + verify-status sections (Story 1-9a consumer). Sourced verbatim from api.yaml lines 74–157 + 543–572. |
 | 2026-06-25 | Renamed `msw-handler-catalog-1-5.md` → `msw-handler-catalog-auth.md`; appended `POST /api/auth/register` section (Story 1.8 consumer); broadened `target_stories` to all of 1-9a..d. Murat #4 amendment via Story 1-8 party-mode review. |
@@ -492,6 +493,184 @@ http.get(`${API}/api/auth/verify-status`, () =>
 > TTL elapsed); subsequent polls will return the same 404. The component
 > swaps to the "Verification link expired" inline state and stops the
 > poller via `enabled=false`.
+
+---
+
+## POST /api/auth/accept-invite
+
+Story 1-9c consumer. The endpoint accepts an invite via REST (the OAuth
+branch lands through `/api/auth/google?inviteToken=...` callback and is
+documented separately under the Google OAuth contract in `api.yaml`).
+Success populates the session cache via the response body + the
+`Set-Cookie: refresh_token=...` header so silent-refresh hydration works
+post-acceptance. Errors carry typed `details` payloads for the variants
+that need them (centerName / inviterEmail / invitedEmail / oauthEmail).
+
+### Happy path — `200 OK`
+
+```typescript
+// extracted constant — typed against AcceptInviteResult so codegen drift
+// surfaces at compile time, not at test run time.
+export const MSW_ACCEPT_INVITE_DEFAULT = {
+  accessToken: 'msw.invite.jwt',
+  user: { ...MSW_USER, emailVerified: true },
+  center: {
+    id: '00000000-0000-0000-0000-msw0000ctr01',
+    name: 'MSW Center',
+  },
+  role: 'teacher',
+} as const satisfies AcceptInviteResult
+
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<Envelope<AcceptInviteResult>>(
+    { data: MSW_ACCEPT_INVITE_DEFAULT },
+    {
+      status: 200,
+      headers: {
+        'Set-Cookie':
+          'refresh_token=msw-invite-refresh-token; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax',
+      },
+    },
+  ),
+)
+```
+
+### Variants
+
+**404 INVITE_NOT_FOUND** — token row missing or revoked. Terminal dead-link state.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'INVITE_NOT_FOUND', message: 'invite missing or revoked', details: null } },
+    { status: 404 },
+  ),
+)
+```
+
+**410 INVITE_EXPIRED** — 7-day TTL elapsed. Terminal expired state; details carry `centerName` + `inviterEmail` for the mailto CTA.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    {
+      error: {
+        code: 'INVITE_EXPIRED',
+        message: 'invite expired',
+        details: {
+          centerName: 'IELTS Academy',
+          inviterEmail: 'linh@ielts-academy.vn',
+        },
+      },
+    },
+    { status: 410 },
+  ),
+)
+```
+
+**409 INVITE_ALREADY_ACCEPTED** — user previously accepted. Terminal good-outcome state with sign-in CTA; details carry `centerName`.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    {
+      error: {
+        code: 'INVITE_ALREADY_ACCEPTED',
+        message: 'invite already accepted',
+        details: { centerName: 'IELTS Academy' },
+      },
+    },
+    { status: 409 },
+  ),
+)
+```
+
+**409 INVITE_EMAIL_MISMATCH** — REST-path landing. The details payload carries `invitedEmail` + `oauthEmail` BUT the page MUST NOT echo them to the DOM (privacy mirror of `auth_handler.go:590-597` SEC-11). The OAuth path lands on `/login?error=invite_email_mismatch` and is owned by Story 1-9d AC2.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    {
+      error: {
+        code: 'INVITE_EMAIL_MISMATCH',
+        message: 'invite email mismatch',
+        details: {
+          invitedEmail: 'invited@example.com',
+          oauthEmail: 'oauth@example.com',
+        },
+      },
+    },
+    { status: 409 },
+  ),
+)
+```
+
+**409 PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER** — existing OAuth-only user tried the password branch. Page re-renders the Google CTA as the only viable recovery.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER', message: 'oauth user only', details: null } },
+    { status: 409 },
+  ),
+)
+```
+
+**409 EMAIL_ALREADY_REGISTERED** — rare race during new-user branch.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'email already in use', details: null } },
+    { status: 409 },
+  ),
+)
+```
+
+**400 INVALID_INVITE_TOKEN** — backend over-cap / malformed token. Terminal invalidToken state. NOTE: an empty / whitespace-only token in the URL path short-circuits to the same DOM region pre-network — the AC4 zero-MSW-count guard locks this.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'INVALID_INVITE_TOKEN', message: 'token malformed', details: null } },
+    { status: 400 },
+  ),
+)
+```
+
+**429 RATE_LIMIT_EXCEEDED** — per-IP throttling. `Retry-After` header drives the countdown; clamped at the call site to `[MIN_RATE_LIMIT_SECONDS=5, MAX_RATE_LIMIT_SECONDS=300]`.
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'too many requests', details: null } },
+    { status: 429, headers: { 'Retry-After': '45' } },
+  ),
+)
+```
+
+**422 VALIDATION_ERROR** — request body schema rejection (rare; the frontend Zod schema gates most of this client-side).
+
+```typescript
+http.post('/api/auth/accept-invite', () =>
+  HttpResponse.json<ErrorEnvelope>(
+    {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'invalid request',
+        details: { fields: [{ field: 'fullName', message: 'required' }] },
+      },
+    },
+    { status: 422 },
+  ),
+)
+```
+
+> Story 1-9c's terminal regions (404 / 410 / 409 family / 400) REPLACE
+> the form on render. Inline alerts (429 / 422 / 5xx) leave the form
+> mounted so the user can retry. The 8 distinct `data-testid` regions
+> + the TEST-FE-6 negative-assertion ratchet (every terminal-region
+> test asserts the OTHER 7 regions are absent) lock the contract.
 
 ---
 

@@ -201,3 +201,14 @@
 - Untracked `_bmad-output/implementation-artifacts/1-9a-email-verification-ui*.md` files at review time — commit atomicity depends on operator. — operator responsibility.
 - `commitTerminal` stability is an undocumented hidden contract: page's 10-min cap effect depends on `commitTerminal` referential stability; protected today by `useCallback([])` but no test re-renders parent mid-window. [useVerificationPoller.ts:73-77] — defensive test.
 - Spec text inconsistency — `VERIFY_REDIRECT_DELAY_MS` 800ms (AC6 table line 238) vs 1500ms (Dev Notes line 479). Code shipped 1500ms (correct per amendment). — stale spec line cleanup.
+
+## Deferred from: code review of story-1-9c (2026-06-29)
+
+- LoginPage `?invited=true` check is case-sensitive (`?invited=TRUE` ignored) — Story 2-1 moves the banner ownership to dashboard; case-normalization can ride along. [`LoginPage.tsx`, `deriveBannerKey`]
+- `useAcceptInvite` onSuccess hard-navigates to `/dashboard` for all roles — dashboard routing concern owned by Story 2-1; student/teacher/owner role-split lands when dashboard ships. [`classlite-web/src/features/auth/api/acceptInvite.ts`]
+- `sanitizeCenterName` uses NFC normalization; NFKC would fold fullwidth/compatibility confusables and tighten phishing-string defense — security hardening, not a regression. [`classlite-web/src/features/auth/lib/sanitizeCenterName.ts`]
+- `<TerminalRegion>` component refactor — 7 near-duplicate JSX blocks on `InviteAcceptancePage` mirror the anti-pattern the spec already flags as the 5-variant `<Banner variant>` 1-9d gate. Roll into the 1-9d refactor pass. [`InviteAcceptancePage.tsx`, all 7 terminal blocks]
+- `forgotPassword.test.tsx` shows TS module-resolution diagnostics (`@/test/msw-server`, `@/lib/query-client`, etc.) — pre-existing from 1-9b, surfaced in the 1-9c diagnostic feed but not caused by 1-9c. [`classlite-web/src/features/auth/__tests__/forgotPassword.test.tsx`]
+- `build:check` script not wired into `ci-web.yml` — acknowledged in completion notes; 1-line CI PR planned to ride with the codegen-drift CI gate (party-mode 2026-06-26 follow-up). [`.github/workflows/ci-web.yml`]
+- BroadcastChannel `invite-accepted` cross-tab signal absent — spec explicit deferral; sibling tabs hydrate on next silent-refresh tick (same assumption as 1-9a verified-banner branch). [`classlite-web/src/features/auth/`]
+- `passwordNotAllowed` terminal offers no "try email again" recovery path and no test pins the UX absence — intentional per spec design; pin contract only if 1-9d revisits the OAuth-mismatch recovery shape. [`InviteAcceptancePage.tsx`, passwordNotAllowed branch]

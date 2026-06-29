@@ -73,4 +73,7 @@ export const authKeys = {
   /** Story 1-9b — mutation key for the reset-password (set new password) call. */
   resetPasswordMutation: () =>
     [...authKeys.all, 'mutation', 'reset-password'] as const,
+  /** Story 1-9c — mutation key for the accept-invite call. */
+  acceptInviteMutation: () =>
+    [...authKeys.all, 'mutation', 'accept-invite'] as const,
 }

@@ -183,6 +183,51 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     }
   })
 
+  test('Story 1-9c — auth chunk includes InviteAcceptancePage; dashboard chunks do NOT', async () => {
+    // Mirrors the Story 1-9b contract above: vacuous-pass guard on the
+    // InviteAcceptancePage chunk count + iterated negative assertions
+    // across the dashboard chunks.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    const inviteChunks = files.filter((f: string) =>
+      /^InviteAcceptancePage-[\w-]+\.js$/.test(f),
+    )
+    const studentChunkFiles = files.filter((f: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(f),
+    )
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+
+    expect(
+      inviteChunks.length,
+      'InviteAcceptancePage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      studentChunkFiles.length,
+      'student dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      teacherChunkFiles.length,
+      'teacher dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    for (const inviteChunkBasename of inviteChunks) {
+      expect(studentContents).not.toContain(inviteChunkBasename)
+      expect(teacherContents).not.toContain(inviteChunkBasename)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by

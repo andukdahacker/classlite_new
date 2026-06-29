@@ -624,6 +624,69 @@ describe('Story 1-9b i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1-9c — invite acceptance UI keys. Per-story discharge of R38 for the
+ * new `/invite/:token` surface + the LoginPage `?invited=true` success banner.
+ *
+ * 7 ★ REVIEWER-MANDATORY Vietnamese keys (flagged in story AC3 for VN-fluent
+ * reviewer pass before merge):
+ *   - auth.invite.title (active-voice rewrite per Sally party-mode 2026-06-26)
+ *   - auth.invite.titleWithCenter (Vietnamese interpolation order)
+ *   - auth.invite.error.expired.body (centerName + inviterEmail interpolation)
+ *   - auth.invite.error.emailMismatch.body (privacy-aware copy — no echo)
+ *   - auth.invite.error.emailAlreadyRegistered.body
+ *   - auth.invite.error.passwordNotAllowed.body (one to watch)
+ *   - auth.login.banner.invited (active-voice rewrite — drops awkward em-dash)
+ */
+export const STORY_1_9C_KEYS = [
+  // Header + body copy (AC4)
+  'auth.invite.title',
+  'auth.invite.titleWithCenter',
+  'auth.invite.body',
+
+  // Primary actions (AC4)
+  'auth.invite.googleCta',
+  'auth.invite.emailCollapse',
+  'auth.invite.emailFormExpandedAnnouncement',
+  'auth.invite.fullNameLabel',
+  'auth.invite.passwordLabel',
+  'auth.invite.submit',
+  'auth.invite.backToLogin',
+
+  // Terminal error states (AC5) — 404 / 410 / 409 / 400 / 422 / 5xx / 429
+  'auth.invite.error.notFound.heading',
+  'auth.invite.error.notFound.body',
+  'auth.invite.error.expired.heading',
+  'auth.invite.error.expired.body',
+  'auth.invite.error.expired.contactCta',
+  'auth.invite.error.alreadyAccepted.heading',
+  'auth.invite.error.alreadyAccepted.body',
+  'auth.invite.error.alreadyAccepted.cta',
+  'auth.invite.error.emailMismatch.heading',
+  'auth.invite.error.emailMismatch.body',
+  'auth.invite.error.passwordNotAllowed.heading',
+  'auth.invite.error.passwordNotAllowed.body',
+  'auth.invite.error.invalidToken.heading',
+  'auth.invite.error.invalidToken.body',
+  'auth.invite.error.emailAlreadyRegistered.heading',
+  'auth.invite.error.emailAlreadyRegistered.body',
+  'auth.invite.error.emailAlreadyRegistered.cta',
+  'auth.invite.error.rateLimited',
+  'auth.invite.error.generic',
+
+  // Client-side validation (AC4)
+  'auth.invite.error.fullNameRequired',
+
+  // LoginPage success banner — `/login?invited=true` landing (AC6)
+  'auth.login.banner.invited',
+] as const
+
+describe('Story 1-9c i18n parity (R38)', () => {
+  test('every Story 1-9c key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1_9C_KEYS)
+  })
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

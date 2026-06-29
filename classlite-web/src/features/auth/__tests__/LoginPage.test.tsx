@@ -43,6 +43,9 @@ function UrlProbe() {
       <span data-testid="url-reset-param">
         {searchParams.get('reset') ?? ''}
       </span>
+      <span data-testid="url-invited-param">
+        {searchParams.get('invited') ?? ''}
+      </span>
     </>
   )
 }
@@ -426,6 +429,48 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
     renderLogin({ initialEntries: ['/login?verified=1&reset=1'] })
     const banner = await screen.findByTestId('login-form-banner')
     expect(banner.textContent).toBe(i18n.t('auth.login.banner.reset'))
+  })
+
+  // ===== Story 1-9c — `?invited=true` banner contracts (+4 tests per AC6) =====
+
+  test('renders invited banner with checkmark glyph when /login?invited=true lands', async () => {
+    renderLogin({ initialEntries: ['/login?invited=true'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.invited'))
+    // Inline checkmark SVG with aria-hidden — same shape as the reset
+    // banner so axe-zero stays clean.
+    const svg = banner.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  test('clears the ?invited=true query param after mount', async () => {
+    renderLogin({ initialEntries: ['/login?invited=true'] })
+    await screen.findByTestId('login-form-banner')
+    await waitFor(() => {
+      expect(screen.getByTestId('url-invited-param').textContent).toBe('')
+    })
+  })
+
+  test('prefers invited banner over reset banner when both ?invited=true&reset=1 land (priority: invited > reset)', async () => {
+    renderLogin({ initialEntries: ['/login?invited=true&reset=1'] })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.invited'))
+  })
+
+  test('prefers invited banner over oauth-error when both ?invited=true&error=invite_email_mismatch land (Winston priority-escalation collision)', async () => {
+    renderLogin({
+      initialEntries: ['/login?invited=true&error=invite_email_mismatch'],
+    })
+    const banner = await screen.findByTestId('login-form-banner')
+    expect(banner.textContent).toBe(i18n.t('auth.login.banner.invited'))
+    // The swallowed oauth-error param MUST be wiped alongside `invited`
+    // — closes the ratchet against future priority-chain flips silently
+    // suppressing oauth-error.
+    await waitFor(() => {
+      expect(screen.getByTestId('url-error-param').textContent).toBe('')
+      expect(screen.getByTestId('url-invited-param').textContent).toBe('')
+    })
   })
 
   test('session cache is invalidated on ?reset=1 landing (Murat addition — closes stale-sibling-tab flash)', async () => {

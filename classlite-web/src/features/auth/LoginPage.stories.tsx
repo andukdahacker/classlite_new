@@ -57,3 +57,26 @@ export const ResetBanner: Story = {
     await expect(svg?.getAttribute('aria-hidden')).toBe('true')
   },
 }
+
+/**
+ * `/login?invited=true` mount — Story 1-9c AC7. Success banner with the
+ * inline checkmark glyph + invited copy. Surfaces after Story 1-6's
+ * OAuth-callback success redirects to `APP_POST_LOGIN_URL?invited=true`
+ * and the index loader forwards the query.
+ *
+ * Mirrors the ResetBanner shape — same border / bg / text classes — so
+ * the visual contract stays consistent across success banners.
+ */
+export const InvitedBanner: Story = {
+  parameters: {
+    router: { initialEntries: ['/login?invited=true'] },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const banner = await canvas.findByTestId('login-form-banner')
+    await expect(banner).toBeTruthy()
+    const svg = banner.querySelector('svg')
+    await expect(svg).not.toBeNull()
+    await expect(svg?.getAttribute('aria-hidden')).toBe('true')
+  },
+}

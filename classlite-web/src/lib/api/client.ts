@@ -214,6 +214,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Initiate Google OAuth sign-in (story 1.6)
+         * @description Generates a CSRF-bound signed state token, sets the `oauth_state`
+         *     httpOnly cookie (Path=/api/auth, Max-Age=600), and 302-redirects to
+         *     Google's authorization URL. Optional `inviteToken` is verified
+         *     pre-flight to short-circuit a wasted Google round-trip; `redirectTo`
+         *     is honored only when it matches the same-origin allowlist.
+         */
+        get: operations["googleInit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google OAuth callback (story 1.6)
+         * @description Always returns 302. Success → `APP_POST_LOGIN_URL` plus
+         *     `?invited=true&center=<name>` when an invite was accepted, or
+         *     `?error=<code>` for invite-recoverable failures. Failure →
+         *     `APP_LOGIN_ERROR_URL_BASE?error=<code>`. Codes: `csrf_invalid`,
+         *     `csrf_expired`, `google_exchange_failed`, `google_userinfo_failed`,
+         *     `google_timeout`, `google_email_unverified`, `google_access_denied`,
+         *     `google_server_error`, `oauth_wrong_tenant`, `google_link_race`,
+         *     `invite_email_mismatch`, `invite_expired`, `invite_already_accepted`.
+         *     The `oauth_state` cookie is cleared on every exit path.
+         *     OAUTH_NOT_CONFIGURED is the only response that is NOT a 302 — it
+         *     emits a 503 JSON envelope so operator monitoring picks it up.
+         */
+        get: operations["googleCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accept-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a staff invite via email/password (story 1.6)
+         * @description Two branches based on whether the invite email matches an existing
+         *     user. New users supply `fullName` + `password`; existing users
+         *     omit both. The invite link is the email verification — accepted
+         *     users land with `emailVerified: true`. Per-IP rate limited
+         *     (10 / 60s) to defend against token enumeration.
+         */
+        post: operations["acceptInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{userId}/force-logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner-initiated force-logout for a staff member (story 1.6 / FR-80)
+         * @description Bulk-deletes every `refresh_tokens` row for the target user.
+         *     Documented limitation: access tokens already issued remain valid
+         *     for up to AccessTokenTTL (15 min) — EDGE-2 tradeoff accepted.
+         *     Cross-tenant targets return 404 USER_NOT_FOUND (NEVER 403, which
+         *     would leak existence). Requires authenticated Owner JWT.
+         */
+        post: operations["forceLogout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/verify-status": {
         parameters: {
             query?: never;
@@ -358,6 +460,50 @@ export interface components {
         };
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
+        };
+        AcceptInviteRequest: {
+            inviteToken: string;
+            /** @description Required only on the new-user branch. */
+            fullName?: string | null;
+            /** @description Required only on the new-user branch. */
+            password?: string | null;
+        };
+        InviteCenter: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        AcceptInviteResult: {
+            accessToken: string;
+            user: components["schemas"]["UserSummary"];
+            center: components["schemas"]["InviteCenter"];
+            /** @enum {string} */
+            role: "owner" | "admin" | "teacher" | "student";
+        };
+        EnvelopeAcceptInviteResult: {
+            data: components["schemas"]["AcceptInviteResult"];
+        };
+        ForceLogoutResult: {
+            forcedLogout: boolean;
+            /** @description Number of refresh_tokens rows deleted for the target. */
+            sessionsRevoked: number;
+        };
+        EnvelopeForceLogoutResult: {
+            data: components["schemas"]["ForceLogoutResult"];
+        };
+        InviteExpiredDetails: {
+            centerName: string;
+            /** Format: email */
+            inviterEmail: string;
+        };
+        InviteAlreadyAcceptedDetails: {
+            centerName: string;
+        };
+        InviteEmailMismatchDetails: {
+            /** Format: email */
+            invitedEmail: string;
+            /** Format: email */
+            oauthEmail: string;
         };
     };
     responses: never;
@@ -739,6 +885,234 @@ export interface operations {
                 };
             };
             /** @description Validation failure (password length) or malformed body. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    googleInit: {
+        parameters: {
+            query?: {
+                inviteToken?: string;
+                redirectTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to Google authorization URL. Sets `oauth_state` cookie. */
+            302: {
+                headers: {
+                    /** @description Google's authorization URL with `state=<signed>` query param. */
+                    Location?: string;
+                    /**
+                     * @description `oauth_state=<signed>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=600`
+                     *     (Domain set in non-dev).
+                     */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description INVALID_INVITE_TOKEN — supplied token exceeds the 256-char cap. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVITE_NOT_FOUND — inviteToken was supplied but the invite no longer exists. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVITE_ALREADY_ACCEPTED — the invite has already been redeemed. Details carry `{ centerName }`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVITE_EXPIRED — inviteToken was supplied but the invite has expired. Details carry `{ centerName, inviterEmail }`. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description OAUTH_NOT_CONFIGURED — operator left Google credentials empty (dev parity only). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    googleCallback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser-navigation redirect — success or failure carries the outcome in the Location query string. */
+            302: {
+                headers: {
+                    Location?: string;
+                    /**
+                     * @description `refresh_token=<value>` on success (per AC10 from story 1.5)
+                     *     AND `oauth_state=; Max-Age=0` (replay defense).
+                     */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    acceptInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Invite accepted, session issued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAcceptInviteResult"];
+                };
+            };
+            /** @description INVITE_NOT_FOUND — the token does not match a row. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVITE_ALREADY_ACCEPTED / INVITE_EMAIL_MISMATCH / PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER / GOOGLE_ID_ALREADY_LINKED. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVITE_EXPIRED — surfaces details `{ centerName, inviterEmail }` so the SPA can render UX recovery. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR — missing fullName/password on new-user branch, or malformed body. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-IP rate limit (10 / 60s) exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    forceLogout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessions revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeForceLogoutResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED — missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE — caller is not an Owner. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description USER_NOT_FOUND — target does not exist in the caller's tenant (cross-tenant attempts also collapse here). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR — malformed UUID. */
             422: {
                 headers: {
                     [name: string]: unknown;
