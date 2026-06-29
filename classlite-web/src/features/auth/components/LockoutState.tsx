@@ -22,7 +22,7 @@
  * `RequestPasswordReset` does NOT check lockout state (verified per
  * `auth_reset.go:33-69`), so password-reset remains usable during lockout.
  */
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { buttonVariants } from '@/components/ui/button'
@@ -70,32 +70,32 @@ export default function LockoutState({
   const { t } = useTranslation()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const previousRemainingRef = useRef<number>(remainingSeconds)
-  const thresholdMessageRef = useRef<string>('')
+  const [thresholdMessage, setThresholdMessage] = useState<string>('')
 
   useEffect(() => {
     headingRef.current?.focus()
   }, [])
 
   // Edge-triggered threshold-announce: fire once as the countdown crosses
-  // 60s, again as it crosses 30s. The ref carries the LAST emitted message
-  // so re-renders don't clear and re-fire.
-  const previous = previousRemainingRef.current
-  let nextThresholdMessage = thresholdMessageRef.current
-  if (
-    previous > THRESHOLD_ONE_MINUTE &&
-    remainingSeconds <= THRESHOLD_ONE_MINUTE &&
-    remainingSeconds > THRESHOLD_THIRTY_SECONDS
-  ) {
-    nextThresholdMessage = t('auth.login.lockout.thresholdOneMinute')
-  } else if (
-    previous > THRESHOLD_THIRTY_SECONDS &&
-    remainingSeconds <= THRESHOLD_THIRTY_SECONDS &&
-    remainingSeconds > 0
-  ) {
-    nextThresholdMessage = t('auth.login.lockout.thresholdThirtySeconds')
-  }
-  previousRemainingRef.current = remainingSeconds
-  thresholdMessageRef.current = nextThresholdMessage
+  // 60s, again as it crosses 30s. The ref carries the previous remaining
+  // value so the effect re-runs only when the threshold is actually crossed.
+  useEffect(() => {
+    const previous = previousRemainingRef.current
+    if (
+      previous > THRESHOLD_ONE_MINUTE &&
+      remainingSeconds <= THRESHOLD_ONE_MINUTE &&
+      remainingSeconds > THRESHOLD_THIRTY_SECONDS
+    ) {
+      setThresholdMessage(t('auth.login.lockout.thresholdOneMinute'))
+    } else if (
+      previous > THRESHOLD_THIRTY_SECONDS &&
+      remainingSeconds <= THRESHOLD_THIRTY_SECONDS &&
+      remainingSeconds > 0
+    ) {
+      setThresholdMessage(t('auth.login.lockout.thresholdThirtySeconds'))
+    }
+    previousRemainingRef.current = remainingSeconds
+  }, [remainingSeconds, t])
 
   const minutes = Math.max(1, Math.ceil(remainingSeconds / SECONDS_PER_MINUTE))
 
@@ -130,7 +130,7 @@ export default function LockoutState({
         role="status"
         className="sr-only"
       >
-        {thresholdMessageRef.current}
+        {thresholdMessage}
       </span>
       <Link
         to="/forgot-password"

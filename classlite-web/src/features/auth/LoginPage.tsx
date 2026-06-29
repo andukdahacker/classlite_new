@@ -222,10 +222,13 @@ export default function LoginPage() {
   >(() => deriveReplacement(searchParams))
 
   // Re-derive on searchParams change so a SPA-nav back to a mismatch URL
-  // re-enters the screen even after the prior URL-clear.
+  // re-enters the screen even after the prior URL-clear. Same shape as the
+  // bannerKey re-derive effect — URL is an external input that changes
+  // outside React's render cycle on SPA navigation.
   useEffect(() => {
     const next = deriveReplacement(searchParams)
     if (next === null) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLatchedReplacement((prev) => {
       if (prev?.kind === next.kind) {
         if (

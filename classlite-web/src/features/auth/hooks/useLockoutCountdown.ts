@@ -61,9 +61,14 @@ export function useLockoutCountdown(
   useEffect(() => {
     // On a new lockoutUntilMs (or transition to null), reset internal state
     // synchronously so a double-mount with different values doesn't carry
-    // the prior tick.
+    // the prior tick. The setState calls below are intentionally synchronous
+    // — they're the "subscribe to external system" half of the effect rule
+    // (Date.now() is the external system); the alternative (compute at
+    // render-time from props + Date.now()) breaks the Amelia A2 pin that
+    // the hook OWN the isActive useState.
     expiryHandledRef.current = false
     const initial = computeRemainingSeconds(lockoutUntilMs)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRemainingSeconds(initial)
     const initiallyActive =
       lockoutUntilMs !== null && lockoutUntilMs > Date.now()
