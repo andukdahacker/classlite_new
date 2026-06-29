@@ -687,6 +687,88 @@ describe('Story 1-9c i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 1-9d — Auth Error & Recovery States.
+ *
+ * 16 keys cover the four new states (Lockout, OAuth Email Mismatch, Workspace
+ * Blocked, Session Expiry) per AC1–AC4. Forked body copy on the Workspace
+ * Blocked screen (Sally STRONG fork — bodyUserinfoFailed vs bodyEmailUnverified)
+ * and the threshold-announce a11y pin (60s + 30s thresholds) are reflected
+ * in the key list below.
+ *
+ * 6 ★ REVIEWER-MANDATORY Vietnamese keys (flagged in story AC6 for VN-fluent
+ * reviewer pass before merge):
+ *   - auth.login.lockout.heading ("Vui lòng" register edit — apology framing)
+ *   - auth.login.oauthMismatch.body (privacy-aware, no email echo)
+ *   - auth.login.workspaceBlocked.bodyUserinfoFailed (Workspace-policy framing)
+ *   - auth.login.workspaceBlocked.bodyEmailUnverified (forced-verification framing)
+ *   - auth.login.banner.sessionExpired ("vì lý do an toàn" — reassuring tone)
+ *   - auth.login.banner.sessionExpiredDataLossHint (honest framing about lost work)
+ */
+export const STORY_1_9D_KEYS = [
+  // Lockout state (AC1) — 5 keys
+  'auth.login.lockout.heading',
+  'auth.login.lockout.body',
+  'auth.login.lockout.thresholdOneMinute',
+  'auth.login.lockout.thresholdThirtySeconds',
+  'auth.login.lockout.resetCta',
+
+  // OAuth Email Mismatch (AC2) — 4 keys
+  'auth.login.oauthMismatch.heading',
+  'auth.login.oauthMismatch.body',
+  'auth.login.oauthMismatch.reopenInviteHint',
+  'auth.login.oauthMismatch.retryGoogleCta',
+
+  // Workspace Blocked (AC3) — 5 keys (shared heading + forked body + 2 CTAs)
+  'auth.login.workspaceBlocked.heading',
+  'auth.login.workspaceBlocked.bodyUserinfoFailed',
+  'auth.login.workspaceBlocked.bodyEmailUnverified',
+  'auth.login.workspaceBlocked.tryPersonalCta',
+  'auth.login.workspaceBlocked.registerCta',
+
+  // Session Expiry banner (AC4) — 2 keys
+  'auth.login.banner.sessionExpired',
+  'auth.login.banner.sessionExpiredDataLossHint',
+] as const
+
+describe('Story 1-9d i18n parity (R38)', () => {
+  test('every Story 1-9d key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_1_9D_KEYS)
+  })
+})
+
+/**
+ * Story 1-9d STORY_1_9D_KEYS closed enumeration (Murat M7 pin — R-NEW=16
+ * orphan-key misattribution defense).
+ *
+ * Catches at test-time the case where a dev claims an orphan key from a
+ * prior story (e.g. `auth.login.error.invalidCredentials`, shipped 1-8)
+ * into STORY_1_9D_KEYS — per-key parity stays green but the historical
+ * lineage becomes a lie. Same shape as the COVERED_NAMESPACES script-level
+ * ratchet, scoped to the new story's array.
+ */
+describe('Story 1-9d STORY_1_9D_KEYS closed enumeration (R-NEW=16)', () => {
+  const ALLOWED_PREFIXES = [
+    'auth.login.lockout.',
+    'auth.login.oauthMismatch.',
+    'auth.login.workspaceBlocked.',
+  ] as const
+  const ALLOWED_EXACT = [
+    'auth.login.banner.sessionExpired',
+    'auth.login.banner.sessionExpiredDataLossHint',
+  ] as const
+
+  test.each(STORY_1_9D_KEYS)(
+    '%s belongs to a 1-9d allowed prefix or exact key',
+    (key) => {
+      const ok =
+        ALLOWED_PREFIXES.some((p) => key.startsWith(p)) ||
+        (ALLOWED_EXACT as readonly string[]).includes(key)
+      expect(ok).toBe(true)
+    },
+  )
+})
+
 describe('Story 1-7c i18n parity (R38)', () => {
   test('every Story 1-7c i18n key exists in both en.json and vi.json', () => {
     // Will throw with a readable diff naming each missing key per locale

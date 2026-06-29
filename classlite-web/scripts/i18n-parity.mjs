@@ -55,6 +55,11 @@ const COVERED_NAMESPACES = [
   'pageHead.',
   'userPill.',
   'appShell.',
+  // Story 1-9d extension (Murat 1-9c handoff): every `auth.*` key in either
+  // locale MUST be claimed by some STORY_*_KEYS array. Closes the orphan-key
+  // vacuous-pass gap where a new auth key passes parity (both locales have
+  // it) but isn't claimed by any per-story discharge block.
+  'auth.',
 ]
 
 function fail(code, msg) {
