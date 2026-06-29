@@ -50,6 +50,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import AuthCard from '@/features/auth/components/AuthCard'
+import Banner from '@/features/auth/components/Banner'
 import CollapsibleEmailForm from '@/features/auth/components/CollapsibleEmailForm'
 import GoogleOAuthButton from '@/features/auth/components/GoogleOAuthButton'
 import PasswordInput from '@/features/auth/components/PasswordInput'
@@ -278,47 +279,36 @@ export default function LoginPage() {
           <GoogleOAuthButton label={googleLabel} disabled={isPending} />
 
           {!isAuthenticated && bannerKey === 'invited' && !emailFormOpen && (
-            <div
-              role="alert"
-              data-testid="login-form-banner"
-              className="flex items-start gap-2 rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
-            >
-              {CHECKMARK_SVG}
-              <span>{t('auth.login.banner.invited')}</span>
-            </div>
+            <Banner
+              variant="invited"
+              message={t('auth.login.banner.invited')}
+              icon={CHECKMARK_SVG}
+            />
           )}
 
           {!isAuthenticated && bannerKey === 'reset' && !emailFormOpen && (
-            <div
-              role="alert"
-              data-testid="login-form-banner"
-              className="flex items-start gap-2 rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
-            >
-              {CHECKMARK_SVG}
-              <span>{t('auth.login.banner.reset')}</span>
-            </div>
+            <Banner
+              variant="reset"
+              message={t('auth.login.banner.reset')}
+              icon={CHECKMARK_SVG}
+            />
           )}
 
           {!isAuthenticated && bannerKey === 'verified' && !emailFormOpen && (
-            <div
-              role="alert"
-              data-testid="login-form-banner"
-              className="rounded-md border border-[color:var(--cl-status-success)]/40 bg-[color:var(--cl-status-success)]/10 p-3 text-sm text-[color:var(--cl-status-success)]"
-            >
-              {t('auth.login.banner.verified')}
-            </div>
+            <Banner
+              variant="verified"
+              message={t('auth.login.banner.verified')}
+            />
           )}
 
           {!isAuthenticated &&
             bannerKey === 'oauth-error' &&
             !emailFormOpen && (
-              <div
-                role="alert"
-                data-testid="login-form-error"
-                className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-              >
-                {t('auth.login.error.oauthGeneric')}
-              </div>
+              <Banner
+                variant="oauth-error"
+                message={t('auth.login.error.oauthGeneric')}
+                testId="login-form-error"
+              />
             )}
 
           {emailFormOpen && (
