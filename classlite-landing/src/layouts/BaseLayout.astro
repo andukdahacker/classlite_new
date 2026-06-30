@@ -1,22 +1,154 @@
 ---
+/**
+ * BaseLayout — Story 1.10 AC1 SEO + AC4a hint-cookie redirect +
+ * AC4b banner-attribute setter + AC6 lang-cookie write + font preload.
+ *
+ * Script discipline (Amelia BLOCKER #12 + AC4a/AC4b/AC6) — every
+ * `<script>` block in this layout's `<head>` is `is:inline` because
+ * they all need to run synchronously BEFORE first paint:
+ *
+ *   1. AC4a hint-cookie redirect + AC4b banner-attribute setter
+ *      (combined; ≤18 lines) — placed ABOVE `<title>` so the redirect
+ *      fires before any visible content paints. Default Astro
+ *      `<script>` becomes a deferred ES module that runs AFTER
+ *      `DOMContentLoaded`, causing a flash of landing-page paint
+ *      before the bounce.
+ *
+ *   2. AC6 lang-cookie write — placed at the bottom of `<head>`.
+ *      Embeds an inline duplicate of `computeCookieDomain` between
+ *      sentinel comments (Task 9.7) so the parity guard can verify
+ *      byte-identity against `classlite-web/src/lib/cookie-domain.ts`.
+ *
+ * Layer 4 of the landing-script-budget.md discipline.
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
 import '../styles/tokens.css'
 import '../styles/global.css'
 
 interface Props {
   title: string
-  lang?: string
+  description?: string
+  lang: 'vi' | 'en'
+  ogTitle?: string
+  ogDescription?: string
+  canonicalUrl?: string
+  /* `routePath` is the locale-relative slug for hreflang alternates —
+     e.g. "/" for the landing index, "/privacy" for the legal page.
+     Hreflang `vi`/`en`/`x-default` are emitted against
+     `https://classlite.app/<lang><routePath>`. Defaults to "/" so the
+     index pages stay one-arg. P3-decision from code review 2026-06-30. */
+  routePath?: string
 }
 
-const { title, lang = 'en' } = Astro.props
+const {
+  title,
+  description,
+  lang,
+  ogTitle,
+  ogDescription,
+  canonicalUrl,
+  routePath = '/',
+} = Astro.props
+const ogLocale = lang === 'vi' ? 'vi_VN' : 'en_US'
+const dashboardUrl = PUBLIC_DASHBOARD_URL
+const hreflangVi = `https://classlite.app/vi${routePath}`
+const hreflangEn = `https://classlite.app/en${routePath}`
 ---
 
 <!doctype html>
 <html lang={lang}>
   <head>
+    {/* AC4a + AC4b combined: hint-cookie redirect + banner-attribute setter. is:inline ABOVE <title> per Amelia BLOCKER #12. */}
+    <script is:inline define:vars={{ dashboardUrl }}>
+      try {
+        const params = new URLSearchParams(window.location.search)
+        const sessionExpired =
+          params.get('session_expired')?.toLowerCase() === 'true'
+        if (sessionExpired) {
+          document.documentElement.setAttribute('data-session-expired', 'true')
+        } else {
+          const hint = document.cookie.split(';').some((segment) => {
+            const eq = segment.indexOf('=')
+            if (eq < 0) return false
+            return segment.slice(0, eq).trim() === 'logged_in' &&
+              segment.slice(eq + 1).trim() === '1'
+          })
+          if (hint) {
+            window.location.replace(new URL('/dashboard', dashboardUrl).toString())
+          }
+        }
+      } catch (e) {
+        /* noop — jsdom / private mode */
+      }
+    </script>
+
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    {ogTitle && <meta property="og:title" content={ogTitle} />}
+    {ogDescription && (
+      <meta property="og:description" content={ogDescription} />
+    )}
+    <meta property="og:locale" content={ogLocale} />
+    <meta property="og:image" content={`/og-image-${lang}.png`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+    <link rel="alternate" hreflang="vi" href={hreflangVi} />
+    <link rel="alternate" hreflang="en" href={hreflangEn} />
+    <link rel="alternate" hreflang="x-default" href={hreflangVi} />
+    <link
+      rel="preload"
+      href="/fonts/fraunces-italic-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    {/* AC6 lang-cookie write — is:inline at bottom of <head> so it completes before CTA click. */}
+    <script is:inline define:vars={{ activeLang: lang }}>
+      try {
+        /* CL-COOKIE-DOMAIN-PARITY-START */
+        function computeCookieDomain() {
+          if (typeof window === 'undefined') return null
+          const host = window.location.hostname
+            .toLowerCase()
+            .replace(/\.$/, '')
+          if (host === 'classlite.app' || host.endsWith('.classlite.app')) {
+            return '.classlite.app'
+          }
+          if (
+            host === 'classlite.localhost' ||
+            host.endsWith('.classlite.localhost')
+          ) {
+            return '.classlite.localhost'
+          }
+          return null
+        }
+        /* CL-COOKIE-DOMAIN-PARITY-END */
+        /* Only write the lang cookie if absent — never overwrite a user's
+           saved preference just because they navigated to the opposite
+           locale. P21 from code review 2026-06-30. */
+        const existing = document.cookie.split(';').some((segment) => {
+          const eq = segment.indexOf('=')
+          return eq > 0 && segment.slice(0, eq).trim() === 'lang'
+        })
+        if (!existing) {
+          const domain = computeCookieDomain()
+          const parts = [
+            'lang=' + activeLang,
+            'Max-Age=31536000',
+            'Path=/',
+            'SameSite=Lax',
+          ]
+          if (domain) parts.push('Domain=' + domain)
+          document.cookie = parts.join('; ')
+        }
+      } catch (e) {
+        /* noop */
+      }
+    </script>
   </head>
   <body class="dotted">
     <slot />

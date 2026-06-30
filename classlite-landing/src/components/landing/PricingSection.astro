@@ -1,0 +1,145 @@
+---
+/**
+ * PricingSection — UX-DR12. Holds the billing-cycle radio toggle + 3
+ * PricingCard tiers + below-grid CTA. Task 6.2 decision: CSS-only
+ * toggle (Option A). Two hidden `<input type="radio" name="billing">`
+ * inputs + sibling-selector CSS hide/show `.hint-monthly` /
+ * `.hint-annual` price spans inside each card. 0 JS for the swap.
+ *
+ * Cross-locale state preservation (Sally STRONG #7) — the language
+ * toggle on the StickyHeader/Footer appends `?billing=<active>` to
+ * the destination URL, and a ≤4-line inline script on this page
+ * pre-checks the matching radio before paint.
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
+import type { Strings } from '../../content/types'
+import PricingCard from './PricingCard.astro'
+
+interface Props {
+  lang: 'vi' | 'en'
+  strings: Strings
+}
+
+const { lang, strings } = Astro.props
+const currency = lang === 'vi' ? 'vnd' : 'vnd' // landing keeps VND for both locales — Vietnamese market
+const belowCtaHref = `${PUBLIC_DASHBOARD_URL}/register`
+---
+
+<section
+  id="pricing"
+  class="bg-[var(--cl-paper-2)] border-y border-[var(--cl-line)]"
+>
+  <div class="mx-auto max-w-[1180px] px-4 py-16 md:px-8 md:py-24">
+    <h2
+      class="mb-10 text-center font-[var(--cl-font-display)] text-[28px] text-[var(--cl-ink)] md:text-[36px]"
+    >
+      {strings.pricing.heading}
+    </h2>
+
+    <form
+      class="pricing-toggle mx-auto mb-10 flex w-fit overflow-hidden rounded-full border border-[var(--cl-line)] bg-[var(--cl-surface)]"
+    >
+      <input
+        type="radio"
+        name="billing"
+        id="billing-monthly"
+        value="monthly"
+        class="peer/monthly sr-only"
+        checked
+      />
+      <label
+        for="billing-monthly"
+        class="inline-flex h-10 cursor-pointer items-center px-4 text-sm text-[var(--cl-muted)] peer-checked/monthly:bg-[var(--cl-ink)] peer-checked/monthly:text-white"
+        data-testid="landing-pricing-toggle-monthly"
+        >{strings.pricing.toggleMonthly}</label
+      >
+      <input
+        type="radio"
+        name="billing"
+        id="billing-annual"
+        value="annual"
+        class="peer/annual sr-only"
+      />
+      <label
+        for="billing-annual"
+        class="inline-flex h-10 cursor-pointer items-center px-4 text-sm text-[var(--cl-muted)] peer-checked/annual:bg-[var(--cl-ink)] peer-checked/annual:text-white"
+        data-testid="landing-pricing-toggle-annual"
+        >{strings.pricing.toggleAnnual}</label
+      >
+    </form>
+
+    <div
+      class="grid grid-cols-1 gap-6 md:grid-cols-3"
+      data-testid="landing-pricing-grid"
+    >
+      <PricingCard
+        tier="free"
+        pricing={strings.pricing.free}
+        popularBadge={strings.pricing.popularBadge}
+        annualBadge={strings.pricing.annualBadge}
+        currency={currency}
+      />
+      <PricingCard
+        tier="pro"
+        pricing={strings.pricing.pro}
+        popularBadge={strings.pricing.popularBadge}
+        annualBadge={strings.pricing.annualBadge}
+        currency={currency}
+      />
+      <PricingCard
+        tier="studio"
+        pricing={strings.pricing.studio}
+        popularBadge={strings.pricing.popularBadge}
+        annualBadge={strings.pricing.annualBadge}
+        currency={currency}
+      />
+    </div>
+
+    <div class="mt-10 text-center">
+      <a
+        href={belowCtaHref}
+        class="inline-flex h-12 w-full items-center justify-center rounded-md bg-[var(--cl-accent-2-btn)] px-6 text-base font-medium text-white shadow-[var(--cl-shadow-amber)] motion-safe:transition-colors hover:bg-[var(--cl-accent-2-text)] md:w-auto"
+        data-testid="landing-pricing-below-cta"
+      >
+        {strings.pricing.belowCta}
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Sibling-selector swap: the checked monthly radio shows .hint-monthly;
+     the checked annual radio shows .hint-annual. Pure CSS, ZERO JS.
+     `.hint-monthly` / `.hint-annual` render inside `PricingCard.astro`
+     (sibling component with a distinct Astro scope hash), so the
+     selectors target `:global()` to pierce the scope boundary. P3 from
+     code review 2026-06-30. Transitions are not animated so no
+     prefers-reduced-motion guard is required. */
+  .pricing-toggle:has(input[value='annual']:checked) ~ .grid :global(.hint-monthly),
+  form.pricing-toggle:has(input[value='annual']:checked) + div :global(.hint-monthly) {
+    display: none;
+  }
+  .pricing-toggle:has(input[value='annual']:checked) ~ * :global(.hint-annual),
+  form.pricing-toggle:has(input[value='annual']:checked) + div :global(.hint-annual) {
+    display: block;
+  }
+</style>
+
+<script is:inline>
+  // AC6 — cross-locale state preservation (Sally STRONG #7). Pre-paint
+  // hydration of the billing toggle from the `?billing=` URL param.
+  // Sets the `checked` IDL property (not the HTML attribute, which only
+  // reflects the initial state and does not drive `:checked` after
+  // parse). Case-insensitive match per P4. ≤6 lines.
+  try {
+    const cycle = new URLSearchParams(window.location.search)
+      .get('billing')
+      ?.toLowerCase()
+    if (cycle === 'annual') {
+      const annual = document.getElementById('billing-annual')
+      const monthly = document.getElementById('billing-monthly')
+      if (annual instanceof HTMLInputElement) annual.checked = true
+      if (monthly instanceof HTMLInputElement) monthly.checked = false
+    }
+  } catch {}
+</script>

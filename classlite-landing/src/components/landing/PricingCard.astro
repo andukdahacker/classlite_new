@@ -1,0 +1,105 @@
+---
+/**
+ * PricingCard — UX-DR12. VND prices LOCKED per BLOCKER A8 (2026-06-04).
+ * Format mandated by reframe (3): large price + "Giá đã bao gồm VAT 10%"
+ * caption. Annual prices show the "~2 tháng miễn phí" badge. The Pro
+ * variant gets `border: 2px solid var(--cl-accent-2)` and an amber
+ * popular badge.
+ *
+ * The visible price (monthly OR annual) is selected by sibling-selector
+ * CSS driven by the `<input type="radio" name="billing">` hidden inputs
+ * in `PricingSection.astro` — pure HTML/CSS, ZERO JavaScript (Task 6.2
+ * decision).
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
+import type { PricingTierStrings, Strings } from '../../content/types'
+
+type Tier = 'free' | 'pro' | 'studio'
+
+interface Props {
+  tier: Tier
+  pricing: PricingTierStrings
+  popularBadge: Strings['pricing']['popularBadge']
+  annualBadge: Strings['pricing']['annualBadge']
+  currency: 'vnd' | 'usd-note'
+}
+
+const { tier, pricing, popularBadge, annualBadge, currency } = Astro.props
+
+const planParam = tier === 'free' ? '' : `?plan=${tier}`
+const cta = `${PUBLIC_DASHBOARD_URL}/register${planParam}`
+
+const isPro = tier === 'pro'
+const priceSuffix = currency === 'vnd' ? '₫' : ''
+const unitMonthly = currency === 'vnd' ? '/tháng' : '/month'
+const unitAnnual = currency === 'vnd' ? '/năm' : '/year'
+---
+
+<article
+  data-testid={`landing-pricing-card-${tier}`}
+  class:list={[
+    'relative flex flex-col rounded-2xl bg-[var(--cl-surface)] p-6 shadow-[var(--cl-shadow-card)]',
+    isPro
+      ? 'border-2 border-[var(--cl-accent-2)]'
+      : 'border border-[var(--cl-line)]',
+  ]}
+>
+  {
+    isPro && (
+      <span
+        class="absolute -top-3 right-4 inline-flex items-center rounded-full bg-[var(--cl-accent-2)] px-3 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white"
+        data-testid={`landing-pricing-card-${tier}-popular`}
+      >
+        {popularBadge}
+      </span>
+    )
+  }
+
+  <h3
+    class="mb-4 font-[var(--cl-font-display)] text-[22px] text-[var(--cl-ink)]"
+  >
+    {pricing.name}
+  </h3>
+
+  <div class="mb-2 min-h-[88px]">
+    <p
+      class="hint-monthly font-[var(--cl-font-mono)] text-[36px] font-medium text-[var(--cl-ink)]"
+      data-testid={`landing-pricing-card-${tier}-price-monthly`}
+    >
+      {pricing.priceMonthly}{priceSuffix}
+      <span class="text-base font-normal text-[var(--cl-muted)]">{unitMonthly}</span>
+    </p>
+    <p
+      class="hint-annual hidden font-[var(--cl-font-mono)] text-[36px] font-medium text-[var(--cl-ink)]"
+      data-testid={`landing-pricing-card-${tier}-price-annual`}
+    >
+      {pricing.priceAnnual}{priceSuffix}
+      <span class="text-base font-normal text-[var(--cl-muted)]">{unitAnnual}</span>
+      {tier !== 'free' && (
+        <span
+          class="ml-2 inline-flex items-center rounded-full bg-[var(--cl-tint-green)] px-2 py-0.5 text-[10px] font-medium text-[var(--cl-green)]"
+        >
+          {annualBadge}
+        </span>
+      )}
+    </p>
+    <p class="mt-1 text-[11px] italic text-[var(--cl-muted)]">{pricing.vatNote}</p>
+  </div>
+
+  <p class="mb-6 text-sm leading-relaxed text-[var(--cl-muted)]">
+    {pricing.description}
+  </p>
+
+  <a
+    href={cta}
+    class:list={[
+      'mt-auto inline-flex h-11 items-center justify-center rounded-md px-4 text-sm font-medium motion-safe:transition-colors',
+      isPro
+        ? 'bg-[var(--cl-accent-2-btn)] text-white hover:bg-[var(--cl-accent-2-text)]'
+        : 'border border-[var(--cl-line)] text-[var(--cl-ink)] hover:bg-[var(--cl-line-soft)]',
+    ]}
+    data-testid={`landing-pricing-card-${tier}-cta`}
+  >
+    {pricing.cta}
+  </a>
+</article>

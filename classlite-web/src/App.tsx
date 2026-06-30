@@ -43,6 +43,7 @@
 import { useEffect, useRef } from 'react'
 import { RouterProvider } from 'react-router'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
+import { useHintCookieWrite } from '@/hooks/useHintCookieWrite'
 import { useLanguageInit } from '@/hooks/useLanguageInit'
 import { router } from '@/routes'
 import { Toaster } from '@/components/ui/sonner'
@@ -52,6 +53,7 @@ import { runBootProbe } from '@/lib/auth-refresh'
 
 export default function App() {
   useLanguageInit()
+  useHintCookieWrite()
   const bootRefreshFired = useRef(false)
 
   useEffect(() => {

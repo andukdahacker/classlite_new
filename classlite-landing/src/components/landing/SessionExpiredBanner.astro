@@ -1,0 +1,66 @@
+---
+/**
+ * SessionExpiredBanner — AC4b. Default hidden (`display: none`).
+ * Revealed by the `<html data-session-expired="true">` attribute set
+ * by the AC4a `<script is:inline>` in `BaseLayout.astro`'s `<head>`
+ * BEFORE paint, eliminating CLS (Sally STRONG #6).
+ *
+ * The replaceState URL-strip script (AC4b + Task 6.3) lives in this
+ * component as a `<script is:inline>` so it runs synchronously where
+ * placed and strips the `?session_expired=true` param so a refresh
+ * does not re-show the banner.
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
+import type { Strings } from '../../content/types'
+
+interface Props {
+  strings: Strings
+}
+
+const { strings } = Astro.props
+const loginUrl = `${PUBLIC_DASHBOARD_URL}/login`
+---
+
+<div
+  data-testid="landing-session-expired-banner"
+  class="session-expired-banner border-b border-[var(--cl-accent-2-text)]/30 bg-[var(--cl-tint-gold)] text-[var(--cl-accent-2-text)]"
+  role="alert"
+>
+  <div
+    class="mx-auto flex max-w-[1180px] flex-col items-start gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-8"
+  >
+    <p class="text-sm">{strings.banner.sessionExpired.body}</p>
+    <a
+      href={loginUrl}
+      class="inline-flex h-11 w-full items-center justify-center rounded-md bg-[var(--cl-accent-2-btn)] px-4 text-sm font-medium text-white motion-safe:transition-colors hover:bg-[var(--cl-accent-2-text)] md:w-auto"
+      data-testid="landing-session-expired-banner-cta"
+    >
+      {strings.banner.sessionExpired.cta}
+    </a>
+  </div>
+</div>
+
+<style>
+  .session-expired-banner {
+    display: none;
+  }
+  :global(html[data-session-expired='true']) .session-expired-banner {
+    display: block;
+  }
+</style>
+
+<script is:inline>
+  // AC4b — strip ONLY the `session_expired` query param so the
+  // banner does not re-show on refresh. Preserve every other query
+  // param (UTM tracking, `billing=annual`, etc.) and the URL hash.
+  // P13 from code review 2026-06-30 — previously `replaceState`
+  // wiped the entire search string and the hash.
+  try {
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('session_expired')) {
+      url.searchParams.delete('session_expired')
+      const next = url.pathname + url.search + url.hash
+      history.replaceState({}, '', next)
+    }
+  } catch {}
+</script>

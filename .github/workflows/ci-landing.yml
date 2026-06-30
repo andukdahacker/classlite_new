@@ -4,12 +4,14 @@ on:
   push:
     paths:
       - 'classlite-landing/**'
+      - 'classlite-web/src/lib/cookie-domain.ts'
       - 'classlite-web/src/tokens.css'
       - 'scripts/sync-tokens.sh'
       - '.github/workflows/ci-landing.yml'
   pull_request:
     paths:
       - 'classlite-landing/**'
+      - 'classlite-web/src/lib/cookie-domain.ts'
       - 'classlite-web/src/tokens.css'
       - 'scripts/sync-tokens.sh'
       - '.github/workflows/ci-landing.yml'
@@ -35,7 +37,45 @@ jobs:
           fi
       - name: Lint (Astro check)
         run: cd classlite-landing && npx astro check
+      - name: Type-check (scripts + tests)
+        run: cd classlite-landing && npx tsc --noEmit -p tsconfig.scripts.json
       - name: Lint (Stylelint)
         run: cd classlite-landing && npm run lint:css
+      - name: Story 1.10 AC8 — R38 Layer 4 (CI parity script + LOCKED_PRICES + orphan scan)
+        run: cd classlite-landing && npm run check-parity
+      - name: Story 1.10 AC8 — R38 Layers 2+3 (Vitest helper + ATDD parity-coverage specimen)
+        run: cd classlite-landing && npm run test
+      - name: Story 1.10 Task 9.7 — cookie-domain parity (sentinel comments)
+        run: cd classlite-landing && npm run check-cookie-domain
+      - name: Story 1.10 AC7 — R-NEW-55 PUBLIC_DASHBOARD_URL allowlist
+        run: cd classlite-landing && npm run validate-url
+        env:
+          NODE_ENV: production
+          PUBLIC_DASHBOARD_URL: https://my.classlite.app
+      - name: 0-JS budget guard (Story 1.10 AC + landing-script-budget.md)
+        run: |
+          # P27 from code review 2026-06-30 — the previous grep matched the directive
+          # anywhere in source, including string literals and comments in JSDoc blocks
+          # that *talk about* the discipline. Narrow to: leading whitespace + the
+          # `client:<verb>` token followed by `=`, `>`, or whitespace (attribute
+          # syntax). Also restrict to `.astro` and `.tsx`/`.jsx` so docs in `.md`
+          # files cannot trip it.
+          if grep -rE "[[:space:]]client:(load|idle|visible|media|only)([[:space:]>=]|$)" \
+            --include='*.astro' --include='*.tsx' --include='*.jsx' \
+            classlite-landing/src/; then
+            echo "::error::Astro hydration directive detected. See docs/landing-script-budget.md — requires PM+reviewer sign-off."
+            exit 1
+          fi
       - name: Build
         run: cd classlite-landing && npm run build
+        env:
+          NODE_ENV: production
+          PUBLIC_DASHBOARD_URL: https://my.classlite.app
+      - name: Story 1.10 — Playwright e2e (locale-redirect + landing + URL validation)
+        run: |
+          cd classlite-landing
+          npm run test:e2e:install
+          npm run test:e2e
+        env:
+          NODE_ENV: production
+          PUBLIC_DASHBOARD_URL: https://my.classlite.app

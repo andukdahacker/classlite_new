@@ -8,9 +8,17 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "prebuild": "node scripts/validate-dashboard-url.mjs",
     "lint:css": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "check-parity": "node scripts/check-landing-parity.mjs",
+    "check-cookie-domain": "node scripts/check-cookie-domain-parity.mjs",
+    "validate-url": "node scripts/validate-dashboard-url.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.9",
@@ -21,7 +29,14 @@
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1",
+    "@vitest/ui": "^4.1.9",
     "stylelint": "^17.13.0",
-    "stylelint-config-standard": "^40.0.0"
+    "stylelint-config-standard": "^40.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }

@@ -1,0 +1,177 @@
+---
+/**
+ * StickyHeader — wordmark + nav + language toggle + CTA. Story 1.10
+ * AC2.1 + AC3 (scroll-state) + AC5 (mobile hamburger via <details>).
+ *
+ * Script discipline: the scroll-state IntersectionObserver lives in a
+ * default `<script>` block (NOT `is:inline`) per AC3 — it only matters
+ * post-mount, so Astro's deferred ES-module bundling is fine. See
+ * `docs/landing-script-budget.md` for the full discipline.
+ *
+ * Mobile parity: the language toggle is mirrored inside the
+ * `<details>` hamburger panel so mobile users have an in-header way to
+ * switch locale (P11 from code review 2026-06-30). Transitions are
+ * gated behind the `motion-safe:` Tailwind variant so they only
+ * animate when `prefers-reduced-motion: no-preference` (P24).
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
+import type { Strings } from '../../content/types'
+
+interface Props {
+  lang: 'vi' | 'en'
+  strings: Strings
+}
+
+const { lang, strings } = Astro.props
+const otherLang = lang === 'vi' ? 'en' : 'vi'
+const registerUrl = `${PUBLIC_DASHBOARD_URL}/register`
+---
+
+<header
+  data-testid="landing-sticky-header"
+  class="sticky top-0 z-40 w-full bg-transparent motion-safe:transition-colors motion-safe:duration-200 [&.is-stuck]:bg-[var(--cl-surface)] [&.is-stuck]:border-b [&.is-stuck]:border-[var(--cl-line)] [&.is-stuck]:shadow-[var(--cl-shadow-card)]"
+>
+  <div
+    class="mx-auto flex h-16 max-w-[1180px] items-center justify-between px-4 md:px-8"
+  >
+    <a href={`/${lang}/`} class="flex items-baseline gap-1.5">
+      <span
+        class="font-[var(--cl-font-display)] text-[22px] italic text-[var(--cl-ink)]"
+        >ClassLite</span
+      >
+      <span
+        class="inline-block h-2 w-2 rounded-full bg-[var(--cl-accent-2)]"
+        aria-hidden="true"></span>
+    </a>
+
+    <nav
+      class="hidden items-center gap-8 md:flex"
+      aria-label={lang === 'vi' ? 'Menu chính' : 'Primary navigation'}
+    >
+      <a
+        href="#features"
+        class="text-sm text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+        >{strings.header.nav.features}</a
+      >
+      <a
+        href="#pricing"
+        class="text-sm text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+        >{strings.header.nav.pricing}</a
+      >
+      <a
+        href="#proof"
+        class="text-sm text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+        >{strings.header.nav.proof}</a
+      >
+    </nav>
+
+    <details
+      class="md:hidden"
+      data-testid="landing-sticky-header-hamburger"
+    >
+      <summary
+        class="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-md hover:bg-[var(--cl-line-soft)] [&::-webkit-details-marker]:hidden"
+        aria-label={strings.header.hamburgerLabel}
+        aria-expanded="false"
+        aria-controls="landing-sticky-header-mobile-panel"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          aria-hidden="true"
+        >
+          <path d="M3 6h14M3 10h14M3 14h14" stroke-linecap="round" />
+        </svg>
+      </summary>
+      <div
+        id="landing-sticky-header-mobile-panel"
+        class="absolute left-0 right-0 top-16 z-30 border-b border-[var(--cl-line)] bg-[var(--cl-surface)] p-4 shadow-[var(--cl-shadow-card)]"
+      >
+        <a
+          href="#features"
+          class="block py-3 text-base text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+          >{strings.header.nav.features}</a
+        >
+        <a
+          href="#pricing"
+          class="block py-3 text-base text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+          >{strings.header.nav.pricing}</a
+        >
+        <a
+          href="#proof"
+          class="block py-3 text-base text-[var(--cl-ink-soft)] hover:text-[var(--cl-ink)]"
+          >{strings.header.nav.proof}</a
+        >
+        <a
+          href={`/${otherLang}/`}
+          hreflang={otherLang}
+          class="block border-t border-[var(--cl-line)] py-3 text-base text-[var(--cl-muted)] hover:text-[var(--cl-ink)]"
+          data-testid="landing-sticky-header-lang-toggle-mobile"
+          >{strings.header.langToggleLabel}</a
+        >
+      </div>
+    </details>
+
+    <div class="flex items-center gap-3">
+      <a
+        href={`/${otherLang}/`}
+        hreflang={otherLang}
+        class="hidden min-h-11 items-center px-2 text-sm text-[var(--cl-muted)] hover:text-[var(--cl-ink)] md:inline-flex"
+        data-testid="landing-sticky-header-lang-toggle"
+        >{strings.header.langToggleLabel}</a
+      >
+      <a
+        href={registerUrl}
+        class="inline-flex h-11 items-center rounded-md border border-[var(--cl-line)] bg-transparent px-4 text-sm font-medium text-[var(--cl-ink)] motion-safe:transition-all hover:bg-[var(--cl-line-soft)] [.is-stuck_&]:border-transparent [.is-stuck_&]:bg-[var(--cl-accent-2-btn)] [.is-stuck_&]:text-white [.is-stuck_&]:hover:bg-[var(--cl-accent-2-text)]"
+        data-testid="landing-sticky-header-cta"
+        >{strings.header.cta}</a
+      >
+    </div>
+  </div>
+</header>
+
+<script>
+  // AC3 — StickyHeader scroll-state. P19: replaces the
+  // absolute-positioned 1×1 sentinel (whose containing-block depended
+  // on the nearest positioned ancestor and was fragile under any
+  // future wrapper) with a JS-injected zero-area sentinel at the very
+  // top of <body> + a `rootMargin` of `400px 0 0 0` so the observer
+  // fires when the viewport's effective top crosses past document y=400.
+  // ≤30 lines per landing-script-budget.md.
+  const header = document.querySelector<HTMLElement>(
+    '[data-testid="landing-sticky-header"]',
+  )
+  if (header) {
+    const sentinel = document.createElement('div')
+    sentinel.id = 'landing-scroll-sentinel'
+    sentinel.setAttribute('aria-hidden', 'true')
+    sentinel.style.cssText =
+      'position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none'
+    document.body.insertBefore(sentinel, document.body.firstChild)
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return
+        header.classList.toggle('is-stuck', !entry.isIntersecting)
+      },
+      { rootMargin: '400px 0px 0px 0px' },
+    )
+    observer.observe(sentinel)
+
+    // P20 — mirror `<details>` open state into the summary's
+    // aria-expanded so screen-reader users hear the menu toggle.
+    const hamburger = header.querySelector<HTMLDetailsElement>(
+      '[data-testid="landing-sticky-header-hamburger"]',
+    )
+    const summary = hamburger?.querySelector<HTMLElement>('summary')
+    if (hamburger && summary) {
+      hamburger.addEventListener('toggle', () => {
+        summary.setAttribute('aria-expanded', String(hamburger.open))
+      })
+    }
+  }
+</script>

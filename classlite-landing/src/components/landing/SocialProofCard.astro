@@ -1,0 +1,49 @@
+---
+/**
+ * SocialProofCard — UX-DR13. Sally BLOCKER #3 reframe: scenario
+ * archetypes for the launch phase, NOT testimonials. Section-level
+ * header + italic note (rendered by the parent `PricingSection`-sibling
+ * scope) carry the honesty; each card frames its quote as a scenario
+ * we'd expect, attributed to an illustrative center owner.
+ */
+import type { SocialProofCardStrings } from '../../content/types'
+
+interface Props {
+  card: SocialProofCardStrings
+  idx: 1 | 2
+}
+
+const { card, idx } = Astro.props
+---
+
+<article
+  data-testid={`landing-social-proof-card-${idx}`}
+  class="flex flex-col rounded-2xl border border-[var(--cl-line)] bg-[var(--cl-surface)] p-6 shadow-[var(--cl-shadow-card)]"
+>
+  <header class="mb-4 flex items-center justify-between gap-4">
+    <h3 class="font-[var(--cl-font-display)] text-[18px] text-[var(--cl-ink)]">
+      {card.center}
+    </h3>
+    <div class="text-right">
+      <span
+        class="block font-[var(--cl-font-mono)] text-[24px] font-medium text-[var(--cl-accent-2-text)]"
+      >
+        {card.outcomeValue}
+      </span>
+      <span class="text-[10px] uppercase tracking-[0.08em] text-[var(--cl-muted)]">
+        {card.outcomeLabel}
+      </span>
+    </div>
+  </header>
+  <blockquote
+    class="mb-4 text-sm leading-relaxed italic text-[var(--cl-ink-soft)]"
+  >
+    &ldquo;{card.quote}&rdquo;
+  </blockquote>
+  <p class="mb-3 text-xs text-[var(--cl-muted)]">{card.attribution}</p>
+  <p
+    class="mt-auto border-t border-[var(--cl-line-soft)] pt-3 text-[11px] font-[var(--cl-font-mono)] text-[var(--cl-muted)]"
+  >
+    {card.stats}
+  </p>
+</article>

@@ -1,0 +1,55 @@
+---
+/**
+ * PainCalculator — UX-DR11. Pure HTML/CSS, ZERO JavaScript. Three
+ * Geist Mono stat lines stacked vertically.
+ *
+ * Sally STRONG #4 adds the đồng-conversion line + assumption call-out.
+ * Vietnamese center owners budget in money, not hours — converting
+ * 720 hours to ~150 triệu đồng turns the abstraction into a P&L line
+ * item. The assumption call-out keeps the math honest.
+ */
+import type { Strings } from '../../content/types'
+
+interface Props {
+  strings: Strings
+}
+
+const { strings } = Astro.props
+---
+
+<section
+  data-testid="landing-pain-calculator"
+  class="border-b border-[var(--cl-line)] bg-[var(--cl-surface-warm)]"
+>
+  <div class="mx-auto max-w-[1180px] px-4 py-16 text-center md:px-8 md:py-24">
+    <p
+      class="mb-2 font-[var(--cl-font-mono)] text-base text-[var(--cl-muted)] md:text-lg"
+      data-testid="landing-pain-calculator-line1"
+    >
+      {strings.painCalculator.line1}
+    </p>
+    <p
+      class="mb-1 font-[var(--cl-font-mono)] text-[36px] font-medium text-[var(--cl-accent-2-text)]"
+      data-testid="landing-pain-calculator-line2"
+    >
+      {strings.painCalculator.line2}
+    </p>
+    <p
+      class="mb-8 font-[var(--cl-font-mono)] text-[11px] uppercase tracking-[0.1em] text-[var(--cl-muted)]"
+    >
+      {strings.painCalculator.footnote}
+    </p>
+    <p
+      class="mb-1 font-[var(--cl-font-mono)] text-lg text-[var(--cl-ink)]"
+      data-testid="landing-pain-calculator-money-conversion"
+    >
+      {strings.painCalculator.moneyConversion}
+    </p>
+    <p
+      class="font-[var(--cl-font-mono)] text-[11px] italic text-[var(--cl-muted)]"
+      data-testid="landing-pain-calculator-assumption"
+    >
+      {strings.painCalculator.assumption}
+    </p>
+  </div>
+</section>

@@ -75,4 +75,10 @@
   --cl-modal-width: 460px;
   --cl-side-panel: 300px;
   --cl-detail-panel: 320px;
+
+  /* Motion — Story 1d-2 AC4. Skeleton pulse is slower than tw-animate-css
+     default to match the editorial-paper / ink-bleed rhythm. Progress
+     indeterminate shares the easing for cross-primitive consistency. */
+  --cl-skeleton-pulse-duration: 2.4s;
+  --cl-skeleton-pulse-easing: cubic-bezier(0.4, 0, 0.6, 1);
 }

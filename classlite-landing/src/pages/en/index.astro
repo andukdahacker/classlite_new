@@ -1,9 +1,81 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro'
+import StickyHeader from '../../components/landing/StickyHeader.astro'
+import SessionExpiredBanner from '../../components/landing/SessionExpiredBanner.astro'
+import Hero from '../../components/landing/Hero.astro'
+import PainCalculator from '../../components/landing/PainCalculator.astro'
+import FeatureCard from '../../components/landing/FeatureCard.astro'
+import SocialProofCard from '../../components/landing/SocialProofCard.astro'
+import PricingSection from '../../components/landing/PricingSection.astro'
+import Footer from '../../components/landing/Footer.astro'
+import { strings } from '../../content/en'
+
+const lang = 'en' as const
 ---
 
-<BaseLayout title="ClassLite — IELTS Center Management" lang="en">
-  <main class="flex min-h-screen items-center justify-center">
-    <h1 class="font-[var(--cl-font-display)] text-4xl">Welcome to ClassLite</h1>
-  </main>
+<BaseLayout
+  title={strings.meta.title}
+  description={strings.meta.description}
+  lang={lang}
+  ogTitle={strings.meta.ogTitle}
+  ogDescription={strings.meta.ogDescription}
+  canonicalUrl="https://classlite.app/en/"
+>
+  <StickyHeader lang={lang} strings={strings} />
+  <SessionExpiredBanner strings={strings} />
+  <Hero strings={strings} />
+  <PainCalculator strings={strings} />
+
+  <section
+    id="features"
+    class="border-b border-[var(--cl-line)] bg-[var(--cl-paper)]"
+  >
+    <div class="mx-auto max-w-[1180px] px-4 py-16 md:px-8 md:py-24">
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <FeatureCard
+          tint="blue"
+          title={strings.feature.writing.title}
+          body={strings.feature.writing.body}
+        />
+        <FeatureCard
+          tint="gold"
+          title={strings.feature.qa.title}
+          body={strings.feature.qa.body}
+        />
+        <FeatureCard
+          tint="green"
+          title={strings.feature.analytics.title}
+          body={strings.feature.analytics.body}
+        />
+      </div>
+    </div>
+  </section>
+
+  <section
+    id="proof"
+    class="border-b border-[var(--cl-line)] bg-[var(--cl-surface-warm)]"
+  >
+    <div class="mx-auto max-w-[1180px] px-4 py-16 md:px-8 md:py-24">
+      <h2
+        class="mb-3 text-center font-[var(--cl-font-display)] text-[28px] text-[var(--cl-ink)] md:text-[36px]"
+        data-testid="landing-social-proof-section-header"
+      >
+        {strings.socialProof.sectionHeader}
+      </h2>
+      <p
+        class="mx-auto mb-10 max-w-[680px] text-center text-sm italic text-[var(--cl-muted)]"
+        data-testid="landing-social-proof-section-note"
+      >
+        {strings.socialProof.sectionNote}
+      </p>
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <SocialProofCard card={strings.socialProof.card1} idx={1} />
+        <SocialProofCard card={strings.socialProof.card2} idx={2} />
+      </div>
+    </div>
+  </section>
+
+  <PricingSection lang={lang} strings={strings} />
+
+  <Footer lang={lang} strings={strings} />
 </BaseLayout>

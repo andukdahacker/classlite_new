@@ -16,33 +16,20 @@
  * and writes it from the dashboard's `LanguageToggle`.
  */
 
+import { computeCookieDomain } from './cookie-domain'
+
 export type Language = 'en' | 'vi'
 
 const COOKIE_NAME = 'lang'
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 
 /**
- * Compute the cookie `Domain` attribute for the current host.
- *
- *   - `*.classlite.app` / `classlite.app`     → `.classlite.app`
- *   - `*.classlite.localhost` / `classlite.localhost` → `.classlite.localhost`
- *   - everything else (bare `localhost`, jsdom, Codespaces)         → `null`
- *     (no Domain attribute; cookie defaults to current host)
+ * Compute the cookie `Domain` attribute for the current host. Delegates
+ * to `cookie-domain.ts:computeCookieDomain` — the lang cookie and the
+ * `logged_in` hint cookie (Story 1.10) share this Domain decision so
+ * both surfaces hand off cleanly across subdomains.
  */
-export function languageCookieDomain(): string | null {
-  if (typeof window === 'undefined') return null
-  const host = window.location.hostname
-  if (host === 'classlite.app' || host.endsWith('.classlite.app')) {
-    return '.classlite.app'
-  }
-  if (
-    host === 'classlite.localhost' ||
-    host.endsWith('.classlite.localhost')
-  ) {
-    return '.classlite.localhost'
-  }
-  return null
-}
+export { computeCookieDomain as languageCookieDomain }
 
 /**
  * Read the `lang` cookie value. Returns `null` when absent or malformed.
@@ -65,7 +52,7 @@ export function readLanguageCookie(): Language | null {
  */
 export function writeLanguageCookie(value: Language): void {
   if (typeof document === 'undefined') return
-  const domain = languageCookieDomain()
+  const domain = computeCookieDomain()
   const parts = [
     `${COOKIE_NAME}=${value}`,
     `Max-Age=${COOKIE_MAX_AGE_SECONDS}`,

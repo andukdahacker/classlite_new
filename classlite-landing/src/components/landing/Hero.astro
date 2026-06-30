@@ -1,0 +1,46 @@
+---
+/**
+ * Hero — Sally BLOCKER #1 (LP-01 wireframe restored verbatim). The
+ * punch + rescue land in one breath ("Giáo viên của bạn đang mất 12
+ * phút chấm... ClassLite giảm xuống còn 3 phút."), preserving the
+ * load-bearing emotional pivot. The previous draft's "15 giờ → 60 giờ"
+ * hour-aggregation split the payload across H1 + subhead and lost the
+ * rescue — so there is no subheadline key.
+ */
+import { PUBLIC_DASHBOARD_URL } from 'astro:env/client'
+import type { Strings } from '../../content/types'
+
+interface Props {
+  strings: Strings
+}
+
+const { strings } = Astro.props
+const registerUrl = `${PUBLIC_DASHBOARD_URL}/register`
+---
+
+<section
+  data-testid="landing-hero"
+  class="bg-dot-grid border-b border-[var(--cl-line)]"
+>
+  <div class="mx-auto max-w-[1180px] px-4 py-20 text-center md:px-8 md:py-28">
+    <p
+      class="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--cl-accent-2-text)]"
+      data-testid="landing-hero-eyebrow"
+    >
+      {strings.hero.eyebrow}
+    </p>
+    <h1
+      class="mx-auto max-w-[820px] font-[var(--cl-font-display)] text-[32px] leading-[1.15] text-[var(--cl-ink)] md:text-[44px]"
+      data-testid="landing-hero-headline"
+    >
+      {strings.hero.headline}
+    </h1>
+    <a
+      href={registerUrl}
+      class="mt-10 inline-flex h-12 w-full items-center justify-center rounded-md bg-[var(--cl-accent-2-btn)] px-6 text-base font-medium text-white shadow-[var(--cl-shadow-amber)] motion-safe:transition-colors hover:bg-[var(--cl-accent-2-text)] md:w-auto"
+      data-testid="landing-hero-cta"
+    >
+      {strings.hero.cta}
+    </a>
+  </div>
+</section>

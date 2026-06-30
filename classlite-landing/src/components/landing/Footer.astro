@@ -1,0 +1,101 @@
+---
+/**
+ * Footer — navy background mirroring sidebar token. Three columns
+ * desktop, stacked mobile. Disclaimer is REMOVED per Sally BLOCKER #3
+ * — `socialProof.sectionNote` already owns the honesty at section
+ * level. Legal links are placeholders for the v1 launch
+ * (`1-10-followup-legal-pages`, `1-10-followup-zalo-link`).
+ */
+import type { Strings } from '../../content/types'
+
+interface Props {
+  lang: 'vi' | 'en'
+  strings: Strings
+}
+
+const { lang, strings } = Astro.props
+const otherLang = lang === 'vi' ? 'en' : 'vi'
+const zaloUrl = 'https://zalo.me/0123456789'
+---
+
+<footer
+  data-testid="landing-footer"
+  class="bg-[var(--cl-ink)] text-[var(--cl-sidebar-text)]"
+>
+  <div
+    class="mx-auto grid max-w-[1180px] grid-cols-1 gap-10 px-4 py-12 md:grid-cols-3 md:px-8 md:py-16"
+  >
+    <div>
+      <div class="mb-3 flex items-baseline gap-1.5">
+        <span class="font-[var(--cl-font-display)] text-[22px] italic text-white"
+          >ClassLite</span
+        >
+        <span
+          class="inline-block h-2 w-2 rounded-full bg-[var(--cl-accent-2)]"
+          aria-hidden="true"></span>
+      </div>
+      <p class="text-sm leading-relaxed">{strings.footer.tagline}</p>
+    </div>
+
+    <div>
+      <h4
+        class="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-white/60"
+      >
+        {strings.footer.product}
+      </h4>
+      <ul class="space-y-2 text-sm">
+        <li>
+          <a class="hover:text-white" href="#pricing"
+            >{strings.header.nav.pricing}</a
+          >
+        </li>
+        <li>
+          <a class="hover:text-white" href="#features"
+            >{strings.header.nav.features}</a
+          >
+        </li>
+        <li>
+          <a class="hover:text-white" href={`/${otherLang}/`} hreflang={otherLang}
+            data-testid="landing-footer-lang-toggle"
+            >{strings.header.langToggleLabel}</a
+          >
+        </li>
+      </ul>
+    </div>
+
+    <div>
+      <h4
+        class="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-white/60"
+      >
+        {strings.footer.legal}
+      </h4>
+      <ul class="space-y-2 text-sm">
+        <li>
+          <a class="hover:text-white" href={`/${lang}/terms`}
+            >{strings.footer.legalLinks.terms}</a
+          >
+        </li>
+        <li>
+          <a class="hover:text-white" href={`/${lang}/privacy`}
+            >{strings.footer.legalLinks.privacy}</a
+          >
+        </li>
+        <li>
+          <a class="hover:text-white" href={zaloUrl} rel="noopener noreferrer"
+            >{strings.footer.legalLinks.zalo}</a
+          >
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div
+    class="border-t border-white/10"
+  >
+    <div
+      class="mx-auto max-w-[1180px] px-4 py-4 text-[12px] text-white/50 md:px-8"
+    >
+      {strings.footer.copyright}
+    </div>
+  </div>
+</footer>
