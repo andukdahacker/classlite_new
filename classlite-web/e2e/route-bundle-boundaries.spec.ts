@@ -28,7 +28,15 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     const requests: string[] = []
     page.on('request', (req) => requests.push(req.url()))
     await page.goto('/dashboard')
-    await page.waitForLoadState('networkidle')
+    // Deterministic post-load signal: TeacherDashboard renders this testid
+    // (features/dashboard/TeacherDashboard.tsx) once the lazy chunk has
+    // resolved AND its i18n key has bound. Replaces the prior
+    // `waitForLoadState('networkidle')` which is unreliable in this SPA
+    // (HMR WebSocket keeps the connection counter non-zero in dev). By the
+    // time the heading is visible, every chunk needed for the dashboard
+    // render has been requested — any auth-chunk leak would already be in
+    // `requests`.
+    await expect(page.getByTestId('teacher-dashboard-heading')).toBeVisible()
 
     const sawAuthLayout = requests.some((url) =>
       /\/AuthLayout-[\w-]+\.js/.test(url),
@@ -51,7 +59,11 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     const requests: string[] = []
     page.on('request', (req) => requests.push(req.url()))
     await page.goto('/login')
-    await page.waitForLoadState('networkidle')
+    // Deterministic post-load signal: LoginPage renders this testid
+    // (features/auth/LoginPage.tsx — `login-heading`) once the AuthLayout +
+    // LoginPage chunks have resolved and the title binds. Same rationale as
+    // the /dashboard test above: replaces the brittle `networkidle` wait.
+    await expect(page.getByTestId('login-heading')).toBeVisible()
 
     const sawStudent = requests.some((url) =>
       /\/StudentDashboard-[\w-]+\.js/.test(url),

@@ -79,3 +79,18 @@ jobs:
         env:
           NODE_ENV: production
           PUBLIC_DASHBOARD_URL: https://my.classlite.app
+      - name: Epic 1C NFR-3 — Lighthouse CI (Performance Baseline + a11y + SEO)
+        # Closes the Concern from `_bmad-output/test-artifacts/nfr-assessment-epic-1c.md`:
+        # bundle-boundary E2E + 0-JS budget guard verify the *behavior*; this
+        # step verifies the *metric ceiling* per `test-design-architecture.md`
+        # line 106 ("PR — Lighthouse on changed routes"). Runs against the
+        # already-built `dist/` via lhci's static-dist mode — no wrangler boot
+        # needed for the static `/vi/` + `/en/` pages.
+        #
+        # Thresholds (lighthouserc.json):
+        #   - accessibility ≥ 0.95 (ERROR — matches axe.allowlist.json={} stance)
+        #   - SEO ≥ 0.95 (ERROR — public landing, SEO is load-bearing)
+        #   - performance ≥ 0.9 (WARN — CI runners are noisy; tighten to ERROR after baseline tuning)
+        #   - best-practices ≥ 0.9 (WARN)
+        # `numberOfRuns: 3` medians out CI runner noise.
+        run: cd classlite-landing && npx -y @lhci/cli@latest autorun --config=./lighthouserc.json

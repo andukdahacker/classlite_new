@@ -46,10 +46,26 @@ test.describe('Multi-tab refresh coordination (AC4 / UX-DR19)', () => {
       page2.locator('[data-testid="fire-bait"]').click(),
     ])
 
-    await Promise.all([
-      page1.waitForLoadState('networkidle'),
-      page2.waitForLoadState('networkidle'),
-    ])
+    // Wait deterministically for the FIRST refresh to fire (the route
+    // injects 150ms latency so this resolves once the in-flight call has
+    // landed). Replaces the prior `waitForLoadState('networkidle')` —
+    // unreliable in an SPA where HMR / app polling keep the connection
+    // counter non-zero.
+    await expect
+      .poll(() => refreshCount, {
+        timeout: 5_000,
+        message: 'expected at least one refresh to fire across two tabs',
+      })
+      .toBeGreaterThanOrEqual(1)
+
+    // Bounded race observation. The coalesce window is the 150ms route
+    // delay PLUS the in-process lock release; if a second refresh is
+    // going to slip past the `navigator.locks` + `lastRefreshedAt`
+    // debounce, it lands inside this window. Using a deliberately
+    // bounded wait here (not as a deterministic signal) is OK — the
+    // load-bearing assertion right after is what catches a coalesce
+    // regression.
+    await page1.waitForTimeout(300)
 
     // The load-bearing assertion: across two tabs, exactly one network
     // refresh fires. Coalescing is enforced by `navigator.locks` +

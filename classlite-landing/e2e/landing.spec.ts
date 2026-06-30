@@ -65,8 +65,11 @@ test.describe('AC3 — StickyHeader scroll-state', () => {
     const header = page.getByTestId('landing-sticky-header')
     await expect(header).not.toHaveClass(/is-stuck/)
     await page.evaluate(() => window.scrollTo(0, 600))
-    // give IntersectionObserver one frame
-    await page.waitForTimeout(200)
+    // No hard wait: `toHaveClass` auto-retries up to the default expect
+    // timeout (5s) and converges as soon as the IntersectionObserver
+    // callback flips the class. Replaces the prior 200ms `waitForTimeout`
+    // which was 12× longer than one animation frame and still flake-prone
+    // on slow CI runners.
     await expect(header).toHaveClass(/is-stuck/)
   })
 })
@@ -165,7 +168,13 @@ test.describe('AC4 — hint cookie redirect (Murat BLOCKER #3 cookie-domain fix)
     // shift between two consecutive measurements.
     const hero = page.getByTestId('landing-hero')
     const initial = await hero.boundingBox()
-    await page.waitForTimeout(150)
+    // Pin to two consecutive animation frames instead of a 150ms wall-clock
+    // wait. CLS would manifest as a layout shift between paints — measuring
+    // across one rAF tick is the correct semantic window for "before vs after
+    // first paint" without coupling to a magic millisecond value.
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    )
     const after = await hero.boundingBox()
     expect(initial?.y).toBe(after?.y)
   })
@@ -173,8 +182,14 @@ test.describe('AC4 — hint cookie redirect (Murat BLOCKER #3 cookie-domain fix)
   test('replaceState strips ?session_expired param after first paint', async ({ page }) => {
     await clearCookies(page)
     await page.goto(`${BASE}/vi/?session_expired=true`)
-    await page.waitForTimeout(100)
-    expect(page.url()).not.toContain('session_expired')
+    // No hard wait: poll the URL until the inline `replaceState` script
+    // strips the param. The script is `is:inline` in BaseLayout's <head>,
+    // so it fires before first paint in practice — but rather than couple
+    // to a 100ms magic number, the poll converges as soon as the URL
+    // observably changes.
+    await expect
+      .poll(() => page.url(), { timeout: 2_000 })
+      .not.toContain('session_expired')
   })
 })
 

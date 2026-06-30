@@ -79,6 +79,22 @@ jobs:
         run: cd classlite-web && npx vitest run --passWithNoTests
       - name: Build
         run: cd classlite-web && npm run build
+      - name: Epic 1C NFR-3 — Lighthouse CI (/login baseline)
+        # Closes the second half of the Concern from
+        # `_bmad-output/test-artifacts/nfr-assessment-epic-1c.md`. The
+        # web dashboard is mostly authenticated, so the only public route
+        # we can Lighthouse without auth shenanigans is `/login`. That's
+        # still load-bearing — every authenticated session funnels through
+        # it on first visit + session-expiry recovery. lhci boots
+        # `vite preview` via `startServerCommand` (lighthouserc.json) and
+        # tears it down after collection.
+        #
+        # Thresholds (lighthouserc.json):
+        #   - accessibility ≥ 0.95 (ERROR)
+        #   - performance ≥ 0.8 (WARN — auth screen has heavier vendor chunk than landing)
+        #   - best-practices ≥ 0.85, SEO ≥ 0.85 (WARN — /login is not SEO-critical)
+        # `numberOfRuns: 3` medians out CI runner noise.
+        run: cd classlite-web && npx -y @lhci/cli@latest autorun --config=./lighthouserc.json
 
   storybook:
     # Story 1d-1 AC6 — Storybook foundation gate. All four checks below
