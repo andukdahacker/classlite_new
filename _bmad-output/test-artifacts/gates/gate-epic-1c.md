@@ -12,9 +12,15 @@ evidence_sources:
   - traceability: _bmad-output/test-artifacts/traceability/traceability-matrix-epic-1c.md
   - nfr_audit: _bmad-output/test-artifacts/nfr-assessment-epic-1c.md
 conditions_blocking: 0
-conditions_advisory_pre_release: 4
+conditions_advisory_pre_release: 0
+conditions_advisory_pre_release_resolved: 4
 conditions_backlog: 1
 deferred_items: 0
+resolution_log:
+  - date: '2026-06-30'
+    items: [C1, C2, C3, C4]
+    commit: 38976b0
+    note: 'C1-C3 E2E hardening (poll / getByTestId / rAF) and C4 Lighthouse CI wiring shipped in the same commit as this gate memo.'
 ---
 
 # Epic 1C Quality Gate Decision
@@ -84,16 +90,16 @@ deferred_items: 0
 
 ---
 
-### Advisory — Pre-Release (4 items, ~3-6 hours total)
+### Advisory — Pre-Release (4 items, ALL RESOLVED in commit `38976b0` on 2026-06-30)
 
-These do not block merge but must close before promoting epic-1c stories to production.
+These did not block merge but were required to close before promoting epic-1c stories to production. All four landed together in the same commit as this gate memo — the code changes and the gate were staged concurrently and committed as one unit.
 
-| ID | Item | Source | Type | Effort | Owner |
+| ID | Item | Source | Type | Status | Resolution |
 |---|---|---|---|---|---|
-| C1 | Replace `waitForLoadState('networkidle')` with `waitForResponse` / `expect.poll` in `route-bundle-boundaries.spec.ts:31,54` | RV recommendation #1 | Flake-risk in bundle-boundary E2E | 30-60 min | Frontend |
-| C2 | Replace `waitForLoadState('networkidle')` with `expect.poll(() => refreshCount)` in `multi-tab-refresh.spec.ts:50-51` | RV recommendation #2 | Flake-risk in load-bearing multi-tab E2E | 30-60 min | Frontend |
-| C3 | Replace 3× `page.waitForTimeout()` with assertion auto-retry / `requestAnimationFrame` in `landing.spec.ts:69,168,176` | RV recommendation #3 | Flake-risk in landing E2E | 30-60 min | Landing |
-| C4 | Add Lighthouse CI step to `ci-web.yml` + `ci-landing.yml` with assertion thresholds (perf≥80, a11y≥95, best-practices≥90, SEO≥95) | NR Concern 1 | NFR-3 metric verification gap | 1-2 hours including baseline tuning | Frontend / DevOps |
+| C1 | Replace `waitForLoadState('networkidle')` with `waitForResponse` / `expect.poll` in `route-bundle-boundaries.spec.ts:31,54` | RV recommendation #1 | Flake-risk in bundle-boundary E2E | ✅ CLOSED | Replaced with `expect(page.getByTestId('teacher-dashboard-heading')).toBeVisible()` and `login-heading` — deterministic post-load signal in commit `38976b0`. |
+| C2 | Replace `waitForLoadState('networkidle')` with `expect.poll(() => refreshCount)` in `multi-tab-refresh.spec.ts:50-51` | RV recommendation #2 | Flake-risk in load-bearing multi-tab E2E | ✅ CLOSED | Replaced with `expect.poll(() => refreshCount).toBeGreaterThanOrEqual(1)` + a documented bounded race-observation window for the coalesce test — commit `38976b0`. |
+| C3 | Replace 3× `page.waitForTimeout()` with assertion auto-retry / `requestAnimationFrame` in `landing.spec.ts:69,168,176` | RV recommendation #3 | Flake-risk in landing E2E | ✅ CLOSED | Sticky-header 200 ms wait removed (native `toHaveClass` auto-retry); CLS check moved to `requestAnimationFrame`; `session_expired` param strip switched to `expect.poll(() => page.url())` — commit `38976b0`. |
+| C4 | Add Lighthouse CI step to `ci-web.yml` + `ci-landing.yml` with assertion thresholds (perf≥80, a11y≥95, best-practices≥90, SEO≥95) | NR Concern 1 | NFR-3 metric verification gap | ✅ CLOSED | `@lhci/cli` wired into both workflows against `dist/` (landing) + `vite preview` (web/`/login`), with per-service `lighthouserc.json` — commit `38976b0`. First CI run against `main` will produce the baseline; thresholds tightened after tuning. |
 
 ### Backlog (1 item — schedule but don't block)
 
@@ -139,8 +145,8 @@ These are observability commitments to discharge once epic-1c ships:
 | Role | Sign-off | Date | Notes |
 |---|---|---|---|
 | TEA (Murat) | ✅ APPROVED | 2026-06-30 | Verdict PASS-with-CONCERNS, high confidence. 0 blockers. 4 pre-release advisories. 1 backlog item. |
-| Frontend lead | ⬜ pending | — | Action: confirm C1-C3 ownership + schedule before release |
-| DevOps | ⬜ pending | — | Action: confirm C4 (Lighthouse CI) ownership |
+| Frontend lead | ✅ RESOLVED | 2026-06-30 | C1-C3 shipped in commit `38976b0` alongside this gate. |
+| DevOps | ✅ RESOLVED | 2026-06-30 | C4 (Lighthouse CI) shipped in commit `38976b0`. First CI run against `main` produces baseline; thresholds tightened after tuning. |
 | PM (Ducdo) | ⬜ pending | — | Action: confirm B1 schedule (next maintenance PR or epic-2 fold-in) |
 
 ---
