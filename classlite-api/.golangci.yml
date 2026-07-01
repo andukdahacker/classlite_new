@@ -1,0 +1,26 @@
+# Standard-linter set for classlite-api. The load-bearing GO-1 check
+# (Store methods must take TenantContext) is enforced by the custom
+# analyzer at ./tools/tenantcheck, run as a separate CI step — see
+# .github/workflows/ci-api.yml and pre-epic-2-blockers-2026-06-30.md.
+#
+# This file uses golangci-lint v1 syntax (no `version:` key), which is
+# accepted by both v1 and v2 runners.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  exclude-dirs:
+    # Skip the analyzer's synthetic testdata packages — they contain
+    # deliberately wrong code that is fixture input, not production code.
+    - tools/tenantcheck/testdata

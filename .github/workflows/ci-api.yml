@@ -28,12 +28,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - name: Vet
-        run: cd classlite-api && go vet ./...
-      - name: Staticcheck
+      - name: Lint (golangci-lint)
+        # Runs the standard-linter set defined in classlite-api/.golangci.yml
+        # (errcheck / govet / staticcheck / unused / ineffassign). Replaces the
+        # prior standalone `go vet` + `staticcheck` steps — same underlying
+        # tools, one binary, one AST walk.
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: classlite-api
+      - name: Tenantcheck (R1 mitigation A — GO-1 enforcement)
+        # Custom analyzer that fails the build if any method on a *Store type
+        # is missing TenantContext as its second parameter. Runs standalone
+        # (not through golangci-lint custom binary) so violations point
+        # unambiguously to project-context.md GO-1. See
+        # _bmad-output/test-artifacts/test-design/pre-epic-2-blockers-2026-06-30.md
+        # and tools/tenantcheck/ for the mechanism.
+        #
+        # Two calls: (a) run the analyzer's own tests — asserts the negative
+        # fixtures still fire diagnostics (teeth check); (b) run the analyzer
+        # against the real store package.
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          cd classlite-api && staticcheck ./...
+          cd classlite-api
+          go test ./tools/tenantcheck/...
+          go run ./tools/tenantcheck/cmd/tenantcheck ./internal/store/...
       - name: sqlc vet
         run: |
           go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
