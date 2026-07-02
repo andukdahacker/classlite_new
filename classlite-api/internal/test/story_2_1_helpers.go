@@ -358,3 +358,49 @@ var _ = httptest.NewRecorder
 // pgx import kept live so ATDD tests don't need to add it explicitly when
 // referencing pgx.Tx via the AuditLogger interface.
 var _ pgx.Tx
+
+// -----------------------------------------------------------------------------
+// Fixture helpers (added by /bmad-tea TA 2-1 — F1, F2).
+// Rolls up two RV LOW findings into reusable seams before propagating them
+// across the suite.
+// -----------------------------------------------------------------------------
+
+// MustParseUUID parses a canonical UUID string and t.Fatalf's on failure.
+// Replaces the `uid, _ := uuid.Parse(...)` silent-discard pattern that RV
+// flagged: on parse failure, the discard yields uuid.Nil and downstream tests
+// fail with confusing "P1 VIOLATION" or "zero UUID" errors instead of the
+// underlying malformed-input signal.
+func MustParseUUID(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	u, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatalf("MustParseUUID(%q): %v", s, err)
+	}
+	return u
+}
+
+// UniqueEmail returns a parallel-safe email for use in raw-pool tests (or
+// anywhere hardcoded emails would collide across concurrent runs). The
+// centers_slug_collision_race_test's per-run nonce pattern is generalized
+// here so future raw-pool authors have one canonical helper to reach for.
+//
+// Format: "<prefix>-<uuid>@example.com". Prefix documents intent
+// (e.g. "slug-race-a"); the full UUID guarantees uniqueness within the DB.
+func UniqueEmail(prefix string) string {
+	if prefix == "" {
+		prefix = "unique"
+	}
+	return prefix + "-" + uuid.NewString() + "@example.com"
+}
+
+// SuperuserPool exposes the cleanup superuser pool for RLS-bypassing
+// visibility checks in tests that assert on state across the transaction
+// boundary. Rare use — most tests should stick to the classlite_app pool
+// so RLS coverage stays real. Justified when a test needs to verify that
+// data DID survive a Commit against a table with RLS (e.g. center_members)
+// where the classlite_app connection would see 0 rows without SET LOCAL
+// app.current_tenant_id. Used by INT-2-4 broken-token-issuer scenario.
+func SuperuserPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	return superuserPool(t)
+}

@@ -34,17 +34,32 @@ func (mockAccessTokenIssuer) MintAccessToken(
 	return "mock-token", time.Now().Add(15 * time.Minute), nil
 }
 
+// slugRaceWaitTimeout is the wall-clock ceiling for both CreateCenter
+// goroutines to complete. Under a healthy environment this test runs in
+// <1s; the 30s cap surfaces goroutine hangs (connection-pool exhaustion,
+// DB stall) as a clean test failure instead of blocking the whole
+// binary until go test's default 10-minute deadline expires. Added by
+// /bmad-tea TA 2-1 per RV finding.
+const slugRaceWaitTimeout = 30 * time.Second
+
 func TestCenters_SlugCollisionRegeneration(t *testing.T) {
 	pool := SetupRawPool(t)
 	ctx := context.Background()
 
 	// Two synthetic users tagged with a run-scoped nonce so parallel test
-	// runs don't collide on unique-email. The center name also embeds the
-	// nonce so previous runs' leftover rows can't preempt the base slug.
-	nonce := uuid.NewString()[:8]
-	emailA := "slug-race-a-" + nonce + "@example.com"
-	emailB := "slug-race-b-" + nonce + "@example.com"
-	scopedCenterName := "Race " + nonce
+	// runs don't collide on unique-email. Emails carry the full UUID
+	// (128 bits) — no length constraint. The center name uses a shorter
+	// hex-only slice so its Slugify output stays under the 30-char
+	// slugMaxLen: otherwise the base slug itself gets truncated on the
+	// happy-path insert and the "winning-base + suffix" invariant this
+	// test asserts no longer holds. 12 hex chars = 48 bits — well over
+	// 2^24 tests before the birthday-paradox 50% collision line, which
+	// is ~16M runs; ample for realistic suite growth (RV isolation nit).
+	fullNonce := uuid.NewString()
+	nameNonce := strings.ReplaceAll(fullNonce, "-", "")[:12]
+	emailA := "slug-race-a-" + fullNonce + "@example.com"
+	emailB := "slug-race-b-" + fullNonce + "@example.com"
+	scopedCenterName := "Race " + nameNonce
 
 	var uidA, uidB pgtype.UUID
 	if err := pool.QueryRow(ctx,
@@ -72,8 +87,8 @@ func TestCenters_SlugCollisionRegeneration(t *testing.T) {
 	auditSvc := service.NewAuditService(pool)
 	centerSvc := service.NewCenterService(pool, auditSvc, mockAccessTokenIssuer{}, clock.RealClock{})
 
-	guidA, _ := uuid.Parse(UUIDString(uidA))
-	guidB, _ := uuid.Parse(UUIDString(uidB))
+	guidA := MustParseUUID(t, UUIDString(uidA))
+	guidB := MustParseUUID(t, UUIDString(uidB))
 
 	type outcome struct {
 		short string
@@ -102,7 +117,17 @@ func TestCenters_SlugCollisionRegeneration(t *testing.T) {
 			outcomes[1] = outcome{err: err}
 		}
 	}()
-	wg.Wait()
+	// wg.Wait() with a deterministic ceiling — see slugRaceWaitTimeout comment.
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(slugRaceWaitTimeout):
+		t.Fatalf("slug race test hung — one or both CreateCenter goroutines did not complete within %s", slugRaceWaitTimeout)
+	}
 
 	for i, o := range outcomes {
 		if o.err != nil {

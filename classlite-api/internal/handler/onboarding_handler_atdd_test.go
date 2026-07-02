@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/service"
@@ -467,3 +468,283 @@ func assertDoesNotLeak(t *testing.T, body *bytes.Buffer, forbidden ...string) {
 var _ = handler.NewOnboardingHandler
 var _ = service.NewOnboardingService
 var _ = context.TODO
+
+// -----------------------------------------------------------------------------
+// TA pass (2026-07-02) — P2/P3 expansion beyond ATDD's P0/P1 surface.
+// Each test carries an ID (2.1-INT-2-N) matching automation-summary-2-1.md.
+// -----------------------------------------------------------------------------
+
+// 2.1-INT-2-1 (P2, AC1): POST /persona twice with DIFFERENT values must be
+// treated as last-write-wins — the spec's "idempotent" language covers the
+// same-value case; a subsequent different value is a legitimate wizard
+// back+forward+re-pick and must persist the new choice.
+func TestSetPersona_INT21_LastWriteWins_DifferentValues(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "last-write@example.com", "L")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	for _, persona := range []string{"founder", "operator"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/onboarding/persona",
+			strings.NewReader(`{"persona":"`+persona+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("persona=%q: want 200, got %d — body: %s", persona, rec.Code, rec.Body.String())
+		}
+	}
+
+	// GET progress — Persona field (users.persona-derived) must reflect the
+	// SECOND write, not the first.
+	req := httptest.NewRequest(http.MethodGet, "/api/onboarding/progress", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET after two POSTs: want 200, got %d", rec.Code)
+	}
+	var envelope struct {
+		Data struct {
+			Persona *string `json:"persona"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if envelope.Data.Persona == nil {
+		t.Fatal("Persona MUST be non-nil after two writes — got null; last-write-wins broken")
+	}
+	if *envelope.Data.Persona != "operator" {
+		t.Errorf("last-write-wins: want persona=operator, got %q", *envelope.Data.Persona)
+	}
+}
+
+// 2.1-INT-2-2 (P2, AC1/3): request body just over the 16 KiB cap must fail
+// as a client error (422), not a 500 — MaxBytesReader trips inside
+// json.Decode and the handler must surface a clean VALIDATION_ERROR envelope.
+func TestOnboarding_INT22_BodyCapBoundary_Returns422NotFiveHundred(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "body-cap@example.com", "B")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	// Build a JSON body over 16 KiB via a fat payload field.
+	// 16*1024 = 16384; the pad string alone (17000 chars) puts us safely over.
+	pad := strings.Repeat("x", 17_000)
+	body := `{"currentStep":"persona","payload":{"schemaVersion":1,"personaChoice":"` + pad + `"}}`
+	if len(body) <= 16*1024 {
+		t.Fatalf("test precondition: crafted body is %d bytes, expected > 16 KiB", len(body))
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/onboarding/progress",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code >= 500 {
+		t.Errorf("body-cap overflow leaked as %d — MUST be a 4xx client error, not 5xx", rec.Code)
+	}
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("want 422 VALIDATION_ERROR, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	assertErrorCode(t, rec.Body, "VALIDATION_ERROR")
+}
+
+// 2.1-INT-2-6 (P2, AC3): PUT /progress with an unsupported payload
+// schemaVersion must surface as 422 VALIDATION_ERROR, not 500. Locks in
+// MigrateOnboardingPayload's error path through the handler's error mapper.
+func TestPutProgress_INT26_UnsupportedSchemaVersion_Returns422(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "schema-99@example.com", "S")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/onboarding/progress",
+		strings.NewReader(`{"currentStep":"persona","payload":{"schemaVersion":99,"personaChoice":"founder"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("unsupported schemaVersion: want 422, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	assertErrorCode(t, rec.Body, "VALIDATION_ERROR")
+}
+
+// 2.1-INT-2-7 (P3, AC3+AC4): full wizard round-trip proves the code-review
+// Persona (users.persona-derived, top-level response) vs PersonaChoice
+// (payload draft, only inside RawPayload) split holds end-to-end across
+// three endpoints — POST /persona → PUT /progress → GET /progress.
+func TestOnboarding_INT27_WizardRoundtrip_PersonaVsPersonaChoiceSemantics(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "wizard@example.com", "W")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	// Step 1: POST /persona sets users.persona = "solo_teacher".
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/persona",
+		strings.NewReader(`{"persona":"solo_teacher"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("step 1 POST /persona: want 200, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+
+	// Step 2: PUT /progress with payload.personaChoice = "founder" (draft
+	// deliberately different from users.persona, simulating wizard state).
+	req = httptest.NewRequest(http.MethodPut, "/api/onboarding/progress",
+		strings.NewReader(`{"currentStep":"center","payload":{"schemaVersion":1,"personaChoice":"founder","centerDraft":{"name":"Wizard Test","brandColor":"#112233","logoUrl":null}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("step 2 PUT /progress: want 200, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+
+	// Step 3: GET /progress — top-level Persona MUST be "solo_teacher"
+	// (users.persona), payload.personaChoice MUST be "founder" (the draft).
+	req = httptest.NewRequest(http.MethodGet, "/api/onboarding/progress", nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("step 3 GET /progress: want 200, got %d", rec.Code)
+	}
+	var envelope struct {
+		Data struct {
+			CurrentStep string  `json:"currentStep"`
+			Persona     *string `json:"persona"`
+			Payload     struct {
+				PersonaChoice string `json:"personaChoice"`
+				CenterDraft   struct {
+					Name string `json:"name"`
+				} `json:"centerDraft"`
+			} `json:"payload"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if envelope.Data.Persona == nil || *envelope.Data.Persona != "solo_teacher" {
+		t.Errorf("top-level Persona MUST reflect users.persona = solo_teacher, got %v", envelope.Data.Persona)
+	}
+	if envelope.Data.Payload.PersonaChoice != "founder" {
+		t.Errorf("payload.personaChoice MUST reflect the draft = founder, got %q", envelope.Data.Payload.PersonaChoice)
+	}
+	if envelope.Data.CurrentStep != "center" {
+		t.Errorf("currentStep MUST be center, got %q", envelope.Data.CurrentStep)
+	}
+	if envelope.Data.Payload.CenterDraft.Name != "Wizard Test" {
+		t.Errorf("payload.centerDraft.name MUST roundtrip, got %q", envelope.Data.Payload.CenterDraft.Name)
+	}
+}
+
+// 2.1-INT-2-8 (P2, AC8): per-route rate limit (20 tokens per minute per
+// IP-keyed user) — the 21st request within the window MUST return
+// 429 RATE_LIMIT_EXCEEDED. Each newStorySrv call in the test harness gets
+// its own limiter (unique key per test), so the burst count is deterministic.
+func TestOnboarding_INT28_RateLimit_21stRequestReturns429(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "rate-limit@example.com", "R")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	// 20 GETs — all succeed (burst budget).
+	for i := 0; i < 20; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/onboarding/progress", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d/20 unexpectedly rate-limited — burst budget exhausted early", i+1)
+		}
+	}
+
+	// 21st request — must trip.
+	req := httptest.NewRequest(http.MethodGet, "/api/onboarding/progress", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("21st request: want 429 RATE_LIMIT_EXCEEDED, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	assertErrorCode(t, rec.Body, "RATE_LIMIT_EXCEEDED")
+}
+
+// 2.1-INT-2-9 (P3, envelope contract): every 2xx from every story-2.1
+// endpoint must include meta.serverTime as a parseable RFC3339 UTC
+// timestamp. Cross-cuts every AC; single test protects the whole surface.
+func TestOnboarding_INT29_EnvelopeContract_ServerTimeIsRFC3339UTC(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "envelope@example.com", "E")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	// Exercise the 4 endpoints in an order that keeps each 2xx.
+	// 1. POST /persona (200)
+	// 2. PUT /progress (200)
+	// 3. GET /progress (200)
+	// 4. POST /centers (201) — must be last to satisfy one-center-per-user.
+	type call struct {
+		method string
+		path   string
+		body   string
+		want   int
+	}
+	calls := []call{
+		{http.MethodPost, "/api/onboarding/persona", `{"persona":"founder"}`, http.StatusOK},
+		{http.MethodPut, "/api/onboarding/progress", `{"currentStep":"persona","payload":{"schemaVersion":1}}`, http.StatusOK},
+		{http.MethodGet, "/api/onboarding/progress", "", http.StatusOK},
+		{http.MethodPost, "/api/centers", `{"name":"Envelope Test","brandColor":null,"logoUrl":null}`, http.StatusCreated},
+	}
+
+	for _, c := range calls {
+		var req *http.Request
+		if c.body == "" {
+			req = httptest.NewRequest(c.method, c.path, nil)
+		} else {
+			req = httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != c.want {
+			t.Errorf("%s %s: want %d, got %d — body: %s", c.method, c.path, c.want, rec.Code, rec.Body.String())
+			continue
+		}
+
+		var envelope struct {
+			Meta struct {
+				ServerTime string `json:"serverTime"`
+			} `json:"meta"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+			t.Errorf("%s %s: decode envelope: %v", c.method, c.path, err)
+			continue
+		}
+		if envelope.Meta.ServerTime == "" {
+			t.Errorf("%s %s: envelope.meta.serverTime is empty — every 2xx MUST populate it", c.method, c.path)
+			continue
+		}
+		// Must parse as RFC3339 with (or without) fractional seconds.
+		// AC preamble specifies ISO-8601 UTC, RFC3339 is the strict subset.
+		parsed, err := time.Parse(time.RFC3339Nano, envelope.Meta.ServerTime)
+		if err != nil {
+			// Fall back to RFC3339 (no fractional) — either is acceptable per spec.
+			parsed, err = time.Parse(time.RFC3339, envelope.Meta.ServerTime)
+			if err != nil {
+				t.Errorf("%s %s: serverTime %q is not valid RFC3339: %v", c.method, c.path, envelope.Meta.ServerTime, err)
+				continue
+			}
+		}
+		if parsed.Location() != time.UTC && parsed.Location().String() != "UTC" {
+			// RFC3339 encoded as "Z" preserves UTC; "+00:00" also acceptable.
+			// Convert to UTC and compare offset to catch non-UTC-encoded timestamps.
+			_, offset := parsed.Zone()
+			if offset != 0 {
+				t.Errorf("%s %s: serverTime %q is not UTC (offset=%d)", c.method, c.path, envelope.Meta.ServerTime, offset)
+			}
+		}
+	}
+}

@@ -289,9 +289,16 @@ func TestCreateCenter_AC06_AuditFailure_RollsBackWholeTx(t *testing.T) {
 	}
 
 	// Assert zero rows across ALL three tables — tx atomicity.
+	// `centers` has no RLS, so the app pool sees it globally.
+	// `center_members` and `audit_logs` are RLS-protected, so query via
+	// the superuser pool — otherwise RLS returns 0 rows against the
+	// classlite_app connection regardless of whether the tx rolled back
+	// (vacuously satisfying the assertion). Hardening applied by
+	// /bmad-tea TA 2-1 after INT-2-4 surfaced the RLS-scope issue.
+	sp := test.SuperuserPool(t)
 	countCenters := test.CountRows(t, pool, "SELECT count(*) FROM centers")
-	countMembers := test.CountRows(t, pool, "SELECT count(*) FROM center_members WHERE user_id = $1", user.ID)
-	countAudit := test.CountRows(t, pool, "SELECT count(*) FROM audit_logs WHERE user_id = $1", user.ID)
+	countMembers := test.CountRows(t, sp, "SELECT count(*) FROM center_members WHERE user_id = $1", user.ID)
+	countAudit := test.CountRows(t, sp, "SELECT count(*) FROM audit_logs WHERE user_id = $1", user.ID)
 
 	if countCenters != 0 {
 		t.Errorf("AC6 tx atomicity broken: %d centers rows survived a failed audit", countCenters)
@@ -389,4 +396,136 @@ var (
 	_ = service.NewCenterService
 	_ = (*service.AuthService).MintAccessToken
 	_ = time.Second
+	_ sync.Mutex // sync stays live via brokenTokenIssuer even if usage collapses
 )
+
+// -----------------------------------------------------------------------------
+// TA pass (2026-07-02) — center-side P2 expansion.
+// -----------------------------------------------------------------------------
+
+// brokenTokenIssuer satisfies the accessTokenIssuer interface (via the same
+// method shape MockAccessTokenIssuer uses) but returns an error every time.
+// Used to prove the post-Commit ordering invariant: if MintAccessToken fails
+// AFTER tx.Commit succeeds, the center + membership + audit rows MUST persist
+// (client can recover by re-logging in), NOT roll back.
+type brokenTokenIssuer struct{ err error }
+
+func (b brokenTokenIssuer) MintAccessToken(
+	_ context.Context, _ uuid.UUID, _ *uuid.UUID, _ string,
+) (string, time.Time, error) {
+	return "", time.Time{}, b.err
+}
+
+// 2.1-INT-2-3 (P2, AC2): name composed entirely of Unicode whitespace
+// (nbsp + ideographic space + regular spaces) must trim to empty and be
+// rejected as VALIDATION_ERROR. Locks in the code-review P7 `strings.TrimSpace`
+// fix — the byte-based trimName it replaced would have kept these characters
+// as content, letting them through the min-length check.
+func TestCreateCenter_INT23_UnicodeWhitespaceName_Returns422(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "ws-only@example.com", "W")
+	test.MarkUserEmailVerified(t, db, user.ID)
+	srv := test.NewTestServerForUser(t, db, user.ID)
+
+	// U+00A0 = non-breaking space, U+3000 = ideographic space (Vietnamese
+	// keyboards produce these under some IME configurations).
+	body := "{\"name\":\"    　  \",\"brandColor\":null,\"logoUrl\":null}"
+	req := httptest.NewRequest(http.MethodPost, "/api/centers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("Unicode-whitespace-only name: want 422 VALIDATION_ERROR, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	assertErrorCodeCenter(t, rec.Body, "VALIDATION_ERROR")
+}
+
+// 2.1-INT-2-4 (P2, AC2): broken accessTokenIssuer AFTER successful Commit —
+// the center + membership + audit rows MUST persist (accepted-loss recovery
+// via re-login). Symmetric to AC6 audit-failure test but flips the ordering
+// invariant: audit runs inside the tx (must roll back), token mint runs
+// OUTSIDE the tx (must NOT roll back).
+func TestCreateCenter_INT24_BrokenTokenIssuer_CenterPersistsAfterCommit(t *testing.T) {
+	pool := test.SetupRawPool(t) // real pool so the tx actually commits
+	user := test.CreateUserOnPool(t, pool, "token-fail@example.com", "T")
+	test.MarkUserEmailVerifiedOnPool(t, pool, user.ID)
+	// CreateUserOnPool registers a t.Cleanup that purges via superuser pool.
+
+	auditSvc := service.NewAuditService(pool)
+	broken := brokenTokenIssuer{err: errors.New("simulated token mint failure")}
+	centerSvc := service.NewCenterService(pool, auditSvc, broken, test.RealClock{})
+
+	uid := test.MustParseUUID(t, test.UUIDString(user.ID))
+	result, err := centerSvc.CreateCenter(context.Background(), uid, service.CreateCenterInput{
+		Name: "Token Fail Test", BrandColor: nil, LogoUrl: nil,
+	})
+
+	if err == nil {
+		t.Fatalf("broken token issuer: CreateCenter MUST return the mint error, got nil (result=%+v)", result)
+	}
+
+	// The whole point of this test: rows persist even though the caller sees
+	// an error. center_members has RLS, so query via the superuser pool to
+	// see across the tenant boundary (this is the same escape hatch
+	// PurgeUserAndOwnedCenters uses at cleanup).
+	sp := test.SuperuserPool(t)
+	countMembers := test.CountRows(t, sp, "SELECT count(*) FROM center_members WHERE user_id = $1", user.ID)
+	if countMembers != 1 {
+		t.Errorf("post-Commit token failure: expected 1 center_members row (accepted loss + login recovers), got %d", countMembers)
+	}
+	countAudit := test.CountRows(t, sp, "SELECT count(*) FROM audit_logs WHERE user_id = $1 AND action = 'center.created'", user.ID)
+	if countAudit != 1 {
+		t.Errorf("post-Commit token failure: expected 1 audit_logs 'center.created' row, got %d", countAudit)
+	}
+}
+
+// 2.1-INT-2-5 (P2, AC2): name-length ceiling is rune-based, not byte-based.
+// Vietnamese input is ~90% of the target market; a byte-based check would
+// reject a 40-character Vietnamese name (which is 100-120 bytes). Locks in
+// the code-review P3 `utf8.RuneCountInString` fix against regression.
+func TestCreateCenter_INT25_RuneBoundary_VietnameseName(t *testing.T) {
+	db := test.SetupDB(t)
+
+	// "Đà" = 4 bytes (Đ=2, à=2). 60 repetitions = 120 runes, 240 bytes —
+	// well past the byte-based check but exactly at the rune-based ceiling.
+	nameAt120Runes := strings.Repeat("Đà", 60)
+	nameAt121Runes := nameAt120Runes + "x"
+
+	t.Run("at_120_runes_succeeds", func(t *testing.T) {
+		db2 := test.SetupDB(t) // fresh tx so the two subtests are isolated
+		user := test.CreateUser(t, db2, "rune-120@example.com", "U")
+		test.MarkUserEmailVerified(t, db2, user.ID)
+		srv := test.NewTestServerForUser(t, db2, user.ID)
+
+		body := `{"name":"` + nameAt120Runes + `","brandColor":null,"logoUrl":null}`
+		req := httptest.NewRequest(http.MethodPost, "/api/centers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Errorf("120-rune Vietnamese name: want 201 (rune-check accepts), got %d — body: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("at_121_runes_rejected", func(t *testing.T) {
+		db2 := test.SetupDB(t)
+		user := test.CreateUser(t, db2, "rune-121@example.com", "U")
+		test.MarkUserEmailVerified(t, db2, user.ID)
+		srv := test.NewTestServerForUser(t, db2, user.ID)
+
+		body := `{"name":"` + nameAt121Runes + `","brandColor":null,"logoUrl":null}`
+		req := httptest.NewRequest(http.MethodPost, "/api/centers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("121-rune Vietnamese name: want 422 (over ceiling), got %d — body: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCodeCenter(t, rec.Body, "VALIDATION_ERROR")
+	})
+
+	_ = db // silence unused var if compiler misreads the closure
+}
