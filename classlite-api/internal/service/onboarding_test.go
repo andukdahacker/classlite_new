@@ -90,6 +90,9 @@ func TestOnboardingService_GetProgress_DefaultWhenMissing(t *testing.T) {
 	if got.CurrentStep != "persona" {
 		t.Errorf("default currentStep = %q, want persona", got.CurrentStep)
 	}
+	if got.Persona != nil {
+		t.Errorf("default Persona (users.persona-derived) = %v, want nil — users.persona was never set for this user", *got.Persona)
+	}
 	if got.PersonaChoice != nil {
 		t.Errorf("default personaChoice = %v, want nil", *got.PersonaChoice)
 	}
@@ -124,7 +127,15 @@ func TestOnboardingService_UpsertProgress_TypedPayloadRoundtrip(t *testing.T) {
 		t.Errorf("currentStep = %q, want center", got.CurrentStep)
 	}
 	if got.PersonaChoice == nil || *got.PersonaChoice != "founder" {
-		t.Errorf("personaChoice = %v, want founder", got.PersonaChoice)
+		t.Errorf("personaChoice (payload draft) = %v, want founder", got.PersonaChoice)
+	}
+	// Persona (users.persona-derived) is orthogonal to PersonaChoice (payload
+	// draft). UpsertProgress writes onboarding_progress only; it never touches
+	// users.persona. Since this test never called UpdatePersona, Persona must
+	// stay nil — proves the code-review P1 split (Persona vs PersonaChoice)
+	// stays intact through the upsert path.
+	if got.Persona != nil {
+		t.Errorf("Persona (users.persona-derived) = %v, want nil — UpsertProgress must not touch users.persona", *got.Persona)
 	}
 	// Round-trip: unknown top-level field must not leak into stored payload.
 	if got.RawPayload != nil {

@@ -204,19 +204,24 @@ func TestOnboardingProgress_P4_DeleteNotApplicable(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// P5-NoAuthFallback — TestOnboardingProgress_NoAuthContextRejects
-// Failure mode: handler resolves UserID from a fallback ("system user",
-// zero UUID, config default). Guards against `if userID := tc.UserID;
-// userID == "" { userID = someFallback }`.
+// P5-NoAuthFallback — TWO focused tests (split at /bmad-tea RV so failures
+// attribute to the correct layer).
+//
+// Failure mode being guarded: handler or service resolves UserID from a
+// fallback ("system user", zero UUID, config default). Guards against
+// `if userID := tc.UserID; userID == "" { userID = someFallback }`.
+//
+// Layer 1: service-layer rejection when caller passes uuid.Nil.
+// Layer 2: handler-layer 500 posture when the request context has NO
+//          TenantContext at all (middleware misconfigured or bypassed).
 // -----------------------------------------------------------------------------
 
-func TestOnboardingProgress_P5_NoAuthContextRejects(t *testing.T) {
+func TestOnboardingProgress_P5_ServiceRejectsZeroUUID(t *testing.T) {
 	db := SetupDB(t)
 	ctx := context.Background()
 
 	svc := newOnboardingSvc(t, db)
 
-	// -------- Service-layer rejection: zero UUID must not fall back --------
 	// Pass a zero UUID — the service MUST reject, not fall back to a default
 	// user or silently return default state.
 	zeroUID := uuid.Nil
@@ -234,11 +239,15 @@ func TestOnboardingProgress_P5_NoAuthContextRejects(t *testing.T) {
 	}
 	// Validate it's model.ValidationError (or an equivalent typed error), not raw pgx error.
 	var vErr model.ValidationError
-	if err != nil && !errorsAs(err, &vErr) {
+	if err != nil && !errors.As(err, &vErr) {
 		t.Logf("P5 note: err type %T (want model.ValidationError-like)", err)
 	}
+}
 
-	// -------- Handler-layer posture: missing TenantContext → 500 -----------
+func TestOnboardingProgress_P5_HandlerRejectsMissingTenantContext(t *testing.T) {
+	db := SetupDB(t)
+	svc := newOnboardingSvc(t, db)
+
 	// Spec AC9 P5: handler invoked with a request whose context has NO
 	// TenantContext.UserID must return 500 INTERNAL_ERROR, mirroring
 	// RequireRole's missing-context posture. A 422 VALIDATION_ERROR
@@ -251,12 +260,12 @@ func TestOnboardingProgress_P5_NoAuthContextRejects(t *testing.T) {
 	if herr == nil {
 		t.Fatal("P5 VIOLATION: handler must reject request lacking TenantContext, got nil error")
 	}
-	var vErr2 model.ValidationError
-	if errors.As(herr, &vErr2) {
+	var vErr model.ValidationError
+	if errors.As(herr, &vErr) {
 		t.Errorf("P5 VIOLATION: handler returned model.ValidationError for missing TenantContext → maps to 422; spec mandates 500. Got: %v", herr)
 	}
 	if !errors.Is(herr, handler.ErrTenantContextMissing) {
-		t.Errorf("P5 note: expected handler.ErrTenantContextMissing sentinel, got %T: %v", herr, herr)
+		t.Errorf("P5 VIOLATION: expected handler.ErrTenantContextMissing sentinel, got %T: %v", herr, herr)
 	}
 }
 
@@ -353,9 +362,11 @@ func TestCenterMembers_UserUniqueViolation(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// Tiny local helpers so we don't sprawl imports.
+// Tiny local helpers.
 // -----------------------------------------------------------------------------
 
+// contains reports whether sub is within s. Local so this file doesn't need
+// the `strings` import — the byte-level canary check in P6 is the only caller.
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
@@ -364,6 +375,3 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
-
-// errorsAs delegates to stdlib errors.As now that green-phase types exist.
-func errorsAs(err error, target any) bool { return errors.As(err, target) }
