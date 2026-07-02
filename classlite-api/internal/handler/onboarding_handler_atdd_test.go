@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// RED-PHASE ATDD specimens for Story 2.1 — Onboarding Handler.
+// ATDD specimens for Story 2.1 — Onboarding Handler.
 //
 // Every test in this file is expected to FAIL against the current codebase:
 //   - handler.NewOnboardingHandler does not exist yet (compile-fail)

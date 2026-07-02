@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// RED-PHASE ATDD specimen for Story 2.1 — RequireVerifiedEmail middleware.
+// ATDD specimen for Story 2.1 — RequireVerifiedEmail middleware.
 //
 // Expected to FAIL against current codebase:
 //   - middleware.RequireVerifiedEmail does not exist

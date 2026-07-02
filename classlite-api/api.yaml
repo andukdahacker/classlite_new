@@ -571,6 +571,201 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 2.1 — Onboarding + Center setup ----------------
+
+  /api/onboarding/persona:
+    post:
+      operationId: setOnboardingPersona
+      summary: Set the authenticated user's persona (story 2.1)
+      description: |
+        Writes the caller's persona choice to `users.persona`. Idempotent — a
+        repeat POST with the same value returns 200, not 409, so the wizard
+        may hit this on browser back. Unknown persona values → 422.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPersonaRequest'
+      responses:
+        "200":
+          description: Persona persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSetPersonaResult'
+        "401":
+          description: Missing or invalid access token (AUTH_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit exceeded (20/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/centers:
+    post:
+      operationId: createCenter
+      summary: Create a center + bind creator as Owner (story 2.1)
+      description: |
+        Single transaction — inserts the center row, generates a unique
+        `shortCode` (slug + retry), inserts `center_members` with role=owner,
+        writes an `audit_logs` row `center.created`, and returns a fresh
+        access token whose claims include the new center+role. v1 supports
+        one center per user — a repeat attempt returns 409
+        USER_ALREADY_HAS_CENTER.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCenterRequest'
+      responses:
+        "201":
+          description: Center created, caller bound as Owner, fresh JWT returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCreateCenterResult'
+        "401":
+          description: Missing or invalid access token (AUTH_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: Caller already has a center (USER_ALREADY_HAS_CENTER)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit exceeded (20/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Slug regeneration exhausted after 5 attempts (INTERNAL_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/onboarding/progress:
+    get:
+      operationId: getOnboardingProgress
+      summary: Read the caller's onboarding progress (story 2.1)
+      description: |
+        Returns the caller's saved onboarding progress row plus their
+        current persona. Never 404s — when no progress row exists, responds
+        200 with `{currentStep: "persona", payload: null, updatedAt: null}`
+        and the caller's persona (which may itself be null).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Progress state (or default when unsaved)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeOnboardingProgress'
+        "401":
+          description: Missing or invalid access token (AUTH_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit exceeded (20/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      operationId: putOnboardingProgress
+      summary: Upsert the caller's onboarding progress (story 2.1)
+      description: |
+        Upserts a single row per user in `onboarding_progress` keyed by
+        `user_id`. Unknown `currentStep` → 422.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutOnboardingProgressRequest'
+      responses:
+        "200":
+          description: Progress persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopePutOnboardingProgressResult'
+        "401":
+          description: Missing or invalid access token (AUTH_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Per-IP rate limit exceeded (20/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -640,6 +835,75 @@ components:
           type: string
           minLength: 8
           maxLength: 72
+
+    # ---------------- Story 2.1 requests ----------------
+    SetPersonaRequest:
+      type: object
+      required: [persona]
+      properties:
+        persona:
+          type: string
+          enum: [operator, founder, solo_teacher]
+
+    CreateCenterRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        brandColor:
+          type: string
+          nullable: true
+          description: Hex color like `#3B82F6`. Nullable in v1.
+        logoUrl:
+          type: string
+          nullable: true
+          description: Presigned R2 asset URL (finalized in a later story). Nullable in v1.
+
+    OnboardingProgressPayload:
+      type: object
+      description: |
+        Typed JSONB payload written to `onboarding_progress.payload`. Story 2.1
+        pins `schemaVersion: 1`. `templateDraft` remains opaque JSON until
+        story 2.2 pins its shape.
+      required: [schemaVersion]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        personaChoice:
+          type: string
+          nullable: true
+          enum: [operator, founder, solo_teacher]
+        centerDraft:
+          type: object
+          nullable: true
+          required: [name]
+          properties:
+            name:
+              type: string
+            brandColor:
+              type: string
+              nullable: true
+            logoUrl:
+              type: string
+              nullable: true
+        templateDraft:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    PutOnboardingProgressRequest:
+      type: object
+      required: [currentStep, payload]
+      properties:
+        currentStep:
+          type: string
+          enum: [persona, center, template, spawn, solo_first_class, done]
+        payload:
+          $ref: '#/components/schemas/OnboardingProgressPayload'
 
     # ---------------- Response bodies (data part only) ----------------
     UserSummary:
@@ -737,7 +1001,92 @@ components:
         reset:
           type: boolean
 
+    # ---------------- Story 2.1 result payloads ----------------
+    SetPersonaResult:
+      type: object
+      required: [persona]
+      properties:
+        persona:
+          type: string
+          enum: [operator, founder, solo_teacher]
+
+    CreateCenterResult:
+      type: object
+      required: [id, name, shortCode, brandColor, logoUrl, timezone, role, accessToken, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shortCode:
+          type: string
+        brandColor:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          description: |
+            Center's timezone in IANA format. Defaults to `Asia/Ho_Chi_Minh`
+            in v1 — story 2.5 exposes edit capability.
+        role:
+          type: string
+          enum: [owner]
+          description: v1 always `owner` regardless of persona (see FU-2-1-F).
+        accessToken:
+          type: string
+          description: Fresh HS256 JWT with centerId+role claims, 15-minute TTL.
+        expiresAt:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC expiry for the new access token.
+
+    OnboardingProgressResult:
+      type: object
+      required: [currentStep, payload, updatedAt, persona]
+      properties:
+        currentStep:
+          type: string
+          enum: [persona, center, template, spawn, solo_first_class, done]
+        payload:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/OnboardingProgressPayload'
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        persona:
+          type: string
+          nullable: true
+          enum: [operator, founder, solo_teacher]
+
+    PutOnboardingProgressResult:
+      type: object
+      required: [currentStep, payload, updatedAt]
+      properties:
+        currentStep:
+          type: string
+          enum: [persona, center, template, spawn, solo_first_class, done]
+        payload:
+          $ref: '#/components/schemas/OnboardingProgressPayload'
+        updatedAt:
+          type: string
+          format: date-time
+
     # ---------------- Envelopes ----------------
+    EnvelopeMeta:
+      type: object
+      required: [serverTime]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC timestamp at response render time. Clients use this instead of Date.now() for skew-immune "N seconds ago" affordances.
+
     EnvelopeRegisterResult:
       type: object
       required: [data]
@@ -793,6 +1142,43 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ResetPasswordResult'
+
+    # ---------------- Story 2.1 envelopes (data + meta.serverTime) ----------------
+    EnvelopeSetPersonaResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SetPersonaResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeCreateCenterResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CreateCenterResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeOnboardingProgress:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/OnboardingProgressResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopePutOnboardingProgressResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/PutOnboardingProgressResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
     # ---------------- Error envelope ----------------
     FieldError:

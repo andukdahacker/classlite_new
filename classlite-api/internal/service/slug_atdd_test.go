@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// RED-PHASE ATDD specimen for Story 2.1 — Slugify (Vietnamese-aware).
+// ATDD specimen for Story 2.1 — Slugify (Vietnamese-aware).
 //
 // Expected to FAIL against current codebase:
 //   - service.Slugify does not exist yet

@@ -5,10 +5,15 @@ import "context"
 // TenantContext carries tenant identity for every store method.
 // Every store method MUST accept TenantContext — missing it compiles clean
 // but leaks data across tenants via RLS bypass.
+//
+// EmailVerified mirrors users.email_verified at the moment ExtractTenant ran.
+// It powers RequireVerifiedEmail without a second GetUserByID call — the
+// middleware becomes a pure context check (Story 2.1 Task 5.0 / Task 5.1).
 type TenantContext struct {
-	CenterID string
-	UserID   string
-	Role     string
+	CenterID      string
+	UserID        string
+	Role          string
+	EmailVerified bool
 }
 
 // tenantCtxKey is the typed context key used by middleware.ExtractTenant

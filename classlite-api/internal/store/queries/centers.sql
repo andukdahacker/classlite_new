@@ -8,6 +8,14 @@ INSERT INTO centers (name, short_code)
 VALUES ($1, $2)
 RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at;
 
+-- name: CreateCenterFull :one
+-- Story 2.1 — INSERT with a pre-generated id (Task 7.2 flow: NewID() runs
+-- BEFORE SET LOCAL app.current_tenant_id, so the tx-first-tenant-scoped-write
+-- pattern works even if `centers` later gains RLS).
+INSERT INTO centers (id, name, short_code, brand_color, logo_url)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at;
+
 -- name: GetCenterByShortCode :one
 -- Story 1.6 — used by HandleGoogleCallback to resolve a subdomain slug
 -- to a center for the tenant-binding check (AC3). `centers` is a global

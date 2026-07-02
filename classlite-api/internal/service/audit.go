@@ -57,35 +57,10 @@ func (s *AuditService) Log(
 	entityID uuid.UUID,
 	changes any,
 ) error {
-	if action == "" {
-		return model.ValidationError{Fields: []model.FieldError{{Field: "action", Message: "action is required"}}}
-	}
-	if entityType == "" {
-		return model.ValidationError{Fields: []model.FieldError{{Field: "entity_type", Message: "entity_type is required"}}}
-	}
-	if tc.UserID == "" {
-		return model.ValidationError{Fields: []model.FieldError{{Field: "user_id", Message: "user_id is required"}}}
-	}
-
-	userUUID, err := uuid.Parse(tc.UserID)
-	if err != nil {
-		return model.ValidationError{Fields: []model.FieldError{{Field: "user_id", Message: "user_id must be a valid UUID"}}}
-	}
-	centerUUID, err := uuid.Parse(tc.CenterID)
-	if err != nil {
-		return model.ValidationError{Fields: []model.FieldError{{Field: "center_id", Message: "center_id must be a valid UUID"}}}
-	}
-
-	changes = coalesceChanges(changes)
-	changesJSON, err := json.Marshal(changes)
-	if err != nil {
-		return fmt.Errorf("audit log: marshal changes: %w", err)
-	}
-
-	ipAddress, _ := ctx.Value(model.IPAddress).(string)
-	ipParam := pgtype.Text{}
-	if ipAddress != "" {
-		ipParam = pgtype.Text{String: ipAddress, Valid: true}
+	// Validate BEFORE opening a tx so caller-input errors do not incur pool
+	// churn (and so the nopBeginner regression tests pin the ordering).
+	if err := validateAuditInputs(tc, action, entityType); err != nil {
+		return err
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -100,8 +75,91 @@ func (s *AuditService) Log(
 		return fmt.Errorf("audit log: %w", err)
 	}
 
+	if err := logWithinTxCore(ctx, tx, tc, action, entityType, entityID, changes); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("audit log: commit: %w", err)
+	}
+	return nil
+}
+
+// LogWithinTx inserts an audit row into a caller-managed transaction. It
+// does NOT run SET LOCAL app.current_tenant_id — the caller MUST have set
+// it on tx before calling. Running it here would either no-op (same value)
+// or corrupt the caller's tx state (different value); either way is worse
+// than trusting the caller.
+//
+// Callers use this when they need the audit INSERT and their own INSERTs
+// to succeed or fail atomically. Story 2.1's CenterService.CreateCenter is
+// the canonical consumer: centers + center_members + audit_logs must land
+// in one tx (AC6).
+func (s *AuditService) LogWithinTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	tc model.TenantContext,
+	action string,
+	entityType string,
+	entityID uuid.UUID,
+	changes any,
+) error {
+	return logWithinTxCore(ctx, tx, tc, action, entityType, entityID, changes)
+}
+
+// validateAuditInputs runs the caller-input checks shared by Log and
+// LogWithinTx.
+func validateAuditInputs(tc model.TenantContext, action, entityType string) error {
+	if action == "" {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "action", Message: "action is required"}}}
+	}
+	if entityType == "" {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "entity_type", Message: "entity_type is required"}}}
+	}
+	if tc.UserID == "" {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "user_id", Message: "user_id is required"}}}
+	}
+	if _, err := uuid.Parse(tc.UserID); err != nil {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "user_id", Message: "user_id must be a valid UUID"}}}
+	}
+	if _, err := uuid.Parse(tc.CenterID); err != nil {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "center_id", Message: "center_id must be a valid UUID"}}}
+	}
+	return nil
+}
+
+// logWithinTxCore is the shared payload — validate inputs, marshal the
+// changes JSON, run the sqlc INSERT. Split so Log() and LogWithinTx() share
+// exactly one code path.
+func logWithinTxCore(
+	ctx context.Context,
+	tx pgx.Tx,
+	tc model.TenantContext,
+	action string,
+	entityType string,
+	entityID uuid.UUID,
+	changes any,
+) error {
+	if err := validateAuditInputs(tc, action, entityType); err != nil {
+		return err
+	}
+	userUUID, _ := uuid.Parse(tc.UserID)
+	centerUUID, _ := uuid.Parse(tc.CenterID)
+
+	changes = coalesceChanges(changes)
+	changesJSON, err := json.Marshal(changes)
+	if err != nil {
+		return fmt.Errorf("audit log: marshal changes: %w", err)
+	}
+
+	ipAddress, _ := ctx.Value(model.IPAddress).(string)
+	ipParam := pgtype.Text{}
+	if ipAddress != "" {
+		ipParam = pgtype.Text{String: ipAddress, Valid: true}
+	}
+
 	queries := generated.New(tx)
-	_, err = queries.InsertAuditLog(ctx, generated.InsertAuditLogParams{
+	if _, err := queries.InsertAuditLog(ctx, generated.InsertAuditLogParams{
 		CenterID:   uuidToPg(centerUUID),
 		UserID:     uuidToPg(userUUID),
 		Action:     action,
@@ -109,13 +167,8 @@ func (s *AuditService) Log(
 		EntityID:   uuidToPg(entityID),
 		Changes:    changesJSON,
 		IpAddress:  ipParam,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("audit log: insert: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("audit log: commit: %w", err)
 	}
 	return nil
 }

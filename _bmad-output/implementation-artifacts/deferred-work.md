@@ -1,5 +1,14 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-1 (2026-07-02)
+
+- `idx_center_members_user_id` on `center_members` uses bare `CREATE UNIQUE INDEX` (ACCESS EXCLUSIVE for the duration of the build) — golang-migrate wraps every migration in a transaction so `CREATE INDEX CONCURRENTLY` cannot ship in the same file. Safe at first-launch (empty table), but before the table has meaningful production rows, ship a separate migration that runs `CREATE UNIQUE INDEX CONCURRENTLY` outside a tx (either bump golang-migrate to a version with driver-level tx-off, or execute the CONCURRENTLY create via a manual step). Migration file `20260702120200_add_center_members_user_unique.up.sql` carries the reminder inline.
+- `json.NewDecoder` in handler bodies never calls `DisallowUnknownFields` and `Decode` accepts trailing garbage after a valid object (`{...}extraJson` is silently accepted). Codebase-wide pattern predating story 2-1. Consider a helper `strictJSONDecode(r, &v)` and a lint sweep as a hygiene pass.
+- `WriteEnvelope` writes HTTP status via `w.WriteHeader(status)` before `json.NewEncoder(w).Encode(...)` runs — client disconnect mid-encode leaves a `201 Created` with a truncated body. Same pattern used across every 2xx handler that adopts the envelope. Consider `bytes.Buffer` marshal-first, write-second.
+- `isConstraintViolation` does string-equality against hardcoded constraint names (`idx_centers_short_code`, `idx_center_members_user_id`). Renaming the DB constraint silently disables the retry loop and 409 remap. Compile-time enforcement (e.g., generated constants from schema) would prevent silent drift.
+- `UpsertOnboardingProgress` advances `updated_at` on an identical-payload repeat PUT. Polling clients watching `updatedAt` for changes see a false "changed" signal. Consider `INSERT ... ON CONFLICT DO UPDATE SET ... WHERE current_step != EXCLUDED.current_step OR payload != EXCLUDED.payload`.
+- Superuser cleanup pool (`internal/test/story_2_1_helpers.go` — `superuserPool`) has three issues: hardcoded `classlite_dev_password` in source, pool never closed for the life of the test binary, and `t.Fatalf` inside `sync.Once.Do` closes over the FIRST test's `t` — later tests calling in after the once has already fired won't get proper Fatalf propagation. Consider env-driven config + `pgxpool.Close` in test-main teardown + errgroup-style once construction.
+
 ## Deferred from: code review of story-1-9b (2026-06-26)
 
 - Burned reset token persists in URL after consumed/expired/invalid landing (`ResetPasswordPage.tsx`) — low-leak surface; consider `setSearchParams({}, {replace:true})` on terminal-state set during a future polish pass.

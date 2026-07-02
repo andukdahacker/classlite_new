@@ -219,6 +219,36 @@ func main() {
 	)
 	mux.Handle("POST /api/admin/users/{userId}/force-logout", forceLogoutChain)
 
+	// Story 2.1 — Onboarding + Center endpoints. Middleware chain per AC8:
+	//   ExtractTenant → RequireVerifiedEmail → per-route rate limit → handler
+	auditSvc := service.NewAuditService(pool)
+	onboardingSvc := service.NewOnboardingService(pool)
+	centerSvc := service.NewCenterService(pool, auditSvc, authSvc, clock.RealClock{})
+	onboardingHandler := handler.NewOnboardingHandler(onboardingSvc, clock.RealClock{})
+	centerHandler := handler.NewCenterHandler(centerSvc, clock.RealClock{})
+
+	onboardingLimit := middleware.RateLimitByKey(
+		"onboarding",
+		rate.Every(60*time.Second),
+		20,
+		middleware.IPKeyFn,
+	)
+	requireVerified := middleware.RequireVerifiedEmail()
+	extractTenant := middleware.ExtractTenant(pool, authSvc.JWTSigner())
+
+	onboardingChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				onboardingLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+
+	mux.Handle("POST /api/onboarding/persona", onboardingChain(onboardingHandler.SetPersona))
+	mux.Handle("GET /api/onboarding/progress", onboardingChain(onboardingHandler.GetProgress))
+	mux.Handle("PUT /api/onboarding/progress", onboardingChain(onboardingHandler.PutProgress))
+	mux.Handle("POST /api/centers", onboardingChain(centerHandler.Create))
+
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux
 	corsOrigins := middleware.ParseOrigins(cfg.CORSOrigins)

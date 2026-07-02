@@ -20,8 +20,11 @@ package test
 
 import (
 	"context"
+	"errors"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store/generated"
@@ -213,6 +216,7 @@ func TestOnboardingProgress_P5_NoAuthContextRejects(t *testing.T) {
 
 	svc := newOnboardingSvc(t, db)
 
+	// -------- Service-layer rejection: zero UUID must not fall back --------
 	// Pass a zero UUID — the service MUST reject, not fall back to a default
 	// user or silently return default state.
 	zeroUID := uuid.Nil
@@ -232,6 +236,27 @@ func TestOnboardingProgress_P5_NoAuthContextRejects(t *testing.T) {
 	var vErr model.ValidationError
 	if err != nil && !errorsAs(err, &vErr) {
 		t.Logf("P5 note: err type %T (want model.ValidationError-like)", err)
+	}
+
+	// -------- Handler-layer posture: missing TenantContext → 500 -----------
+	// Spec AC9 P5: handler invoked with a request whose context has NO
+	// TenantContext.UserID must return 500 INTERNAL_ERROR, mirroring
+	// RequireRole's missing-context posture. A 422 VALIDATION_ERROR
+	// (from returning model.ValidationError) misclassifies a middleware
+	// misconfiguration as a client-side validation failure.
+	h := handler.NewOnboardingHandler(svc, RealClock{})
+	req := httptest.NewRequest("GET", "/api/onboarding/progress", nil) // no TenantContext in ctx
+	rec := httptest.NewRecorder()
+	herr := h.GetProgress(rec, req)
+	if herr == nil {
+		t.Fatal("P5 VIOLATION: handler must reject request lacking TenantContext, got nil error")
+	}
+	var vErr2 model.ValidationError
+	if errors.As(herr, &vErr2) {
+		t.Errorf("P5 VIOLATION: handler returned model.ValidationError for missing TenantContext → maps to 422; spec mandates 500. Got: %v", herr)
+	}
+	if !errors.Is(herr, handler.ErrTenantContextMissing) {
+		t.Errorf("P5 note: expected handler.ErrTenantContextMissing sentinel, got %T: %v", herr, herr)
 	}
 }
 
@@ -340,9 +365,5 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// errorsAs is a `errors.As` shim so we don't wrestle with a separate import
-// block when the target type isn't yet defined against the compile.
-func errorsAs(err error, target interface{}) bool {
-	// Green-phase: replace with stdlib `errors.As(err, target)`.
-	return false
-}
+// errorsAs delegates to stdlib errors.As now that green-phase types exist.
+func errorsAs(err error, target any) bool { return errors.As(err, target) }

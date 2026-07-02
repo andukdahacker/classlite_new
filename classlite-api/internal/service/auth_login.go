@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 	"github.com/google/uuid"
@@ -310,6 +311,36 @@ func (s *AuthService) recordLoginAttempt(ctx context.Context, emailNorm string, 
 		return fmt.Errorf("record login attempt: %w", err)
 	}
 	return nil
+}
+
+// mintAccessToken signs a fresh access token for a caller-specified
+// identity. Unlike buildAccessToken it does NOT read center_members — the
+// caller (Story 2.1 CenterService.CreateCenter) has just inserted the
+// membership row in the same tx and would race against its own uncommitted
+// write. When centerID is nil, the JWT carries only UserID.
+//
+// Unexported so the only callable seam is *AuthService.MintAccessToken —
+// preventing a future caller from smuggling an arbitrary role claim from
+// outside the service package.
+func mintAccessToken(jwt JWTSigner, clk clock.Clock, userID uuid.UUID, centerID *uuid.UUID, role string) (string, time.Time, error) {
+	claims := AccessClaims{UserID: userID.String()}
+	if centerID != nil {
+		claims.CenterID = centerID.String()
+		claims.Role = role
+	}
+	signed, err := jwt.SignAccess(claims, int(AccessTokenTTL.Seconds()))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, clk.Now().Add(AccessTokenTTL), nil
+}
+
+// MintAccessToken is the sole external seam for minting a fresh access token
+// for the CenterService.CreateCenter path — the AuthService instance is
+// already wired at cmd/api/main.go and CenterService consumes it through
+// the accessTokenIssuer interface.
+func (s *AuthService) MintAccessToken(ctx context.Context, userID uuid.UUID, centerID *uuid.UUID, role string) (string, time.Time, error) {
+	return mintAccessToken(s.jwt, s.clk, userID, centerID, role)
 }
 
 // buildAccessToken signs a 15-minute JWT carrying the user's id and, when

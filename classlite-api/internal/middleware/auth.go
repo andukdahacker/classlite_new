@@ -56,7 +56,8 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 				return
 			}
 			q := generated.New(db)
-			if _, err := q.GetUserByID(r.Context(), pgtype.UUID{Bytes: userUUID, Valid: true}); err != nil {
+			user, err := q.GetUserByID(r.Context(), pgtype.UUID{Bytes: userUUID, Valid: true})
+			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					writeMiddlewareJSON(w, r, http.StatusUnauthorized, "AUTH_USER_GONE", "Authentication failed.")
 					return
@@ -96,9 +97,10 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 				}
 			}
 			tc := model.TenantContext{
-				CenterID: claims.CenterID,
-				UserID:   claims.UserID,
-				Role:     dbRole,
+				CenterID:      claims.CenterID,
+				UserID:        claims.UserID,
+				Role:          dbRole,
+				EmailVerified: user.EmailVerified,
 			}
 			next.ServeHTTP(w, r.WithContext(model.WithTenantContext(r.Context(), tc)))
 		})

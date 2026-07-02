@@ -4,13 +4,42 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
 )
 
 // Envelope wraps successful responses. No omitempty on JSON tags (GO-5).
 type Envelope struct {
 	Data any `json:"data"`
+}
+
+// EnvelopeWithMeta is the Story 2.1 envelope shape — every 2xx response
+// from an onboarding + center endpoint carries meta.serverTime so the
+// wizard can render clock-skew-immune "N seconds ago" affordances.
+type EnvelopeWithMeta struct {
+	Data any          `json:"data"`
+	Meta EnvelopeMeta `json:"meta"`
+}
+
+// EnvelopeMeta carries the ambient response metadata.
+type EnvelopeMeta struct {
+	ServerTime time.Time `json:"serverTime"`
+}
+
+// WriteEnvelope writes a successful response with the Story 2.1
+// {data, meta} envelope. clk is injected for tests; callers pass
+// clock.RealClock in production.
+func WriteEnvelope(w http.ResponseWriter, status int, clk clock.Clock, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(EnvelopeWithMeta{
+		Data: data,
+		Meta: EnvelopeMeta{ServerTime: clk.Now().UTC()},
+	}); err != nil {
+		slog.Warn("write envelope response failed", "error", err)
+	}
 }
 
 // ErrorResponse is the standard error envelope.

@@ -8,6 +8,13 @@ INSERT INTO center_members (user_id, center_id, role)
 VALUES ($1, $2, $3)
 RETURNING user_id, center_id, role, created_at;
 
+-- name: CountCenterMembersByUser :one
+-- Story 2.1 — pre-check for the "one center per user in v1" invariant
+-- surfaced as 409 USER_ALREADY_HAS_CENTER. Application-layer pre-check is
+-- the suspenders; idx_center_members_user_id is the belt for the race
+-- window.
+SELECT COUNT(*) FROM center_members WHERE user_id = $1;
+
 -- name: ListCenterMembersByCenter :many
 SELECT user_id, center_id, role, created_at
 FROM center_members

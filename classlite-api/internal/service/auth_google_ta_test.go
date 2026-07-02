@@ -72,21 +72,19 @@ func TestGoogleCallback_TenantBindingMatrix_CrossSubdomain(t *testing.T) {
 	alice := test.CreateUser(t, db, "alice@example.com", "Alice")
 	// bob is member of B only.
 	bob := test.CreateUser(t, db, "bob@example.com", "Bob")
-	// carol is member of BOTH centers.
-	carol := test.CreateUser(t, db, "carol@example.com", "Carol")
+	// Story 2.1: multi-center users blocked by idx_center_members_user_id
+	// (v1 one-center-per-user invariant, FU-2-1-D reintroduces this fixture
+	// post-launch). Carol's two-center coverage returns then.
 
 	_ = test.TenantContext(t, db, centerA.ID)
 	_ = test.CreateCenterMember(t, db, alice.ID, centerA.ID, "owner")
-	_ = test.CreateCenterMember(t, db, carol.ID, centerA.ID, "teacher")
 	_ = test.TenantContext(t, db, centerB.ID)
 	_ = test.CreateCenterMember(t, db, bob.ID, centerB.ID, "owner")
-	_ = test.CreateCenterMember(t, db, carol.ID, centerB.ID, "admin")
 
 	// Seed google_id so resolveGoogleIdentity hits Branch A for each user.
 	for email, sub := range map[string]string{
 		"alice@example.com": "google-sub-alice",
 		"bob@example.com":   "google-sub-bob",
-		"carol@example.com": "google-sub-carol",
 	} {
 		if _, err := db.Exec(context.Background(),
 			`UPDATE users SET google_id = $2 WHERE email = $1`,
@@ -111,10 +109,8 @@ func TestGoogleCallback_TenantBindingMatrix_CrossSubdomain(t *testing.T) {
 		{"alice-on-apex", "alice@example.com", "google-sub-alice", "my.classlite.app", false},
 		// Bob (B only) on subdomain A → mismatch.
 		{"bob-on-sub-A", "bob@example.com", "google-sub-bob", "tena.classlite.app", true},
-		// Carol (both) on subdomain A → pass.
-		{"carol-on-sub-A", "carol@example.com", "google-sub-carol", "tena.classlite.app", false},
-		// Carol on subdomain B → pass.
-		{"carol-on-sub-B", "carol@example.com", "google-sub-carol", "tenb.classlite.app", false},
+		// Carol (multi-center) cases removed under Story 2.1's v1
+		// one-center-per-user invariant — restored by FU-2-1-D.
 	}
 
 	for _, tc := range cases {

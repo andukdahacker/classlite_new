@@ -151,6 +151,71 @@ func TestExtractTenant_AC14_P2_MalformedAuthScheme_401(t *testing.T) {
 	}
 }
 
+// Story 2.1 Task 5.0: ExtractTenant must copy users.email_verified into
+// TenantContext.EmailVerified so RequireVerifiedEmail can gate downstream
+// requests without a second DB round-trip. Verified-user case.
+func TestExtractTenant_Story21_EmailVerifiedTrue_Populated(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "verified@example.com", "Verified User")
+	if _, err := db.Exec(context.Background(),
+		`UPDATE users SET email_verified = true WHERE id = $1`, user.ID); err != nil {
+		t.Fatalf("mark verified: %v", err)
+	}
+
+	jwt := service.NewJWTSignerWithClock([]byte("test-signing-key-at-least-256-bits-long-12345678"),
+		clock.RealClock{})
+	tok, err := jwt.SignAccess(service.AccessClaims{UserID: test.UUIDString(user.ID)}, 900)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	var seenTC model.TenantContext
+	mw := middleware.ExtractTenant(db, jwt)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tc, _ := middleware.TenantFromContext(r.Context())
+		seenTC = tc
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !seenTC.EmailVerified {
+		t.Errorf("EmailVerified = false; want true for verified user (Task 5.0)")
+	}
+}
+
+// Unverified-user case — Task 5.0 companion assertion. Complements the
+// verified test so RequireVerifiedEmail's context-check contract is proven
+// end-to-end at the ExtractTenant seam.
+func TestExtractTenant_Story21_EmailVerifiedFalse_Populated(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "unverified@example.com", "Unverified")
+	// email_verified defaults to false — no update needed.
+
+	jwt := service.NewJWTSignerWithClock([]byte("test-signing-key-at-least-256-bits-long-12345678"),
+		clock.RealClock{})
+	tok, err := jwt.SignAccess(service.AccessClaims{UserID: test.UUIDString(user.ID)}, 900)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	var seenTC model.TenantContext
+	mw := middleware.ExtractTenant(db, jwt)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tc, _ := middleware.TenantFromContext(r.Context())
+		seenTC = tc
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if seenTC.EmailVerified {
+		t.Errorf("EmailVerified = true; want false for unverified default (Task 5.0)")
+	}
+}
+
 // Compile-time keepalive — the context-injection helper must keep the
 // model import live across renames.
 var _ = context.Background

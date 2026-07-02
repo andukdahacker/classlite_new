@@ -340,6 +340,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/onboarding/persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the authenticated user's persona (story 2.1)
+         * @description Writes the caller's persona choice to `users.persona`. Idempotent — a
+         *     repeat POST with the same value returns 200, not 409, so the wizard
+         *     may hit this on browser back. Unknown persona values → 422.
+         */
+        post: operations["setOnboardingPersona"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/centers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a center + bind creator as Owner (story 2.1)
+         * @description Single transaction — inserts the center row, generates a unique
+         *     `shortCode` (slug + retry), inserts `center_members` with role=owner,
+         *     writes an `audit_logs` row `center.created`, and returns a fresh
+         *     access token whose claims include the new center+role. v1 supports
+         *     one center per user — a repeat attempt returns 409
+         *     USER_ALREADY_HAS_CENTER.
+         */
+        post: operations["createCenter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/onboarding/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the caller's onboarding progress (story 2.1)
+         * @description Returns the caller's saved onboarding progress row plus their
+         *     current persona. Never 404s — when no progress row exists, responds
+         *     200 with `{currentStep: "persona", payload: null, updatedAt: null}`
+         *     and the caller's persona (which may itself be null).
+         */
+        get: operations["getOnboardingProgress"];
+        /**
+         * Upsert the caller's onboarding progress (story 2.1)
+         * @description Upserts a single row per user in `onboarding_progress` keyed by
+         *     `user_id`. Unknown `currentStep` → 422.
+         */
+        put: operations["putOnboardingProgress"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -371,6 +446,41 @@ export interface components {
         ResetPasswordRequest: {
             token: string;
             newPassword: string;
+        };
+        SetPersonaRequest: {
+            /** @enum {string} */
+            persona: "operator" | "founder" | "solo_teacher";
+        };
+        CreateCenterRequest: {
+            name: string;
+            /** @description Hex color like `#3B82F6`. Nullable in v1. */
+            brandColor?: string | null;
+            /** @description Presigned R2 asset URL (finalized in a later story). Nullable in v1. */
+            logoUrl?: string | null;
+        };
+        /**
+         * @description Typed JSONB payload written to `onboarding_progress.payload`. Story 2.1
+         *     pins `schemaVersion: 1`. `templateDraft` remains opaque JSON until
+         *     story 2.2 pins its shape.
+         */
+        OnboardingProgressPayload: {
+            /** @constant */
+            schemaVersion: 1;
+            /** @enum {string|null} */
+            personaChoice?: "operator" | "founder" | "solo_teacher" | null;
+            centerDraft?: {
+                name: string;
+                brandColor?: string | null;
+                logoUrl?: string | null;
+            } | null;
+            templateDraft?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        PutOnboardingProgressRequest: {
+            /** @enum {string} */
+            currentStep: "persona" | "center" | "template" | "spawn" | "solo_first_class" | "done";
+            payload: components["schemas"]["OnboardingProgressPayload"];
         };
         UserSummary: {
             /** Format: uuid */
@@ -423,6 +533,58 @@ export interface components {
         ResetPasswordResult: {
             reset: boolean;
         };
+        SetPersonaResult: {
+            /** @enum {string} */
+            persona: "operator" | "founder" | "solo_teacher";
+        };
+        CreateCenterResult: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            shortCode: string;
+            brandColor: string | null;
+            logoUrl: string | null;
+            /**
+             * @description Center's timezone in IANA format. Defaults to `Asia/Ho_Chi_Minh`
+             *     in v1 — story 2.5 exposes edit capability.
+             */
+            timezone: string;
+            /**
+             * @description v1 always `owner` regardless of persona (see FU-2-1-F).
+             * @enum {string}
+             */
+            role: "owner";
+            /** @description Fresh HS256 JWT with centerId+role claims, 15-minute TTL. */
+            accessToken: string;
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC expiry for the new access token.
+             */
+            expiresAt: string;
+        };
+        OnboardingProgressResult: {
+            /** @enum {string} */
+            currentStep: "persona" | "center" | "template" | "spawn" | "solo_first_class" | "done";
+            payload: components["schemas"]["OnboardingProgressPayload"] | null;
+            /** Format: date-time */
+            updatedAt: string | null;
+            /** @enum {string|null} */
+            persona: "operator" | "founder" | "solo_teacher" | null;
+        };
+        PutOnboardingProgressResult: {
+            /** @enum {string} */
+            currentStep: "persona" | "center" | "template" | "spawn" | "solo_first_class" | "done";
+            payload: components["schemas"]["OnboardingProgressPayload"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EnvelopeMeta: {
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC timestamp at response render time. Clients use this instead of Date.now() for skew-immune "N seconds ago" affordances.
+             */
+            serverTime: string;
+        };
         EnvelopeRegisterResult: {
             data: components["schemas"]["RegisterResult"];
         };
@@ -446,6 +608,22 @@ export interface components {
         };
         EnvelopeResetPasswordResult: {
             data: components["schemas"]["ResetPasswordResult"];
+        };
+        EnvelopeSetPersonaResult: {
+            data: components["schemas"]["SetPersonaResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeCreateCenterResult: {
+            data: components["schemas"]["CreateCenterResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeOnboardingProgress: {
+            data: components["schemas"]["OnboardingProgressResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopePutOnboardingProgressResult: {
+            data: components["schemas"]["PutOnboardingProgressResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         FieldError: {
             field: string;
@@ -1145,6 +1323,251 @@ export interface operations {
             };
             /** @description Poll ID not found, malformed, or expired (POLL_ID_NOT_FOUND) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    setOnboardingPersona: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPersonaRequest"];
+            };
+        };
+        responses: {
+            /** @description Persona persisted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSetPersonaResult"];
+                };
+            };
+            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-IP rate limit exceeded (20/min) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCenter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCenterRequest"];
+            };
+        };
+        responses: {
+            /** @description Center created, caller bound as Owner, fresh JWT returned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCreateCenterResult"];
+                };
+            };
+            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Caller already has a center (USER_ALREADY_HAS_CENTER) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-IP rate limit exceeded (20/min) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Slug regeneration exhausted after 5 attempts (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getOnboardingProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Progress state (or default when unsaved) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeOnboardingProgress"];
+                };
+            };
+            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-IP rate limit exceeded (20/min) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    putOnboardingProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutOnboardingProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description Progress persisted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopePutOnboardingProgressResult"];
+                };
+            };
+            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-IP rate limit exceeded (20/min) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

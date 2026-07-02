@@ -1,6 +1,4 @@
-//go:build atdd_red_phase
-
-// RED-PHASE ATDD specimens for Story 2.1 — Center Handler.
+// ATDD specimens for Story 2.1 — Center Handler.
 //
 // Expected to FAIL against current codebase:
 //   - handler.NewCenterHandler does not exist
@@ -322,6 +320,20 @@ func TestCreateCenter_AC06_ExactJsonbShape_BeforeNullAfterPopulated(t *testing.T
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
+	// Parse the response to get the returned centerID — the audit row's
+	// entity_id must equal it (AC6 pins the full row shape).
+	var createResp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("decode create-center response: %v", err)
+	}
+	if createResp.Data.ID == "" {
+		t.Fatalf("create-center response missing data.id (status=%d, body=%s)", rec.Code, rec.Body.String())
+	}
+
 	// Fetch the audit_logs row via test helper.
 	auditRow := test.LatestAuditLogForUser(t, db, user.ID) // green-phase fixture
 	var changes struct {
@@ -346,6 +358,12 @@ func TestCreateCenter_AC06_ExactJsonbShape_BeforeNullAfterPopulated(t *testing.T
 	if auditRow.Action != "center.created" {
 		t.Errorf("AC6: audit_logs.action = %q, want center.created", auditRow.Action)
 	}
+	if auditRow.EntityType != "center" {
+		t.Errorf("AC6: audit_logs.entity_type = %q, want %q", auditRow.EntityType, "center")
+	}
+	if got := test.UUIDString(auditRow.EntityID); got != createResp.Data.ID {
+		t.Errorf("AC6: audit_logs.entity_id = %q, want %q (from create-center response)", got, createResp.Data.ID)
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -369,6 +387,6 @@ func assertErrorCodeCenter(t *testing.T, body *bytes.Buffer, wantCode string) {
 var (
 	_ = handler.NewCenterHandler
 	_ = service.NewCenterService
-	_ = service.MintAccessToken
+	_ = (*service.AuthService).MintAccessToken
 	_ = time.Second
 )
