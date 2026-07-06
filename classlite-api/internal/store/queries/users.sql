@@ -36,6 +36,14 @@ WHERE id = $1;
 -- name: GetUserPersona :one
 SELECT persona FROM users WHERE id = $1;
 
+-- name: GetUserPersonaAndEmail :one
+-- Story 2.2 — Spawn reads persona (drives AC6 Founder auto-assign),
+-- email (drives AC4 Branch A self-assign), AND full_name (drives the
+-- inviter-name field in invite emails — C1-20 review fix; was previously
+-- derived from the email local-part which leaked the caller's raw address
+-- into invite subject / body). Users table has no RLS so a pool read is fine.
+SELECT persona, email, full_name FROM users WHERE id = $1;
+
 -- name: LinkGoogleAccount :execrows
 -- Story 1.6 — Branch B of HandleGoogleCallback's account-resolution. The
 -- WHERE google_id IS NULL clause is the race guard: two simultaneous

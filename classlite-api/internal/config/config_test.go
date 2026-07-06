@@ -20,6 +20,7 @@ func productionBase() config.Config {
 		JWTSecret:            okSecret,
 		AppVerifyURLBase:     "https://my.classlite.app/verify-email",
 		AppResetURLBase:      "https://my.classlite.app/reset-password",
+		AppInviteURLBase:     "https://my.classlite.app/invite",
 		CookieDomain:         ".classlite.app",
 		GoogleClientID:       "client-id",
 		GoogleClientSecret:   "client-secret",
@@ -41,7 +42,7 @@ func TestValidate_DevelopmentAcceptsEmpty(t *testing.T) {
 func TestValidate_ProductionRequiresDBURL(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "", JWTSecret: okSecret,
-		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("production should reject empty DATABASE_URL")
@@ -51,7 +52,7 @@ func TestValidate_ProductionRequiresDBURL(t *testing.T) {
 func TestValidate_ProductionRequiresJWTSecret(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "",
-		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("production should reject empty JWT_SECRET")
@@ -61,7 +62,7 @@ func TestValidate_ProductionRequiresJWTSecret(t *testing.T) {
 func TestValidate_ProductionRequiresAppVerifyURLBase(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
-		AppVerifyURLBase: "", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("production should reject empty APP_VERIFY_URL_BASE")
@@ -71,17 +72,27 @@ func TestValidate_ProductionRequiresAppVerifyURLBase(t *testing.T) {
 func TestValidate_ProductionRequiresAppResetURLBase(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
-		AppVerifyURLBase: "https://x", AppResetURLBase: "",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "", AppInviteURLBase: "https://z",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("production should reject empty APP_RESET_URL_BASE")
 	}
 }
 
+func TestValidate_ProductionRequiresAppInviteURLBase(t *testing.T) {
+	cfg := config.Config{
+		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("production should reject empty APP_INVITE_URL_BASE (R2-P1: prevents localhost invite URLs shipping in prod)")
+	}
+}
+
 func TestValidate_ProductionRejectsShortJWTSecret(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "too-short",
-		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 		CookieDomain: ".classlite.app",
 	}
 	err := cfg.Validate()
@@ -164,7 +175,7 @@ func TestValidate_DevelopmentAcceptsEmptyOAuth(t *testing.T) {
 func TestValidate_ProductionRequiresCookieDomain(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
-		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 		// CookieDomain intentionally empty — D4 requires explicit value.
 	}
 	err := cfg.Validate()
@@ -179,7 +190,7 @@ func TestValidate_ProductionRequiresCookieDomain(t *testing.T) {
 func TestValidate_ProductionRejectsLocalhostCookieDomain(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: okSecret,
-		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y",
+		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
 		CookieDomain: "localhost",
 	}
 	err := cfg.Validate()

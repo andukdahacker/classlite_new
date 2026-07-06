@@ -29,8 +29,13 @@ type ValidationError struct {
 }
 
 // FieldError represents a single field validation failure.
+// Code is optional — Story 2.2 introduced per-field UPPER_SNAKE_CASE codes
+// (INVALID_TEACHER_EMAIL, SELF_INVITE_BLOCKED) so wizard UIs can route on
+// stable identifiers instead of prose messages. Leaving Code empty stays
+// backward-compatible with Story 1.4–2.1 handlers.
 type FieldError struct {
 	Field   string `json:"field"`
+	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 

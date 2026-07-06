@@ -387,6 +387,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List accessible templates — system seeds + caller's center-owned (story 2.2)
+         * @description Returns the concatenation of the caller's accessible class templates:
+         *     (a) global system seeds (`class_templates.center_id IS NULL`, at least
+         *     5 rows — see AC1b), then (b) center-owned custom templates ordered by
+         *     `created_at DESC`. Response includes a per-row `scope` discriminator
+         *     (`"system" | "center"`) so the wizard can render them distinctly.
+         */
+        get: operations["listTemplates"];
+        put?: never;
+        /**
+         * Create a center-owned custom template with pre-configured sessions (story 2.2)
+         * @description Inserts a `class_templates` row scoped to the caller's center and all
+         *     provided `template_sessions` rows in a SINGLE transaction. Validation
+         *     enforces `sessions.length == sessionCount` as the single source of
+         *     truth — any drift returns 422.
+         */
+        post: operations["createTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{id}/spawn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Spawn N classes atomically from a template (story 2.2)
+         * @description Reads the template (system OR own — RLS renders other tenants' rows
+         *     invisible → 404 TEMPLATE_NOT_FOUND) then, in ONE transaction, inserts
+         *     N `classes` rows, resolves each class's teacher via Branch A/B/C/D,
+         *     writes optional `invites` rows for pending teachers, and writes one
+         *     `audit_logs` row `class.spawned` per class. On ANY failure the whole
+         *     tx rolls back — zero classes, zero invites, zero audit rows. Invite
+         *     emails are enqueued AFTER commit through `EmailRetryQueue`
+         *     (best-effort — the invite ROW is the durable contract).
+         */
+        post: operations["spawnClasses"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding/progress": {
         parameters: {
             query?: never;
@@ -578,6 +636,129 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        CreateTemplateRequest: {
+            /** @description Rune-count limits (`utf8.RuneCountInString`) — a Vietnamese template name of 120 characters is fine even though the UTF-8 byte length exceeds 120. */
+            name: string;
+            /** @description IELTS band target — allowed values 1.0..9.0 in 0.5 steps. */
+            targetBand: number;
+            /** @enum {string} */
+            primarySkill: "writing" | "speaking" | "listening" | "reading" | "listening_reading" | "all_skills";
+            sessionCount: number;
+            color: string | null;
+            /** @description MUST equal length of sessionCount (AC2 single-source-of-truth). */
+            sessions: components["schemas"]["TemplateSessionInput"][];
+        };
+        TemplateSessionInput: {
+            title: string;
+            description: string | null;
+        };
+        Template: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            targetBand: number;
+            /** @enum {string} */
+            primarySkill: "writing" | "speaking" | "listening" | "reading" | "listening_reading" | "all_skills";
+            sessionCount: number;
+            color: string | null;
+            /** @enum {string} */
+            scope: "system" | "center";
+        };
+        TemplateSession: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            description: string | null;
+            sessionOrder: number;
+        };
+        ListTemplatesResult: {
+            /**
+             * @description System seeds + caller's center-owned templates. The response is
+             *     guaranteed to contain at least the 5 system seeds (per AC1b); if
+             *     fewer are found the handler responds `500 SEED_INCOMPLETE`
+             *     rather than a spec-conformant short response. C2-13 review fix
+             *     — the invariant was previously enforced only at runtime.
+             */
+            templates: components["schemas"]["Template"][];
+        };
+        CreateTemplateResult: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            targetBand: number;
+            /** @enum {string} */
+            primarySkill: "writing" | "speaking" | "listening" | "reading" | "listening_reading" | "all_skills";
+            sessionCount: number;
+            color: string | null;
+            /** @enum {string} */
+            scope: "center";
+            sessions: components["schemas"]["TemplateSession"][];
+        };
+        SpawnClassInput: {
+            cohortName: string;
+            /**
+             * Format: date
+             * @description ISO-8601 date (YYYY-MM-DD). Must not be more than 30 days in the past.
+             */
+            startDate: string;
+            /** Format: email */
+            teacherEmail: string | null;
+        };
+        SpawnRequest: {
+            classes: components["schemas"]["SpawnClassInput"][];
+        };
+        SpawnedClass: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date */
+            startDate: string;
+            /**
+             * Format: uuid
+             * @description Set for Branches A + B; null for Branches C + D.
+             */
+            teacherId: string | null;
+            /**
+             * Format: email
+             * @description Set for Branches A + B (from `users.email`); null for Branches C + D — privacy per AC3 (do NOT leak "email exists in system").
+             */
+            teacherEmail: string | null;
+            /**
+             * Format: email
+             * @description Set for Branch C only (from payload, normalized to lowercase); null otherwise.
+             */
+            pendingTeacherEmail: string | null;
+            /** @enum {string} */
+            teacherStatus: "assigned" | "invited" | "unassigned";
+            /** @enum {string} */
+            teacherAssignmentReason: "explicit_self" | "explicit_member" | "founder_auto" | "invited" | "unassigned";
+        };
+        SpawnInviteEntry: {
+            /**
+             * Format: email
+             * @description Lowercased invited email.
+             */
+            email: string;
+            /**
+             * @description **0-indexed** payload-order class indices this invite covers.
+             *     Clients rendering "invite N went to <email>" copy MUST convert
+             *     to 1-based for display (C2-06 review fix — spec previously
+             *     didn't specify the indexing base).
+             */
+            classIndices: number[];
+            /** @description Return value of `EmailRetryQueue.Enqueue` for newly-created invites; false when reusing an existing invite or when the retry queue buffer is full. */
+            enqueued: boolean;
+            /** @description True when a pre-existing active invite was reused (dedup at DB via `idx_invites_center_email_active`); false when a new row was written this call. */
+            reusedExistingInvite: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        SpawnResult: {
+            classes: components["schemas"]["SpawnedClass"][];
+            invites: components["schemas"]["SpawnInviteEntry"][];
+            /** @description Count of newly-created invite rows that were also enqueued=true (dedup-reused OR buffer-full invites are excluded). */
+            invitesSent: number;
+        };
         EnvelopeMeta: {
             /**
              * Format: date-time
@@ -625,8 +806,32 @@ export interface components {
             data: components["schemas"]["PutOnboardingProgressResult"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
+        EnvelopeListTemplatesResult: {
+            data: components["schemas"]["ListTemplatesResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeCreateTemplateResult: {
+            data: components["schemas"]["CreateTemplateResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSpawnResult: {
+            data: components["schemas"]["SpawnResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
         FieldError: {
             field: string;
+            /**
+             * @description Optional per-field UPPER_SNAKE_CASE identifier (e.g.
+             *     INVALID_TEACHER_EMAIL, SELF_INVITE_BLOCKED) — populated for
+             *     error-catalog fields; empty string OR omitted when the error
+             *     carries only a prose message. Story 1.x handlers pre-date the
+             *     catalog and emit `""` for `code`; Story 2.2+ handlers populate
+             *     it where the wizard router needs to key on the field-level
+             *     code. C2-03 review fix — was `required` under Story 2.2's
+             *     initial pass, which broke JSON-Schema validators for pre-2.2
+             *     envelopes that didn't emit the key.
+             */
+            code?: string;
             message: string;
         };
         ErrorBody: {
@@ -1354,7 +1559,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnvelopeSetPersonaResult"];
                 };
             };
-            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1381,7 +1586,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Per-IP rate limit exceeded (20/min) */
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -1414,7 +1619,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnvelopeCreateCenterResult"];
                 };
             };
-            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1450,7 +1655,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Per-IP rate limit exceeded (20/min) */
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -1460,6 +1665,211 @@ export interface operations {
                 };
             };
             /** @description Slug regeneration exhausted after 5 attempts (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeListTemplatesResult"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Seed migration incomplete (SEED_INCOMPLETE) OR unexpected server error (INTERNAL_ERROR) — inspect `error.code` to route (C2-09 review fix) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Template created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCreateTemplateResult"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure (VALIDATION_ERROR) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected server error (INTERNAL_ERROR) — C2-02 review fix (was undocumented) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    spawnClasses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpawnRequest"];
+            };
+        };
+        responses: {
+            /** @description All classes spawned atomically */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSpawnResult"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Template does not exist or is invisible to caller (TEMPLATE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure (VALIDATION_ERROR at envelope level). `error.details[*].code` may include: `INVALID_TEACHER_EMAIL`, `SELF_INVITE_BLOCKED`. Other field-level codes are empty (`""`) and rely on `error.details[*].field` + `error.details[*].message` for surfacing (cohortName length, startDate drift, class count, malformed JSON). C2-08 review fix — the enumeration is not exhaustive. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (spawnLimit 5/min IP + onboardingLimit 20/min IP) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected server error (INTERNAL_ERROR) */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1488,7 +1898,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnvelopeOnboardingProgress"];
                 };
             };
-            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1506,7 +1916,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Per-IP rate limit exceeded (20/min) */
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -1539,7 +1949,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnvelopePutOnboardingProgressResult"];
                 };
             };
-            /** @description Missing or invalid access token (AUTH_REQUIRED) */
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1566,7 +1976,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Per-IP rate limit exceeded (20/min) */
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
             429: {
                 headers: {
                     [name: string]: unknown;

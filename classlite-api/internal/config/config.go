@@ -28,6 +28,13 @@ type Config struct {
 	// AppResetURLBase is the canonical base URL embedded in password-reset
 	// emails (story 1.5). The token is appended as ?token=<value>.
 	AppResetURLBase string
+	// AppInviteURLBase is the canonical base URL embedded in team-invite
+	// emails (story 2.2 spawn path). The raw token is appended as /<value>.
+	// R2-P1 fix: the ClassService constructor previously defaulted this to
+	// a localhost URL, so a prod deploy that forgot the wiring would ship
+	// localhost URLs to real teachers. Validate() rejects an empty value in
+	// non-dev; main.go calls classSvc.SetAcceptURLBase(cfg.AppInviteURLBase).
+	AppInviteURLBase string
 	// Story 1.6 — Google OAuth + invite acceptance + force-logout.
 	GoogleClientID       string
 	GoogleClientSecret   string
@@ -60,6 +67,7 @@ func Load() Config {
 		R2BucketName:     getEnv("R2_BUCKET_NAME", "classlite-uploads"),
 		AppVerifyURLBase: getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
 		AppResetURLBase:  getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
+		AppInviteURLBase: getEnv("APP_INVITE_URL_BASE", "http://localhost:5173/invite"),
 		GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:    getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback"),
@@ -102,6 +110,9 @@ func (c Config) Validate() error {
 		}
 		if c.AppResetURLBase == "" {
 			missing = append(missing, "APP_RESET_URL_BASE")
+		}
+		if c.AppInviteURLBase == "" {
+			missing = append(missing, "APP_INVITE_URL_BASE")
 		}
 		// D4: COOKIE_DOMAIN must be set explicitly in non-dev. The default
 		// is "localhost" (good for local dev only); a deploy that forgets
@@ -185,6 +196,7 @@ func (c Config) LogSummary() {
 		"r2_bucket_name", c.R2BucketName,
 		"app_verify_url_base_set", c.AppVerifyURLBase != "",
 		"app_reset_url_base_set", c.AppResetURLBase != "",
+		"app_invite_url_base_set", c.AppInviteURLBase != "",
 		"google_client_id_set", c.GoogleClientID != "",
 		"oauth_state_secret_set", c.OAuthStateSecret != "",
 		"app_apex_host", c.AppApexHost,

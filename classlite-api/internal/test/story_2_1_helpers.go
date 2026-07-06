@@ -237,6 +237,20 @@ type User struct {
 	FullName string
 }
 
+// prePurgeHooks is a registry populated by init() in sibling
+// story_2_X_helpers.go files so those stories can chain their owned-resource
+// cleanup BEFORE this cascade drops centers. Registered hooks run under the
+// same superuser pool as the shared cleanup.
+var prePurgeHooks []func(sp *pgxpool.Pool, userID pgtype.UUID)
+
+// registerPre2_2Purge lets story_2_2_helpers.go (init) chain its resource
+// cleanup into PurgeUserAndOwnedCenters. Kept generic so future stories can
+// add their own registry function (e.g. registerPre3_1Purge) without
+// touching this file.
+func registerPre2_2Purge(fn func(sp *pgxpool.Pool, userID pgtype.UUID)) {
+	prePurgeHooks = append(prePurgeHooks, fn)
+}
+
 // PurgeUserAndOwnedCenters is the raw-pool cleanup counterpart to
 // t.Cleanup in the concurrent tests. It uses a superuser pool (see
 // superuserPool below) so it bypasses RLS on center_members + audit_logs
@@ -252,6 +266,13 @@ func PurgeUserAndOwnedCenters(t *testing.T, _ *pgxpool.Pool, userID pgtype.UUID)
 	t.Helper()
 	ctx := context.Background()
 	sp := superuserPool(t)
+
+	// Story 2.2 (and beyond) pre-purge hooks run first so class_templates,
+	// classes, invites, template_sessions get cleared before the shared
+	// center delete would otherwise trip on the classes.teacher_id FK.
+	for _, hook := range prePurgeHooks {
+		hook(sp, userID)
+	}
 
 	rows, err := sp.Query(ctx, `SELECT center_id FROM center_members WHERE user_id = $1`, userID)
 	if err != nil {
@@ -270,6 +291,21 @@ func PurgeUserAndOwnedCenters(t *testing.T, _ *pgxpool.Pool, userID pgtype.UUID)
 
 	if _, err := sp.Exec(ctx, `DELETE FROM audit_logs WHERE user_id = $1`, userID); err != nil {
 		t.Logf("purge: delete audit_logs for user %s: %v", UUIDString(userID), err)
+	}
+	// auth_audit_logs FKs user_id — must clear before delete users. Story
+	// 2.2 was the first to exercise the raw-pool + real-auth flow that
+	// exposed this residue path.
+	if _, err := sp.Exec(ctx, `DELETE FROM auth_audit_logs WHERE user_id = $1`, userID); err != nil {
+		t.Logf("purge: delete auth_audit_logs for user %s: %v", UUIDString(userID), err)
+	}
+	if _, err := sp.Exec(ctx, `DELETE FROM email_verifications WHERE user_id = $1`, userID); err != nil {
+		t.Logf("purge: delete email_verifications for user %s: %v", UUIDString(userID), err)
+	}
+	if _, err := sp.Exec(ctx, `DELETE FROM refresh_tokens WHERE user_id = $1`, userID); err != nil {
+		t.Logf("purge: delete refresh_tokens for user %s: %v", UUIDString(userID), err)
+	}
+	if _, err := sp.Exec(ctx, `DELETE FROM password_resets WHERE user_id = $1`, userID); err != nil {
+		t.Logf("purge: delete password_resets for user %s: %v", UUIDString(userID), err)
 	}
 	if _, err := sp.Exec(ctx, `DELETE FROM center_members WHERE user_id = $1`, userID); err != nil {
 		t.Logf("purge: delete center_members for user %s: %v", UUIDString(userID), err)

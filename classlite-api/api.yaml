@@ -597,7 +597,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EnvelopeSetPersonaResult'
         "401":
-          description: Missing or invalid access token (AUTH_REQUIRED)
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
           content:
             application/json:
               schema:
@@ -615,7 +615,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "429":
-          description: Per-IP rate limit exceeded (20/min)
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
           content:
             application/json:
               schema:
@@ -648,7 +648,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EnvelopeCreateCenterResult'
         "401":
-          description: Missing or invalid access token (AUTH_REQUIRED)
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
           content:
             application/json:
               schema:
@@ -672,13 +672,183 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "429":
-          description: Per-IP rate limit exceeded (20/min)
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "500":
           description: Slug regeneration exhausted after 5 attempts (INTERNAL_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/templates:
+    get:
+      operationId: listTemplates
+      summary: List accessible templates — system seeds + caller's center-owned (story 2.2)
+      description: |
+        Returns the concatenation of the caller's accessible class templates:
+        (a) global system seeds (`class_templates.center_id IS NULL`, at least
+        5 rows — see AC1b), then (b) center-owned custom templates ordered by
+        `created_at DESC`. Response includes a per-row `scope` discriminator
+        (`"system" | "center"`) so the wizard can render them distinctly.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListTemplatesResult'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Seed migration incomplete (SEED_INCOMPLETE) OR unexpected server error (INTERNAL_ERROR) — inspect `error.code` to route (C2-09 review fix)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createTemplate
+      summary: Create a center-owned custom template with pre-configured sessions (story 2.2)
+      description: |
+        Inserts a `class_templates` row scoped to the caller's center and all
+        provided `template_sessions` rows in a SINGLE transaction. Validation
+        enforces `sessions.length == sessionCount` as the single source of
+        truth — any drift returns 422.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        "201":
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCreateTemplateResult'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Unexpected server error (INTERNAL_ERROR) — C2-02 review fix (was undocumented)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/templates/{id}/spawn:
+    post:
+      operationId: spawnClasses
+      summary: Spawn N classes atomically from a template (story 2.2)
+      description: |
+        Reads the template (system OR own — RLS renders other tenants' rows
+        invisible → 404 TEMPLATE_NOT_FOUND) then, in ONE transaction, inserts
+        N `classes` rows, resolves each class's teacher via Branch A/B/C/D,
+        writes optional `invites` rows for pending teachers, and writes one
+        `audit_logs` row `class.spawned` per class. On ANY failure the whole
+        tx rolls back — zero classes, zero invites, zero audit rows. Invite
+        emails are enqueued AFTER commit through `EmailRetryQueue`
+        (best-effort — the invite ROW is the durable contract).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpawnRequest'
+      responses:
+        "201":
+          description: All classes spawned atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSpawnResult'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center yet (CENTER_REQUIRED), tenant claim on JWT invalid (INVALID_TENANT_CLAIM), or generic forbidden (FORBIDDEN)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: Template does not exist or is invisible to caller (TEMPLATE_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: |
+            Validation failure (VALIDATION_ERROR at envelope level). `error.details[*].code` may include: `INVALID_TEACHER_EMAIL`, `SELF_INVITE_BLOCKED`. Other field-level codes are empty (`""`) and rely on `error.details[*].field` + `error.details[*].message` for surfacing (cohortName length, startDate drift, class count, malformed JSON). C2-08 review fix — the enumeration is not exhaustive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (spawnLimit 5/min IP + onboardingLimit 20/min IP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Unexpected server error (INTERNAL_ERROR)
           content:
             application/json:
               schema:
@@ -703,7 +873,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EnvelopeOnboardingProgress'
         "401":
-          description: Missing or invalid access token (AUTH_REQUIRED)
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
           content:
             application/json:
               schema:
@@ -715,7 +885,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "429":
-          description: Per-IP rate limit exceeded (20/min)
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
           content:
             application/json:
               schema:
@@ -742,7 +912,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EnvelopePutOnboardingProgressResult'
         "401":
-          description: Missing or invalid access token (AUTH_REQUIRED)
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
           content:
             application/json:
               schema:
@@ -760,7 +930,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "429":
-          description: Per-IP rate limit exceeded (20/min)
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
           content:
             application/json:
               schema:
@@ -1077,6 +1247,238 @@ components:
           type: string
           format: date-time
 
+    # ---------------- Story 2.2 — Templates + Spawning ----------------
+    CreateTemplateRequest:
+      type: object
+      required: [name, targetBand, primarySkill, sessionCount, color, sessions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Rune-count limits (`utf8.RuneCountInString`) — a Vietnamese template name of 120 characters is fine even though the UTF-8 byte length exceeds 120.
+        targetBand:
+          type: number
+          minimum: 1.0
+          maximum: 9.0
+          description: IELTS band target — allowed values 1.0..9.0 in 0.5 steps.
+        primarySkill:
+          type: string
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+        sessionCount:
+          type: integer
+          minimum: 1
+          maximum: 100
+        color:
+          type: string
+          nullable: true
+        sessions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: MUST equal length of sessionCount (AC2 single-source-of-truth).
+          items:
+            $ref: '#/components/schemas/TemplateSessionInput'
+
+    TemplateSessionInput:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          nullable: true
+
+    Template:
+      type: object
+      required: [id, name, targetBand, primarySkill, sessionCount, color, scope]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        targetBand:
+          type: number
+        primarySkill:
+          type: string
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+        sessionCount:
+          type: integer
+        color:
+          type: string
+          nullable: true
+        scope:
+          type: string
+          enum: [system, center]
+
+    TemplateSession:
+      type: object
+      required: [id, title, description, sessionOrder]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sessionOrder:
+          type: integer
+
+    ListTemplatesResult:
+      type: object
+      required: [templates]
+      properties:
+        templates:
+          type: array
+          minItems: 5
+          description: |
+            System seeds + caller's center-owned templates. The response is
+            guaranteed to contain at least the 5 system seeds (per AC1b); if
+            fewer are found the handler responds `500 SEED_INCOMPLETE`
+            rather than a spec-conformant short response. C2-13 review fix
+            — the invariant was previously enforced only at runtime.
+          items:
+            $ref: '#/components/schemas/Template'
+
+    CreateTemplateResult:
+      type: object
+      required: [id, name, targetBand, primarySkill, sessionCount, color, scope, sessions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        targetBand:
+          type: number
+        primarySkill:
+          type: string
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+        sessionCount:
+          type: integer
+        color:
+          type: string
+          nullable: true
+        scope:
+          type: string
+          enum: [center]
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateSession'
+
+    SpawnClassInput:
+      type: object
+      required: [cohortName, startDate, teacherEmail]
+      properties:
+        cohortName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date
+          description: ISO-8601 date (YYYY-MM-DD). Must not be more than 30 days in the past.
+        teacherEmail:
+          type: string
+          format: email
+          nullable: true
+
+    SpawnRequest:
+      type: object
+      required: [classes]
+      properties:
+        classes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/SpawnClassInput'
+
+    SpawnedClass:
+      type: object
+      required: [id, name, startDate, teacherId, teacherEmail, pendingTeacherEmail, teacherStatus, teacherAssignmentReason]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        startDate:
+          type: string
+          format: date
+        teacherId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set for Branches A + B; null for Branches C + D.
+        teacherEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Set for Branches A + B (from `users.email`); null for Branches C + D — privacy per AC3 (do NOT leak "email exists in system").
+        pendingTeacherEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Set for Branch C only (from payload, normalized to lowercase); null otherwise.
+        teacherStatus:
+          type: string
+          enum: [assigned, invited, unassigned]
+        teacherAssignmentReason:
+          type: string
+          enum: [explicit_self, explicit_member, founder_auto, invited, unassigned]
+
+    SpawnInviteEntry:
+      type: object
+      required: [email, classIndices, enqueued, reusedExistingInvite, expiresAt]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Lowercased invited email.
+        classIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+          description: |
+            **0-indexed** payload-order class indices this invite covers.
+            Clients rendering "invite N went to <email>" copy MUST convert
+            to 1-based for display (C2-06 review fix — spec previously
+            didn't specify the indexing base).
+        enqueued:
+          type: boolean
+          description: Return value of `EmailRetryQueue.Enqueue` for newly-created invites; false when reusing an existing invite or when the retry queue buffer is full.
+        reusedExistingInvite:
+          type: boolean
+          description: True when a pre-existing active invite was reused (dedup at DB via `idx_invites_center_email_active`); false when a new row was written this call.
+        expiresAt:
+          type: string
+          format: date-time
+
+    SpawnResult:
+      type: object
+      required: [classes, invites, invitesSent]
+      properties:
+        classes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpawnedClass'
+        invites:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpawnInviteEntry'
+        invitesSent:
+          type: integer
+          description: Count of newly-created invite rows that were also enqueued=true (dedup-reused OR buffer-full invites are excluded).
+
     # ---------------- Envelopes ----------------
     EnvelopeMeta:
       type: object
@@ -1180,6 +1582,34 @@ components:
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 
+    # ---------------- Story 2.2 envelopes (data + meta.serverTime) ----------------
+    EnvelopeListTemplatesResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ListTemplatesResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeCreateTemplateResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CreateTemplateResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSpawnResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SpawnResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
     # ---------------- Error envelope ----------------
     FieldError:
       type: object
@@ -1187,6 +1617,18 @@ components:
       properties:
         field:
           type: string
+        code:
+          type: string
+          description: |
+            Optional per-field UPPER_SNAKE_CASE identifier (e.g.
+            INVALID_TEACHER_EMAIL, SELF_INVITE_BLOCKED) — populated for
+            error-catalog fields; empty string OR omitted when the error
+            carries only a prose message. Story 1.x handlers pre-date the
+            catalog and emit `""` for `code`; Story 2.2+ handlers populate
+            it where the wizard router needs to key on the field-level
+            code. C2-03 review fix — was `required` under Story 2.2's
+            initial pass, which broke JSON-Schema validators for pre-2.2
+            envelopes that didn't emit the key.
         message:
           type: string
 

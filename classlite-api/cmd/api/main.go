@@ -249,6 +249,60 @@ func main() {
 	mux.Handle("PUT /api/onboarding/progress", onboardingChain(onboardingHandler.PutProgress))
 	mux.Handle("POST /api/centers", onboardingChain(centerHandler.Create))
 
+	// Story 2.2 — Templates + Spawn. Middleware chain per AC8:
+	//   ExtractTenant → onboardingLimit → RequireVerifiedEmail →
+	//   RequireCenterContext → handler
+	//
+	// Winston-W-B3 fix: onboardingLimit runs BEFORE RequireVerifiedEmail so
+	// a valid-JWT verified-but-center-less flood cannot bypass the bucket.
+	templateSvc := service.NewTemplateService(pool, auditSvc, clock.RealClock{})
+	classSvc := service.NewClassService(pool, auditSvc, retryQ, clock.RealClock{})
+	// R2-P1 fix: wire the invite accept URL base. The ClassService constructor
+	// defaults this to a localhost URL; Validate() rejects an empty
+	// AppInviteURLBase in non-dev so a missing wiring cannot ship silently.
+	classSvc.SetAcceptURLBase(cfg.AppInviteURLBase)
+	templateHandler := handler.NewTemplateHandler(templateSvc, classSvc, clock.RealClock{})
+	requireCenter := middleware.RequireCenterContext()
+
+	templateChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			onboardingLimit(
+				requireVerified(
+					requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
+
+	// Spawn-specific rate limit (Winston-W-S4 + C1-10 review fix): 5/min
+	// keyed by `centerID:ip` (not pure IP). Spawn amplifies to 20 classes × 20
+	// invite emails per request; a botnet-driven IP flood would otherwise
+	// bypass a pure-IP cap. Center-scoped keying caps Resend spend + DB
+	// writes per tenant AND keeps shared-NAT users independent. Falls back to
+	// pure IP when no TenantContext (unauthenticated caller — already
+	// rejected by ExtractTenant earlier in the chain, but belt-and-suspenders).
+	spawnLimit := middleware.RateLimitByKey(
+		"spawn",
+		rate.Every(60*time.Second),
+		5,
+		middleware.CenterAndIPKeyFn,
+	)
+	spawnChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			spawnLimit(
+				onboardingLimit(
+					requireVerified(
+						requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+
+	mux.Handle("GET /api/templates", templateChain(templateHandler.List))
+	mux.Handle("POST /api/templates", templateChain(templateHandler.Create))
+	mux.Handle("POST /api/templates/{id}/spawn", spawnChain(templateHandler.Spawn))
+
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux
 	corsOrigins := middleware.ParseOrigins(cfg.CORSOrigins)

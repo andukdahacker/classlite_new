@@ -15,6 +15,16 @@ RETURNING user_id, center_id, role, created_at;
 -- window.
 SELECT COUNT(*) FROM center_members WHERE user_id = $1;
 
+-- name: CountCenterMembersByUserAndCenter :one
+-- Story 2.2 R2-D2 fix — Branch B teacher-resolution verification. The
+-- Round 1 C1-11 patch documented via comment that RLS-scoped SET LOCAL
+-- was the sole guard against cross-center leakage in Branch B; Round 2
+-- surfaced this as fragile because a future ExtractTenant regression would
+-- silently open cross-tenant Branch-B promotion. This dedicated query is
+-- the belt-and-suspenders: even if RLS were dropped, the explicit center_id
+-- predicate keeps Branch B scoped to the caller's own center.
+SELECT COUNT(*) FROM center_members WHERE user_id = $1 AND center_id = $2;
+
 -- name: ListCenterMembersByCenter :many
 SELECT user_id, center_id, role, created_at
 FROM center_members

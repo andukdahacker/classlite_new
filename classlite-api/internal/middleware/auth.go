@@ -23,6 +23,7 @@ import (
 
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
+	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -76,10 +77,32 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 					writeInvalidTenantClaim(db, w, r, userUUID)
 					return
 				}
-				member, err := q.GetCenterMemberByUserAndCenter(r.Context(), generated.GetCenterMemberByUserAndCenterParams{
+				// Open a tx + SET LOCAL app.current_tenant_id so RLS on
+				// center_members permits the membership read. Without this,
+				// the read runs under the pool's empty tenant context and
+				// RLS filters out every row — every authenticated request
+				// with a CenterID claim would fail with INVALID_TENANT_CLAIM
+				// (mirrors the AdminInviteStaff pattern in auth_admin.go).
+				tx, err := db.Begin(r.Context())
+				if err != nil {
+					writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
+					return
+				}
+				// R2-P5 fix: swap raw SELECT set_config to the canonical
+				// store.SetTenantContext helper for consistency with the rest
+				// of the codebase. The helper re-validates the UUID (already
+				// parsed successfully above, so no new failure surface).
+				if err := store.SetTenantContext(r.Context(), tx, model.TenantContext{CenterID: centerUUID.String()}); err != nil {
+					_ = tx.Rollback(context.WithoutCancel(r.Context()))
+					writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
+					return
+				}
+				txQ := generated.New(tx)
+				member, err := txQ.GetCenterMemberByUserAndCenter(r.Context(), generated.GetCenterMemberByUserAndCenterParams{
 					UserID:   pgtype.UUID{Bytes: userUUID, Valid: true},
 					CenterID: pgtype.UUID{Bytes: centerUUID, Valid: true},
 				})
+				_ = tx.Rollback(context.WithoutCancel(r.Context()))
 				switch {
 				case err == nil:
 					dbRole = member.Role

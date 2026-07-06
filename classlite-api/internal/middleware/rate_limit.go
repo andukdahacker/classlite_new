@@ -146,6 +146,19 @@ func IPKeyFn(r *http.Request) string {
 	return extractIPFromRequest(r)
 }
 
+// CenterAndIPKeyFn keys by `centerID:ip` for authenticated + center-scoped
+// endpoints (Story 2.2 spawn). C1-10 review fix — pure IP keying is trivially
+// bypassed via a botnet and hurts users on shared NAT; center-scoped costs
+// (Resend spend, DB writes) should be capped per tenant, not per network.
+// Falls back to pure IP when no TenantContext (e.g., pre-auth path).
+func CenterAndIPKeyFn(r *http.Request) string {
+	ip := IPKeyFn(r)
+	if tc, ok := model.TenantFromContext(r.Context()); ok && tc.CenterID != "" {
+		return tc.CenterID + ":" + ip
+	}
+	return ip
+}
+
 // extractIPFromRequest is the legacy fallback used when ClientIP middleware
 // did not run (e.g., standalone middleware tests).
 func extractIPFromRequest(r *http.Request) string {
