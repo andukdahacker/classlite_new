@@ -240,6 +240,81 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     }
   })
 
+  test('Story 2-3a — onboarding chunk includes OnboardingLayout + PersonaSelectPage + CenterSetupPage; dashboard chunks do NOT', async () => {
+    // Winston-W5 fold — the onboarding wizard must stay in its own chunk so
+    // pre-auth visits (`/login`) never pull in the wizard code, and the
+    // teacher dashboard never bloats with `/welcome` or `/setup/center`
+    // components. Mirrors the Story 1-9a/b/c iteration pattern.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    const onboardingLayoutChunks = files.filter((f: string) =>
+      /^OnboardingLayout-[\w-]+\.js$/.test(f),
+    )
+    const personaSelectChunks = files.filter((f: string) =>
+      /^PersonaSelectPage-[\w-]+\.js$/.test(f),
+    )
+    const centerSetupChunks = files.filter((f: string) =>
+      /^CenterSetupPage-[\w-]+\.js$/.test(f),
+    )
+    const studentChunkFiles = files.filter((f: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(f),
+    )
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    const loginChunkFiles = files.filter((f: string) =>
+      /^LoginPage-[\w-]+\.js$/.test(f),
+    )
+
+    expect(
+      onboardingLayoutChunks.length,
+      'OnboardingLayout chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      personaSelectChunks.length,
+      'PersonaSelectPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      centerSetupChunks.length,
+      'CenterSetupPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      studentChunkFiles.length,
+      'student dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      teacherChunkFiles.length,
+      'teacher dashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      loginChunkFiles.length,
+      'login page chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const loginContents = loginChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    for (const chunk of [
+      ...onboardingLayoutChunks,
+      ...personaSelectChunks,
+      ...centerSetupChunks,
+    ]) {
+      expect(studentContents).not.toContain(chunk)
+      expect(teacherContents).not.toContain(chunk)
+      expect(loginContents).not.toContain(chunk)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by

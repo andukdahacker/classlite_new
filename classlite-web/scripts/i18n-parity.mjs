@@ -60,6 +60,12 @@ const COVERED_NAMESPACES = [
   // vacuous-pass gap where a new auth key passes parity (both locales have
   // it) but isn't claimed by any per-story discharge block.
   'auth.',
+  // Story 2-3a extension (Murat-S1 fold): onboarding wizard keys +
+  // TeacherDashboard welcome-back banner keys. Same orphan-key ratchet as
+  // `auth.` — a future add under either namespace must appear in a
+  // STORY_*_KEYS array.
+  'onboarding.',
+  'dashboard.finishSetup.',
 ]
 
 function fail(code, msg) {

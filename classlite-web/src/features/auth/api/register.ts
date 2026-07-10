@@ -49,6 +49,9 @@ export function useRegister() {
         // `useAuth().isAuthenticated` stays FALSE because
         // `user.emailVerified === false`.
         accessToken: null,
+        // Story 2-3a AC9 — `center` starts null; the onboarding wizard's
+        // `useCreateCenter` populates it on center creation.
+        center: null,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       // (P1 amendment 2026-06-25) encodeURIComponent — verifyPollId is

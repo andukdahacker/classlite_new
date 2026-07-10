@@ -1,5 +1,12 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-3a (2026-07-09)
+
+- Cross-tab `broadcastLoginSucceeded` omission from `useCreateCenter.onSuccess` (`classlite-web/src/features/onboarding/api/useCreateCenter.ts:46-65`) — sibling tab stays with `session.center = null` after Tab A creates a center; second create attempt from Tab B 409s. Deferred: FU-2-3a-D explicitly covers multi-tab reconciliation as out-of-scope.
+- `route-bundle-boundaries.spec.ts` catches path references only (`classlite-web/e2e/route-bundle-boundaries.spec.ts:63-81`) — Rolldown might inline code without referencing the file path; the negative-`toContain(filename)` assertion only catches path-based leaks. Pre-existing spec pattern from Story 1-9a/b/c iterations — infra-level improvement is out of story scope.
+- `api-fetch.ts` `parseEnvelope` body-fallback `requestId` not length-limited (`classlite-web/src/lib/api-fetch.ts:600-606`) — raw body string flows into Sentry tags + user-facing `onboarding.center.error.generic` interpolation. React's default escaping mitigates XSS; MSW-controlled inputs make this defense-in-depth only. Small hardening pass in a future story or infra sweep.
+- `vitest.config.ts testTimeout: 30_000` global bump (`classlite-web/vitest.config.ts:1093-1098`) — justification is lint-fixture-specific but the timeout is global. Real component/integration tests regressing to 25s waits pass silently. Pre-existing infra concern; deferred to targeted per-suite timeout policy.
+
 ## Deferred from: code review of story-2-1 (2026-07-02)
 
 - `idx_center_members_user_id` on `center_members` uses bare `CREATE UNIQUE INDEX` (ACCESS EXCLUSIVE for the duration of the build) — golang-migrate wraps every migration in a transaction so `CREATE INDEX CONCURRENTLY` cannot ship in the same file. Safe at first-launch (empty table), but before the table has meaningful production rows, ship a separate migration that runs `CREATE UNIQUE INDEX CONCURRENTLY` outside a tx (either bump golang-migrate to a version with driver-level tx-off, or execute the CONCURRENTLY create via a manual step). Migration file `20260702120200_add_center_members_user_unique.up.sql` carries the reminder inline.

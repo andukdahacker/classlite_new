@@ -29,11 +29,31 @@ import type { components } from '@/lib/api/client'
 export type UserSummary = components['schemas']['UserSummary']
 
 /**
+ * CenterSummary — the six-field slice of `CreateCenterResult` that lives on
+ * `Session.center` (Story 2-3a AC9). Populated by `useCreateCenter.onSuccess`;
+ * defined-as-null on every other Session writer so downstream `useCurrentCenter`
+ * + AC8 `!= null` guards never observe `undefined`.
+ */
+export interface CenterSummary {
+  id: string
+  name: string
+  shortCode: string
+  brandColor: string | null
+  logoUrl: string | null
+  timezone: string
+}
+
+/**
  * Session — the cache shape Story 1-8 establishes for the lifetime of
  * the dashboard. `user` is the openapi-generated UserSummary verbatim;
  * `accessToken` is `null` for a registered-but-unverified user
  * (verification flow lives in Story 1.9a) AND non-null after a
  * successful login or silent refresh.
+ *
+ * `center` (added by Story 2-3a AC9): the summary of the caller's owned center,
+ * or `null` before onboarding completes. Every session writer MUST populate
+ * this — a bare `{user, accessToken}` write leaks `undefined` into the cache
+ * and every consumer that guards on `session.center != null` misfires.
  *
  * IMPORTANT: `isAuthenticated` in `useAuth` is derived from
  * `user.emailVerified`, NOT from the presence of `accessToken`. A user
@@ -45,6 +65,7 @@ export type UserSummary = components['schemas']['UserSummary']
 export interface Session {
   user: UserSummary
   accessToken: string | null
+  center: CenterSummary | null
 }
 
 export const authKeys = {

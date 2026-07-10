@@ -43,6 +43,7 @@ const verifiedSession: Session = {
     emailVerified: true,
   },
   accessToken: 'jwt.access',
+  center: null,
 }
 
 const unverifiedSession: Session = {
@@ -53,6 +54,7 @@ const unverifiedSession: Session = {
     emailVerified: false,
   },
   accessToken: null,
+  center: null,
 }
 
 describe('useAuth — cache-subscribing version (Story 1-8 AC5)', () => {
@@ -65,6 +67,7 @@ describe('useAuth — cache-subscribing version (Story 1-8 AC5)', () => {
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      session: null,
     })
   })
 

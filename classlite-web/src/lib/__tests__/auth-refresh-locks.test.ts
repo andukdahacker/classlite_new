@@ -110,8 +110,15 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     })
     // Allow microtasks + message-bus delivery to drain.
     await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(setSpy).toHaveBeenCalledWith(['auth', 'session'], payload)
-    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+    // Story 2-3a AC9: hydrateSessionCache now writes via a functional updater
+    // that stitches in `center` (preserved from prior state, or null for a
+    // fresh cache slot). The spy sees the function, not the plain payload;
+    // the definitive check is the effective cache value.
+    expect(setSpy).toHaveBeenCalled()
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual({
+      ...payload,
+      center: null,
+    })
     sender.close()
   })
 
@@ -184,9 +191,15 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     const result = await refreshAccessToken()
     expect(result.ok).toBe(true)
     if (result.ok) {
+      // RefreshSessionData shape stays as `{user, accessToken}` — the
+      // `center` field is stitched in at cache-write time (Story 2-3a AC9).
       expect(result.data).toEqual(payload)
     }
-    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+    // Cache write stitches `center: null` (no prior center to preserve).
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual({
+      ...payload,
+      center: null,
+    })
   })
 
   test('200 with malformed body still resolves ok and does NOT clobber the existing cache', async () => {
@@ -241,7 +254,59 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     })
     // Drain microtasks so the listener runs.
     await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(queryClient.getQueryData(['auth', 'session'])).toEqual(payload)
+    // Story 2-3a AC9 — hydrateSessionCache synthesizes `center: null` when
+    // the sibling had no prior cache entry (asserted: defined-as-null,
+    // never undefined).
+    expect(queryClient.getQueryData(['auth', 'session'])).toEqual({
+      ...payload,
+      center: null,
+    })
     sibling.close()
+  })
+
+  test('Story 2-3a AC9 — silent refresh preserves prior Session.center rather than wiping it', async () => {
+    // Seed a session with a populated center (mimics post-onboarding state).
+    const center = {
+      id: 'center-1',
+      name: 'Saigon English Center',
+      shortCode: 'saigon-english-center',
+      // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
+      brandColor: '#1e3a8a',
+      logoUrl: null,
+      timezone: 'Asia/Ho_Chi_Minh',
+    }
+    queryClient.setQueryData(['auth', 'session'], {
+      user: {
+        id: 'user-onboarded',
+        email: 'trang@example.com',
+        fullName: 'Trang Tran',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.old',
+      center,
+    })
+    const refreshedPayload = {
+      user: {
+        id: 'user-onboarded',
+        email: 'trang@example.com',
+        fullName: 'Trang Tran',
+        emailVerified: true,
+      },
+      accessToken: 'jwt.rotated',
+    }
+    server.use(
+      http.post('/api/auth/refresh', () =>
+        HttpResponse.json({ data: refreshedPayload }, { status: 200 }),
+      ),
+    )
+    const result = await refreshAccessToken()
+    expect(result.ok).toBe(true)
+    const cached = queryClient.getQueryData(['auth', 'session']) as {
+      accessToken: string
+      center: typeof center
+    }
+    expect(cached.accessToken).toBe('jwt.rotated')
+    // Prior center preserved — a rotation must NOT nuke onboarding state.
+    expect(cached.center).toEqual(center)
   })
 })

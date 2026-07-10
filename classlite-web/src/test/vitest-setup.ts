@@ -13,6 +13,12 @@
  */
 import { afterAll, afterEach, beforeAll, expect } from 'vitest'
 import { cleanup } from '@testing-library/react'
+// Side-effect import: registers @testing-library/jest-dom matchers
+// (toBeInTheDocument, toBeDisabled, toHaveFocus, toHaveAttribute, etc.) into
+// Vitest's `expect` and augments the `Assertion<T>` interface. Onboarding
+// component tests (Story 2-3a) rely on these matchers per TEST-FE-5 role-query
+// discipline; earlier suites got away with plain assertions.
+import '@testing-library/jest-dom/vitest'
 // Deep import: vitest-axe 0.1.0's package-root `matchers.d.ts` re-exports
 // via `export type *` which collapses runtime values into type-only under
 // `verbatimModuleSyntax`. The `dist/matchers.d.ts` declaration re-exports

@@ -232,6 +232,16 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
     .json()
     .catch(() => ({}) as ErrorEnvelope)) as ErrorEnvelope
   const code = errorBody.error?.code ?? 'UNKNOWN'
+  // Prefer the `x-request-id` response header (production wire path) and
+  // fall back to `error.requestId` inside the body when the header is
+  // missing — some gateways strip trace headers before returning error
+  // envelopes, and MSW test doubles carry the id inline.
+  const bodyRequestId =
+    typeof (errorBody.error as { requestId?: unknown } | undefined)?.requestId ===
+    'string'
+      ? ((errorBody.error as { requestId?: string }).requestId ?? null)
+      : null
+  const effectiveRequestId = requestId ?? bodyRequestId
   // Surface Retry-After ONLY for the rate-limit / account-lock cases —
   // every other error gets `null`. Pinned by Story 1-8 LoginPage which
   // reads `error.retryAfterSeconds` directly for the
@@ -244,12 +254,12 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
     response.status,
     code,
     errorBody.error?.message ?? response.statusText,
-    requestId,
+    effectiveRequestId,
     errorBody.error?.details,
     retryAfterSeconds,
   )
   Sentry.captureException(apiError, {
-    tags: { requestId, errorCode: apiError.code },
+    tags: { requestId: effectiveRequestId, errorCode: apiError.code },
   })
   throw apiError
 }

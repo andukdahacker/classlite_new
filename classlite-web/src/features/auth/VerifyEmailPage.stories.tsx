@@ -32,6 +32,10 @@ function seedSession(email: string) {
       emailVerified: false,
     },
     accessToken: null,
+    // R1-P24: honor the "defined-as-null" Session.center invariant from
+    // Story 2-3a AC9 (Winston-W2) — every session writer, including
+    // Storybook decorators, must populate this slot.
+    center: null,
   })
 }
 

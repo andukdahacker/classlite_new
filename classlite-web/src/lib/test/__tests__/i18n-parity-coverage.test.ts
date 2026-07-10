@@ -26,7 +26,10 @@
  * Risk reference: `_bmad-output/test-artifacts/test-design/classlite_new-handoff.md` line 162 (R38).
  */
 import { describe, expect, test } from 'vitest'
-import { assertI18nParity } from '@/lib/test/i18n-parity'
+import {
+  assertI18nInterpolationParity,
+  assertI18nParity,
+} from '@/lib/test/i18n-parity'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -790,3 +793,95 @@ describe('Story 1-7c i18n parity (R38)', () => {
   })
 })
 
+/**
+ * Story 2-3a — onboarding wizard (persona pick + center setup).
+ *
+ * Closed-enumeration STORY_2_3A_KEYS mirrors the 1-9d precedent — every new
+ * key gets a `describe.each` ratchet claiming an allowed prefix so a future
+ * orphan under `onboarding.` OR `dashboard.finishSetup.` fails CI. Also
+ * exercises `assertI18nInterpolationParity` (Murat-S2 fold) so a Vietnamese
+ * translator can't rename `{{seconds}}` → `{{giay}}` without CI catching it.
+ */
+export const STORY_2_3A_KEYS = [
+  'onboarding.wizard.brand',
+  'onboarding.wizard.signOut',
+  'onboarding.wizard.autoSaving.idle',
+  'onboarding.wizard.autoSaving.saved',
+  'onboarding.wizard.autoSaving.saving',
+  'onboarding.wizard.autoSaving.failed',
+  'onboarding.wizard.autoSaving.failedPersistent',
+  'onboarding.wizard.saveAndFinishLater',
+  'onboarding.persona.eyebrow',
+  'onboarding.persona.title',
+  'onboarding.persona.subtitle',
+  'onboarding.persona.operator.title',
+  'onboarding.persona.operator.lede',
+  'onboarding.persona.operator.description',
+  'onboarding.persona.founder.title',
+  'onboarding.persona.founder.lede',
+  'onboarding.persona.founder.description',
+  'onboarding.persona.solo.title',
+  'onboarding.persona.solo.lede',
+  'onboarding.persona.solo.description',
+  'onboarding.persona.continueCta',
+  'onboarding.persona.error.rateLimited',
+  'onboarding.persona.error.emailVerificationRequired',
+  'onboarding.persona.error.generic',
+  'onboarding.center.step',
+  'onboarding.center.title',
+  'onboarding.center.subtitle',
+  'onboarding.center.form.nameLabel',
+  'onboarding.center.form.namePlaceholder',
+  'onboarding.center.form.shortCodePreviewLabel',
+  'onboarding.center.form.shortCodeCaveat',
+  'onboarding.center.form.shortCodeFallback',
+  'onboarding.center.form.brandingLabel',
+  'onboarding.center.form.uploadLogoCaption',
+  'onboarding.center.form.saveContinueCta',
+  'onboarding.center.form.backCta',
+  'onboarding.center.form.nextCaption',
+  'onboarding.center.error.nameRequired',
+  'onboarding.center.error.nameMax',
+  'onboarding.center.error.nameInvalid',
+  'onboarding.center.error.userAlreadyHasCenter',
+  'onboarding.center.error.userAlreadyHasCenter.hint',
+  'onboarding.center.error.emailVerificationRequired',
+  'onboarding.center.error.rateLimited',
+  'onboarding.center.error.generic',
+  'onboarding.center.form.branchesCaption',
+  'onboarding.center.form.brandColor.deepNavy',
+  'onboarding.center.form.brandColor.amber',
+  'onboarding.center.form.brandColor.green',
+  'onboarding.center.form.brandColor.red',
+  'onboarding.center.form.brandColor.brown',
+  'onboarding.center.form.brandColor.gray',
+  // R1 code-review additions.
+  'onboarding.wizard.autoSaving.savedAnnouncement',
+  'onboarding.wizard.autoSaving.retryNow',
+  'onboarding.persona.error.retryCta',
+  'onboarding.center.error.userAlreadyHasCenterGeneric',
+  'onboarding.center.error.brandColorInvalid',
+  'dashboard.finishSetup.banner',
+  'dashboard.finishSetup.continueCta',
+  'dashboard.finishSetup.awaitingNextStep',
+] as const
+
+describe('Story 2-3a i18n parity (R38)', () => {
+  test('every Story 2-3a i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_3A_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for every 2-3a key (Murat-S2)', () => {
+    assertI18nInterpolationParity(STORY_2_3A_KEYS)
+  })
+
+  const ALLOWED_PREFIXES = ['onboarding.', 'dashboard.finishSetup.'] as const
+
+  test.each(STORY_2_3A_KEYS)(
+    '%s belongs to a 2-3a allowed prefix',
+    (key) => {
+      const ok = ALLOWED_PREFIXES.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})

@@ -27,5 +27,11 @@ export default defineConfig({
     // running files sequentially adds a marginal cost for guaranteed
     // stability.
     fileParallelism: false,
+    // Integration tests under `src/test/lint-fixtures/` shell out to
+    // `npm run lint`, which spawns tsc + eslint and consistently spends
+    // 4–7 seconds. The default 5s timeout puts them on a knife-edge that
+    // fails under CPU pressure (e.g. new-test load). 30s is well over the
+    // real work but keeps runaway hangs bounded.
+    testTimeout: 30_000,
   },
 })

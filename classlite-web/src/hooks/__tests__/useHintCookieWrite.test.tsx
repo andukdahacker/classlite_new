@@ -60,6 +60,7 @@ const AUTHED_SESSION: Session = {
     emailVerified: true,
   },
   accessToken: 'jwt.test',
+  center: null,
 }
 
 const UNVERIFIED_SESSION: Session = {
@@ -68,6 +69,7 @@ const UNVERIFIED_SESSION: Session = {
     emailVerified: false,
   },
   accessToken: null,
+  center: null,
 }
 
 function mockHostname(host: string): { restore: () => void } {

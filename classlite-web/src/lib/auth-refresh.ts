@@ -65,6 +65,26 @@ export interface RefreshSessionData {
   accessToken: string
 }
 
+/**
+ * Local mirror of `Session` from `src/features/auth/api/authKeys.ts` —
+ * duplicated to preserve the module-cycle rationale documented in the file
+ * header (importing `authKeys`/`Session` here would land a third edge on the
+ * `query-client ↔ api-fetch ↔ auth-refresh` triad). The `authKeys.test.ts`
+ * contract lock guards against drift.
+ */
+interface SessionCacheEntry {
+  user: UserSummary
+  accessToken: string | null
+  center: {
+    id: string
+    name: string
+    shortCode: string
+    brandColor: string | null
+    logoUrl: string | null
+    timezone: string
+  } | null
+}
+
 export type RefreshResult =
   | { ok: true; data: RefreshSessionData | null }
   | { ok: false }
@@ -240,7 +260,20 @@ async function performNetworkRefresh(): Promise<RefreshResult> {
     if (data) {
       // Hydrate the session cache so useAuth re-renders. Literal key —
       // see SESSION_QUERY_KEY rationale.
-      queryClient.setQueryData(SESSION_QUERY_KEY, data)
+      //
+      // Story 2-3a AC9: `RefreshSessionData` intentionally stays as
+      // `{user, accessToken}` (broadcast semantics = auth state, not
+      // onboarding state). `Session.center` is stitched in here — preserved
+      // from any prior cache entry so an in-progress user does not lose
+      // their center across silent refresh, and defined-as-null for a
+      // fresh cache slot (NEVER `undefined`).
+      queryClient.setQueryData(
+        SESSION_QUERY_KEY,
+        (previous: SessionCacheEntry | undefined) => ({
+          ...data,
+          center: previous?.center ?? null,
+        }),
+      )
     }
     channel?.postMessage({
       type: 'refresh-succeeded',
@@ -351,7 +384,17 @@ function hydrateSessionCache(data: RefreshSessionData): void {
   // straight in. Same hydration helper as the refresh-succeeded branch
   // (Story 1-9a Layer B — refactored into a helper so the two
   // listener arms can't drift apart).
-  queryClient.setQueryData(SESSION_QUERY_KEY, data)
+  //
+  // Story 2-3a AC9: `Session.center` is synthesized here (broadcast payload
+  // does not carry it). Prior center is preserved when this sibling tab
+  // already had a cache entry — a fresh sibling gets defined-as-null.
+  queryClient.setQueryData(
+    SESSION_QUERY_KEY,
+    (previous: SessionCacheEntry | undefined) => ({
+      ...data,
+      center: previous?.center ?? null,
+    }),
+  )
 }
 
 function handleChannelMessage(event: MessageEvent<unknown>): void {

@@ -72,6 +72,12 @@ export function useAcceptInvite(getActiveToken?: GetActiveToken) {
       const session: Session = {
         user: result.user,
         accessToken: result.accessToken,
+        // Story 2-3a AC9 — invited teachers land on a center owned by
+        // someone else; `Session.center` remains null in the invitee's
+        // client cache. Story 2.6 role gating will read the caller's
+        // membership via a separate query. Populating this field with the
+        // invite's target center would mislead `useCurrentCenter` selectors.
+        center: null,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       broadcastLoginSucceeded({

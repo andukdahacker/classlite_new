@@ -58,6 +58,12 @@ export function useLogin() {
       const session: Session = {
         user: result.user,
         accessToken: result.accessToken,
+        // Story 2-3a AC9 — `center` is populated ONLY by
+        // `useCreateCenter.onSuccess`. Login-response Session shape does not
+        // carry center metadata; downstream consumers read the value from the
+        // separate onboarding progress query. `null` is the defined absent
+        // marker (never `undefined`).
+        center: null,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       // Story 1-9a Layer B — broadcast the login to sibling tabs so a

@@ -34,7 +34,7 @@
  * regex is defense-in-depth, not the sole XSS gate.
  */
 
-const CENTER_NAME_REGEX = /^[\p{L}\p{N}\s\-'.]{1,60}$/u
+import { CENTER_NAME_REGEX } from '@/lib/centerName'
 
 export function sanitizeCenterName(raw: string | null): string | null {
   if (raw === null) return null

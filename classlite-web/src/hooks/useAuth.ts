@@ -51,6 +51,13 @@ export interface UseAuthResult {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
+  /**
+   * Raw session cache entry. Exposed for AC8 route guards + `useCurrentCenter`
+   * which need `session.center` and `session.accessToken` (Story 2-3a AC8/AC9).
+   * Prefer the derived `user` / `isAuthenticated` for UI logic; reach for
+   * `session` only when the raw cache shape matters.
+   */
+  session: Session | null
 }
 
 const SESSION_KEY_TUPLE = authKeys.session()
@@ -95,5 +102,6 @@ export function useAuth(): UseAuthResult {
     // gate — see authKeys.ts Session JSDoc.
     isAuthenticated: user?.emailVerified === true,
     isLoading,
+    session,
   }
 }

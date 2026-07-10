@@ -200,6 +200,39 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
+  // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
+  // pre-auth visits never pull the wizard chunk. Extended
+  // `e2e/route-bundle-boundaries.spec.ts` asserts `/welcome` chunk isolation
+  // from `/login` and `/dashboard` bundle groups.
+  {
+    lazy: async () => {
+      const { default: OnboardingLayout } = await import(
+        '@/features/onboarding/OnboardingLayout'
+      )
+      return { Component: OnboardingLayout }
+    },
+    children: [
+      {
+        path: '/welcome',
+        lazy: async () => {
+          const { default: PersonaSelectPage } = await import(
+            '@/features/onboarding/PersonaSelectPage'
+          )
+          return { Component: PersonaSelectPage }
+        },
+      },
+      {
+        path: '/setup/center',
+        lazy: async () => {
+          const { default: CenterSetupPage } = await import(
+            '@/features/onboarding/CenterSetupPage'
+          )
+          return { Component: CenterSetupPage }
+        },
+      },
+    ],
+  },
   // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires
   // per-route `errorElement={<PermissionDenied requiredRoles={[...]} />}`
   // for role-gated routes; this standalone URL renders the
