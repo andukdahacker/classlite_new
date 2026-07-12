@@ -64,6 +64,10 @@ function renderWizard(
                 path="/setup/template"
                 element={<p>setup-template reached</p>}
               />
+              <Route
+                path="/setup/first-class"
+                element={<p>setup-first-class reached</p>}
+              />
             </Route>
             <Route path="/dashboard" element={<p>dashboard reached</p>} />
             <Route path="/verify-email" element={<p>verify-email</p>} />
@@ -281,6 +285,49 @@ describe('PersonaSelectPage — AC10 resume-routing decision table', () => {
       .getAllByRole('radio')
       .filter((el) => el.getAttribute('aria-checked') === 'true')
     expect(checked).toHaveLength(0)
+  })
+
+  // R1-C3-P13 — Amelia-B3 amendment: Solo Teacher persona resuming with an
+  // ADVANCED currentStep (template / spawn / solo_first_class) routes
+  // DIRECTLY to `/setup/first-class`, NOT `/setup/template`. Prior to the
+  // amendment, the shipped 2-3a resume effect hardcoded `/setup/template`
+  // for all personas — a Solo Teacher would double-redirect via `/welcome
+  // → /setup/template → /setup/first-class`. This test protects the
+  // single-navigate path per the persona-branch dispatch.
+  //
+  // Note: Solo + currentStep=center is handled separately (routes to
+  // /setup/center — the user hasn't finished center setup yet). The
+  // amendment covers the advanced steps.
+  test('Amelia-B3 — persona=solo_teacher + currentStep=solo_first_class → routes to /setup/first-class (single navigate)', async () => {
+    server.use(
+      errorHandlers.progressWithPersona('solo_teacher', 'solo_first_class'),
+    )
+    renderWizard()
+    await waitFor(() =>
+      expect(
+        screen.getByText('setup-first-class reached'),
+      ).toBeInTheDocument(),
+    )
+    // Solo MUST NOT touch /setup/template on the way — no intermediate render.
+    expect(
+      screen.queryByText('setup-template reached'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('Amelia-B3 — persona=solo_teacher + currentStep=spawn → routes to /setup/first-class', async () => {
+    server.use(
+      errorHandlers.progressWithPersona('solo_teacher', 'spawn'),
+    )
+    renderWizard()
+    await waitFor(() =>
+      expect(
+        screen.getByText('setup-first-class reached'),
+      ).toBeInTheDocument(),
+    )
+    // Guard: no /setup/template flash for Solo Teacher.
+    expect(
+      screen.queryByText('setup-template reached'),
+    ).not.toBeInTheDocument()
   })
 })
 

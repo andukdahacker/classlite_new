@@ -36,6 +36,7 @@ export default function TeacherDashboard() {
   const currentCenter = useCurrentCenter()
 
   const currentStep = progress.data?.currentStep
+  const persona = progress.data?.persona ?? null
   const midWizardNoCenter =
     currentCenter === null &&
     currentStep !== undefined &&
@@ -64,10 +65,11 @@ export default function TeacherDashboard() {
         >
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm text-slate-800">
-              {postCenterIncomplete
-                ? // R1-P38 (R1-D2): the CTA target route (`/setup/template`)
-                  // does not exist until Story 2.3b ships. Render the banner
-                  // WITHOUT a CTA so a click cannot land on NotFound.
+              {postCenterIncomplete && persona === null
+                ? // R1-P38 (R1-D2) + Amelia-S2 amendment: with 2-3b live, the
+                  // CTA target is persona-derived. Persona=null retains the
+                  // stopgap "awaitingNextStep" copy — no clear destination
+                  // if the wire never persisted a persona.
                   t('dashboard.finishSetup.awaitingNextStep')
                 : t('dashboard.finishSetup.banner')}
             </p>
@@ -77,6 +79,21 @@ export default function TeacherDashboard() {
                 onClick={() =>
                   navigate('/setup/center', { replace: true })
                 }
+                className="text-sm font-medium text-slate-900 underline"
+                data-testid="dashboard-finish-setup-cta"
+              >
+                {t('dashboard.finishSetup.continueCta')}
+              </button>
+            ) : postCenterIncomplete && persona !== null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const target =
+                    persona === 'solo_teacher'
+                      ? '/setup/first-class'
+                      : '/setup/template'
+                  navigate(target, { replace: true })
+                }}
                 className="text-sm font-medium text-slate-900 underline"
                 data-testid="dashboard-finish-setup-cta"
               >

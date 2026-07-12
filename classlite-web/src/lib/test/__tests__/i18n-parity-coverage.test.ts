@@ -885,3 +885,120 @@ describe('Story 2-3a i18n parity (R38)', () => {
     },
   )
 })
+
+/**
+ * Story 2-3b — onboarding wizard (template pick + class spawn + Solo first
+ * class).
+ *
+ * Closed-enumeration STORY_2_3B_KEYS + prefix-ratchet block mirrors the
+ * 2-3a precedent. Every new key added by this story lands in this array so
+ * a future orphan under `onboarding.template.*`, `onboarding.spawn.*`,
+ * `onboarding.solo.*`, or `onboarding.wizard.*` fails CI.
+ *
+ * Prefix ratchet allows: onboarding.template.* / onboarding.spawn.* /
+ * onboarding.solo.* / onboarding.wizard.* / dashboard.finishSetup.*
+ * (Murat-S1 fold).
+ *
+ * Interpolation tokens (Murat-S2, 10 total):
+ *   {{index}} {{seconds}} {{n}} {{max}} {{userFullName}}
+ *   {{templateName}} {{band}} {{name}} {{role}} {{requestId}}
+ */
+export const STORY_2_3B_KEYS = [
+  'onboarding.template.eyebrow',
+  'onboarding.template.title',
+  'onboarding.template.subtitle',
+  'onboarding.template.buildFromScratch.title',
+  'onboarding.template.buildFromScratch.description',
+  'onboarding.template.card.systemBadge',
+  'onboarding.template.card.centerBadge',
+  'onboarding.template.card.targetBand',
+  'onboarding.template.card.sessions',
+  'onboarding.template.skill.writing',
+  'onboarding.template.skill.speaking',
+  'onboarding.template.skill.listening',
+  'onboarding.template.skill.reading',
+  'onboarding.template.skill.listening_reading',
+  'onboarding.template.skill.all_skills',
+  'onboarding.template.preview.title',
+  'onboarding.template.preview.sessionsPreview',
+  'onboarding.template.continueCta',
+  'onboarding.template.error.generic',
+  'onboarding.template.error.seedIncomplete',
+  'onboarding.template.error.retryCta',
+  'onboarding.spawn.eyebrow',
+  'onboarding.spawn.title',
+  'onboarding.spawn.subtitle',
+  'onboarding.spawn.rowHeadingAria',
+  'onboarding.spawn.rowIndex',
+  'onboarding.spawn.cohortName.label',
+  'onboarding.spawn.cohortName.placeholder',
+  'onboarding.spawn.startDate.label',
+  'onboarding.spawn.teacher.label',
+  'onboarding.spawn.teacher.empty',
+  'onboarding.spawn.teacher.assigned',
+  'onboarding.spawn.teacher.invitedPending',
+  'onboarding.spawn.teacher.founderAutoAssign',
+  'onboarding.spawn.teacher.selfInviteHintV1',
+  'onboarding.spawn.teacher.composerTitle',
+  'onboarding.spawn.teacher.composerEmailLabel',
+  'onboarding.spawn.teacher.composerNameLabel',
+  'onboarding.spawn.teacher.composerAddCta',
+  'onboarding.spawn.teacher.composerCancelCta',
+  'onboarding.spawn.rowMinimum',
+  'onboarding.spawn.deleteClassAria',
+  'onboarding.spawn.addClassCta',
+  'onboarding.spawn.saveAndSpawnCta',
+  'onboarding.spawn.saveAndSpawnCta.pending',
+  'onboarding.spawn.customTemplateNotice',
+  'onboarding.spawn.customTemplateNotice.pickInstead',
+  'onboarding.spawn.pickTemplateInsteadCta',
+  'onboarding.spawn.error.cohortRequired',
+  'onboarding.spawn.error.cohortMax',
+  'onboarding.spawn.error.startDateInvalid',
+  'onboarding.spawn.error.startDatePast',
+  'onboarding.spawn.error.startDateTooFarFuture',
+  'onboarding.spawn.teacher.clearAriaLabel',
+  'onboarding.spawn.error.teacherEmailInvalid',
+  'onboarding.spawn.error.teacherEmailSelfInvite',
+  'onboarding.spawn.error.templateNotFound',
+  'onboarding.spawn.error.templateNotFoundToast',
+  'onboarding.spawn.error.centerRequiredToast',
+  'onboarding.spawn.error.rateLimited',
+  'onboarding.spawn.error.generic',
+  'onboarding.spawn.error.retryCta',
+  'onboarding.spawn.error.autoSaveWarning',
+  'onboarding.wizard.resumedFromDraft',
+  'onboarding.solo.eyebrow',
+  'onboarding.solo.title',
+  'onboarding.solo.subtitle',
+  'onboarding.solo.teacher.locked',
+  'onboarding.solo.teacher.helper',
+  'onboarding.solo.templatePickDetails',
+  'onboarding.solo.saveAndSpawnCta',
+] as const
+
+describe('Story 2-3b i18n parity (R38)', () => {
+  test('every Story 2-3b i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_3B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for every 2-3b key (Murat-S2)', () => {
+    assertI18nInterpolationParity(STORY_2_3B_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_3B = [
+    'onboarding.template.',
+    'onboarding.spawn.',
+    'onboarding.solo.',
+    'onboarding.wizard.',
+    'dashboard.finishSetup.',
+  ] as const
+
+  test.each(STORY_2_3B_KEYS)(
+    '%s belongs to a 2-3b allowed prefix (Murat-S1 ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_3B.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})

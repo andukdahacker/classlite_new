@@ -1,5 +1,45 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-3b Chunk 3 (2026-07-12)
+
+- R1-C3-W1 No component-level tests under `vi` locale — Playwright covers bilingual via LocaleEn + LocaleVi projects; per-component `vi` renders are follow-up hardening (TEST-UX-1).
+- R1-C3-W2 `TemplateSelectPage` loading-skeleton test is jsdom-microtask dependent — no artificial MSW delay. Empirically passes; hardening could use `findByTestId` with explicit still-loading positive.
+- R1-C3-W3 Test-file boilerplate — `<I18nextProvider><QueryClientProvider>` repeated 7+ times; a `renderOnboardingRoute()` helper would DRY.
+- R1-C3-W4 Error-path tests use 3s findBy timeouts due to QueryClient retry — could speed up with `retry: false` on the test QueryClient.
+- R1-C3-W5 `fixtures.ts` builder overrides not directly tested — exercised transitively through consumers.
+- R1-C3-W6 `onboarding.spawn.teacher.assigned` interpolates {{name}}+{{role}} but no test exercises both tokens together — parity-check confirms en/vi match.
+- R1-C3-W7 `SPAWN_PLACEHOLDER`/`FIRST_CLASS_PLACEHOLDER`/etc hard-coded in English in test scaffolding — test-only concern; destination pages render real content in production.
+- R1-C3-W8 AC10 render-setup duplicated across 4 routing-row tests — `renderForRoutingRow` helper would DRY.
+- R1-C3-W9 AC7 (iii) trigger click uses regex on `You'll teach...` — passes empirically; hardening could use `chipTriggerRefs`/testid scoped click.
+- R1-C3-W10 401 variants absent from MSW inventory (Murat-B1 documented as 401/403/...) — 401 is architecturally unreachable from the onboarding wizard.
+- R1-C3-W11 `mockSpawnedClass` id-shape prefix inconsistency — `class-` always applied; consistent but fragile.
+
+## Deferred from: code review of story-2-3b Chunk 2 (2026-07-12)
+
+- R1-C2-W1 `useCountdown` — `reset(N)` with same N no-ops the effect resubscription (`classlite-web/src/features/onboarding/hooks/useCountdown.ts:1075-1088`) — behavior is monotonic; documented in header. Not a bug.
+- R1-C2-W2 `useListTemplates` — no `enabled` guard (`classlite-web/src/features/onboarding/api/useListTemplates.ts:1214-1228`) — callers gate at page mount; hardening.
+- R1-C2-W3 `useCountdown` — 1-tick staleness in `onZeroRef` update ordering (`classlite-web/src/features/onboarding/hooks/useCountdown.ts:1069-1082`) — negligible at 1s interval.
+- R1-C2-W4 `useAutoSave` — return shape drift on version skew (`classlite-web/src/features/onboarding/hooks/useAutoSave.ts:1173-1180`) — TS catches at compile.
+- R1-C2-W5 `useListTemplates` — no retry on bare network error (`classlite-web/src/features/onboarding/api/useListTemplates.ts:1222-1227`) — retry only on `ApiError.status >= 500`; network hardening.
+- R1-C2-W6 `classSpawnSchema` — no dedupe check on cohortName across rows (`classlite-web/src/features/onboarding/lib/classSpawnSchema.ts:1368-1407`) — server enforces; FE early-feedback nice-to-have.
+- R1-C2-W7 `onboardingPayload.TemplateDraftPayload` — `spawnedClassIds` and `classesDraft` use `T | undefined` (not `T | null`) (`classlite-web/src/lib/onboardingPayload.ts:1461-1471`) — inconsistent with `buildFromScratch?: boolean | null`; header comment mitigates.
+- R1-C2-W8 `useSpawnClasses` — no in-hook double-submit guard (`classlite-web/src/features/onboarding/api/useSpawnClasses.ts:1267-1276`) — callsite `submitDisabled` gates practically; belt-and-suspenders.
+- R1-C2-W9 `classSpawnSchema.templateId` — lenient UUID regex accepts synthetic zeros (`classlite-web/src/features/onboarding/lib/classSpawnSchema.ts:1329-1332`) — justified for seeds.
+- R1-C2-W10 `AssignTeacherComposer` — focus-return depends on parent contract (`classlite-web/src/features/onboarding/components/AssignTeacherComposer.tsx:442-446, 514-519`) — verified via `chipTriggerRefs` in Chunk 1.
+
+## Deferred from: code review of story-2-3b Chunk 1 (2026-07-12)
+
+- R1-C1-W1 `wireRowsFor` reads UI state (`rowStates[0]?.starIcon`) from render closure — submit logic coupled to display state (`classlite-web/src/features/onboarding/ClassSpawnPage.tsx:469-484`) — design concern, no concrete repro; refactor to derive from RHF form state requires spec alignment.
+- R1-C1-W2 `TemplatePreview` invoked with `template={null}` when `buildFromScratchSelected` is true (`classlite-web/src/features/onboarding/TemplateSelectPage.tsx:186-192`) — verify at Chunk 2 review that prop type is `Template | null` and null-branch is handled.
+- R1-C1-W3 `AssignChipValue` shape inconsistency — `handleAssignConfirmed` writes without `userId`; founder injection writes with `userId` (`classlite-web/src/features/onboarding/ClassSpawnPage.tsx:621-633` vs 415-428) — verify at Chunk 2 review that `userId` is optional and downstream consumers handle both.
+- R1-C1-W4 `Array.from(v).length` grapheme-cluster limitation (`classlite-web/src/features/onboarding/SoloFirstClassPage.tsx:879-887`) — known accepted pattern from Story 2-3a Amelia-B1; family emoji miscounts. Non-blocking edge.
+- R1-C1-W5 `retryCountdown` in `handleSpawnError` `useCallback` deps — memoization risk if `useCountdown` returns unstable object (`classlite-web/src/features/onboarding/ClassSpawnPage.tsx:486-567`) — verify at Chunk 2 review that hook's return object is memoized.
+- R1-C1-W6 `stepFromPathname` no trailing-slash / query / hash normalization (`classlite-web/src/features/onboarding/OnboardingLayout.tsx:1222-1228`) — no known repro; non-blocking hardening.
+- R1-C1-W7 `TeacherDashboard` banner CTA uses `navigate(..., { replace: true })` (`classlite-web/src/features/dashboard/TeacherDashboard.tsx:1470-1476`) — matches 2-3a `midWizardNoCenter` pattern; consistent, not a bug.
+- R1-C1-W8 `CenterSetupPage` `setInterval` → `useCountdown` refactor cleanup regression risk (`classlite-web/src/features/onboarding/CenterSetupPage.tsx:1332-1373` deletion) — verify at Chunk 2 that `useCountdown` cleans up its interval on unmount.
+- R1-C1-W9 `POST_CENTER_WIZARD_PATHS` missing `/setup/done` (`classlite-web/src/features/onboarding/OnboardingLayout.tsx:1236-1240`) — Story 2.3c owns `/setup/done`; add when that lands.
+- R1-C1-W10 `TeacherDashboard` finish-setup CTA target ignores `currentStep` — Op/Founder mid-spawn double-navigates via TemplateSelectPage forward (`classlite-web/src/features/dashboard/TeacherDashboard.tsx:87-101`) — functional via double-navigate (both `replace: true`); minor UX flash. Align CTA target to `PersonaSelectPage.tsx:76-108` resume matrix.
+
 ## Deferred from: code review of story-2-3a (2026-07-09)
 
 - Cross-tab `broadcastLoginSucceeded` omission from `useCreateCenter.onSuccess` (`classlite-web/src/features/onboarding/api/useCreateCenter.ts:46-65`) — sibling tab stays with `session.center = null` after Tab A creates a center; second create attempt from Tab B 409s. Deferred: FU-2-3a-D explicitly covers multi-tab reconciliation as out-of-scope.

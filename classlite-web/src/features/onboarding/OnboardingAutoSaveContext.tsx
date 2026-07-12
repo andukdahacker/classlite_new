@@ -13,17 +13,30 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import {
   useAutoSave,
+  type OnboardingStep,
   type UseAutoSaveResult,
 } from './hooks/useAutoSave'
 
 const OnboardingAutoSaveContext = createContext<UseAutoSaveResult | null>(null)
 
+export interface OnboardingAutoSaveProviderProps {
+  children: ReactNode
+  /**
+   * Story 2-3b Winston-W1 fold — the wizard step this Provider's auto-save
+   * PUTs bookmark. `OnboardingLayout` derives this from `useLocation().pathname`
+   * so every child page (`/setup/center`, `/setup/template`, `/setup/spawn`,
+   * `/setup/first-class`) writes the correct `currentStep`. Without this
+   * prop, every downstream page would ship `currentStep: 'center'` (the
+   * Story 2-3a default) and trash resume-routing.
+   */
+  currentStep?: OnboardingStep
+}
+
 export function OnboardingAutoSaveProvider({
   children,
-}: {
-  children: ReactNode
-}) {
-  const autoSave = useAutoSave()
+  currentStep,
+}: OnboardingAutoSaveProviderProps) {
+  const autoSave = useAutoSave({ currentStep })
   return (
     <OnboardingAutoSaveContext.Provider value={autoSave}>
       {children}

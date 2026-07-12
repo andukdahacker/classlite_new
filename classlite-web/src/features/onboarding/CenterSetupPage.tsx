@@ -38,6 +38,7 @@ import { useOnboardingProgress } from './api/useOnboardingProgress'
 import { usePutOnboardingProgress } from './api/usePutOnboardingProgress'
 import { useOnboardingAutoSave } from './OnboardingAutoSaveContext'
 import { onboardingSubmitFlag } from './onboardingSubmitFlag'
+import { useCountdown } from './hooks/useCountdown'
 import { RadioGroupTiles } from './components/RadioGroupTile'
 
 /* eslint-disable no-restricted-syntax -- brand-color wire values (FU-2-3a-C) */
@@ -84,13 +85,11 @@ export default function CenterSetupPage() {
   const schema = useCenterSetupSchema()
 
   const [errorState, setErrorState] = useState<CenterErrorState | null>(null)
-  // Countdown state — `initialSeconds` seed set at 429 receipt, `elapsedSeconds`
-  // ticks up via setInterval. Derived `remainingRetrySeconds` is a pure
-  // computation over these two values (no Date.now() in render).
-  const [retryCountdown, setRetryCountdown] = useState<{
-    initialSeconds: number
-    elapsedSeconds: number
-  }>({ initialSeconds: 0, elapsedSeconds: 0 })
+  // 429 Retry-After countdown via shared hook (Story 2-3b Task 3.4 refactor —
+  // Amelia-B6 fold; extracted so ClassSpawnPage + SoloFirstClassPage consume
+  // the same tick + cleanup semantics).
+  const retryCountdown = useCountdown({ initialSeconds: 0 })
+  const remainingRetrySeconds = retryCountdown.remainingSeconds
   const nameInputRef = useRef<HTMLInputElement | null>(null)
 
   const draftDefaults: CenterSetupFormValues = useMemo(() => {
@@ -131,30 +130,6 @@ export default function CenterSetupPage() {
     // + error). Clearing on unmount would race the layout's post-navigate
     // re-render.
   }, [])
-
-  // AC7 429 Retry-After countdown — tick every second so the derived
-  // `remainingRetrySeconds` below re-computes (Murat-B3 fold). The interval
-  // callback advances `elapsedSeconds` in state; that's a setState in a
-  // callback (not effect body), so React 19's set-state-in-effect lint stays
-  // clean. The interval self-clears when elapsed reaches initial.
-  useEffect(() => {
-    if (retryCountdown.initialSeconds === 0) return
-    const id = setInterval(() => {
-      setRetryCountdown((prev) => {
-        if (prev.elapsedSeconds + 1 >= prev.initialSeconds) {
-          clearInterval(id)
-          return { initialSeconds: 0, elapsedSeconds: 0 }
-        }
-        return { ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }
-      })
-    }, 1_000)
-    return () => clearInterval(id)
-  }, [retryCountdown.initialSeconds])
-
-  const remainingRetrySeconds = Math.max(
-    0,
-    retryCountdown.initialSeconds - retryCountdown.elapsedSeconds,
-  )
 
   const watchedName = useWatch({ control: form.control, name: 'name' }) ?? ''
   const watchedBrandColor =
@@ -202,12 +177,22 @@ export default function CenterSetupPage() {
       navigate('/welcome', { replace: true })
       return
     }
+    // Story 2-3b Amelia-B4 amendment — persona-branch the currentStep→route
+    // dispatch. Solo Teacher's step order goes through `/setup/first-class`,
+    // NOT `/setup/template`; without this branch the first Solo user who
+    // resumes would double-redirect.
     if (
       currentStep === 'template' ||
       currentStep === 'spawn' ||
       currentStep === 'solo_first_class'
     ) {
-      navigate('/setup/template', { replace: true })
+      if (persona === 'solo_teacher') {
+        navigate('/setup/first-class', { replace: true })
+        return
+      }
+      const target =
+        currentStep === 'template' ? '/setup/template' : '/setup/spawn'
+      navigate(target, { replace: true })
     }
   }, [progress.data, navigate])
 
@@ -237,8 +222,14 @@ export default function CenterSetupPage() {
       // to reverse the sequence. If PUT progress fails, the user stays on
       // /setup/center with an error surface (not wedged on /dashboard by
       // the banner-to-nonexistent-route loop).
+      // Story 2-3b Amelia-B4 amendment — persona-branch the next-step target.
+      // Solo Teacher goes to /setup/first-class (`currentStep: 'solo_first_class'`);
+      // Operator + Founder go to /setup/template.
+      const isSolo = progress.data?.persona === 'solo_teacher'
+      const nextStep = isSolo ? 'solo_first_class' : 'template'
+      const nextRoute = isSolo ? '/setup/first-class' : '/setup/template'
       await putProgress.mutateAsync({
-        currentStep: 'template',
+        currentStep: nextStep,
         payload: {
           schemaVersion: 1,
           personaChoice: progress.data?.persona ?? null,
@@ -250,7 +241,7 @@ export default function CenterSetupPage() {
           templateDraft: null,
         },
       })
-      navigate('/setup/template', { replace: true })
+      navigate(nextRoute, { replace: true })
       onboardingSubmitFlag.set(false)
     } catch (err) {
       onboardingSubmitFlag.set(false)
@@ -333,7 +324,7 @@ export default function CenterSetupPage() {
       // Guard against `Retry-After: 0` — skip the disable window entirely
       // rather than flashing "Try again in 0s" for one tick.
       if (seconds > 0) {
-        setRetryCountdown({ initialSeconds: seconds, elapsedSeconds: 0 })
+        retryCountdown.reset(seconds)
       }
       return
     }

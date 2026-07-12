@@ -73,13 +73,32 @@ export default function PersonaSelectPage() {
       navigate('/dashboard', { replace: true })
       return
     }
+    // Story 2-3b Amelia-B3 amendment — persona-branch the currentStep→route
+    // dispatch. Pre-2-3b this hardcoded `/setup/template` for ALL personas
+    // including Solo, which would double-redirect the first Solo Teacher
+    // who resumes (welcome → template → first-class).
+    if (persona === 'solo_teacher') {
+      if (currentStep === 'center') {
+        navigate('/setup/center', { replace: true })
+        return
+      }
+      // solo_teacher's step order skips 'template' entirely; template/spawn/
+      // solo_first_class all resolve to /setup/first-class.
+      navigate('/setup/first-class', { replace: true })
+      return
+    }
     if (
       persona !== null &&
       (currentStep === 'template' ||
         currentStep === 'spawn' ||
         currentStep === 'solo_first_class')
     ) {
-      navigate('/setup/template', { replace: true })
+      // Operator + Founder — dispatch by advanced step: spawn/solo_first_class
+      // → /setup/spawn (they've picked a template already); template →
+      // /setup/template.
+      const target =
+        currentStep === 'template' ? '/setup/template' : '/setup/spawn'
+      navigate(target, { replace: true })
       return
     }
     if (persona !== null && currentStep === 'center') {

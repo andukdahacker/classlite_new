@@ -67,6 +67,10 @@ function renderPage(
               path="/setup/template"
               element={<p>setup-template reached</p>}
             />
+            <Route
+              path="/setup/first-class"
+              element={<p>setup-first-class reached</p>}
+            />
             <Route path="/verify-email" element={<p>verify-email</p>} />
           </Routes>
         </MemoryRouter>
@@ -288,5 +292,44 @@ describe('CenterSetupPage — AC14 accessibility gate', () => {
       i18n.t('onboarding.center.form.nameLabel'),
     )
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+// R1-C3-P13 — Amelia-B4 amendment: on Solo Teacher persona resuming with
+// an ADVANCED currentStep (template / spawn / solo_first_class), the
+// shipped 2-3a resume effect originally hardcoded `/setup/template` for
+// all personas; the amendment persona-branches Solo to `/setup/first-class`.
+// Without the amendment, a Solo user with `currentStep: 'solo_first_class'`
+// would double-redirect through `/setup/template → /setup/first-class`.
+// This test protects the direct-route dispatch.
+describe('CenterSetupPage — Amelia-B4 Solo Teacher persona-branch resume', () => {
+  test('post-hydration effect: persona=solo_teacher + currentStep=solo_first_class → routes to /setup/first-class (not /setup/template)', async () => {
+    // Seed a Solo Teacher with an ADVANCED currentStep — the case the
+    // amendment protects.
+    server.use(
+      errorHandlers.progressWithPersona('solo_teacher', 'solo_first_class'),
+    )
+    renderPage()
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('setup-first-class reached'),
+      ).toBeInTheDocument(),
+    )
+    // MUST NOT bounce through /setup/template — regression guard.
+    expect(
+      screen.queryByText('setup-template reached'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('post-hydration effect: persona=solo_teacher + currentStep=spawn → routes to /setup/first-class', async () => {
+    server.use(errorHandlers.progressWithPersona('solo_teacher', 'spawn'))
+    renderPage()
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('setup-first-class reached'),
+      ).toBeInTheDocument(),
+    )
   })
 })

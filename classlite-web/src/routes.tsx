@@ -231,6 +231,36 @@ const baseRoutes: RouteObject[] = [
           return { Component: CenterSetupPage }
         },
       },
+      // Story 2-3b Task 8.1 — 3 new lazy sibling routes. Each pulls its own
+      // chunk per Winston-W5 chunk-isolation pattern; `route-bundle-boundaries.spec.ts`
+      // extended with cross-chunk assertions.
+      {
+        path: '/setup/template',
+        lazy: async () => {
+          const { default: TemplateSelectPage } = await import(
+            '@/features/onboarding/TemplateSelectPage'
+          )
+          return { Component: TemplateSelectPage }
+        },
+      },
+      {
+        path: '/setup/spawn',
+        lazy: async () => {
+          const { default: ClassSpawnPage } = await import(
+            '@/features/onboarding/ClassSpawnPage'
+          )
+          return { Component: ClassSpawnPage }
+        },
+      },
+      {
+        path: '/setup/first-class',
+        lazy: async () => {
+          const { default: SoloFirstClassPage } = await import(
+            '@/features/onboarding/SoloFirstClassPage'
+          )
+          return { Component: SoloFirstClassPage }
+        },
+      },
     ],
   },
   // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires

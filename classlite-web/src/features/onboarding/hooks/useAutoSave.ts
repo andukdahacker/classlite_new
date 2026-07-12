@@ -63,6 +63,31 @@ export interface UseAutoSaveResult {
    * expose a "Try again" button in the persistent-failure banner (R1-P26).
    */
   retryNow: () => Promise<void>
+  /**
+   * Story 2-3b Winston-W2 fold — terminal-write with latch.
+   *
+   * (a) bumps `saveSeqRef.current` BEFORE the mutation fires so any pending
+   *     older-seq auto-save resolves as stale and no-ops on cache write;
+   * (b) clears any pending debounce timer + pendingPayloadRef;
+   * (c) sets a latch so subsequent `scheduleSave` calls no-op until unmount
+   *     (protects the post-spawn PUT with `currentStep: 'done'` from being
+   *     clobbered by a phantom `currentStep: 'spawn'` auto-save).
+   *
+   * R1-C2-P1 fold — `opts.currentStep` overrides the Provider-derived step
+   * for this single write, so callers can send `currentStep: 'done'` on the
+   * post-spawn terminal PUT while the Provider still resolves the current
+   * pathname to `'spawn'` / `'solo_first_class'`.
+   *
+   * R1-C2-P2 fold — the latch engages only after `doSave` resolves; on
+   * rejection the latch stays open so the form's error-recovery path (user
+   * fixes network, retries submit) can still schedule new saves.
+   *
+   * Fires the PUT and returns a promise that resolves once the write settles.
+   */
+  flushWithLatch: (
+    payload: OnboardingProgressPayload,
+    opts?: { currentStep?: OnboardingStep },
+  ) => Promise<void>
 }
 
 export function useAutoSave(
@@ -85,9 +110,16 @@ export function useAutoSave(
   const saveSeqRef = useRef(0)
   const latestSeqRef = useRef(0)
   const isMountedRef = useRef(true)
+  // Winston-W2 latch — set true after `flushWithLatch` completes so any
+  // further `scheduleSave` call is a no-op (protects the terminal
+  // `currentStep: 'done'` PUT from being clobbered).
+  const latchedRef = useRef(false)
 
   const doSave = useCallback(
-    async (payload: OnboardingProgressPayload) => {
+    async (
+      payload: OnboardingProgressPayload,
+      stepOverride?: OnboardingStep,
+    ): Promise<boolean> => {
       saveSeqRef.current += 1
       const mySeq = saveSeqRef.current
       latestSeqRef.current = mySeq
@@ -96,21 +128,23 @@ export function useAutoSave(
       try {
         const result: PutOnboardingProgressResult =
           await putRef.current.mutateAsync({
-            currentStep,
+            currentStep: stepOverride ?? currentStep,
             payload,
           })
-        if (!isMountedRef.current || mySeq < latestSeqRef.current) return
+        if (!isMountedRef.current || mySeq < latestSeqRef.current) return false
         consecutiveFailuresRef.current = 0
         setLastSavedAt(result.updatedAt)
         setSavingState('saved')
+        return true
       } catch {
-        if (!isMountedRef.current || mySeq < latestSeqRef.current) return
+        if (!isMountedRef.current || mySeq < latestSeqRef.current) return false
         consecutiveFailuresRef.current += 1
         setSavingState(
           consecutiveFailuresRef.current >= PERSISTENT_FAILURE_THRESHOLD
             ? 'persistentFailure'
             : 'error',
         )
+        return false
       }
     },
     [currentStep],
@@ -118,6 +152,9 @@ export function useAutoSave(
 
   const scheduleSave = useCallback(
     (payload: OnboardingProgressPayload) => {
+      // Winston-W2: once the terminal latch is set, all further debounced
+      // writes are dropped — the spawn PUT with `currentStep: 'done'` wins.
+      if (latchedRef.current) return
       pendingPayloadRef.current = payload
       if (timerRef.current) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
@@ -170,5 +207,36 @@ export function useAutoSave(
     }
   }, [])
 
-  return { savingState, lastSavedAt, scheduleSave, flush, retryNow }
+  const flushWithLatch = useCallback(
+    async (
+      payload: OnboardingProgressPayload,
+      opts?: { currentStep?: OnboardingStep },
+    ) => {
+      // (a) bump saveSeq so any in-flight older-seq save resolves as stale
+      saveSeqRef.current += 1
+      latestSeqRef.current = saveSeqRef.current
+      // (b) clear any pending debounce
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      pendingPayloadRef.current = null
+      // R1-C2-P2 — engage the latch ONLY after doSave completes successfully.
+      // If the PUT fails, leave the latch open so the caller's retry path can
+      // still schedule new saves. `doSave` returns `false` on error / stale-
+      // seq drop / unmount; only `true` engages the terminal latch.
+      const ok = await doSave(payload, opts?.currentStep)
+      if (ok) latchedRef.current = true
+    },
+    [doSave],
+  )
+
+  return {
+    savingState,
+    lastSavedAt,
+    scheduleSave,
+    flush,
+    retryNow,
+    flushWithLatch,
+  }
 }

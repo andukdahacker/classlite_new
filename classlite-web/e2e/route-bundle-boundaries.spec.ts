@@ -315,6 +315,89 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     }
   })
 
+  test('Story 2-3b — template/spawn/first-class chunks isolated from login+dashboard AND from each other (Winston-S6)', async () => {
+    // Story 2-3b Task 8.2 fold — each of the 3 new post-center wizard pages
+    // gets its own lazy chunk; the load-bearing negative is that:
+    //   (a) none co-appears with login / dashboard bundles (standard
+    //       isolation belt), AND
+    //   (b) TemplateSelectPage does NOT statically import the ClassSpawnPage
+    //       chunk via a barrel leak (Winston-S6 — shared TemplateCard could
+    //       transitively pull the spawn page in).
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    const templateChunks = files.filter((f: string) =>
+      /^TemplateSelectPage-[\w-]+\.js$/.test(f),
+    )
+    const spawnChunks = files.filter((f: string) =>
+      /^ClassSpawnPage-[\w-]+\.js$/.test(f),
+    )
+    const soloChunks = files.filter((f: string) =>
+      /^SoloFirstClassPage-[\w-]+\.js$/.test(f),
+    )
+    const studentChunkFiles = files.filter((f: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(f),
+    )
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    const loginChunkFiles = files.filter((f: string) =>
+      /^LoginPage-[\w-]+\.js$/.test(f),
+    )
+
+    expect(
+      templateChunks.length,
+      'TemplateSelectPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      spawnChunks.length,
+      'ClassSpawnPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+    expect(
+      soloChunks.length,
+      'SoloFirstClassPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const loginContents = loginChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // (a) — no cross-bundle leaks into login / dashboards.
+    for (const chunk of [
+      ...templateChunks,
+      ...spawnChunks,
+      ...soloChunks,
+    ]) {
+      expect(studentContents).not.toContain(chunk)
+      expect(teacherContents).not.toContain(chunk)
+      expect(loginContents).not.toContain(chunk)
+    }
+
+    // (b) Winston-S6 — TemplateSelectPage chunk must NOT statically import
+    // the ClassSpawnPage chunk (or vice versa). Rolldown writes the peer
+    // chunk filename verbatim into any importer's manifest.
+    const templateContents = templateChunks
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const spawnContents = spawnChunks
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    for (const spawnChunkBasename of spawnChunks) {
+      expect(templateContents).not.toContain(spawnChunkBasename)
+    }
+    for (const templateChunkBasename of templateChunks) {
+      expect(spawnContents).not.toContain(templateChunkBasename)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by

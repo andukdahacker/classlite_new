@@ -30,6 +30,33 @@ import {
 } from './OnboardingAutoSaveContext'
 import { AutoSaveIndicator } from './components/AutoSaveIndicator'
 import { onboardingSubmitFlag } from './onboardingSubmitFlag'
+import type { OnboardingStep } from './hooks/useAutoSave'
+
+// Story 2-3b Winston-W1 fold — pathname → currentStep map. Every step value
+// is a valid `PutOnboardingProgressRequest.currentStep` enum entry (api.yaml
+// line 1074). `/welcome` intentionally returns `undefined` (not `'persona'`):
+// the persona pick is a one-shot POST that does not consume the auto-save
+// Provider (Story 2-3a R1-P29), so the Provider is only rendered on the
+// four routes below.
+function stepFromPathname(pathname: string): OnboardingStep | undefined {
+  if (pathname === '/setup/center') return 'center'
+  if (pathname === '/setup/template') return 'template'
+  if (pathname === '/setup/spawn') return 'spawn'
+  if (pathname === '/setup/first-class') return 'solo_first_class'
+  return undefined
+}
+
+// Story 2-3b amendment — Story 2-3a's `session.center != null → /dashboard`
+// guard was correct while there was no post-center wizard step to reach. With
+// this story shipping `/setup/template`, `/setup/spawn`, and
+// `/setup/first-class` (all of which REQUIRE `session.center` to be
+// populated), the guard must let those routes through. `onboardingSubmitFlag`
+// still bypasses during the CenterSetupPage submit race (R1-P1/P2 fix).
+const POST_CENTER_WIZARD_PATHS = new Set<string>([
+  '/setup/template',
+  '/setup/spawn',
+  '/setup/first-class',
+])
 
 export function OnboardingLayoutSkeleton() {
   return (
@@ -78,7 +105,11 @@ export default function OnboardingLayout() {
       navigate('/verify-email', { replace: true })
       return
     }
-    if (session?.center != null && !onboardingSubmitFlag.current) {
+    if (
+      session?.center != null &&
+      !onboardingSubmitFlag.current &&
+      !POST_CENTER_WIZARD_PATHS.has(location.pathname)
+    ) {
       navigate('/dashboard', { replace: true })
     }
   }, [
@@ -97,10 +128,17 @@ export default function OnboardingLayout() {
   // onboardingSubmitFlag suppression. Without this gate, the cache write
   // in useCreateCenter.onSuccess would unmount CenterSetupPage mid-onSubmit
   // (before the PUT-progress + navigate calls settle), stranding the wizard.
-  if (session?.center != null && !onboardingSubmitFlag.current) return null
+  if (
+    session?.center != null &&
+    !onboardingSubmitFlag.current &&
+    !POST_CENTER_WIZARD_PATHS.has(location.pathname)
+  )
+    return null
+
+  const currentStep = stepFromPathname(location.pathname)
 
   return (
-    <OnboardingAutoSaveProvider>
+    <OnboardingAutoSaveProvider currentStep={currentStep}>
       <OnboardingChrome email={user.email} />
     </OnboardingAutoSaveProvider>
   )
