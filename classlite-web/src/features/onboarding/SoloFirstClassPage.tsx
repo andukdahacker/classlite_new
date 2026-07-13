@@ -28,6 +28,7 @@ import { useSpawnClasses } from './api/useSpawnClasses'
 import { useListTemplates } from './api/useListTemplates'
 import { useOnboardingAutoSave } from './OnboardingAutoSaveContext'
 import { useCountdown } from './hooks/useCountdown'
+import { SaveAndFinishLaterLink } from './components/SaveAndFinishLaterLink'
 import { TemplateRibbon } from './components/TemplateRibbon'
 import { queueArrivalToast } from './arrivalToast'
 
@@ -515,6 +516,16 @@ export default function SoloFirstClassPage() {
             {t('onboarding.spawn.error.autoSaveWarning')}
           </div>
         ) : null}
+
+        {/* Story 2-3c AC4 — Save-and-finish-later affordance. R1-C2-P8:
+            placed at the very bottom of the form (after error/warning
+            banners) to match the ClassSpawnPage normal-form variant's
+            visual order. */}
+        <SaveAndFinishLaterLink
+          page="SoloFirstClassPage"
+          flush={autoSave.flush}
+          primaryPending={spawn.isPending}
+        />
       </form>
       )}
     </section>

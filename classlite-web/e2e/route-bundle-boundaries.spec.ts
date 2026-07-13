@@ -398,6 +398,78 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
     }
   })
 
+  test('Story 2-3c — /setup/done chunk isolated from login+dashboard AND from spawn+first-class (Task 4.2)', async () => {
+    // Story 2-3c Task 4.2 fold — the celebration page ships its own lazy
+    // chunk. Load-bearing negatives:
+    //   (a) OnboardingDonePage chunk does NOT co-appear with login or
+    //       dashboard bundle groups (standard isolation belt).
+    //   (b) Does NOT co-appear with ClassSpawnPage or SoloFirstClassPage
+    //       chunks — a shared component leak (not the type-only
+    //       TemplateDraftPayload import, which tree-shakes) would drag the
+    //       spawn chunk in via the barrel.
+    // Deep-import discipline per TS-7 + W-S4:
+    //   `useOnboardingProgress` MUST be deep-imported from
+    //   `@/features/onboarding/api/useOnboardingProgress` — NOT via the
+    //   `@/features/onboarding` barrel — else OnboardingLayout +
+    //   PersonaSelectPage + CenterSetupPage would leak into the done chunk.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+    const doneChunks = files.filter((f: string) =>
+      /^OnboardingDonePage-[\w-]+\.js$/.test(f),
+    )
+    const spawnChunks = files.filter((f: string) =>
+      /^ClassSpawnPage-[\w-]+\.js$/.test(f),
+    )
+    const soloChunks = files.filter((f: string) =>
+      /^SoloFirstClassPage-[\w-]+\.js$/.test(f),
+    )
+    const studentChunkFiles = files.filter((f: string) =>
+      /^StudentDashboard-[\w-]+\.js$/.test(f),
+    )
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    const loginChunkFiles = files.filter((f: string) =>
+      /^LoginPage-[\w-]+\.js$/.test(f),
+    )
+
+    expect(
+      doneChunks.length,
+      'OnboardingDonePage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const studentContents = studentChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    const loginContents = loginChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // (a) — no cross-bundle leaks into login / dashboards.
+    for (const chunk of doneChunks) {
+      expect(studentContents).not.toContain(chunk)
+      expect(teacherContents).not.toContain(chunk)
+      expect(loginContents).not.toContain(chunk)
+    }
+
+    // (b) — done chunk does NOT statically import spawn or first-class.
+    const doneContents = doneChunks
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    for (const spawnChunkBasename of spawnChunks) {
+      expect(doneContents).not.toContain(spawnChunkBasename)
+    }
+    for (const soloChunkBasename of soloChunks) {
+      expect(doneContents).not.toContain(soloChunkBasename)
+    }
+  })
+
   test('production dist/ does NOT include any dev-only route module', async () => {
     // Read-only audit of the build artifact. The dev server serves dev
     // chunks by design, so this assertion runs against `dist/` (built by

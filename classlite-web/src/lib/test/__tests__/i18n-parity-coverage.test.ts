@@ -1002,3 +1002,60 @@ describe('Story 2-3b i18n parity (R38)', () => {
     },
   )
 })
+
+/**
+ * Story 2-3c — onboarding wizard closer (`/setup/done` celebration screen).
+ *
+ * Closed-enumeration STORY_2_3C_KEYS + prefix-ratchet block mirrors the
+ * 2-3a / 2-3b precedent. Every NEW key added by this story lands in this
+ * array — `onboarding.wizard.saveAndFinishLater` (2-3a) is REUSED, not
+ * duplicated, so it is NOT in this set.
+ *
+ * Prefix ratchet: single allow-list `onboarding.done.*` per A-I3 (tighter
+ * than the story's initial `['onboarding.done.', 'onboarding.wizard.']`
+ * sketch — `wizard.*` is 2-3a's turf, not 2-3c's).
+ *
+ * Interpolation tokens (M-B1 + A-B2, 3 total):
+ *   {{centerName}} {{count}} {{requestId}}
+ * ({{shortCode}} is composed via JS template literal in the tile
+ * component, NOT via i18next interpolation.)
+ */
+export const STORY_2_3C_KEYS = [
+  'onboarding.done.title',
+  'onboarding.done.subtitle.operator',
+  'onboarding.done.subtitle.founder',
+  'onboarding.done.subtitle.solo_teacher',
+  'onboarding.done.stat.classesReady',
+  'onboarding.done.stat.classesReady_one',
+  'onboarding.done.stat.classesReadyLabel',
+  'onboarding.done.stat.teachersInvited',
+  'onboarding.done.stat.teachersInvited_one',
+  'onboarding.done.stat.teachersInvitedLabel',
+  'onboarding.done.stat.subdomain',
+  'onboarding.done.openDashboardCta',
+  'onboarding.done.error.generic',
+  'onboarding.done.error.genericWithRequestId',
+  'onboarding.done.error.retryCta',
+  'onboarding.done.error.setupIncomplete',
+  'onboarding.done.error.continueToDashboardCta',
+] as const
+
+describe('Story 2-3c i18n parity (R38)', () => {
+  test('every Story 2-3c i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_3C_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for every 2-3c key (M-B1 + A-B2)', () => {
+    assertI18nInterpolationParity(STORY_2_3C_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_3C = ['onboarding.done.'] as const
+
+  test.each(STORY_2_3C_KEYS)(
+    '%s belongs to a 2-3c allowed prefix (A-I3 single-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_3C.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})

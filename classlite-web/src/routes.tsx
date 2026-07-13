@@ -261,6 +261,20 @@ const baseRoutes: RouteObject[] = [
           return { Component: SoloFirstClassPage }
         },
       },
+      // Story 2-3c Task 4.1 — terminal /setup/done celebration screen.
+      // Own chunk per Winston-W5 chunk-isolation pattern; `route-bundle-
+      // boundaries.spec.ts` extended with cross-chunk assertions
+      // (deep-import discipline W-S4 keeps `useOnboardingProgress` on its
+      // own path so the barrel doesn't drag the whole feature in).
+      {
+        path: '/setup/done',
+        lazy: async () => {
+          const { default: OnboardingDonePage } = await import(
+            '@/features/onboarding/OnboardingDonePage'
+          )
+          return { Component: OnboardingDonePage }
+        },
+      },
     ],
   },
   // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires

@@ -37,12 +37,19 @@ import type { OnboardingStep } from './hooks/useAutoSave'
 // line 1074). `/welcome` intentionally returns `undefined` (not `'persona'`):
 // the persona pick is a one-shot POST that does not consume the auto-save
 // Provider (Story 2-3a R1-P29), so the Provider is only rendered on the
-// four routes below.
+// routes below.
+//
+// Story 2-3c Task 1.1 — `/setup/done` returns `'done'` (defense-in-depth
+// per AC6): 2-3b's terminal `flushWithLatch(payload, { currentStep: 'done' })`
+// engages `latchedRef` upstream, so no scheduleSave fires here. If the latch
+// ever leaks (Provider remounts across chunk boundary), an accidental PUT
+// with `currentStep: 'done'` is idempotent — safe.
 function stepFromPathname(pathname: string): OnboardingStep | undefined {
   if (pathname === '/setup/center') return 'center'
   if (pathname === '/setup/template') return 'template'
   if (pathname === '/setup/spawn') return 'spawn'
   if (pathname === '/setup/first-class') return 'solo_first_class'
+  if (pathname === '/setup/done') return 'done'
   return undefined
 }
 
@@ -52,10 +59,24 @@ function stepFromPathname(pathname: string): OnboardingStep | undefined {
 // `/setup/first-class` (all of which REQUIRE `session.center` to be
 // populated), the guard must let those routes through. `onboardingSubmitFlag`
 // still bypasses during the CenterSetupPage submit race (R1-P1/P2 fix).
+// Story 2-3c Task 1.2 — extend to include `/setup/done`. Otherwise the
+// `session.center != null → /dashboard` guard bounces the user off the
+// celebration screen before it can render (AC1).
+//
+// Story 2-3c AC2 branch 3 also permits `/setup/center` through the guard:
+// when OnboardingDonePage's resume ladder encounters a stale-progress state
+// (server reports `currentStep: 'center'` but session.center is already
+// populated — e.g. a cache lag between the CreateCenter response and the
+// server-side progress record), it routes to `/setup/center` so
+// CenterSetupPage's own effect + the shipped 409 USER_ALREADY_HAS_CENTER
+// recovery UI can carry the user to `/dashboard`. Without the allow-list
+// entry, the layout would bounce first and swallow the resume signal.
 const POST_CENTER_WIZARD_PATHS = new Set<string>([
+  '/setup/center',
   '/setup/template',
   '/setup/spawn',
   '/setup/first-class',
+  '/setup/done',
 ])
 
 export function OnboardingLayoutSkeleton() {
@@ -190,8 +211,13 @@ function OnboardingChrome({ email }: OnboardingChromeProps) {
           </a>
           {/* R1-P29 — AutoSaveIndicator only meaningful on pages that write
               draft state. /welcome (persona pick) is a one-shot POST; the
-              idle "Auto-save on" affordance was misleading there. */}
-          {location.pathname !== '/welcome' ? <AutoSaveIndicator /> : null}
+              idle "Auto-save on" affordance was misleading there.
+              Story 2-3c Task 1.3 — same posture for `/setup/done`: no form,
+              no draft; the celebration screen is a pure consumer. */}
+          {location.pathname !== '/welcome' &&
+          location.pathname !== '/setup/done' ? (
+            <AutoSaveIndicator />
+          ) : null}
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8">

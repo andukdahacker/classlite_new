@@ -517,5 +517,22 @@
   "onboarding.solo.teacher.locked": "Bạn · {{userFullName}}",
   "onboarding.solo.teacher.helper": "Không gian cá nhân — bạn là giáo viên.",
   "onboarding.solo.templatePickDetails": "Chọn một mẫu (tùy chọn)",
-  "onboarding.solo.saveAndSpawnCta": "Tạo lớp đầu tiên"
+  "onboarding.solo.saveAndSpawnCta": "Tạo lớp đầu tiên",
+  "onboarding.done.title": "Bạn đã sẵn sàng, {{centerName}}!",
+  "onboarding.done.subtitle.operator": "Trung tâm của bạn đã đi vào hoạt động. Mời giáo viên tham gia — công cụ chấm điểm AI và buổi học đã sẵn sàng khi họ vào.",
+  "onboarding.done.subtitle.founder": "Lớp đầu tiên của bạn đã sẵn sàng và bạn có thể bắt đầu giảng dạy. Bảng điều khiển là bệ phóng của bạn từ đây.",
+  "onboarding.done.subtitle.solo_teacher": "Một lớp, một giáo viên — chính là bạn. Bắt đầu buổi học đầu tiên ngay.",
+  "onboarding.done.stat.classesReady": "{{count}} lớp học đã sẵn sàng",
+  "onboarding.done.stat.classesReady_one": "{{count}} lớp học đã sẵn sàng",
+  "onboarding.done.stat.classesReadyLabel": "Lớp học đã sẵn sàng",
+  "onboarding.done.stat.teachersInvited": "{{count}} giáo viên đã mời",
+  "onboarding.done.stat.teachersInvited_one": "{{count}} giáo viên đã mời",
+  "onboarding.done.stat.teachersInvitedLabel": "Giáo viên đã mời",
+  "onboarding.done.stat.subdomain": "Tên miền phụ của bạn",
+  "onboarding.done.openDashboardCta": "Mở Bảng điều khiển →",
+  "onboarding.done.error.generic": "Đã xảy ra lỗi khi tải tóm tắt cài đặt.",
+  "onboarding.done.error.genericWithRequestId": "Đã xảy ra lỗi khi tải tóm tắt cài đặt. Mã yêu cầu: {{requestId}}",
+  "onboarding.done.error.retryCta": "Thử lại",
+  "onboarding.done.error.setupIncomplete": "Chúng tôi không thể xác nhận cài đặt của bạn. Điều này hiếm khi xảy ra — thử tải lại, hoặc tiếp tục đến bảng điều khiển.",
+  "onboarding.done.error.continueToDashboardCta": "Tiếp tục đến bảng điều khiển"
 }

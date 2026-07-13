@@ -49,6 +49,7 @@ import { useOnboardingAutoSave } from './OnboardingAutoSaveContext'
 import { useCountdown } from './hooks/useCountdown'
 import { ClassRow } from './components/ClassRow'
 import { AssignTeacherComposer } from './components/AssignTeacherComposer'
+import { SaveAndFinishLaterLink } from './components/SaveAndFinishLaterLink'
 import { queueArrivalToast } from './arrivalToast'
 
 interface RowState {
@@ -629,6 +630,20 @@ export default function ClassSpawnPage() {
               {t('onboarding.spawn.pickTemplateInsteadCta')}
             </button>
           </div>
+          {/* Story 2-3c AC4 (A-B1) — Save-and-finish-later inside the amber
+              card is the only exit affordance from the buildFromScratch
+              dead-end besides the "Pick a template" redirect. R1-C2-P4
+              right-aligns to match the 3 other siblings + R1-C2-P5 uses
+              the WCAG-safe slate token via the shared component. */}
+          <div className="mt-3 flex justify-end">
+            <SaveAndFinishLaterLink
+              page="ClassSpawnPage.buildFromScratch"
+              flush={autoSave.flush}
+              primaryPending={spawn.isPending}
+              tone="amber"
+              layout="inline"
+            />
+          </div>
         </div>
       ) : (
         <form
@@ -723,6 +738,17 @@ export default function ClassSpawnPage() {
               {genericErrorCopy}
             </div>
           ) : null}
+
+          {/* Story 2-3c AC4 — Save-and-finish-later affordance. Right-aligned
+              BELOW the primary "Save & spawn" CTA with mt-3 spacing per
+              S-B3 (never beside — fat-finger risk). Shared hook enforces
+              double-click prevention + logs flush failures to Sentry
+              (R1-C2-P1 + P2 + P3). */}
+          <SaveAndFinishLaterLink
+            page="ClassSpawnPage"
+            flush={autoSave.flush}
+            primaryPending={spawn.isPending}
+          />
         </form>
       )}
     </section>

@@ -241,6 +241,29 @@ export const errorHandlers = {
       }),
     ),
 
+  // Story 2-3c Task 3.4 — Save-and-finish-later flush contract tests
+  // (Murat-S3 3-sub-test × 3 pages). The try/finally in the affordance
+  // handler must guarantee navigate to /dashboard on ANY 5xx / 429 / network
+  // failure — user is EXITING, so a stalled auto-save must not orphan them.
+
+  putProgressInternalError: () =>
+    http.put('/api/onboarding/progress', () =>
+      HttpResponse.json(errorEnvelope('INTERNAL_ERROR', 'Boom'), {
+        status: 500,
+      }),
+    ),
+
+  putProgressRateLimited: (retryAfterSeconds = 12) =>
+    http.put('/api/onboarding/progress', () =>
+      HttpResponse.json(
+        errorEnvelope('RATE_LIMIT_EXCEEDED', 'Too many requests'),
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfterSeconds) },
+        },
+      ),
+    ),
+
   progressWithPersona: (
     persona: 'operator' | 'founder' | 'solo_teacher' | null,
     currentStep: OnboardingProgressResult['currentStep'],

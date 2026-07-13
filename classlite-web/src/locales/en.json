@@ -517,5 +517,22 @@
   "onboarding.solo.teacher.locked": "You · {{userFullName}}",
   "onboarding.solo.teacher.helper": "Solo workspace — you're the teacher.",
   "onboarding.solo.templatePickDetails": "Pick a template (optional)",
-  "onboarding.solo.saveAndSpawnCta": "Create my first class"
+  "onboarding.solo.saveAndSpawnCta": "Create my first class",
+  "onboarding.done.title": "You're all set, {{centerName}}!",
+  "onboarding.done.subtitle.operator": "Your center is live. Bring your teachers in — the AI grading and session tools are ready when they are.",
+  "onboarding.done.subtitle.founder": "Your first class is spun up and you're set to teach. The dashboard is your launchpad from here.",
+  "onboarding.done.subtitle.solo_teacher": "One class, one teacher — you. Jump in and start your first session.",
+  "onboarding.done.stat.classesReady": "{{count}} classes ready",
+  "onboarding.done.stat.classesReady_one": "{{count}} class ready",
+  "onboarding.done.stat.classesReadyLabel": "Classes ready",
+  "onboarding.done.stat.teachersInvited": "{{count}} teachers invited",
+  "onboarding.done.stat.teachersInvited_one": "{{count}} teacher invited",
+  "onboarding.done.stat.teachersInvitedLabel": "Teachers invited",
+  "onboarding.done.stat.subdomain": "Your subdomain",
+  "onboarding.done.openDashboardCta": "Open Dashboard →",
+  "onboarding.done.error.generic": "Something went wrong loading your setup summary.",
+  "onboarding.done.error.genericWithRequestId": "Something went wrong loading your setup summary. Request ID: {{requestId}}",
+  "onboarding.done.error.retryCta": "Try again",
+  "onboarding.done.error.setupIncomplete": "We couldn't confirm your setup. This is rare — try refreshing, or continue to your dashboard.",
+  "onboarding.done.error.continueToDashboardCta": "Continue to dashboard"
 }

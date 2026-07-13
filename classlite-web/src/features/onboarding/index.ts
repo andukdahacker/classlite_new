@@ -15,6 +15,7 @@ export { default as CenterSetupPage } from './CenterSetupPage'
 export { default as TemplateSelectPage } from './TemplateSelectPage'
 export { default as ClassSpawnPage } from './ClassSpawnPage'
 export { default as SoloFirstClassPage } from './SoloFirstClassPage'
+export { default as OnboardingDonePage } from './OnboardingDonePage'
 export {
   OnboardingAutoSaveProvider,
   useOnboardingAutoSave,

@@ -1,0 +1,278 @@
+diff --git a/classlite-web/src/features/onboarding/ClassSpawnPage.tsx b/classlite-web/src/features/onboarding/ClassSpawnPage.tsx
+index 87a4edf..a3a3546 100644
+--- a/classlite-web/src/features/onboarding/ClassSpawnPage.tsx
++++ b/classlite-web/src/features/onboarding/ClassSpawnPage.tsx
+@@ -629,6 +629,25 @@ export default function ClassSpawnPage() {
+               {t('onboarding.spawn.pickTemplateInsteadCta')}
+             </button>
+           </div>
++          {/* Story 2-3c AC4 (A-B1) — Save-and-finish-later inside the amber
++              card is the only exit affordance from the buildFromScratch
++              dead-end besides the "Pick a template" redirect. Placed BELOW
++              the primary CTA with mt-3 spacing per S-B3 discipline. */}
++          <div className="mt-3">
++            <button
++              type="button"
++              className="text-xs text-amber-800 underline"
++              onClick={async () => {
++                try {
++                  await autoSave.flush()
++                } finally {
++                  navigate('/dashboard', { replace: true })
++                }
++              }}
++            >
++              {t('onboarding.wizard.saveAndFinishLater')}
++            </button>
++          </div>
+         </div>
+       ) : (
+         <form
+@@ -723,6 +742,27 @@ export default function ClassSpawnPage() {
+               {genericErrorCopy}
+             </div>
+           ) : null}
++
++          {/* Story 2-3c AC4 — Save-and-finish-later affordance. Right-aligned
++              BELOW the primary "Save & spawn" CTA with mt-3 spacing per
++              S-B3 (never beside — fat-finger risk). try/finally guarantees
++              navigate on flush failure so a stalled auto-save cannot orphan
++              the user on the spawn step. */}
++          <div className="mt-3 flex justify-end">
++            <button
++              type="button"
++              className="text-xs text-slate-500 underline"
++              onClick={async () => {
++                try {
++                  await autoSave.flush()
++                } finally {
++                  navigate('/dashboard', { replace: true })
++                }
++              }}
++            >
++              {t('onboarding.wizard.saveAndFinishLater')}
++            </button>
++          </div>
+         </form>
+       )}
+     </section>
+diff --git a/classlite-web/src/features/onboarding/OnboardingLayout.tsx b/classlite-web/src/features/onboarding/OnboardingLayout.tsx
+index 8b3a2b0..4755251 100644
+--- a/classlite-web/src/features/onboarding/OnboardingLayout.tsx
++++ b/classlite-web/src/features/onboarding/OnboardingLayout.tsx
+@@ -37,12 +37,19 @@ import type { OnboardingStep } from './hooks/useAutoSave'
+ // line 1074). `/welcome` intentionally returns `undefined` (not `'persona'`):
+ // the persona pick is a one-shot POST that does not consume the auto-save
+ // Provider (Story 2-3a R1-P29), so the Provider is only rendered on the
+-// four routes below.
++// routes below.
++//
++// Story 2-3c Task 1.1 — `/setup/done` returns `'done'` (defense-in-depth
++// per AC6): 2-3b's terminal `flushWithLatch(payload, { currentStep: 'done' })`
++// engages `latchedRef` upstream, so no scheduleSave fires here. If the latch
++// ever leaks (Provider remounts across chunk boundary), an accidental PUT
++// with `currentStep: 'done'` is idempotent — safe.
+ function stepFromPathname(pathname: string): OnboardingStep | undefined {
+   if (pathname === '/setup/center') return 'center'
+   if (pathname === '/setup/template') return 'template'
+   if (pathname === '/setup/spawn') return 'spawn'
+   if (pathname === '/setup/first-class') return 'solo_first_class'
++  if (pathname === '/setup/done') return 'done'
+   return undefined
+ }
+ 
+@@ -52,10 +59,24 @@ function stepFromPathname(pathname: string): OnboardingStep | undefined {
+ // `/setup/first-class` (all of which REQUIRE `session.center` to be
+ // populated), the guard must let those routes through. `onboardingSubmitFlag`
+ // still bypasses during the CenterSetupPage submit race (R1-P1/P2 fix).
++// Story 2-3c Task 1.2 — extend to include `/setup/done`. Otherwise the
++// `session.center != null → /dashboard` guard bounces the user off the
++// celebration screen before it can render (AC1).
++//
++// Story 2-3c AC2 branch 3 also permits `/setup/center` through the guard:
++// when OnboardingDonePage's resume ladder encounters a stale-progress state
++// (server reports `currentStep: 'center'` but session.center is already
++// populated — e.g. a cache lag between the CreateCenter response and the
++// server-side progress record), it routes to `/setup/center` so
++// CenterSetupPage's own effect + the shipped 409 USER_ALREADY_HAS_CENTER
++// recovery UI can carry the user to `/dashboard`. Without the allow-list
++// entry, the layout would bounce first and swallow the resume signal.
+ const POST_CENTER_WIZARD_PATHS = new Set<string>([
++  '/setup/center',
+   '/setup/template',
+   '/setup/spawn',
+   '/setup/first-class',
++  '/setup/done',
+ ])
+ 
+ export function OnboardingLayoutSkeleton() {
+@@ -190,8 +211,13 @@ function OnboardingChrome({ email }: OnboardingChromeProps) {
+           </a>
+           {/* R1-P29 — AutoSaveIndicator only meaningful on pages that write
+               draft state. /welcome (persona pick) is a one-shot POST; the
+-              idle "Auto-save on" affordance was misleading there. */}
+-          {location.pathname !== '/welcome' ? <AutoSaveIndicator /> : null}
++              idle "Auto-save on" affordance was misleading there.
++              Story 2-3c Task 1.3 — same posture for `/setup/done`: no form,
++              no draft; the celebration screen is a pure consumer. */}
++          {location.pathname !== '/welcome' &&
++          location.pathname !== '/setup/done' ? (
++            <AutoSaveIndicator />
++          ) : null}
+         </div>
+       </header>
+       <main className="mx-auto max-w-6xl px-4 py-8">
+diff --git a/classlite-web/src/features/onboarding/SoloFirstClassPage.tsx b/classlite-web/src/features/onboarding/SoloFirstClassPage.tsx
+index f9f734a..704490c 100644
+--- a/classlite-web/src/features/onboarding/SoloFirstClassPage.tsx
++++ b/classlite-web/src/features/onboarding/SoloFirstClassPage.tsx
+@@ -489,6 +489,25 @@ export default function SoloFirstClassPage() {
+           </button>
+         </div>
+ 
++        {/* Story 2-3c AC4 — Save-and-finish-later affordance. BELOW the
++            primary CTA with mt-3 spacing per S-B3. Solo path is one step,
++            so this is the user's only chance to pause mid-form. */}
++        <div className="mt-3 flex justify-end">
++          <button
++            type="button"
++            className="text-xs text-slate-500 underline"
++            onClick={async () => {
++              try {
++                await autoSave.flush()
++              } finally {
++                navigate('/dashboard', { replace: true })
++              }
++            }}
++          >
++            {t('onboarding.wizard.saveAndFinishLater')}
++          </button>
++        </div>
++
+         {rateLimitCopy ? (
+           <div
+             role="alert"
+diff --git a/classlite-web/src/features/onboarding/TemplateSelectPage.tsx b/classlite-web/src/features/onboarding/TemplateSelectPage.tsx
+index 82aa8d3..548f842 100644
+--- a/classlite-web/src/features/onboarding/TemplateSelectPage.tsx
++++ b/classlite-web/src/features/onboarding/TemplateSelectPage.tsx
+@@ -233,6 +233,28 @@ export default function TemplateSelectPage() {
+           </button>
+         </div>
+       )}
++
++      {/* Story 2-3c AC4 — Save-and-finish-later affordance. Placement per
++          S-B3: right-aligned as a tertiary text link BELOW the primary CTA
++          (never beside it — fat-finger risk). try/finally guarantees the
++          navigate fires even when the auto-save flush rejects (5xx/429/
++          network) — a stalled auto-save must not orphan the user on the
++          wizard step. */}
++      <div className="mt-3 flex justify-end">
++        <button
++          type="button"
++          className="text-xs text-slate-500 underline"
++          onClick={async () => {
++            try {
++              await autoSave.flush()
++            } finally {
++              navigate('/dashboard', { replace: true })
++            }
++          }}
++        >
++          {t('onboarding.wizard.saveAndFinishLater')}
++        </button>
++      </div>
+     </section>
+   )
+ }
+diff --git a/classlite-web/src/features/onboarding/index.ts b/classlite-web/src/features/onboarding/index.ts
+index ced9e95..e4f3d57 100644
+--- a/classlite-web/src/features/onboarding/index.ts
++++ b/classlite-web/src/features/onboarding/index.ts
+@@ -15,6 +15,7 @@ export { default as CenterSetupPage } from './CenterSetupPage'
+ export { default as TemplateSelectPage } from './TemplateSelectPage'
+ export { default as ClassSpawnPage } from './ClassSpawnPage'
+ export { default as SoloFirstClassPage } from './SoloFirstClassPage'
++export { default as OnboardingDonePage } from './OnboardingDonePage'
+ export {
+   OnboardingAutoSaveProvider,
+   useOnboardingAutoSave,
+diff --git a/classlite-web/src/locales/en.json b/classlite-web/src/locales/en.json
+index 4ed4e2d..b030201 100644
+--- a/classlite-web/src/locales/en.json
++++ b/classlite-web/src/locales/en.json
+@@ -517,5 +517,21 @@
+   "onboarding.solo.teacher.locked": "You · {{userFullName}}",
+   "onboarding.solo.teacher.helper": "Solo workspace — you're the teacher.",
+   "onboarding.solo.templatePickDetails": "Pick a template (optional)",
+-  "onboarding.solo.saveAndSpawnCta": "Create my first class"
++  "onboarding.solo.saveAndSpawnCta": "Create my first class",
++  "onboarding.done.title": "You're all set, {{centerName}}!",
++  "onboarding.done.subtitle.operator": "Your center is live. Bring your teachers in — the AI grading and session tools are ready when they are.",
++  "onboarding.done.subtitle.founder": "Your first class is spun up and you're set to teach. The dashboard is your launchpad from here.",
++  "onboarding.done.subtitle.solo_teacher": "One class, one teacher — you. Jump in and start your first session.",
++  "onboarding.done.stat.classesReady": "{{count}} classes ready",
++  "onboarding.done.stat.classesReadyLabel": "Classes ready",
++  "onboarding.done.stat.teachersInvited": "{{count}} teachers invited",
++  "onboarding.done.stat.teachersInvitedLabel": "Teachers invited",
++  "onboarding.done.stat.subdomain": "Your subdomain",
++  "onboarding.done.stat.tileAriaLabel": "{{label}}: {{value}}",
++  "onboarding.done.openDashboardCta": "Open Dashboard →",
++  "onboarding.done.error.generic": "Something went wrong loading your setup summary.",
++  "onboarding.done.error.genericWithRequestId": "Something went wrong loading your setup summary. Request ID: {{requestId}}",
++  "onboarding.done.error.retryCta": "Try again",
++  "onboarding.done.error.setupIncomplete": "We couldn't confirm your setup. This is rare — try refreshing, or continue to your dashboard.",
++  "onboarding.done.error.continueToDashboardCta": "Continue to dashboard"
+ }
+diff --git a/classlite-web/src/locales/vi.json b/classlite-web/src/locales/vi.json
+index 130747d..c0cf637 100644
+--- a/classlite-web/src/locales/vi.json
++++ b/classlite-web/src/locales/vi.json
+@@ -517,5 +517,21 @@
+   "onboarding.solo.teacher.locked": "Bạn · {{userFullName}}",
+   "onboarding.solo.teacher.helper": "Không gian cá nhân — bạn là giáo viên.",
+   "onboarding.solo.templatePickDetails": "Chọn một mẫu (tùy chọn)",
+-  "onboarding.solo.saveAndSpawnCta": "Tạo lớp đầu tiên"
++  "onboarding.solo.saveAndSpawnCta": "Tạo lớp đầu tiên",
++  "onboarding.done.title": "Bạn đã sẵn sàng, {{centerName}}!",
++  "onboarding.done.subtitle.operator": "Trung tâm của bạn đã đi vào hoạt động. Mời giáo viên tham gia — công cụ chấm điểm AI và buổi học đã sẵn sàng khi họ vào.",
++  "onboarding.done.subtitle.founder": "Lớp đầu tiên của bạn đã sẵn sàng và bạn có thể bắt đầu giảng dạy. Bảng điều khiển là bệ phóng của bạn từ đây.",
++  "onboarding.done.subtitle.solo_teacher": "Một lớp, một giáo viên — chính là bạn. Bắt đầu buổi học đầu tiên ngay.",
++  "onboarding.done.stat.classesReady": "{{count}} lớp học đã sẵn sàng",
++  "onboarding.done.stat.classesReadyLabel": "Lớp học đã sẵn sàng",
++  "onboarding.done.stat.teachersInvited": "{{count}} giáo viên đã mời",
++  "onboarding.done.stat.teachersInvitedLabel": "Giáo viên đã mời",
++  "onboarding.done.stat.subdomain": "Tên miền phụ của bạn",
++  "onboarding.done.stat.tileAriaLabel": "{{label}}: {{value}}",
++  "onboarding.done.openDashboardCta": "Mở Bảng điều khiển →",
++  "onboarding.done.error.generic": "Đã xảy ra lỗi khi tải tóm tắt cài đặt.",
++  "onboarding.done.error.genericWithRequestId": "Đã xảy ra lỗi khi tải tóm tắt cài đặt. Mã yêu cầu: {{requestId}}",
++  "onboarding.done.error.retryCta": "Thử lại",
++  "onboarding.done.error.setupIncomplete": "Chúng tôi không thể xác nhận cài đặt của bạn. Điều này hiếm khi xảy ra — thử tải lại, hoặc tiếp tục đến bảng điều khiển.",
++  "onboarding.done.error.continueToDashboardCta": "Tiếp tục đến bảng điều khiển"
+ }
+diff --git a/classlite-web/src/routes.tsx b/classlite-web/src/routes.tsx
+index f192214..856caf6 100644
+--- a/classlite-web/src/routes.tsx
++++ b/classlite-web/src/routes.tsx
+@@ -261,6 +261,20 @@ const baseRoutes: RouteObject[] = [
+           return { Component: SoloFirstClassPage }
+         },
+       },
++      // Story 2-3c Task 4.1 — terminal /setup/done celebration screen.
++      // Own chunk per Winston-W5 chunk-isolation pattern; `route-bundle-
++      // boundaries.spec.ts` extended with cross-chunk assertions
++      // (deep-import discipline W-S4 keeps `useOnboardingProgress` on its
++      // own path so the barrel doesn't drag the whole feature in).
++      {
++        path: '/setup/done',
++        lazy: async () => {
++          const { default: OnboardingDonePage } = await import(
++            '@/features/onboarding/OnboardingDonePage'
++          )
++          return { Component: OnboardingDonePage }
++        },
++      },
+     ],
+   },
+   // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires

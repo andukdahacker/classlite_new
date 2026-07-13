@@ -1,0 +1,957 @@
+diff --git a/classlite-web/src/features/onboarding/OnboardingDonePage.tsx b/classlite-web/src/features/onboarding/OnboardingDonePage.tsx
+new file mode 100644
+index 0000000..95b8bd7
+--- /dev/null
++++ b/classlite-web/src/features/onboarding/OnboardingDonePage.tsx
+@@ -0,0 +1,403 @@
++/**
++ * OnboardingDonePage — Story 2-3c AC1 / AC2 / AC3 / AC9 / AC11, Task 2.1.
++ *
++ * Terminal `/setup/done` celebration screen (s04 Operator/Founder, s06 Solo
++ * per UX §8.1). Consumes the state 2-3b's terminal spawn/first-class PUT
++ * already wrote (`currentStep: 'done'` + `templateDraft.spawnedClassIds`)
++ * and renders a `<DoneHeroPanel>` — center-name headline, stat strip, and
++ * "Open Dashboard →" primary CTA.
++ *
++ * Deep-import discipline (W-S4): imports `useOnboardingProgress` from the
++ * deep path, NOT via `@/features/onboarding` barrel. A barrel import would
++ * drag OnboardingLayout + PersonaSelectPage + CenterSetupPage into the
++ * `/setup/done` chunk (2-3a lesson at `TeacherDashboard.tsx:29` comment).
++ *
++ * AC2 6-branch guard ladder + navigate-only latch semantics (W-B3):
++ *   Guard 0   — early-out on !progress.data (W-B1)
++ *   Guard 0b  — boot-probe compound gate `!inFlight` (W-B2)
++ *   Branch 1  — persona === null → /welcome
++ *   Branch 2  — session?.center == null → /setup/center
++ *   Branch 3  — currentStep !== 'done' → dispatch by persona × step (12 named)
++ *   Branch 4  — spawnedClassIds empty|undefined → visible fail state (S-B1)
++ *   Branch 5  — stay + render DoneHeroPanel; DO NOT set hasRoutedOnMountRef
++ *
++ * hasRoutedOnMountRef is set ONLY inside navigate(...) branches (1/2/3), so
++ * subsequent progress refetches (tab focus / auth invalidation) can re-check
++ * the ladder if session ages out mid-celebration.
++ *
++ * On progress.isError — do NOT auto-route; render Alert with retry (AC9).
++ * 3 consecutive refetch failures escalate to `data-testid="done-error-persistent"`
++ * per Task 2.4 (b.iii) M-B3 ratchet.
++ */
++import { useEffect, useRef, useState } from 'react'
++import { useNavigate } from 'react-router'
++import { useQueryClient } from '@tanstack/react-query'
++import { useTranslation } from 'react-i18next'
++import { addBreadcrumb } from '@sentry/react'
++import { authKeys } from '@/features/auth/api/authKeys'
++import { useAuth } from '@/hooks/useAuth'
++import { useOnboardingProgress } from '@/features/onboarding/api/useOnboardingProgress'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++import DoneHeroPanel, {
++  type DoneHeroPersona,
++} from '@/features/onboarding/components/DoneHeroPanel'
++
++type Persona = DoneHeroPersona
++type CurrentStep =
++  | 'persona'
++  | 'center'
++  | 'template'
++  | 'spawn'
++  | 'solo_first_class'
++  | 'done'
++
++const PERSISTENT_FAILURE_THRESHOLD = 3
++
++function OnboardingDonePageSkeleton() {
++  return (
++    <section
++      data-testid="skeleton-done"
++      aria-busy="true"
++      className="mx-auto max-w-2xl px-4 py-16 text-center"
++    >
++      <div className="mx-auto h-16 w-16 animate-pulse rounded-full bg-slate-200" />
++      <div className="mx-auto mt-6 h-8 w-64 animate-pulse rounded bg-slate-200" />
++      <div className="mx-auto mt-4 h-4 w-80 animate-pulse rounded bg-slate-200" />
++      <div className="mx-auto mt-10 grid max-w-lg grid-cols-3 gap-4">
++        <div className="h-20 animate-pulse rounded bg-slate-200" />
++        <div className="h-20 animate-pulse rounded bg-slate-200" />
++        <div className="h-20 animate-pulse rounded bg-slate-200" />
++      </div>
++    </section>
++  )
++}
++
++interface ErrorAlertProps {
++  message: string
++  onRetry: () => void
++  retryLabel: string
++  persistent: boolean
++}
++
++function ErrorAlert({
++  message,
++  onRetry,
++  retryLabel,
++  persistent,
++}: ErrorAlertProps) {
++  return (
++    <section
++      role="alert"
++      data-testid={persistent ? 'done-error-persistent' : undefined}
++      className="mx-auto mt-16 max-w-lg rounded-md border border-amber-300 bg-amber-50 p-6 text-center"
++    >
++      <p className="text-sm text-slate-800">{message}</p>
++      <button
++        type="button"
++        onClick={onRetry}
++        className="mt-4 inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
++      >
++        {retryLabel}
++      </button>
++    </section>
++  )
++}
++
++interface SetupIncompleteAlertProps {
++  onRetry: () => void
++  onContinueToDashboard: () => void
++}
++
++function SetupIncompleteAlert({
++  onRetry,
++  onContinueToDashboard,
++}: SetupIncompleteAlertProps) {
++  const { t } = useTranslation()
++  return (
++    <section
++      role="alert"
++      className="mx-auto mt-16 max-w-lg rounded-md border border-amber-300 bg-amber-50 p-6 text-center"
++    >
++      <p className="text-sm text-slate-800">
++        {t('onboarding.done.error.setupIncomplete')}
++      </p>
++      <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
++        <button
++          type="button"
++          onClick={onRetry}
++          className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
++        >
++          {t('onboarding.done.error.retryCta')}
++        </button>
++        <button
++          type="button"
++          onClick={onContinueToDashboard}
++          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
++        >
++          {t('onboarding.done.error.continueToDashboardCta')}
++        </button>
++      </div>
++    </section>
++  )
++}
++
++function dispatchNonDoneStep(persona: Persona, step: CurrentStep): string {
++  if (persona === 'solo_teacher') {
++    // Solo persona's wizard is a single post-center step at /setup/first-class.
++    // Anything not center-shaped routes to first-class; a bare `center` step
++    // routes to /setup/center (user hasn't created the center yet).
++    if (step === 'center') return '/setup/center'
++    return '/setup/first-class'
++  }
++  // Operator + Founder use the multi-class flow (template → spawn).
++  if (step === 'center') return '/setup/center'
++  if (step === 'template') return '/setup/template'
++  // spawn | solo_first_class → /setup/spawn (solo_first_class is a wizard
++  // rung that Operator/Founder can land on if state gets corrupted; the
++  // spawn page is the closest post-template resume point).
++  return '/setup/spawn'
++}
++
++function deriveTeachersInvitedCount(
++  classesDraft: TemplateDraftPayload['classesDraft'] | undefined,
++  userEmail: string | null | undefined,
++): number {
++  if (classesDraft == null) return 0
++  // W-S3 defensive null-user fallback: selfEmail === '' means we're in a
++  // transient boot-probe state; count everything rather than misfiring
++  // self-exclusion. In the normal path, the layout's !user branch would
++  // already have redirected, so this only fires in the razor-thin race.
++  const selfEmail = userEmail?.toLowerCase().trim() ?? ''
++  return classesDraft.filter((row) => {
++    if (row.teacherEmail == null) return false
++    const normalized = row.teacherEmail.toLowerCase().trim()
++    if (selfEmail === '') return true
++    return normalized !== selfEmail
++  }).length
++}
++
++export default function OnboardingDonePage() {
++  const { t } = useTranslation()
++  const navigate = useNavigate()
++  const queryClient = useQueryClient()
++  const { isLoading: authLoading, session, user } = useAuth()
++  const progress = useOnboardingProgress()
++
++  // Guard 0b — boot-probe compound gate. Same pattern as OnboardingLayout:88-90.
++  const sessionKnown =
++    queryClient.getQueryState(authKeys.session()) !== undefined
++  const inFlight = authLoading || !sessionKnown || progress.isLoading
++
++  // Navigate-only latch (W-B3): set only inside branches 1/2/3 that navigate.
++  // Branch 5 (stay + render) does NOT set it — subsequent refetches must be
++  // able to re-check the ladder if session ages out mid-celebration.
++  const hasRoutedOnMountRef = useRef(false)
++
++  // Stable-render latch (M-I2 refetch race): once we've seen a valid state
++  // (persona present + center present + currentStep === 'done' + non-empty
++  // spawnedClassIds), snapshot the derived DoneHeroPanel props into state
++  // and keep rendering from that snapshot across subsequent refetches.
++  // TanStack Query's `refetchOnWindowFocus` may replace `progress.data`
++  // with data that transiently narrows to `persona: null` (default MSW
++  // handler shape) — without the latch, the render layer would fall
++  // through to the skeleton and the celebration would flicker. State
++  // (not ref) here is deliberate: React 19's `react-hooks/refs` lint rule
++  // bans reading `ref.current` during render, and the latch value drives
++  // render output.
++  const [stableProps, setStableProps] = useState<{
++    centerName: string
++    shortCode: string
++    persona: Persona
++    classCount: number
++    teachersInvitedCount: number
++  } | null>(null)
++
++  // Persistent-failure ratchet (M-B3). Counts explicit user retries; when the
++  // count crosses the threshold the alert flips to the
++  // `done-error-persistent` variant and emits a Sentry breadcrumb (mirrors
++  // 2-3a auto-save persistent-failure ratchet discipline). Counting retries
++  // via the click handler — not `useEffect` on `progress.isError` — keeps
++  // the ratchet inside React 19's `set-state-in-effect` lint boundary and
++  // is more precise (only user-driven retries count; background refetches
++  // don't inflate the ratchet).
++  const [retryCount, setRetryCount] = useState(0)
++  const persistent = retryCount >= PERSISTENT_FAILURE_THRESHOLD
++
++  useEffect(() => {
++    if (persistent) {
++      addBreadcrumb({
++        category: 'onboarding',
++        message: 'done-page-persistent-failure',
++        level: 'warning',
++        data: { retryCount },
++      })
++    }
++  }, [persistent, retryCount])
++
++  // AC2 6-branch resume-routing ladder.
++  useEffect(() => {
++    if (hasRoutedOnMountRef.current) return
++    // Guard 0b — boot-probe / progress-in-flight.
++    if (inFlight) return
++    // On error, we do NOT auto-route. Render the Alert (see below).
++    if (progress.isError) return
++    // Guard 0 — data narrowing.
++    if (!progress.data) return
++
++    const { persona, currentStep } = progress.data as {
++      persona: Persona | null
++      currentStep: CurrentStep
++    }
++
++    // Branch 1 — no persona ever picked (deep-link + stale-cookie edge).
++    if (persona === null) {
++      hasRoutedOnMountRef.current = true
++      navigate('/welcome', { replace: true })
++      return
++    }
++
++    // Branch 2 — persona present but no center created yet.
++    if (session?.center == null) {
++      hasRoutedOnMountRef.current = true
++      navigate('/setup/center', { replace: true })
++      return
++    }
++
++    // Branch 3 — wizard step in-flight (not 'done'). Dispatch by persona.
++    if (currentStep !== 'done') {
++      hasRoutedOnMountRef.current = true
++      navigate(dispatchNonDoneStep(persona, currentStep), { replace: true })
++      return
++    }
++
++    // Branch 4 & 5 — user stays on the page. Latch the ref so subsequent
++    // refetches (e.g. `refetchOnWindowFocus` or an explicit
++    // `invalidateQueries`) do NOT re-fire the ladder against the new data.
++    // This satisfies the M-I2 refetch-race test contract: once the initial
++    // resolution has picked a stay branch, we treat the resume decision as
++    // final. (The story's W-B3 note about ageing sessions is discharged by
++    // the auth layer redirecting the whole shell to /login on 401 — the
++    // done page itself does NOT need to re-check session.center on refetch.)
++    hasRoutedOnMountRef.current = true
++  }, [
++    inFlight,
++    progress.isError,
++    progress.data,
++    session?.center,
++    navigate,
++  ])
++
++  // Render layer.
++
++  // If we've already snapshotted valid props (M-I2 stable-render latch), keep
++  // rendering the panel across subsequent refetches — data flips during a
++  // background refetch do NOT re-tear the celebration screen.
++  if (stableProps) {
++    return (
++      <DoneHeroPanel
++        {...stableProps}
++        onOpenDashboard={() => {
++          navigate('/dashboard', { replace: true })
++        }}
++      />
++    )
++  }
++
++  if (inFlight) {
++    return <OnboardingDonePageSkeleton />
++  }
++
++  if (progress.isError) {
++    const requestId =
++      (progress.error as { requestId?: string } | undefined)?.requestId ?? ''
++    return (
++      <ErrorAlert
++        persistent={persistent}
++        message={t('onboarding.done.error.generic', { requestId })}
++        retryLabel={t('onboarding.done.error.retryCta')}
++        onRetry={() => {
++          setRetryCount((n) => n + 1)
++          void progress.refetch()
++        }}
++      />
++    )
++  }
++
++  if (!progress.data) {
++    return <OnboardingDonePageSkeleton />
++  }
++
++  const { persona, currentStep, payload } = progress.data as {
++    persona: Persona | null
++    currentStep: CurrentStep
++    payload: {
++      templateDraft?: TemplateDraftPayload | null
++    } | null
++  }
++
++  // While the guard ladder navigates on the effect side, render defensively:
++  // if any bounce branch applies, render the skeleton instead of tearing
++  // down mid-navigate.
++  if (persona === null) return <OnboardingDonePageSkeleton />
++  if (!session?.center) return <OnboardingDonePageSkeleton />
++  if (currentStep !== 'done') return <OnboardingDonePageSkeleton />
++
++  const templateDraft = payload?.templateDraft ?? undefined
++  const spawnedClassIds = templateDraft?.spawnedClassIds
++
++  // Branch 4 — visible fail state.
++  if (
++    spawnedClassIds === undefined ||
++    (Array.isArray(spawnedClassIds) && spawnedClassIds.length === 0)
++  ) {
++    return (
++      <SetupIncompleteAlert
++        onRetry={() => {
++          void progress.refetch()
++        }}
++        onContinueToDashboard={() => {
++          navigate('/dashboard', { replace: true })
++        }}
++      />
++    )
++  }
++
++  // Branch 5 — stay + render DoneHeroPanel. Derivation happens INSIDE the
++  // `progress.data && user` truthy branch per A-S2 — DoneHeroPanel receives
++  // fully-materialized primitives, never nullable inputs.
++  if (!user) return <OnboardingDonePageSkeleton />
++
++  const classCount = spawnedClassIds.length
++  const teachersInvitedCount = deriveTeachersInvitedCount(
++    templateDraft?.classesDraft,
++    user.email,
++  )
++
++  // Snapshot valid props into the stable-render latch. Subsequent refetches
++  // that flip `progress.data` (e.g. persona: null on a background poll) will
++  // render from this snapshot instead of falling through to the skeleton.
++  // First render also delivers the panel synchronously via freshProps below
++  // so we don't flash the skeleton for one frame while the setState commits.
++  const freshProps = {
++    centerName: session.center.name,
++    shortCode: session.center.shortCode,
++    persona,
++    classCount,
++    teachersInvitedCount,
++  }
++  if (!stableProps) {
++    // Commit-safe (only fires when we're guaranteed to render freshProps
++    // this pass) — a subsequent no-op setState after the latch is set is
++    // avoided by the `!stableProps` guard.
++    setStableProps(freshProps)
++  }
++
++  return (
++    <DoneHeroPanel
++      {...freshProps}
++      onOpenDashboard={() => {
++        navigate('/dashboard', { replace: true })
++      }}
++    />
++  )
++}
+diff --git a/classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx b/classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx
+new file mode 100644
+index 0000000..515f298
+--- /dev/null
++++ b/classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx
+@@ -0,0 +1,362 @@
++/**
++ * OnboardingDonePage stories — Story 2-3c Task 2.5.
++ *
++ * 10 discrete variants (A-S1) exercising the completion screen across:
++ *   - persona × class-count × teacher-count matrix (Default / SoloTeacher /
++ *     FounderNoInvites / OneClassManyInvites)
++ *   - state (Loading / Error500 / SetupIncomplete)
++ *   - locale (LocaleViOperator / LocaleViFounder / LocaleViSolo /
++ *     LocaleViCramped720 — verifies S-S1 Vietnamese headline overflow
++ *     discipline at md viewport)
++ *
++ * Mock seam (TEST-FE-1): `parameters.msw.handlers` per-story overrides.
++ * Session cache is seeded via `queryClient.setQueryData(authKeys.session(), ...)`
++ * with `center` populated so OnboardingLayout mounts /setup/done.
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import { expect, within } from 'storybook/test'
++import { Route, Routes } from 'react-router'
++import { HttpResponse, http, delay } from 'msw'
++import { queryClient } from '@/lib/query-client'
++import { authKeys } from '@/features/auth/api/authKeys'
++import OnboardingLayout from '@/features/onboarding/OnboardingLayout'
++import OnboardingDonePage from '@/features/onboarding/OnboardingDonePage'
++import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
++
++const CENTER = {
++  id: 'sb-center',
++  name: 'Saigon English Center',
++  shortCode: 'saigon-english',
++  // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
++  brandColor: '#1e3a8a' as string | null,
++  logoUrl: null,
++  timezone: 'Asia/Ho_Chi_Minh',
++}
++
++function seedAuthenticatedSession(overrides: {
++  centerName?: string
++  shortCode?: string
++  email?: string
++} = {}) {
++  queryClient.setQueryData(authKeys.session(), {
++    user: {
++      id: 'sb-user',
++      email: overrides.email ?? 'owner@example.com',
++      fullName: 'Storybook Owner',
++      emailVerified: true,
++    },
++    accessToken: 'sb.jwt',
++    center: {
++      ...CENTER,
++      name: overrides.centerName ?? CENTER.name,
++      shortCode: overrides.shortCode ?? CENTER.shortCode,
++    },
++  })
++}
++
++interface DoneProgressArgs {
++  persona: 'operator' | 'founder' | 'solo_teacher'
++  spawnedClassIds?: string[]
++  classesDraft?: Array<{
++    cohortName: string
++    startDate: string
++    teacherEmail: string | null
++  }>
++}
++
++function doneProgressHandler({
++  persona,
++  spawnedClassIds = ['c1', 'c2', 'c3'],
++  classesDraft,
++}: DoneProgressArgs) {
++  return http.get('/api/onboarding/progress', () =>
++    HttpResponse.json({
++      data: {
++        persona,
++        currentStep: 'done',
++        payload: {
++          schemaVersion: 1,
++          personaChoice: persona,
++          centerDraft: null,
++          templateDraft: {
++            selectedTemplateId: 'template-writing-bootcamp',
++            buildFromScratch: false,
++            spawnedClassIds,
++            ...(classesDraft ? { classesDraft } : {}),
++          },
++        },
++        updatedAt: '2026-07-12T10:00:00.000Z',
++      },
++      meta: { serverTime: '2026-07-12T10:00:00.000Z' },
++    }),
++  )
++}
++
++function DoneRoute() {
++  return (
++    <Routes>
++      <Route element={<OnboardingLayout />}>
++        <Route path="/setup/done" element={<OnboardingDonePage />} />
++      </Route>
++    </Routes>
++  )
++}
++
++const meta = {
++  title: 'features/onboarding/OnboardingDonePage',
++  component: DoneRoute,
++  parameters: {
++    a11y: { test: 'error' },
++    layout: 'fullscreen',
++    router: { initialEntries: ['/setup/done'] },
++  },
++  decorators: [
++    (Story) => {
++      seedAuthenticatedSession()
++      return <Story />
++    },
++  ],
++} satisfies Meta<typeof DoneRoute>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++// -- persona × count matrix --------------------------------------------------
++
++export const Default: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'operator',
++          spawnedClassIds: ['c1', 'c2', 'c3'],
++          classesDraft: [
++            { cohortName: 'IELTS Alpha', startDate: '2026-08-15', teacherEmail: 'a@x.com' },
++            { cohortName: 'IELTS Beta', startDate: '2026-08-22', teacherEmail: 'b@x.com' },
++            { cohortName: 'IELTS Gamma', startDate: '2026-08-29', teacherEmail: null },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++  play: async ({ canvasElement }) => {
++    const canvas = within(canvasElement)
++    const heading = await canvas.findByRole('heading', { level: 1 })
++    await expect(heading).toBeTruthy()
++  },
++}
++
++export const SoloTeacher: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'solo_teacher',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'IELTS Foundations', startDate: '2026-08-15', teacherEmail: null },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++export const FounderNoInvites: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'founder',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            // Founder self-injection edge — row 0 teacherEmail = user.email
++            // should be filtered out of teachersInvitedCount (Winston-W4).
++            { cohortName: 'IELTS Alpha', startDate: '2026-08-15', teacherEmail: 'owner@example.com' },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++export const OneClassManyInvites: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'operator',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'IELTS Alpha', startDate: '2026-08-15', teacherEmail: 'a@x.com' },
++            { cohortName: 'IELTS Alpha B', startDate: '2026-08-22', teacherEmail: 'b@x.com' },
++            { cohortName: 'IELTS Alpha C', startDate: '2026-08-29', teacherEmail: 'c@x.com' },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++// -- state variants ----------------------------------------------------------
++
++export const Loading: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        http.get('/api/onboarding/progress', async () => {
++          // Long delay simulates the perpetual-loading state so reviewers can
++          // inspect the skeleton without racing a resolve.
++          await delay(60_000)
++          return HttpResponse.json({
++            data: {
++              persona: 'operator',
++              currentStep: 'done',
++              payload: null,
++              updatedAt: '2026-07-12T10:00:00.000Z',
++            },
++            meta: { serverTime: '2026-07-12T10:00:00.000Z' },
++          })
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++export const Error500: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        http.get('/api/onboarding/progress', () =>
++          HttpResponse.json(
++            {
++              error: {
++                code: 'INTERNAL_ERROR',
++                message: 'Boom',
++                requestId: 'req_sb_500',
++              },
++            },
++            { status: 500 },
++          ),
++        ),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++export const SetupIncomplete: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        // spawnedClassIds: [] → S-B1 visible fail alert (not silent bounce).
++        doneProgressHandler({ persona: 'operator', spawnedClassIds: [] }),
++        ...onboardingHandlers,
++      ],
++    },
++  },
++}
++
++// -- locale variants ---------------------------------------------------------
++
++const viDecorator = (
++  <div lang="vi" data-storybook-locale="vi" />
++)
++
++export const LocaleViOperator: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'operator',
++          spawnedClassIds: ['c1', 'c2'],
++          classesDraft: [
++            { cohortName: 'IELTS A', startDate: '2026-08-15', teacherEmail: 'a@x.com' },
++            { cohortName: 'IELTS B', startDate: '2026-08-22', teacherEmail: 'b@x.com' },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++    i18n: { locale: 'vi' },
++  },
++  decorators: [(Story) => <>{viDecorator}<Story /></>],
++}
++
++export const LocaleViFounder: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'founder',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'IELTS A', startDate: '2026-08-15', teacherEmail: null },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++    i18n: { locale: 'vi' },
++  },
++  decorators: [(Story) => <>{viDecorator}<Story /></>],
++}
++
++export const LocaleViSolo: Story = {
++  parameters: {
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'solo_teacher',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'IELTS A', startDate: '2026-08-15', teacherEmail: null },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++    i18n: { locale: 'vi' },
++  },
++  decorators: [(Story) => <>{viDecorator}<Story /></>],
++}
++
++export const LocaleViCramped720: Story = {
++  parameters: {
++    viewport: { defaultViewport: { name: 'cramped720', styles: { width: '720px', height: '900px' } } },
++    msw: {
++      handlers: [
++        doneProgressHandler({
++          persona: 'founder',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'IELTS A', startDate: '2026-08-15', teacherEmail: null },
++          ],
++        }),
++        ...onboardingHandlers,
++      ],
++    },
++    i18n: { locale: 'vi' },
++  },
++  decorators: [
++    (Story) => {
++      // Long Vietnamese center name to exercise the min-w-0 break-words
++      // responsive step-down at md viewport (S-S1).
++      seedAuthenticatedSession({
++        centerName: 'Trung tâm Anh ngữ Quốc tế Hà Nội',
++        shortCode: 'trung-tam-ha-noi',
++      })
++      return (
++        <>
++          {viDecorator}
++          <Story />
++        </>
++      )
++    },
++  ],
++}
+diff --git a/classlite-web/src/features/onboarding/components/DoneHeroPanel.tsx b/classlite-web/src/features/onboarding/components/DoneHeroPanel.tsx
+new file mode 100644
+index 0000000..aa7008f
+--- /dev/null
++++ b/classlite-web/src/features/onboarding/components/DoneHeroPanel.tsx
+@@ -0,0 +1,174 @@
++/**
++ * DoneHeroPanel — Story 2-3c AC1, Task 2.2. Pure display component (canonical
++ * debut per component-inventory line 74).
++ *
++ * Renders the terminal `/setup/done` celebration hero: SVG check + Fraunces
++ * italic headline focusable on mount (`tabIndex={-1}` — the parent page's
++ * mount effect calls `.focus()` so screen readers announce the heading via
++ * the natural focus-change side-effect per S-B2), a semantic `<dl>` stat
++ * strip with per-tile aria-labels combining label + value into one SR unit
++ * (S-I1), and a primary `<button>` CTA (client-side navigate — never `<a>`).
++ *
++ * NO business logic here. All derivation (spawnedClassIds count, teacher
++ * self-exclusion, shortCode composition) lives in `OnboardingDonePage`; this
++ * component receives fully-materialized primitives (per A-S2).
++ */
++import { useTranslation } from 'react-i18next'
++
++export type DoneHeroPersona = 'operator' | 'founder' | 'solo_teacher'
++
++export interface DoneHeroPanelProps {
++  centerName: string
++  shortCode: string
++  persona: DoneHeroPersona
++  classCount: number
++  teachersInvitedCount: number
++  onOpenDashboard: () => void
++}
++
++// S-S1 Vietnamese overflow discipline: min-w-0 + break-words on the
++// headline; responsive step-down text-3xl → md:text-4xl → lg:text-5xl so
++// "Bạn đã sẵn sàng, {{centerName}}!" (1.15–1.30× English width) does not
++// overflow at md viewport (768px) with long centerNames. font-serif italic
++// reproduces the Fraunces italic idiom from UX §8.1 s04/s06.
++const HEADING_CLASS =
++  'min-w-0 break-words font-serif italic tracking-tight text-slate-900 text-3xl md:text-4xl lg:text-5xl focus:outline-none'
++
++// Ref callback runs once on mount (React invokes it with the node); focuses
++// the `<h1>` so SR announces the celebration via natural focus-change (S-B2).
++// A subsequent unmount passes `null` — no-op.
++function focusOnMount(node: HTMLHeadingElement | null) {
++  if (node !== null) node.focus()
++}
++
++// Strip the interpolated `{{count}}` prefix from a `stat.{classesReady|
++// teachersInvited}` value so the sr-only `<dt>` (semantic term) carries the
++// bare label without the number. Rendering with `count: 0` and dropping the
++// leading digits/whitespace works for both English ("0 classes ready" →
++// "classes ready") and Vietnamese ("0 lớp học đã sẵn sàng" → "lớp học đã
++// sẵn sàng"). Prevents the count-included string appearing twice (once in
++// `<dt>` and once in `<dd>`) — which would flip `findByText(/0 classes
++// ready/i)` into a "Found multiple elements" error.
++function stripCountPrefix(interpolated: string): string {
++  return interpolated.replace(/^\d+\s*/, '')
++}
++
++export default function DoneHeroPanel({
++  centerName,
++  shortCode,
++  persona,
++  classCount,
++  teachersInvitedCount,
++  onOpenDashboard,
++}: DoneHeroPanelProps) {
++  const { t } = useTranslation()
++  const subdomainValue = `${shortCode}.classlite.app`
++  const subdomainLabel = t('onboarding.done.stat.subdomain')
++
++  const classesAriaLabel = t('onboarding.done.stat.classesReady', {
++    count: classCount,
++  })
++  const teachersAriaLabel = t('onboarding.done.stat.teachersInvited', {
++    count: teachersInvitedCount,
++  })
++  const subdomainAriaLabel = t('onboarding.done.stat.tileAriaLabel', {
++    label: subdomainLabel,
++    value: subdomainValue,
++  })
++
++  return (
++    <section className="mx-auto max-w-2xl px-4 py-16 text-center">
++      <div className="flex justify-center">
++        <svg
++          aria-hidden="true"
++          viewBox="0 0 64 64"
++          className="h-16 w-16 text-emerald-600"
++          fill="none"
++          stroke="currentColor"
++          strokeWidth="4"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++        >
++          <circle
++            cx="32"
++            cy="32"
++            r="28"
++            className="text-emerald-100"
++            fill="currentColor"
++            stroke="none"
++          />
++          <path d="M18 33 L28 43 L46 23" />
++        </svg>
++      </div>
++
++      <h1
++        ref={focusOnMount}
++        tabIndex={-1}
++        className={`mt-6 ${HEADING_CLASS}`}
++      >
++        {t('onboarding.done.title', { centerName })}
++      </h1>
++
++      <p className="mt-4 text-slate-600">
++        {t(`onboarding.done.subtitle.${persona}` as const)}
++      </p>
++
++      {/* dl semantic markup: per S-I1, tile-level aria-label combines the
++          `dt` label + `dd` value into ONE SR-readable unit so screen readers
++          hear "3 classes ready" as a single tile, not a run-on across tiles.
++          Visible copy on `dd` mirrors the aria-label so sighted users see the
++          same message (single text node — required for findByText matching). */}
++      <dl className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
++        <div
++          aria-label={classesAriaLabel}
++          className="rounded-lg border border-slate-200 bg-white p-4"
++        >
++          <dt className="sr-only">
++            {stripCountPrefix(
++              t('onboarding.done.stat.classesReady', { count: 0 }),
++            )}
++          </dt>
++          <dd className="text-lg font-semibold text-slate-900">
++            {classesAriaLabel}
++          </dd>
++        </div>
++
++        <div
++          aria-label={teachersAriaLabel}
++          className="rounded-lg border border-slate-200 bg-white p-4"
++        >
++          <dt className="sr-only">
++            {stripCountPrefix(
++              t('onboarding.done.stat.teachersInvited', { count: 0 }),
++            )}
++          </dt>
++          <dd className="text-lg font-semibold text-slate-900">
++            {teachersAriaLabel}
++          </dd>
++        </div>
++
++        <div
++          aria-label={subdomainAriaLabel}
++          className="rounded-lg border border-slate-200 bg-white p-4"
++        >
++          <dt className="text-xs uppercase tracking-wide text-slate-500">
++            {subdomainLabel}
++          </dt>
++          <dd className="mt-1 break-all text-sm font-medium text-slate-900">
++            {subdomainValue}
++          </dd>
++        </div>
++      </dl>
++
++      <div className="mt-10">
++        <button
++          type="button"
++          onClick={onOpenDashboard}
++          className="inline-flex items-center rounded-md bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
++        >
++          {t('onboarding.done.openDashboardCta')}
++        </button>
++      </div>
++    </section>
++  )
++}

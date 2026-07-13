@@ -1,5 +1,37 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-3c Chunk 1 (2026-07-12)
+
+- R1-C1-W1 Storybook `CENTER` fixture `brandColor: '#1e3a8a' as string | null` with `eslint-disable no-restricted-syntax` comment (`classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx:445-446`) — fixture-side smell; upstream type or lint rule needs tightening but low impact.
+- R1-C1-W2 `type Persona = DoneHeroPersona` alias conflates wizard-level and display-component persona unions (`classlite-web/src/features/onboarding/OnboardingDonePage.tsx:51`) — cleaner with explicit narrowing at render boundary. Nice-to-have.
+- R1-C1-W3 Storybook missing dedicated resume-routing variants for Branch 1 (persona null → /welcome), Branch 2 (session.center null → /setup/center), Branch 3 (currentStep not done → step-specific) — enumerated ladder states never visually reviewed. Test-side already covers M-B2's 12-permutation `test.each`.
+- R1-C1-W4 `seedAuthenticatedSession` Storybook helper may not set `emailVerified: true` + `accessToken` cleanly for cold-cache first-render — could bounce to /login before boot-probe warms cache (`classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx:451-470`). Storybook-only concern.
+- R1-C1-W5 [Subsumed by P23] `step === 'persona'` corrupt-state routing folded into P23's "route to /welcome for logically-impossible persona × step combos" patch after D2 resolution.
+- R1-C1-W6 [FU-2-3c-E filed] SetupIncompleteAlert "Try again" (branch 4) extension to the 3-attempt persistent-failure ratchet (`classlite-web/src/features/onboarding/OnboardingDonePage.tsx:117-148, 359-368`) — AC9/M-B3 scope ratchet to isError only. Revisit if telemetry shows setup-incomplete retry loops.
+- R1-C1-W7 [FU-2-3c-F filed, reclassified from P11] Type assertions `as { persona: Persona | null; currentStep: CurrentStep }` on `progress.data` (`classlite-web/src/features/onboarding/OnboardingDonePage.tsx:253-256, 336-342`) — full fix requires narrowing `useOnboardingProgress` return type via generated OpenAPI types + a hook-level generic parameter; out of scope for this chunk.
+
+## Deferred from: code review of story-2-3c Chunk 2 (2026-07-12)
+
+- R1-C2-W1 [FU-2-3c-G filed] `AutoSaveIndicator` visibility guard is an inverted exclude-list (`classlite-web/src/features/onboarding/OnboardingLayout.tsx:212-215`) — cleaner model derives from `stepFromPathname()` result. Every future non-form route silently reintroduces the misleading indicator. Architectural refactor, low priority.
+- R1-C2-W2 [FU-2-3c-H filed] `TemplateSelectPage.tsx` "Save and finish later" placement — when `TemplatePreview` renders (template selected), the effective Continue CTA lives INSIDE `<TemplatePreview>`, so the affordance sits below the preview drawer instead of `mt-3` under the actual CTA. Fix requires refactoring `TemplatePreview` to receive footer content OR duplicating the affordance.
+- R1-C2-W3 Vietnamese subtitle keys don't personalize with `{{centerName}}` (`classlite-web/src/locales/vi.json:522-524`) — English title does personalize; not required by spec but potential future polish.
+- R1-C2-W4 [FU-2-3c-I filed] Path-normalization corner cases — trailing slash, query string, hash bypass the exact-match layout guards + `stepFromPathname` map (`classlite-web/src/features/onboarding/OnboardingLayout.tsx:47-54, 74-80, 217-220`). React Router v7 normalizes trailing slashes on internal navigation but external links can carry them. Low real-world hit rate.
+- R1-C2-W5 [FU-2-3c-J filed, resolved from D1] `/setup/center` in `POST_CENTER_WIZARD_PATHS` widens the layout guard — an onboarded user visiting `/setup/center` briefly sees CenterSetupPage form before 409 recovery redirects (`classlite-web/src/features/onboarding/OnboardingLayout.tsx:95-99`). Kept as green-phase fold; backstopped by CenterSetupPage's 409 recovery. Revisit if telemetry shows real users hit the flash.
+- R1-C2-W6 [resolved from D2] `replace: true` on 4 "Save and finish later" navigations — kept. Matches shipped 2-3a `CenterSetupPage` pattern (`classlite-web/src/features/onboarding/TemplateSelectPage.tsx:241`, `ClassSpawnPage.tsx:644 + 759`, `SoloFirstClassPage.tsx:502`). Back button cannot return to paused wizard step by design — user chose to pause via TeacherDashboard's welcome-back banner path.
+
+## Deferred from: code review of story-2-3c Chunk 3 (2026-07-12)
+
+- R1-C3-W1 [FU-2-3c-K filed] `route-bundle-boundaries.spec.ts` chunk-isolation regex `[\w-]+` fragile to Vite hash format changes + substring match (not import graph). Runtime `import()` leaks or shared vendor chunk paths wouldn't be caught. Requires parsing the module manifest for a real invariant check.
+- R1-C3-W2 E2E welcome-back banner assertion lacks positive counterpart (`classlite-web/e2e/onboarding-template-spawn.spec.ts:1369-1372`) — testid typo would silently pass. Add companion test asserting banner renders for `currentStep !== 'done'`.
+- R1-C3-W3 E2E "browser reload" test uses `page.goto('/welcome')` — doesn't simulate reload semantics (`classlite-web/e2e/onboarding-template-spawn.spec.ts:1407-1425`). Test title lies about what it tests.
+- R1-C3-W4 E2E stat-strip plural distinction never asserted — `/classes ready/i` matches any count. "1 classes ready" regression invisible at e2e boundary.
+- R1-C3-W5 `beforeEach` MSW handler-leak risk — tests layer `server.use(errorHandlers.X())` on top of the happy-handler `beforeEach` install. Cleaner pattern: `server.resetHandlers()` in `beforeEach` and install per-test explicitly.
+- R1-C3-W6 Tailwind class-string assertions test implementation not behavior — `className.toMatch(/min-w-0/)` couples to Tailwind. Refactor to `getComputedStyle` for VN overflow discipline.
+- R1-C3-W7 `DoneHeroPanel.test.tsx` shared `i18n.changeLanguage()` without `afterEach` restore — later tests inherit stale locale on test-order shuffle.
+- R1-C3-W8 Save-and-finish-later 500 flush tests don't verify flush was ATTEMPTED — only navigate is asserted. Removing the `await autoSave.flush()` call would still pass. Add MSW handler-called-with spy.
+- R1-C3-W9 `axe` matrix runs only on happy DoneHeroPanel render — never on `ErrorAlert`, `SetupIncompleteAlert`, `OnboardingDonePageSkeleton` layers. 3 error-state renders ship without a11y validation.
+- R1-C3-W10 [FU-2-3c-L filed] `DoneHeroPanel` renders `<dd>{classCount}</dd>` (raw number) — Chunk 2 P7 `_one` plural keys are consumed only in i18n parity ratchet, never rendered. Runtime-verifying "1 class ready" vs "3 classes ready" requires refactoring `<dd>` to `t('classesReady', {count})` OR removing the `_one` keys entirely (spec S-S3 says vi doesn't distinguish plurals).
+
 ## Deferred from: code review of story-2-3b Chunk 3 (2026-07-12)
 
 - R1-C3-W1 No component-level tests under `vi` locale — Playwright covers bilingual via LocaleEn + LocaleVi projects; per-component `vi` renders are follow-up hardening (TEST-UX-1).

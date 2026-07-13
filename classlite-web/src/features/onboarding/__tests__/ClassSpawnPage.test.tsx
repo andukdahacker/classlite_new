@@ -145,6 +145,12 @@ function renderClassSpawnPage(opts: RenderOptions = {}) {
             path="/verify-email"
             element={<div>VERIFY_EMAIL_PLACEHOLDER</div>}
           />
+          {/* Story 2-3c Task 3.4a — placeholder for Save-and-finish-later
+              contract tests (Task 3.2). */}
+          <Route
+            path="/dashboard"
+            element={<div>DASHBOARD_PLACEHOLDER</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider></I18nextProvider>,
@@ -1019,5 +1025,86 @@ describe('AC13 — accessibility gate', () => {
     const { container } = renderClassSpawnPage()
     await screen.findByRole('heading', { name: /Create your first classes/i })
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+// ================================================================
+// Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
+// ================================================================
+//
+// Two variants: normal form + buildFromScratch amber-card variant. The
+// affordance MUST render on both (paused user still gets an exit even from
+// the buildFromScratch dead-end). Placement on the buildFromScratch variant
+// is INSIDE the amber card, BELOW "← Pick a template" (A-B1).
+describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
+  test('2xx flush → navigate /dashboard fires (happy path, normal form)', async () => {
+    const user = userEvent.setup()
+    renderClassSpawnPage()
+
+    await screen.findByRole('heading', { name: /Create your first classes/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressInternalError())
+    renderClassSpawnPage()
+
+    await screen.findByRole('heading', { name: /Create your first classes/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI — user is exiting)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressRateLimited(12))
+    renderClassSpawnPage()
+
+    await screen.findByRole('heading', { name: /Create your first classes/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('buildFromScratch amber-card variant — Save-and-finish-later renders INSIDE amber card BELOW "← Pick a template" (A-B1)', async () => {
+    const user = userEvent.setup()
+    renderClassSpawnPage({ buildFromScratch: true })
+
+    // The amber card body — locate by its "Pick a template" primary CTA
+    const pickTemplateCta = await screen.findByRole('button', {
+      name: /pick a template/i,
+    })
+    expect(pickTemplateCta).toBeInTheDocument()
+
+    // Save-and-finish-later button EXISTS on this variant (paused user's
+    // only other exit beside redirecting to /setup/template).
+    const saveLaterCta = screen.getByRole('button', {
+      name: /save and finish later/i,
+    })
+    expect(saveLaterCta).toBeInTheDocument()
+
+    await user.click(saveLaterCta)
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
   })
 })

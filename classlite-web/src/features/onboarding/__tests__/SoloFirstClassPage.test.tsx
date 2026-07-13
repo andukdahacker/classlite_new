@@ -107,6 +107,12 @@ function renderSoloPage(opts: RenderOptions = {}) {
             path="/setup/center"
             element={<div>CENTER_PLACEHOLDER</div>}
           />
+          {/* Story 2-3c Task 3.4a — placeholder for Save-and-finish-later
+              contract tests (Task 3.3). */}
+          <Route
+            path="/dashboard"
+            element={<div>DASHBOARD_PLACEHOLDER</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider></I18nextProvider>,
@@ -294,5 +300,61 @@ describe('AC13 — accessibility gate', () => {
     const { container } = renderSoloPage()
     await screen.findByRole('heading', { name: /Create your first class/i })
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
+// ---------------------------------------------------------------------------
+//
+// Solo path is one step (`/setup/first-class`) so this is the ONE opportunity
+// to save-and-finish-later on the Solo branch — losing it strands the Solo
+// user in the wizard if they need to step away.
+describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
+  test('2xx flush → navigate /dashboard fires (happy path)', async () => {
+    const user = userEvent.setup()
+    renderSoloPage()
+
+    await screen.findByRole('heading', { name: /Create your first class/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressInternalError())
+    renderSoloPage()
+
+    await screen.findByRole('heading', { name: /Create your first class/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressRateLimited(12))
+    renderSoloPage()
+
+    await screen.findByRole('heading', { name: /Create your first class/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
   })
 })

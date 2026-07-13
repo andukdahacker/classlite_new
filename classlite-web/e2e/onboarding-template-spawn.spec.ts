@@ -75,6 +75,16 @@ async function stubOnboardingBackend(
         teacherEmail: string | null
       }>
     }) => void
+    /**
+     * Story 2-3c Task 7.5 — seed the initial progress step + persona so
+     * `/welcome` idempotence tests can start with a finished-onboarding
+     * state (e.g. `currentStep: 'done'` + `persona: 'operator'`). Without
+     * this, the stub always returns `currentStep: 'persona'` on first GET
+     * and the PersonaSelectPage:72 `currentStep === 'done' → /dashboard`
+     * branch never fires.
+     */
+    initialProgressStep?: Step
+    initialPersona?: Persona
   } = {},
 ): Promise<() => { persona: Persona | null; step: Step }> {
   const state: {
@@ -85,10 +95,10 @@ async function stubOnboardingBackend(
     updatedAt: string | null
     center: { id: string; shortCode: string } | null
   } = {
-    persona: null,
-    step: 'persona',
+    persona: overrides.initialPersona ?? null,
+    step: overrides.initialProgressStep ?? 'persona',
     payload: null,
-    updatedAt: null,
+    updatedAt: overrides.initialProgressStep ? SERVER_TIME : null,
     center: hasCenter
       ? { id: 'center-e2e', shortCode: 'e2e-center' }
       : null,
@@ -388,5 +398,219 @@ test.describe('Story 2-3b happy path — Solo Teacher', () => {
     // `fullName` was the prior spec's assertion target and never appeared
     // in the DOM.
     await expect(page.getByText(DEFAULT_USER.displayName)).toBeVisible()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Story 2-3c Task 7.4 — /setup/done celebration screen
+//                       (6 named tests: 3 personas × 2 locales per M-S4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Story 2-3c heading copy per locale (post-fold green-phase i18n keys):
+ *   en: "You're all set, {{centerName}}!"
+ *   vi: "Bạn đã sẵn sàng, {{centerName}}!"
+ *
+ * Stat strip copy per locale (Task 6.1):
+ *   en: "N classes ready"    vi: "N lớp học đã sẵn sàng"
+ *   en: "N teachers invited" vi: "N giáo viên đã được mời"
+ */
+type Locale = 'en' | 'vi'
+const LOCALES: readonly Locale[] = ['en', 'vi']
+const PERSONAS_FOR_DONE: readonly Persona[] = [
+  'operator',
+  'founder',
+  'solo_teacher',
+]
+
+async function setLocale(
+  context: import('@playwright/test').BrowserContext,
+  locale: Locale,
+) {
+  // Mirrors bilingual-smoke.spec.ts's cookie-based locale toggle.
+  await context.clearCookies()
+  await context.addCookies([
+    { name: 'lang', value: locale, domain: 'localhost', path: '/' },
+  ])
+}
+
+function headingRegexFor(locale: Locale, centerName: string): RegExp {
+  return locale === 'vi'
+    ? new RegExp(`Bạn đã sẵn sàng.*${centerName}`, 'i')
+    : new RegExp(`all set.*${centerName}`, 'i')
+}
+
+function statStripRegexFor(locale: Locale): {
+  classesReady: RegExp
+  teachersInvited: RegExp
+} {
+  return locale === 'vi'
+    ? {
+        classesReady: /lớp học đã sẵn sàng/i,
+        teachersInvited: /giáo viên đã được mời/i,
+      }
+    : {
+        classesReady: /classes ready/i,
+        teachersInvited: /teachers invited/i,
+      }
+}
+
+test.describe('Story 2-3c Task 7.4 — /setup/done celebration', () => {
+  for (const persona of PERSONAS_FOR_DONE) {
+    for (const locale of LOCALES) {
+      test(`${persona}-${locale}: DoneHeroPanel renders with center name + stat strip + Open Dashboard CTA + <h1> focused on mount`, async ({
+        page,
+        context,
+      }) => {
+        await setLocale(context, locale)
+        await stubOnboardingBackend(page, DEFAULT_USER)
+
+        const centerName =
+          persona === 'founder'
+            ? 'Smoke Founder Center'
+            : persona === 'solo_teacher'
+              ? 'Smoke Solo Center'
+              : 'Smoke Operator Center'
+
+        await pickPersonaAndCenter(page, persona, centerName)
+
+        if (persona === 'solo_teacher') {
+          await expect(page).toHaveURL(/\/setup\/first-class/)
+          await page
+            .getByTestId('solo-template-ribbon')
+            .getByRole('radio')
+            .first()
+            .click()
+          await page.getByLabel(/Cohort name/i).fill('Solo First')
+          await page.getByLabel(/Start date/i).fill('2026-07-15')
+          await page
+            .getByRole('button', { name: /Create my first class/i })
+            .click()
+        } else {
+          await expect(page).toHaveURL(/\/setup\/template/)
+          await page
+            .getByRole('radio', { name: /Writing Bootcamp 6\.5/i })
+            .click()
+          await page
+            .getByTestId('template-preview-drawer')
+            .getByRole('button', { name: /Continue/i })
+            .click()
+          await expect(page).toHaveURL(/\/setup\/spawn/)
+          await page.getByLabel(/Cohort name/i).fill('Cohort A')
+          await page.getByLabel(/Start date/i).fill('2026-07-15')
+          await page
+            .getByRole('button', { name: /Save & spawn/i })
+            .click()
+        }
+
+        // Landed on the celebration
+        await expect(page).toHaveURL(/\/setup\/done/)
+
+        // (a) h1 contains interpolated center name (localized)
+        const heading = page.getByRole('heading', { level: 1 })
+        await expect(heading).toBeVisible()
+        await expect(heading).toHaveText(headingRegexFor(locale, centerName))
+
+        // (b) stat strip renders with locale-appropriate copy
+        const strip = statStripRegexFor(locale)
+        await expect(page.getByText(strip.classesReady)).toBeVisible()
+        await expect(page.getByText(strip.teachersInvited)).toBeVisible()
+
+        // (d) <h1> receives focus on mount (S-B2 focus contract)
+        const focusedTag = await page.evaluate(() =>
+          document.activeElement ? document.activeElement.tagName : null,
+        )
+        expect(focusedTag).toBe('H1')
+
+        // (c) Open Dashboard CTA navigates
+        await page.getByRole('button', { name: /Open Dashboard/i }).click()
+        await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
+      })
+    }
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Story 2-3c Task 7.5 — currentStep === 'done' re-entry idempotence (W-S2)
+// ---------------------------------------------------------------------------
+
+test.describe('Story 2-3c Task 7.5 — currentStep === "done" re-entry idempotence', () => {
+  test('after clicking Open Dashboard, /dashboard shows NO welcome-back banner', async ({
+    page,
+  }) => {
+    await stubOnboardingBackend(page, DEFAULT_USER)
+    await pickPersonaAndCenter(page, 'operator', 'Smoke Center')
+
+    // Fast-forward through the wizard
+    await page.getByRole('radio', { name: /Writing Bootcamp 6\.5/i }).click()
+    await page
+      .getByTestId('template-preview-drawer')
+      .getByRole('button', { name: /Continue/i })
+      .click()
+    await page.getByLabel(/Cohort name/i).fill('Cohort A')
+    await page.getByLabel(/Start date/i).fill('2026-07-15')
+    await page.getByRole('button', { name: /Save & spawn/i }).click()
+
+    await expect(page).toHaveURL(/\/setup\/done/)
+    await page.getByRole('button', { name: /Open Dashboard/i }).click()
+    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
+
+    // Welcome-back banner suppressed when currentStep === 'done'
+    await expect(
+      page.locator('[data-testid="dashboard-finish-setup-banner"]'),
+    ).not.toBeVisible()
+  })
+
+  test('user manually re-navigates to /setup/done → celebration renders idempotently with same stat counts', async ({
+    page,
+  }) => {
+    await stubOnboardingBackend(page, DEFAULT_USER)
+    await pickPersonaAndCenter(page, 'operator', 'Smoke Center')
+
+    // Fast-forward
+    await page.getByRole('radio', { name: /Writing Bootcamp 6\.5/i }).click()
+    await page
+      .getByTestId('template-preview-drawer')
+      .getByRole('button', { name: /Continue/i })
+      .click()
+    await page.getByLabel(/Cohort name/i).fill('Cohort A')
+    await page.getByLabel(/Start date/i).fill('2026-07-15')
+    await page.getByRole('button', { name: /Save & spawn/i }).click()
+
+    await expect(page).toHaveURL(/\/setup\/done/)
+    const initialHeading = await page
+      .getByRole('heading', { level: 1 })
+      .textContent()
+
+    // Navigate away, then back manually
+    await page.getByRole('button', { name: /Open Dashboard/i }).click()
+    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
+    await page.goto('/setup/done')
+
+    await expect(page).toHaveURL(/\/setup\/done/)
+    const rerenderedHeading = await page
+      .getByRole('heading', { level: 1 })
+      .textContent()
+    expect(rerenderedHeading).toBe(initialHeading)
+  })
+
+  test('after browser reload with currentStep === "done" on /welcome → routes to /dashboard (PersonaSelectPage:72 shipped)', async ({
+    page,
+  }) => {
+    // With progress cached as `currentStep: 'done'`, hitting /welcome routes
+    // to /dashboard per shipped PersonaSelectPage guard — NOT to /setup/done.
+    // Green-phase note (Amelia): `stubOnboardingBackend` gains an optional
+    // `initialProgressStep` overload so a test can start with progress
+    // pre-marked as `done` (bypasses walking the wizard). Until then, this
+    // test naturally red-signals — the shipped stub returns
+    // `currentStep: 'persona'` on first GET, so PersonaSelectPage:72's
+    // `currentStep === 'done' → /dashboard` branch never fires and the
+    // test lands on /welcome. Add the overload as part of Task 7.5.
+    await stubOnboardingBackend(page, DEFAULT_USER, false, {
+      initialProgressStep: 'done',
+      initialPersona: 'operator',
+    })
+    await page.goto('/welcome')
+    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
   })
 })

@@ -468,3 +468,66 @@ describe('AC13 — accessibility gate', () => {
     expect(await axe(container)).toHaveNoViolations()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Story 2-3c Task 3.4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
+// ---------------------------------------------------------------------------
+//
+// AC4: "try { await autoSave.flush() } finally { navigate('/dashboard', {
+// replace: true }) }" — try/finally guarantees navigate on flush failure.
+// The 3 sub-tests pin: 2xx flush → navigate, 500 flush → navigate, 429 flush
+// → navigate. User is EXITING; a stalled auto-save must not orphan them.
+describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
+  test('2xx flush → navigate /dashboard fires (happy path)', async () => {
+    const user = userEvent.setup()
+    renderTemplateSelectPageForOperator()
+
+    await screen.findByRole('heading', { name: /Choose a template/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressInternalError())
+    renderTemplateSelectPageForOperator()
+
+    await screen.findByRole('heading', { name: /Choose a template/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+  })
+
+  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI — user is exiting)', async () => {
+    const user = userEvent.setup()
+    server.use(errorHandlers.putProgressRateLimited(12))
+    renderTemplateSelectPageForOperator()
+
+    await screen.findByRole('heading', { name: /Choose a template/i })
+
+    await user.click(
+      screen.getByRole('button', { name: /save and finish later/i }),
+    )
+
+    expect(
+      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
+    ).toBeInTheDocument()
+
+    // Contrast with the spawn-page 429 handling: NO countdown surfaces on
+    // this affordance because the user is leaving the wizard.
+    expect(
+      screen.queryByText(/retry.*in.*\d+/i),
+    ).not.toBeInTheDocument()
+  })
+})

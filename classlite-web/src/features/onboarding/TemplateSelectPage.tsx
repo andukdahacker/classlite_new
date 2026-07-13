@@ -24,6 +24,7 @@ import { TemplateCard } from './components/TemplateCard'
 import { BuildFromScratchTile } from './components/BuildFromScratchTile'
 import { TemplatePreview } from './components/TemplatePreview'
 import { consumeArrivalToast } from './arrivalToast'
+import { SaveAndFinishLaterLink } from './components/SaveAndFinishLaterLink'
 
 const BUILD_FROM_SCRATCH_VALUE = '__build_from_scratch__'
 
@@ -233,6 +234,18 @@ export default function TemplateSelectPage() {
           </button>
         </div>
       )}
+
+      {/* Story 2-3c AC4 — Save-and-finish-later affordance. Placement per
+          S-B3: right-aligned as a tertiary text link BELOW the primary CTA
+          (never beside it — fat-finger risk). try/finally guarantees the
+          navigate fires even when the auto-save flush rejects (5xx/429/
+          network) — a stalled auto-save must not orphan the user on the
+          wizard step. */}
+      <SaveAndFinishLaterLink
+        page="TemplateSelectPage"
+        flush={autoSave.flush}
+        primaryPending={putProgress.isPending}
+      />
     </section>
   )
 }

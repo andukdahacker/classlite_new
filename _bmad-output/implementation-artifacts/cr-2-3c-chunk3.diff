@@ -1,0 +1,1996 @@
+diff --git a/classlite-web/src/features/onboarding/__tests__/OnboardingDonePage.test.tsx b/classlite-web/src/features/onboarding/__tests__/OnboardingDonePage.test.tsx
+new file mode 100644
+index 0000000..fff02cc
+--- /dev/null
++++ b/classlite-web/src/features/onboarding/__tests__/OnboardingDonePage.test.tsx
+@@ -0,0 +1,982 @@
++/**
++ * Story 2-3c — OnboardingDonePage red-phase acceptance tests.
++ *
++ * Covers Task 2.4 enumeration + AC1/AC2/AC3/AC9/AC11 + Task 1.5 idempotence
++ * (which lives here rather than in OnboardingLayout.test.tsx because the
++ * idempotence contract fires INSIDE the OnboardingDonePage tree — the
++ * Provider only exists when the layout renders + stepFromPathname resolves).
++ *
++ *   AC1   /setup/done renders inside OnboardingLayout with DoneHeroPanel
++ *   AC2   6-branch guard ladder + spawnedClassIds visible fail (S-B1) +
++ *         guard-order pinning (M-I1) + refetch race (M-I2) + empty-vs-undefined
++ *         enumeration (M-I4)
++ *   AC3   Per-persona subtitle copy (3 branches) + Vietnamese subtitle
++ *   AC9   Three-state (loading skeleton / success / error alert with retry) +
++ *         3-attempt persistent-failure ratchet (M-B3)
++ *   AC11  axe zero-violations across 3 personas × 2 locales (M-S2) +
++ *         focus-on-mount (S-B2)
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 2.1
++ * (`OnboardingDonePage.tsx`) + Task 2.2 (`DoneHeroPanel.tsx`) + Task 6.1
++ * (~12 new `onboarding.done.*` i18n keys) + handlers.ts extension for
++ * `putProgressInternalError` + `putProgressRateLimited` + variants of
++ * `progressWithPersona` that carry `templateDraft.spawnedClassIds` +
++ * `classesDraft`.
++ *
++ * MSW server lifecycle registered globally in `src/test/vitest-setup.ts`;
++ * per-file `beforeEach(server.use(...onboardingHandlers))` re-seats the
++ * happy-path handlers on top of any prior test's overrides (2-3a/2-3b
++ * D4 lesson).
++ */
++import { QueryClientProvider } from '@tanstack/react-query'
++import { render, screen, waitFor } from '@testing-library/react'
++import userEvent from '@testing-library/user-event'
++import { MemoryRouter, Route, Routes } from 'react-router'
++import { axe } from 'vitest-axe'
++import 'vitest-axe/extend-expect'
++import { I18nextProvider } from 'react-i18next'
++import { beforeEach, describe, expect, test } from 'vitest'
++
++import { authKeys, type Session } from '@/features/auth/api/authKeys'
++import { onboardingKeys } from '@/features/onboarding/api/onboardingKeys'
++import OnboardingLayout from '@/features/onboarding/OnboardingLayout'
++import OnboardingDonePage from '@/features/onboarding/OnboardingDonePage'
++import i18n from '@/lib/i18n'
++import { createTestQueryClient } from '@/lib/query-client'
++import { server } from '@/test/msw-server'
++
++import {
++  errorHandlers,
++  onboardingHandlers,
++} from '../api/__tests__/handlers'
++
++// MSW server lifecycle registered globally in `src/test/vitest-setup.ts`.
++beforeEach(() => {
++  server.use(...onboardingHandlers)
++})
++
++// ---------------------------------------------------------------------------
++// Fixtures + render helper
++// ---------------------------------------------------------------------------
++
++const CENTER_ID = 'c0000000-0000-0000-0000-000000000001'
++const USER_EMAIL = 'owner@example.com'
++const USER_FULL_NAME = 'Owner Name'
++const SPAWNED_ONE = ['class-0001']
++const SPAWNED_THREE = ['class-0001', 'class-0002', 'class-0003']
++
++type Persona = 'operator' | 'founder' | 'solo_teacher'
++
++function makeSession(overrides?: Partial<Session>): Session {
++  return {
++    user: {
++      id: 'user-1',
++      email: USER_EMAIL,
++      fullName: USER_FULL_NAME,
++      emailVerified: true,
++    } as unknown as Session['user'],
++    accessToken: 'a.b.c',
++    center: {
++      id: CENTER_ID,
++      name: 'Saigon English Center',
++      shortCode: 'saigon-english',
++      // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
++      brandColor: '#1e3a8a',
++      logoUrl: null,
++      timezone: 'Asia/Ho_Chi_Minh',
++    },
++    ...overrides,
++  }
++}
++
++interface SeedProgressArgs {
++  persona: Persona | null
++  currentStep:
++    | 'persona'
++    | 'center'
++    | 'template'
++    | 'spawn'
++    | 'solo_first_class'
++    | 'done'
++  spawnedClassIds?: string[] | undefined
++  classesDraft?: Array<{
++    cohortName: string
++    startDate: string
++    teacherEmail: string | null
++  }>
++}
++
++function seedProgress(
++  queryClient: ReturnType<typeof createTestQueryClient>,
++  {
++    persona,
++    currentStep,
++    spawnedClassIds,
++    classesDraft,
++  }: SeedProgressArgs,
++) {
++  queryClient.setQueryData(onboardingKeys.progress(), {
++    persona,
++    currentStep,
++    payload: {
++      schemaVersion: 1,
++      personaChoice: persona,
++      centerDraft: null,
++      templateDraft: {
++        selectedTemplateId: 'template-writing-bootcamp',
++        buildFromScratch: false,
++        spawnedClassIds,
++        ...(classesDraft !== undefined ? { classesDraft } : {}),
++      },
++    },
++    updatedAt: '2026-07-12T10:00:00.000Z',
++  })
++}
++
++interface RenderArgs {
++  session?: Session
++  persona?: Persona | null
++  currentStep?: SeedProgressArgs['currentStep']
++  spawnedClassIds?: string[] | undefined
++  classesDraft?: SeedProgressArgs['classesDraft']
++  locale?: 'en' | 'vi'
++  seedProgressCache?: boolean
++  initialPath?: string
++}
++
++async function renderDonePage(args: RenderArgs = {}) {
++  const {
++    session = makeSession(),
++    persona = 'operator',
++    currentStep = 'done',
++    locale = 'en',
++    seedProgressCache = true,
++    initialPath = '/setup/done',
++  } = args
++  // Distinguish "caller omitted the key" from "caller passed undefined
++  // explicitly". Destructuring `= default` short-circuits explicit
++  // `undefined` to the default value, which defeats the M-I4 branch-4
++  // `spawnedClassIds === undefined` and M-S1 `null classesDraft` tests
++  // (both intentionally pass `undefined` to exercise the null-safety path).
++  const spawnedClassIds = Object.prototype.hasOwnProperty.call(
++    args,
++    'spawnedClassIds',
++  )
++    ? args.spawnedClassIds
++    : SPAWNED_THREE
++  const classesDraft = Object.prototype.hasOwnProperty.call(
++    args,
++    'classesDraft',
++  )
++    ? args.classesDraft
++    : [
++        { cohortName: 'IELTS Alpha', startDate: '2026-08-15', teacherEmail: null },
++        { cohortName: 'IELTS Beta', startDate: '2026-08-22', teacherEmail: 'bob@example.com' },
++        { cohortName: 'IELTS Gamma', startDate: '2026-08-29', teacherEmail: 'carol@example.com' },
++      ]
++
++  await i18n.changeLanguage(locale)
++
++  const queryClient = createTestQueryClient()
++  queryClient.setQueryData(authKeys.session(), session)
++
++  if (seedProgressCache) {
++    seedProgress(queryClient, {
++      persona,
++      currentStep,
++      spawnedClassIds,
++      classesDraft,
++    })
++  }
++
++  const utils = render(
++    <I18nextProvider i18n={i18n}>
++      <QueryClientProvider client={queryClient}>
++        <MemoryRouter initialEntries={[initialPath]}>
++          <Routes>
++            <Route element={<OnboardingLayout />}>
++              <Route path="/welcome" element={<div>WELCOME_PLACEHOLDER</div>} />
++              <Route
++                path="/setup/center"
++                element={<div>CENTER_PLACEHOLDER</div>}
++              />
++              <Route
++                path="/setup/template"
++                element={<div>TEMPLATE_PLACEHOLDER</div>}
++              />
++              <Route
++                path="/setup/spawn"
++                element={<div>SPAWN_PLACEHOLDER</div>}
++              />
++              <Route
++                path="/setup/first-class"
++                element={<div>FIRST_CLASS_PLACEHOLDER</div>}
++              />
++              <Route path="/setup/done" element={<OnboardingDonePage />} />
++            </Route>
++            <Route
++              path="/dashboard"
++              element={<div>DASHBOARD_PLACEHOLDER</div>}
++            />
++            <Route path="/login" element={<div>LOGIN_PLACEHOLDER</div>} />
++            <Route
++              path="/verify-email"
++              element={<div>VERIFY_EMAIL_PLACEHOLDER</div>}
++            />
++          </Routes>
++        </MemoryRouter>
++      </QueryClientProvider>
++    </I18nextProvider>,
++  )
++
++  return { ...utils, queryClient }
++}
++
++// ---------------------------------------------------------------------------
++// AC9 — Three-state coverage on <OnboardingDonePage> render
++// ---------------------------------------------------------------------------
++
++describe('AC9 — three-state coverage on <OnboardingDonePage>', () => {
++  test('(a) loading skeleton renders while progress.isLoading (compound inFlight guard)', async () => {
++    // No progress cache seeded + no MSW response yet → useOnboardingProgress
++    // stays in loading state until refetch completes.
++    server.use(
++      // Never-resolving handler for GET progress → forces perpetual loading
++      // for the duration of this test.
++      ...onboardingHandlers,
++    )
++    await renderDonePage({ seedProgressCache: false })
++
++    // Page-level loading skeleton (Task 2.1 spec: OnboardingDonePageSkeleton
++    // or an inline `data-testid="skeleton-done"` block).
++    expect(
++      await screen.findByTestId('skeleton-done'),
++    ).toBeInTheDocument()
++  })
++
++  test('(b) success — DoneHeroPanel renders with populated stats', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      spawnedClassIds: SPAWNED_THREE,
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: 'a@x.com' },
++        { cohortName: 'B', startDate: '2026-08-22', teacherEmail: 'b@x.com' },
++        { cohortName: 'C', startDate: '2026-08-29', teacherEmail: 'c@x.com' },
++      ],
++    })
++
++    // AC1: interpolated center name in <h1>
++    const heading = await screen.findByRole('heading', { level: 1 })
++    expect(heading).toHaveTextContent(/Saigon English Center/i)
++
++    // Stat strip — 3 tiles (R1-C1-P7 + P19: semantic <dt> label + <dd> value)
++    const classesTile = await screen.findByTestId('stat-tile-classes')
++    expect(classesTile).toHaveTextContent(/classes ready/i)
++    expect(classesTile).toHaveTextContent(/3/)
++    const teachersTile = screen.getByTestId('stat-tile-teachers')
++    expect(teachersTile).toHaveTextContent(/teachers invited/i)
++    expect(teachersTile).toHaveTextContent(/3/)
++    expect(screen.getByText(/saigon-english\.classlite\.app/i)).toBeInTheDocument()
++
++    // AC1: primary CTA is a <button> (not <a> — client-side nav)
++    expect(
++      screen.getByRole('button', { name: /open dashboard/i }),
++    ).toBeInTheDocument()
++  })
++
++  test('(c) error — progress.isError renders Alert with retry, does NOT auto-navigate', async () => {
++    server.use(errorHandlers.progressInternalError())
++
++    const { queryClient } = await renderDonePage({ seedProgressCache: false })
++
++    // Alert with retry CTA
++    const alert = await screen.findByRole('alert')
++    expect(alert).toBeInTheDocument()
++    expect(
++      screen.getByRole('button', { name: /try again/i }),
++    ).toBeInTheDocument()
++
++    // Did NOT auto-route back to a wizard step
++    expect(
++      screen.queryByText(/WELCOME_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++
++    // Progress cache still empty → confirm no side-effect writes fired.
++    expect(
++      queryClient.getQueryData(onboardingKeys.progress()),
++    ).toBeUndefined()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC9 (b.i–b.iii) — retry semantics (M-B3)
++// ---------------------------------------------------------------------------
++
++describe('AC9 — retry semantics (M-B3 persistent-failure ratchet)', () => {
++  test('(b.i) retry-success after transient failure — guard ladder fires exactly once (mount-once ref)', async () => {
++    // Deliberately naive: the mount-once ref means even after refetch success,
++    // navigate is not re-fired. The test asserts the DoneHeroPanel renders
++    // AFTER the retry lands the success payload — no double-navigate observed.
++    server.use(errorHandlers.progressInternalError())
++    await renderDonePage({ seedProgressCache: false })
++
++    const alert = await screen.findByRole('alert')
++    expect(alert).toBeInTheDocument()
++
++    // Swap the handler to success and click Try again
++    server.use(...onboardingHandlers)
++    server.use(
++      errorHandlers.progressWithPersona('operator', 'done', {
++        schemaVersion: 1,
++        personaChoice: 'operator',
++        centerDraft: null,
++        templateDraft: {
++          selectedTemplateId: 'template-writing-bootcamp',
++          buildFromScratch: false,
++          spawnedClassIds: SPAWNED_ONE,
++        },
++      }),
++    )
++
++    await userEvent.click(screen.getByRole('button', { name: /try again/i }))
++
++    // Success render
++    const heading = await screen.findByRole('heading', { level: 1 })
++    expect(heading).toBeInTheDocument()
++
++    // Assert we didn't accidentally navigate to the dashboard (mount-once ref
++    // held) — we stayed on /setup/done and rendered the celebration.
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  test('(b.ii) retry-fail → alert stays visible, no double-render', async () => {
++    server.use(errorHandlers.progressInternalError())
++    await renderDonePage({ seedProgressCache: false })
++
++    expect(await screen.findByRole('alert')).toBeInTheDocument()
++
++    await userEvent.click(screen.getByRole('button', { name: /try again/i }))
++
++    // Only one alert in the DOM
++    const alerts = await screen.findAllByRole('alert')
++    expect(alerts).toHaveLength(1)
++  })
++
++  test('(b.iii) persistent-failure ratchet — 3 consecutive refetch failures escalate with role="alert" + Sentry breadcrumb', async () => {
++    server.use(errorHandlers.progressInternalError())
++    await renderDonePage({ seedProgressCache: false })
++
++    const initialAlert = await screen.findByRole('alert')
++    expect(initialAlert).toBeInTheDocument()
++
++    // Fire refetch 3 times
++    for (let i = 0; i < 3; i++) {
++      await userEvent.click(
++        screen.getByRole('button', { name: /try again/i }),
++      )
++      await waitFor(() =>
++        expect(screen.getByRole('alert')).toBeInTheDocument(),
++      )
++    }
++
++    // After 3 failures, the visible copy escalates (test asserts on a
++    // persistent-failure marker — data-testid or updated copy — Task 2.4
++    // spec).
++    expect(
++      await screen.findByTestId('done-error-persistent'),
++    ).toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC2 — 6-branch guard ladder (M-B2 enumeration)
++// ---------------------------------------------------------------------------
++
++describe('AC2 — 6-branch guard ladder (18 named tests per M-B2 + M-I4)', () => {
++  // ── Early-exit tests (guards 0 and 0b) ────────────────────────────────
++  test('early-exit — progress.data undefined → no navigate, renders loading skeleton', async () => {
++    // Seed no cache; MSW happy handler returns default with persona: null,
++    // but between mount and first render, progress.data may be undefined.
++    // We assert the skeleton renders and no premature navigate to any
++    // wizard route or /dashboard happens BEFORE the first data arrives.
++    await renderDonePage({ seedProgressCache: false })
++
++    // Immediately after mount, no premature navigate.
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++    expect(
++      screen.queryByText(/WELCOME_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  test('early-exit — inFlight true (session cache slot missing) → renders skeleton, no navigate', async () => {
++    // Simulate the mid-probe race: no auth session cache seeded → useAuth
++    // reports isLoading true → inFlight guard suppresses the ladder.
++    const queryClient = createTestQueryClient()
++    seedProgress(queryClient, {
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: SPAWNED_ONE,
++    })
++
++    render(
++      <I18nextProvider i18n={i18n}>
++        <QueryClientProvider client={queryClient}>
++          <MemoryRouter initialEntries={['/setup/done']}>
++            <Routes>
++              <Route element={<OnboardingLayout />}>
++                <Route path="/setup/done" element={<OnboardingDonePage />} />
++              </Route>
++              <Route
++                path="/dashboard"
++                element={<div>DASHBOARD_PLACEHOLDER</div>}
++              />
++              <Route path="/login" element={<div>LOGIN_PLACEHOLDER</div>} />
++            </Routes>
++          </MemoryRouter>
++        </QueryClientProvider>
++      </I18nextProvider>,
++    )
++
++    // OnboardingLayout skeleton owns the inFlight branch — no premature
++    // navigation observed.
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  // ── Branch 1 — persona null → /welcome ────────────────────────────────
++  test('branch 1 — progress.data.persona === null → navigate /welcome', async () => {
++    await renderDonePage({
++      persona: null,
++      currentStep: 'persona',
++      spawnedClassIds: undefined,
++      session: makeSession({ center: null }),
++    })
++    expect(
++      await screen.findByText(/WELCOME_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  // ── Branch 2 — session.center null → /setup/center ────────────────────
++  test('branch 2 — session.center === null (persona present) → navigate /setup/center', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      currentStep: 'center',
++      spawnedClassIds: undefined,
++      session: makeSession({ center: null }),
++    })
++    expect(
++      await screen.findByText(/CENTER_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  // ── Branch 3 — 12 currentStep dispatch permutations (M-B2) ────────────
++  const NON_DONE_STEPS = ['center', 'template', 'spawn', 'solo_first_class'] as const
++  const PERSONAS: Persona[] = ['operator', 'founder', 'solo_teacher']
++
++  const dispatchExpectation = (
++    persona: Persona,
++    step: (typeof NON_DONE_STEPS)[number],
++  ): string => {
++    // R1-C1-P23: logically-impossible persona × step combos route to
++    // /welcome (surface state corruption). When session.center is
++    // populated (which the default renderDonePage seeds), the
++    // OnboardingLayout further redirects /welcome → /dashboard because
++    // persona-pick isn't valid once the center exists. Final observable
++    // destination for corrupt states = DASHBOARD_PLACEHOLDER.
++    if (persona === 'solo_teacher') {
++      if (step === 'center') return 'CENTER_PLACEHOLDER'
++      if (step === 'solo_first_class') return 'FIRST_CLASS_PLACEHOLDER'
++      // Solo × (template | spawn) = corruption
++      return 'DASHBOARD_PLACEHOLDER'
++    }
++    // Operator + Founder
++    if (step === 'center') return 'CENTER_PLACEHOLDER'
++    if (step === 'template') return 'TEMPLATE_PLACEHOLDER'
++    if (step === 'spawn') return 'SPAWN_PLACEHOLDER'
++    // Operator|Founder × solo_first_class = corruption
++    return 'DASHBOARD_PLACEHOLDER'
++  }
++
++  for (const persona of PERSONAS) {
++    for (const step of NON_DONE_STEPS) {
++      test(`branch 3 — persona=${persona}, currentStep=${step} → dispatches to ${dispatchExpectation(persona, step)}`, async () => {
++        await renderDonePage({
++          persona,
++          currentStep: step,
++          spawnedClassIds: undefined,
++        })
++        expect(
++          await screen.findByText(dispatchExpectation(persona, step)),
++        ).toBeInTheDocument()
++      })
++    }
++  }
++
++  // ── Branch 4 — spawnedClassIds empty / undefined → VISIBLE FAIL (S-B1) ──
++  test('branch 4 — spawnedClassIds === [] → renders visible setupIncomplete alert (S-B1)', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: [],
++    })
++
++    // S-B1: DO NOT silent-bounce; render a visible fail state
++    const alert = await screen.findByRole('alert')
++    expect(alert).toHaveTextContent(/couldn't confirm your setup/i)
++    expect(
++      screen.getByRole('button', { name: /try again/i }),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByRole('button', { name: /continue to dashboard/i }),
++    ).toBeInTheDocument()
++
++    // Explicitly did NOT bounce to dashboard.
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  test('branch 4 — spawnedClassIds === undefined → renders visible setupIncomplete alert (M-I4)', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: undefined,
++    })
++
++    const alert = await screen.findByRole('alert')
++    expect(alert).toHaveTextContent(/couldn't confirm your setup/i)
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  // ── Branch 5 — stay + render DoneHeroPanel ────────────────────────────
++  test('branch 5 — happy path → stays on /setup/done + renders DoneHeroPanel; hasRoutedOnMountRef NOT set (W-B3)', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: SPAWNED_THREE,
++    })
++
++    const heading = await screen.findByRole('heading', { level: 1 })
++    expect(heading).toBeInTheDocument()
++
++    // Did not bounce to dashboard or any wizard step.
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  // ── Error-no-route ────────────────────────────────────────────────────
++  test('progress.isError → renders Alert + does NOT navigate to any wizard step', async () => {
++    server.use(errorHandlers.progressInternalError())
++    await renderDonePage({ seedProgressCache: false })
++
++    expect(await screen.findByRole('alert')).toBeInTheDocument()
++    expect(
++      screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++    expect(
++      screen.queryByText(/WELCOME_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++    expect(
++      screen.queryByText(/SPAWN_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  // ── Guard-order pins (M-I1) ───────────────────────────────────────────
++  test('guard-order — persona=operator + session.center=null → routes to /setup/center (branch 2, not branch 1)', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      currentStep: 'center',
++      spawnedClassIds: undefined,
++      session: makeSession({ center: null }),
++    })
++    expect(
++      await screen.findByText(/CENTER_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByText(/WELCOME_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  test('guard-order — persona=null + session.center=null → routes to /welcome (branch 1 fires first)', async () => {
++    await renderDonePage({
++      persona: null,
++      currentStep: 'persona',
++      spawnedClassIds: undefined,
++      session: makeSession({ center: null }),
++    })
++    expect(
++      await screen.findByText(/WELCOME_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByText(/CENTER_PLACEHOLDER/i),
++    ).not.toBeInTheDocument()
++  })
++
++  // ── Refetch race (M-I2) ───────────────────────────────────────────────
++  // R1-C1-P1: navigate-only latch (W-B3) — branches 4/5 do NOT set the ref,
++  // so refetches DO re-check the ladder. For valid data (same persona +
++  // done + non-empty spawnedClassIds), the ladder stays at branch 5 and the
++  // panel keeps rendering. For narrowed data, the ladder re-fires and
++  // routes out — desired behavior on session ageing.
++  test('refetch race — valid data on refetch keeps rendering the panel (no accidental navigate)', async () => {
++    const { queryClient } = await renderDonePage({
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: SPAWNED_THREE,
++    })
++
++    // Success rendered.
++    expect(
++      await screen.findByRole('heading', { level: 1 }),
++    ).toBeInTheDocument()
++
++    // Ensure the refetch handler returns the same valid data so the ladder
++    // stays at branch 5.
++    server.use(
++      errorHandlers.progressWithPersona('operator', 'done', {
++        schemaVersion: 1,
++        personaChoice: 'operator',
++        centerDraft: null,
++        templateDraft: {
++          selectedTemplateId: 'template-writing-bootcamp',
++          buildFromScratch: false,
++          spawnedClassIds: SPAWNED_THREE,
++        },
++      }),
++    )
++
++    // Trigger a refetch by invalidating the progress key — simulates
++    // tab-focus + TanStack Query's refetchOnWindowFocus behaviour.
++    await queryClient.invalidateQueries({
++      queryKey: onboardingKeys.progress(),
++    })
++
++    await waitFor(() =>
++      expect(
++        screen.queryByText(/DASHBOARD_PLACEHOLDER/i),
++      ).not.toBeInTheDocument(),
++    )
++    // Heading still there — panel re-rendered with the fresh valid data.
++    expect(
++      screen.getByRole('heading', { level: 1 }),
++    ).toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC1 stat-filter negative matrix (M-S1)
++// ---------------------------------------------------------------------------
++
++describe('AC1 — stat-filter teachersInvitedCount negative matrix (M-S1)', () => {
++  const rows: Array<{
++    name: string
++    userEmail: string
++    classesDraft: SeedProgressArgs['classesDraft']
++    expectedCount: number
++    persona?: Persona
++  }> = [
++    {
++      name: 'case-mismatch — user Owner@example.com vs draft OWNER@EXAMPLE.COM → excluded',
++      userEmail: 'Owner@example.com',
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: 'OWNER@EXAMPLE.COM' },
++      ],
++      expectedCount: 0,
++    },
++    {
++      name: 'trim-mismatch — user bob@example.com vs draft "  bob@example.com  " → excluded',
++      userEmail: 'bob@example.com',
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: '  bob@example.com  ' },
++      ],
++      expectedCount: 0,
++    },
++    {
++      name: 'null classesDraft → count 0 (no throw)',
++      userEmail: 'bob@example.com',
++      classesDraft: undefined,
++      expectedCount: 0,
++    },
++    {
++      name: 'empty classesDraft [] → count 0',
++      userEmail: 'bob@example.com',
++      classesDraft: [],
++      expectedCount: 0,
++    },
++    {
++      name: 'Founder self-injection (Winston-W4) — persona=founder + row 0 teacherEmail=user.email → excluded, count 0',
++      userEmail: 'founder@example.com',
++      persona: 'founder',
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: 'founder@example.com' },
++      ],
++      expectedCount: 0,
++    },
++    {
++      name: 'undefined teacherEmail rows → filtered out (!= null handles undefined)',
++      userEmail: 'owner@example.com',
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: null },
++        { cohortName: 'B', startDate: '2026-08-22', teacherEmail: 'a@x.com' },
++      ],
++      expectedCount: 1,
++    },
++  ]
++
++  for (const row of rows) {
++    test(row.name, async () => {
++      await renderDonePage({
++        session: makeSession({
++          user: {
++            id: 'user-1',
++            email: row.userEmail,
++            fullName: USER_FULL_NAME,
++            emailVerified: true,
++          } as unknown as Session['user'],
++        }),
++        persona: row.persona ?? 'operator',
++        currentStep: 'done',
++        spawnedClassIds: SPAWNED_ONE,
++        classesDraft: row.classesDraft,
++      })
++
++      // Assert on the teacher stat tile — R1-C1-P7 + P19: dt = label,
++      // dd = count. Tile has data-testid="stat-tile-teachers". The dd
++      // renders the raw count number, matched via scoped exact-text query.
++      const tile = await screen.findByTestId('stat-tile-teachers')
++      expect(tile).toHaveTextContent(/teachers invited/i)
++      const dd = tile.querySelector('dd')
++      expect(dd?.textContent?.trim()).toBe(String(row.expectedCount))
++    })
++  }
++
++  test('defensive: null user (transient boot-probe state) — selfEmail === "" fallback counts all non-null emails (W-S3)', async () => {
++    // Auth session cache seat is null → useAuth().user reports null →
++    // stat-filter uses `?? ''` fallback → excludes nothing based on self.
++    const queryClient = createTestQueryClient()
++    queryClient.setQueryData(authKeys.session(), null)
++    seedProgress(queryClient, {
++      persona: 'operator',
++      currentStep: 'done',
++      spawnedClassIds: SPAWNED_ONE,
++      classesDraft: [
++        { cohortName: 'A', startDate: '2026-08-15', teacherEmail: 'a@x.com' },
++        { cohortName: 'B', startDate: '2026-08-22', teacherEmail: 'b@x.com' },
++      ],
++    })
++
++    // Rendering without a real user — page-level guard falls through to
++    // either loading skeleton or dashboard route (depending on the layout's
++    // !user branch). The specific expectation: NO exception thrown; no
++    // "Cannot read property 'toLowerCase' of undefined" error.
++    render(
++      <I18nextProvider i18n={i18n}>
++        <QueryClientProvider client={queryClient}>
++          <MemoryRouter initialEntries={['/setup/done']}>
++            <Routes>
++              <Route element={<OnboardingLayout />}>
++                <Route path="/setup/done" element={<OnboardingDonePage />} />
++              </Route>
++              <Route
++                path="/login"
++                element={<div>LOGIN_PLACEHOLDER</div>}
++              />
++            </Routes>
++          </MemoryRouter>
++        </QueryClientProvider>
++      </I18nextProvider>,
++    )
++
++    // Redirect fires (session === null → layout bounces to /login) —
++    // no exception; the point of this test is defensive `?? ''` handling.
++    expect(
++      await screen.findByText(/LOGIN_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC1 — Open Dashboard CTA
++// ---------------------------------------------------------------------------
++
++describe('AC1 — primary CTA', () => {
++  test('"Open Dashboard →" navigates /dashboard with replace: true', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      spawnedClassIds: SPAWNED_ONE,
++    })
++
++    const cta = await screen.findByRole('button', {
++      name: /open dashboard/i,
++    })
++    expect(cta).toBeInTheDocument()
++
++    await userEvent.click(cta)
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC3 — per-persona subtitle copy
++// ---------------------------------------------------------------------------
++
++describe('AC3 — per-persona subtitle copy (3 branches)', () => {
++  const cases: Array<{ persona: Persona; match: RegExp }> = [
++    { persona: 'operator', match: /center is live/i },
++    { persona: 'founder', match: /first class is spun up/i },
++    { persona: 'solo_teacher', match: /one class, one teacher/i },
++  ]
++
++  for (const { persona, match } of cases) {
++    test(`persona=${persona} → renders persona-specific subtitle`, async () => {
++      await renderDonePage({
++        persona,
++        spawnedClassIds: SPAWNED_ONE,
++      })
++      expect(await screen.findByText(match)).toBeInTheDocument()
++    })
++  }
++})
++
++// ---------------------------------------------------------------------------
++// AC11 — a11y matrix (M-S2 + S-B2)
++// ---------------------------------------------------------------------------
++
++describe('AC11 — a11y zero-violations across 3 personas × 2 locales (M-S2)', () => {
++  const personas: Persona[] = ['operator', 'founder', 'solo_teacher']
++  const locales: Array<'en' | 'vi'> = ['en', 'vi']
++
++  for (const persona of personas) {
++    for (const locale of locales) {
++      test(`axe — persona=${persona}, locale=${locale} → zero violations`, async () => {
++        const { container } = await renderDonePage({
++          persona,
++          locale,
++          spawnedClassIds: SPAWNED_ONE,
++        })
++
++        // Wait for hero to mount.
++        await screen.findByRole('heading', { level: 1 })
++
++        const results = await axe(container)
++        // eslint-disable-next-line @typescript-eslint/no-explicit-any
++        expect(results as any).toHaveNoViolations()
++      })
++    }
++  }
++
++  test('focus-on-mount (S-B2) — <h1> receives focus after mount, SR announces via heading focus-change', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      spawnedClassIds: SPAWNED_ONE,
++    })
++    const heading = await screen.findByRole('heading', { level: 1 })
++    await waitFor(() => expect(heading).toHaveFocus())
++  })
++
++  test('S-B2 — DoneHeroPanel does NOT render a sibling role="status" region', async () => {
++    await renderDonePage({
++      persona: 'operator',
++      spawnedClassIds: SPAWNED_ONE,
++    })
++    await screen.findByRole('heading', { level: 1 })
++
++    // Explicit negative — role="status" on initial mount unreliable across
++    // SR/browser combos; announcement is via <h1> focus, not a paired live
++    // region.
++    expect(screen.queryByRole('status')).not.toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC1 Vietnamese overflow discipline (S-S1)
++// ---------------------------------------------------------------------------
++
++describe('AC1 — Vietnamese Founder headline overflow discipline (S-S1)', () => {
++  test('long VN centerName renders inside <h1> with responsive step-down classes (min-w-0 break-words)', async () => {
++    await renderDonePage({
++      persona: 'founder',
++      locale: 'vi',
++      spawnedClassIds: SPAWNED_ONE,
++      session: makeSession({
++        center: {
++          id: CENTER_ID,
++          name: 'Trung tâm Anh ngữ Quốc tế Hà Nội',
++          shortCode: 'trung-tam-ha-noi',
++          // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
++          brandColor: '#1e3a8a',
++          logoUrl: null,
++          timezone: 'Asia/Ho_Chi_Minh',
++        },
++      }),
++    })
++
++    const heading = await screen.findByRole('heading', { level: 1 })
++    // Assert the h1 carries the Vietnamese-safe layout classes.
++    expect(heading.className).toMatch(/min-w-0/)
++    expect(heading.className).toMatch(/break-words/)
++  })
++})
++
++// ---------------------------------------------------------------------------
++// Task 1.5 — stepFromPathname('/setup/done') idempotence contract (M-S6)
++// ---------------------------------------------------------------------------
++
++describe('Task 1.5 — stepFromPathname("/setup/done") idempotence (M-S6)', () => {
++  test('mounting /setup/done does NOT fire a rogue PUT to /api/onboarding/progress', async () => {
++    let putCallCount = 0
++    server.use(
++      // Wrap the shipped happy PUT handler to count calls; the celebration
++      // page has no form so scheduleSave must never fire.
++      // eslint-disable-next-line @typescript-eslint/no-explicit-any
++      ...(onboardingHandlers as any[]),
++    )
++    // Intercept PUT progress to count calls.
++    const { http, HttpResponse } = await import('msw')
++    server.use(
++      http.put('/api/onboarding/progress', async ({ request }) => {
++        putCallCount += 1
++        const body = (await request.json()) as {
++          currentStep: string
++          payload: unknown
++        }
++        return HttpResponse.json(
++          {
++            data: {
++              currentStep: body.currentStep,
++              payload: body.payload,
++              updatedAt: '2026-07-12T10:00:00.000Z',
++            },
++            meta: { serverTime: '2026-07-12T10:00:00.000Z' },
++          },
++          { status: 200 },
++        )
++      }),
++    )
++
++    await renderDonePage({
++      persona: 'operator',
++      spawnedClassIds: SPAWNED_ONE,
++    })
++
++    await screen.findByRole('heading', { level: 1 })
++    // Give the debounce a tick (page has no form, so 0 PUTs expected).
++    await new Promise((r) => setTimeout(r, 200))
++
++    expect(putCallCount).toBe(0)
++  })
++})
+diff --git a/classlite-web/src/features/onboarding/components/__tests__/DoneHeroPanel.test.tsx b/classlite-web/src/features/onboarding/components/__tests__/DoneHeroPanel.test.tsx
+new file mode 100644
+index 0000000..a3323ed
+--- /dev/null
++++ b/classlite-web/src/features/onboarding/components/__tests__/DoneHeroPanel.test.tsx
+@@ -0,0 +1,179 @@
++/**
++ * Story 2-3c — DoneHeroPanel red-phase acceptance tests.
++ *
++ * Pure display component contract (Task 2.2):
++ *   - Props: { centerName, shortCode, persona, classCount, teachersInvitedCount, onOpenDashboard }
++ *   - NO business logic (derivation lives in OnboardingDonePage per A-S2)
++ *   - Semantic markup: <h1> headline (Fraunces italic, tabIndex=-1 for focus),
++ *     <dl> stat strip with per-tile <dt>/<dd>, primary CTA as <button>
++ *   - SVG check aria-hidden
++ *   - Reduced-motion respected (S-S4 pre-emptive — v1 static, spec future-proofs)
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 2.2
++ * (`src/features/onboarding/components/DoneHeroPanel.tsx`).
++ */
++import { render, screen } from '@testing-library/react'
++import userEvent from '@testing-library/user-event'
++import { I18nextProvider } from 'react-i18next'
++import { axe } from 'vitest-axe'
++import 'vitest-axe/extend-expect'
++import { describe, expect, test, vi } from 'vitest'
++
++import DoneHeroPanel from '@/features/onboarding/components/DoneHeroPanel'
++import i18n from '@/lib/i18n'
++
++type Persona = 'operator' | 'founder' | 'solo_teacher'
++
++interface RenderArgs {
++  centerName?: string
++  shortCode?: string
++  persona?: Persona
++  classCount?: number
++  teachersInvitedCount?: number
++  locale?: 'en' | 'vi'
++  onOpenDashboard?: () => void
++}
++
++async function renderPanel(args: RenderArgs = {}) {
++  const {
++    centerName = 'Saigon English Center',
++    shortCode = 'saigon-english',
++    persona = 'operator',
++    classCount = 3,
++    teachersInvitedCount = 2,
++    locale = 'en',
++    onOpenDashboard = vi.fn(),
++  } = args
++
++  await i18n.changeLanguage(locale)
++
++  const utils = render(
++    <I18nextProvider i18n={i18n}>
++      <DoneHeroPanel
++        centerName={centerName}
++        shortCode={shortCode}
++        persona={persona}
++        classCount={classCount}
++        teachersInvitedCount={teachersInvitedCount}
++        onOpenDashboard={onOpenDashboard}
++      />
++    </I18nextProvider>,
++  )
++
++  return { ...utils, onOpenDashboard }
++}
++
++describe('DoneHeroPanel — display contract', () => {
++  test('renders interpolated headline in <h1> (Fraunces italic, tabIndex=-1 for focus)', async () => {
++    await renderPanel({ centerName: 'Saigon English Center' })
++
++    const heading = screen.getByRole('heading', { level: 1 })
++    expect(heading).toHaveTextContent(/Saigon English Center/)
++    expect(heading).toHaveAttribute('tabIndex', '-1')
++  })
++
++  test('SVG check is aria-hidden (decorative only)', async () => {
++    const { container } = await renderPanel()
++
++    const svg = container.querySelector('svg')
++    expect(svg).not.toBeNull()
++    expect(svg).toHaveAttribute('aria-hidden', 'true')
++  })
++
++  test('stat strip uses semantic <dl> markup with 3 <dt>/<dd> pairs', async () => {
++    const { container } = await renderPanel({
++      classCount: 3,
++      teachersInvitedCount: 2,
++      shortCode: 'saigon-english',
++    })
++
++    const dl = container.querySelector('dl')
++    expect(dl).not.toBeNull()
++    expect(dl!.querySelectorAll('dt')).toHaveLength(3)
++    expect(dl!.querySelectorAll('dd')).toHaveLength(3)
++  })
++
++  test('stat tiles use semantic <dt> label + <dd> value pair — no parent aria-label (R1-C1-P19)', async () => {
++    await renderPanel({
++      classCount: 3,
++      teachersInvitedCount: 2,
++      shortCode: 'saigon-english',
++    })
++
++    // R1-C1-P19: dropped parent aria-label — SR reads <dl> semantics
++    // naturally as "term: definition". Each tile has a testid + a <dt>
++    // (label) + <dd> (value).
++    const classesTile = screen.getByTestId('stat-tile-classes')
++    expect(classesTile).toHaveTextContent(/classes ready/i)
++    expect(classesTile).toHaveTextContent(/3/)
++
++    const teachersTile = screen.getByTestId('stat-tile-teachers')
++    expect(teachersTile).toHaveTextContent(/teachers invited/i)
++    expect(teachersTile).toHaveTextContent(/2/)
++
++    const subdomainTile = screen.getByTestId('stat-tile-subdomain')
++    expect(subdomainTile).toHaveTextContent(/subdomain/i)
++    expect(subdomainTile).toHaveTextContent(/saigon-english\.classlite\.app/)
++  })
++
++  test('subdomain tile composes shortCode via JS template literal, NOT via i18next interpolation', async () => {
++    await renderPanel({ shortCode: 'acme-english' })
++    expect(
++      screen.getByText(/acme-english\.classlite\.app/i),
++    ).toBeInTheDocument()
++  })
++
++  test('primary CTA is a <button> (not <a>) — client-side navigate', async () => {
++    await renderPanel()
++
++    const cta = screen.getByRole('button', { name: /open dashboard/i })
++    expect(cta.tagName.toLowerCase()).toBe('button')
++    expect(cta).toHaveAttribute('type', 'button')
++  })
++
++  test('clicking CTA invokes onOpenDashboard prop', async () => {
++    const { onOpenDashboard } = await renderPanel()
++
++    await userEvent.click(
++      screen.getByRole('button', { name: /open dashboard/i }),
++    )
++    expect(onOpenDashboard).toHaveBeenCalledTimes(1)
++  })
++
++  test('AC1 layout — <h1> container carries responsive step-down + min-w-0 + break-words (S-S1 VN overflow discipline)', async () => {
++    await renderPanel({
++      centerName: 'Trung tâm Anh ngữ Quốc tế Hà Nội',
++      locale: 'vi',
++    })
++
++    const heading = screen.getByRole('heading', { level: 1 })
++    expect(heading.className).toMatch(/min-w-0/)
++    expect(heading.className).toMatch(/break-words/)
++    // Responsive step-down (text-3xl md:text-4xl lg:text-5xl)
++    expect(heading.className).toMatch(/text-3xl/)
++    expect(heading.className).toMatch(/md:text-4xl/)
++    expect(heading.className).toMatch(/lg:text-5xl/)
++  })
++
++  describe('per-persona subtitle (3 branches)', () => {
++    const cases: Array<{ persona: Persona; match: RegExp }> = [
++      { persona: 'operator', match: /center is live/i },
++      { persona: 'founder', match: /first class is spun up/i },
++      { persona: 'solo_teacher', match: /one class, one teacher/i },
++    ]
++
++    for (const { persona, match } of cases) {
++      test(`persona=${persona} → renders persona-specific subtitle copy`, async () => {
++        await renderPanel({ persona })
++        expect(screen.getByText(match)).toBeInTheDocument()
++      })
++    }
++  })
++
++  test('zero axe violations (base render, en, operator)', async () => {
++    const { container } = await renderPanel()
++    const results = await axe(container)
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    expect(results as any).toHaveNoViolations()
++  })
++})
+diff --git a/classlite-web/e2e/onboarding-template-spawn.spec.ts b/classlite-web/e2e/onboarding-template-spawn.spec.ts
+index b6e6aa4..c2c5118 100644
+--- a/classlite-web/e2e/onboarding-template-spawn.spec.ts
++++ b/classlite-web/e2e/onboarding-template-spawn.spec.ts
+@@ -75,6 +75,16 @@ async function stubOnboardingBackend(
+         teacherEmail: string | null
+       }>
+     }) => void
++    /**
++     * Story 2-3c Task 7.5 — seed the initial progress step + persona so
++     * `/welcome` idempotence tests can start with a finished-onboarding
++     * state (e.g. `currentStep: 'done'` + `persona: 'operator'`). Without
++     * this, the stub always returns `currentStep: 'persona'` on first GET
++     * and the PersonaSelectPage:72 `currentStep === 'done' → /dashboard`
++     * branch never fires.
++     */
++    initialProgressStep?: Step
++    initialPersona?: Persona
+   } = {},
+ ): Promise<() => { persona: Persona | null; step: Step }> {
+   const state: {
+@@ -85,10 +95,10 @@ async function stubOnboardingBackend(
+     updatedAt: string | null
+     center: { id: string; shortCode: string } | null
+   } = {
+-    persona: null,
+-    step: 'persona',
++    persona: overrides.initialPersona ?? null,
++    step: overrides.initialProgressStep ?? 'persona',
+     payload: null,
+-    updatedAt: null,
++    updatedAt: overrides.initialProgressStep ? SERVER_TIME : null,
+     center: hasCenter
+       ? { id: 'center-e2e', shortCode: 'e2e-center' }
+       : null,
+@@ -390,3 +400,217 @@ test.describe('Story 2-3b happy path — Solo Teacher', () => {
+     await expect(page.getByText(DEFAULT_USER.displayName)).toBeVisible()
+   })
+ })
++
++// ---------------------------------------------------------------------------
++// Story 2-3c Task 7.4 — /setup/done celebration screen
++//                       (6 named tests: 3 personas × 2 locales per M-S4)
++// ---------------------------------------------------------------------------
++
++/**
++ * Story 2-3c heading copy per locale (post-fold green-phase i18n keys):
++ *   en: "You're all set, {{centerName}}!"
++ *   vi: "Bạn đã sẵn sàng, {{centerName}}!"
++ *
++ * Stat strip copy per locale (Task 6.1):
++ *   en: "N classes ready"    vi: "N lớp học đã sẵn sàng"
++ *   en: "N teachers invited" vi: "N giáo viên đã được mời"
++ */
++type Locale = 'en' | 'vi'
++const LOCALES: readonly Locale[] = ['en', 'vi']
++const PERSONAS_FOR_DONE: readonly Persona[] = [
++  'operator',
++  'founder',
++  'solo_teacher',
++]
++
++async function setLocale(
++  context: import('@playwright/test').BrowserContext,
++  locale: Locale,
++) {
++  // Mirrors bilingual-smoke.spec.ts's cookie-based locale toggle.
++  await context.clearCookies()
++  await context.addCookies([
++    { name: 'lang', value: locale, domain: 'localhost', path: '/' },
++  ])
++}
++
++function headingRegexFor(locale: Locale, centerName: string): RegExp {
++  return locale === 'vi'
++    ? new RegExp(`Bạn đã sẵn sàng.*${centerName}`, 'i')
++    : new RegExp(`all set.*${centerName}`, 'i')
++}
++
++function statStripRegexFor(locale: Locale): {
++  classesReady: RegExp
++  teachersInvited: RegExp
++} {
++  return locale === 'vi'
++    ? {
++        classesReady: /lớp học đã sẵn sàng/i,
++        teachersInvited: /giáo viên đã được mời/i,
++      }
++    : {
++        classesReady: /classes ready/i,
++        teachersInvited: /teachers invited/i,
++      }
++}
++
++test.describe('Story 2-3c Task 7.4 — /setup/done celebration', () => {
++  for (const persona of PERSONAS_FOR_DONE) {
++    for (const locale of LOCALES) {
++      test(`${persona}-${locale}: DoneHeroPanel renders with center name + stat strip + Open Dashboard CTA + <h1> focused on mount`, async ({
++        page,
++        context,
++      }) => {
++        await setLocale(context, locale)
++        await stubOnboardingBackend(page, DEFAULT_USER)
++
++        const centerName =
++          persona === 'founder'
++            ? 'Smoke Founder Center'
++            : persona === 'solo_teacher'
++              ? 'Smoke Solo Center'
++              : 'Smoke Operator Center'
++
++        await pickPersonaAndCenter(page, persona, centerName)
++
++        if (persona === 'solo_teacher') {
++          await expect(page).toHaveURL(/\/setup\/first-class/)
++          await page
++            .getByTestId('solo-template-ribbon')
++            .getByRole('radio')
++            .first()
++            .click()
++          await page.getByLabel(/Cohort name/i).fill('Solo First')
++          await page.getByLabel(/Start date/i).fill('2026-07-15')
++          await page
++            .getByRole('button', { name: /Create my first class/i })
++            .click()
++        } else {
++          await expect(page).toHaveURL(/\/setup\/template/)
++          await page
++            .getByRole('radio', { name: /Writing Bootcamp 6\.5/i })
++            .click()
++          await page
++            .getByTestId('template-preview-drawer')
++            .getByRole('button', { name: /Continue/i })
++            .click()
++          await expect(page).toHaveURL(/\/setup\/spawn/)
++          await page.getByLabel(/Cohort name/i).fill('Cohort A')
++          await page.getByLabel(/Start date/i).fill('2026-07-15')
++          await page
++            .getByRole('button', { name: /Save & spawn/i })
++            .click()
++        }
++
++        // Landed on the celebration
++        await expect(page).toHaveURL(/\/setup\/done/)
++
++        // (a) h1 contains interpolated center name (localized)
++        const heading = page.getByRole('heading', { level: 1 })
++        await expect(heading).toBeVisible()
++        await expect(heading).toHaveText(headingRegexFor(locale, centerName))
++
++        // (b) stat strip renders with locale-appropriate copy
++        const strip = statStripRegexFor(locale)
++        await expect(page.getByText(strip.classesReady)).toBeVisible()
++        await expect(page.getByText(strip.teachersInvited)).toBeVisible()
++
++        // (d) <h1> receives focus on mount (S-B2 focus contract)
++        const focusedTag = await page.evaluate(() =>
++          document.activeElement ? document.activeElement.tagName : null,
++        )
++        expect(focusedTag).toBe('H1')
++
++        // (c) Open Dashboard CTA navigates
++        await page.getByRole('button', { name: /Open Dashboard/i }).click()
++        await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
++      })
++    }
++  }
++})
++
++// ---------------------------------------------------------------------------
++// Story 2-3c Task 7.5 — currentStep === 'done' re-entry idempotence (W-S2)
++// ---------------------------------------------------------------------------
++
++test.describe('Story 2-3c Task 7.5 — currentStep === "done" re-entry idempotence', () => {
++  test('after clicking Open Dashboard, /dashboard shows NO welcome-back banner', async ({
++    page,
++  }) => {
++    await stubOnboardingBackend(page, DEFAULT_USER)
++    await pickPersonaAndCenter(page, 'operator', 'Smoke Center')
++
++    // Fast-forward through the wizard
++    await page.getByRole('radio', { name: /Writing Bootcamp 6\.5/i }).click()
++    await page
++      .getByTestId('template-preview-drawer')
++      .getByRole('button', { name: /Continue/i })
++      .click()
++    await page.getByLabel(/Cohort name/i).fill('Cohort A')
++    await page.getByLabel(/Start date/i).fill('2026-07-15')
++    await page.getByRole('button', { name: /Save & spawn/i }).click()
++
++    await expect(page).toHaveURL(/\/setup\/done/)
++    await page.getByRole('button', { name: /Open Dashboard/i }).click()
++    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
++
++    // Welcome-back banner suppressed when currentStep === 'done'
++    await expect(
++      page.locator('[data-testid="dashboard-finish-setup-banner"]'),
++    ).not.toBeVisible()
++  })
++
++  test('user manually re-navigates to /setup/done → celebration renders idempotently with same stat counts', async ({
++    page,
++  }) => {
++    await stubOnboardingBackend(page, DEFAULT_USER)
++    await pickPersonaAndCenter(page, 'operator', 'Smoke Center')
++
++    // Fast-forward
++    await page.getByRole('radio', { name: /Writing Bootcamp 6\.5/i }).click()
++    await page
++      .getByTestId('template-preview-drawer')
++      .getByRole('button', { name: /Continue/i })
++      .click()
++    await page.getByLabel(/Cohort name/i).fill('Cohort A')
++    await page.getByLabel(/Start date/i).fill('2026-07-15')
++    await page.getByRole('button', { name: /Save & spawn/i }).click()
++
++    await expect(page).toHaveURL(/\/setup\/done/)
++    const initialHeading = await page
++      .getByRole('heading', { level: 1 })
++      .textContent()
++
++    // Navigate away, then back manually
++    await page.getByRole('button', { name: /Open Dashboard/i }).click()
++    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
++    await page.goto('/setup/done')
++
++    await expect(page).toHaveURL(/\/setup\/done/)
++    const rerenderedHeading = await page
++      .getByRole('heading', { level: 1 })
++      .textContent()
++    expect(rerenderedHeading).toBe(initialHeading)
++  })
++
++  test('after browser reload with currentStep === "done" on /welcome → routes to /dashboard (PersonaSelectPage:72 shipped)', async ({
++    page,
++  }) => {
++    // With progress cached as `currentStep: 'done'`, hitting /welcome routes
++    // to /dashboard per shipped PersonaSelectPage guard — NOT to /setup/done.
++    // Green-phase note (Amelia): `stubOnboardingBackend` gains an optional
++    // `initialProgressStep` overload so a test can start with progress
++    // pre-marked as `done` (bypasses walking the wizard). Until then, this
++    // test naturally red-signals — the shipped stub returns
++    // `currentStep: 'persona'` on first GET, so PersonaSelectPage:72's
++    // `currentStep === 'done' → /dashboard` branch never fires and the
++    // test lands on /welcome. Add the overload as part of Task 7.5.
++    await stubOnboardingBackend(page, DEFAULT_USER, false, {
++      initialProgressStep: 'done',
++      initialPersona: 'operator',
++    })
++    await page.goto('/welcome')
++    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
++  })
++})
+diff --git a/classlite-web/e2e/route-bundle-boundaries.spec.ts b/classlite-web/e2e/route-bundle-boundaries.spec.ts
+index 68baeb9..94fda06 100644
+--- a/classlite-web/e2e/route-bundle-boundaries.spec.ts
++++ b/classlite-web/e2e/route-bundle-boundaries.spec.ts
+@@ -398,6 +398,78 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
+     }
+   })
+ 
++  test('Story 2-3c — /setup/done chunk isolated from login+dashboard AND from spawn+first-class (Task 4.2)', async () => {
++    // Story 2-3c Task 4.2 fold — the celebration page ships its own lazy
++    // chunk. Load-bearing negatives:
++    //   (a) OnboardingDonePage chunk does NOT co-appear with login or
++    //       dashboard bundle groups (standard isolation belt).
++    //   (b) Does NOT co-appear with ClassSpawnPage or SoloFirstClassPage
++    //       chunks — a shared component leak (not the type-only
++    //       TemplateDraftPayload import, which tree-shakes) would drag the
++    //       spawn chunk in via the barrel.
++    // Deep-import discipline per TS-7 + W-S4:
++    //   `useOnboardingProgress` MUST be deep-imported from
++    //   `@/features/onboarding/api/useOnboardingProgress` — NOT via the
++    //   `@/features/onboarding` barrel — else OnboardingLayout +
++    //   PersonaSelectPage + CenterSetupPage would leak into the done chunk.
++    expect(
++      existsSync(DIST_DIR),
++      'dist/assets/ not built — run `npm run build` before this Playwright spec',
++    ).toBe(true)
++    const files = readdirSync(DIST_DIR)
++    const doneChunks = files.filter((f: string) =>
++      /^OnboardingDonePage-[\w-]+\.js$/.test(f),
++    )
++    const spawnChunks = files.filter((f: string) =>
++      /^ClassSpawnPage-[\w-]+\.js$/.test(f),
++    )
++    const soloChunks = files.filter((f: string) =>
++      /^SoloFirstClassPage-[\w-]+\.js$/.test(f),
++    )
++    const studentChunkFiles = files.filter((f: string) =>
++      /^StudentDashboard-[\w-]+\.js$/.test(f),
++    )
++    const teacherChunkFiles = files.filter((f: string) =>
++      /^TeacherDashboard-[\w-]+\.js$/.test(f),
++    )
++    const loginChunkFiles = files.filter((f: string) =>
++      /^LoginPage-[\w-]+\.js$/.test(f),
++    )
++
++    expect(
++      doneChunks.length,
++      'OnboardingDonePage chunk missing from dist/',
++    ).toBeGreaterThan(0)
++
++    const studentContents = studentChunkFiles
++      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
++      .join('\n')
++    const teacherContents = teacherChunkFiles
++      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
++      .join('\n')
++    const loginContents = loginChunkFiles
++      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
++      .join('\n')
++
++    // (a) — no cross-bundle leaks into login / dashboards.
++    for (const chunk of doneChunks) {
++      expect(studentContents).not.toContain(chunk)
++      expect(teacherContents).not.toContain(chunk)
++      expect(loginContents).not.toContain(chunk)
++    }
++
++    // (b) — done chunk does NOT statically import spawn or first-class.
++    const doneContents = doneChunks
++      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
++      .join('\n')
++    for (const spawnChunkBasename of spawnChunks) {
++      expect(doneContents).not.toContain(spawnChunkBasename)
++    }
++    for (const soloChunkBasename of soloChunks) {
++      expect(doneContents).not.toContain(soloChunkBasename)
++    }
++  })
++
+   test('production dist/ does NOT include any dev-only route module', async () => {
+     // Read-only audit of the build artifact. The dev server serves dev
+     // chunks by design, so this assertion runs against `dist/` (built by
+diff --git a/classlite-web/src/features/onboarding/__tests__/ClassSpawnPage.test.tsx b/classlite-web/src/features/onboarding/__tests__/ClassSpawnPage.test.tsx
+index 2716372..400c1f7 100644
+--- a/classlite-web/src/features/onboarding/__tests__/ClassSpawnPage.test.tsx
++++ b/classlite-web/src/features/onboarding/__tests__/ClassSpawnPage.test.tsx
+@@ -145,6 +145,12 @@ function renderClassSpawnPage(opts: RenderOptions = {}) {
+             path="/verify-email"
+             element={<div>VERIFY_EMAIL_PLACEHOLDER</div>}
+           />
++          {/* Story 2-3c Task 3.4a — placeholder for Save-and-finish-later
++              contract tests (Task 3.2). */}
++          <Route
++            path="/dashboard"
++            element={<div>DASHBOARD_PLACEHOLDER</div>}
++          />
+         </Routes>
+       </MemoryRouter>
+     </QueryClientProvider></I18nextProvider>,
+@@ -1021,3 +1027,84 @@ describe('AC13 — accessibility gate', () => {
+     expect(await axe(container)).toHaveNoViolations()
+   })
+ })
++
++// ================================================================
++// Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
++// ================================================================
++//
++// Two variants: normal form + buildFromScratch amber-card variant. The
++// affordance MUST render on both (paused user still gets an exit even from
++// the buildFromScratch dead-end). Placement on the buildFromScratch variant
++// is INSIDE the amber card, BELOW "← Pick a template" (A-B1).
++describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
++  test('2xx flush → navigate /dashboard fires (happy path, normal form)', async () => {
++    const user = userEvent.setup()
++    renderClassSpawnPage()
++
++    await screen.findByRole('heading', { name: /Create your first classes/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressInternalError())
++    renderClassSpawnPage()
++
++    await screen.findByRole('heading', { name: /Create your first classes/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI — user is exiting)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressRateLimited(12))
++    renderClassSpawnPage()
++
++    await screen.findByRole('heading', { name: /Create your first classes/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('buildFromScratch amber-card variant — Save-and-finish-later renders INSIDE amber card BELOW "← Pick a template" (A-B1)', async () => {
++    const user = userEvent.setup()
++    renderClassSpawnPage({ buildFromScratch: true })
++
++    // The amber card body — locate by its "Pick a template" primary CTA
++    const pickTemplateCta = await screen.findByRole('button', {
++      name: /pick a template/i,
++    })
++    expect(pickTemplateCta).toBeInTheDocument()
++
++    // Save-and-finish-later button EXISTS on this variant (paused user's
++    // only other exit beside redirecting to /setup/template).
++    const saveLaterCta = screen.getByRole('button', {
++      name: /save and finish later/i,
++    })
++    expect(saveLaterCta).toBeInTheDocument()
++
++    await user.click(saveLaterCta)
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/onboarding/__tests__/OnboardingLayout.test.tsx b/classlite-web/src/features/onboarding/__tests__/OnboardingLayout.test.tsx
+index 3ec1e0a..03672c4 100644
+--- a/classlite-web/src/features/onboarding/__tests__/OnboardingLayout.test.tsx
++++ b/classlite-web/src/features/onboarding/__tests__/OnboardingLayout.test.tsx
+@@ -275,3 +275,132 @@ describe('OnboardingLayout — Winston-W1 currentStep-from-pathname wiring', ()
+     },
+   )
+ })
++
++// ---------------------------------------------------------------------------
++// Story 2-3c Task 1.4 — /setup/done extension (AC1, AC5, AC6)
++// ---------------------------------------------------------------------------
++
++describe('Story 2-3c Task 1.4 — /setup/done route extension', () => {
++  const authenticatedWithCenter: Session = {
++    user: {
++      id: 'user-1',
++      email: 'owner@example.com',
++      fullName: 'Owner',
++      emailVerified: true,
++    } as unknown as Session['user'],
++    accessToken: 'a.b.c',
++    center: {
++      id: 'center-1',
++      name: 'Saigon English Center',
++      shortCode: 'saigon-english',
++      // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
++      brandColor: '#1e3a8a',
++      logoUrl: null,
++      timezone: 'Asia/Ho_Chi_Minh',
++    },
++  }
++
++  function renderDonePath(path = '/setup/done') {
++    const client = createTestQueryClient()
++    client.setQueryData(authKeys.session(), authenticatedWithCenter)
++    const shell = (
++      <I18nextProvider i18n={i18n}>
++        <QueryClientProvider client={client}>
++          <MemoryRouter initialEntries={[path]}>
++            <Routes>
++              <Route element={<OnboardingLayout />}>
++                <Route
++                  path="/setup/done"
++                  element={<div>DONE_CONTENT</div>}
++                />
++                <Route
++                  path="/setup/spawn"
++                  element={<div>SPAWN_CONTENT</div>}
++                />
++                <Route
++                  path="/welcome"
++                  element={<div>WELCOME_CONTENT</div>}
++                />
++              </Route>
++              <Route
++                path="/dashboard"
++                element={<div>DASHBOARD_CONTENT</div>}
++              />
++            </Routes>
++          </MemoryRouter>
++        </QueryClientProvider>
++      </I18nextProvider>
++    )
++    render(shell)
++    return { client }
++  }
++
++  test('(1.4a) stepFromPathname behavior — /setup/done mounts without bouncing to /dashboard (POST_CENTER_WIZARD_PATHS includes /setup/done)', async () => {
++    // If Task 1.2 wasn't done, `session.center != null` would bounce
++    // the celebration screen to /dashboard.
++    renderDonePath('/setup/done')
++
++    await waitFor(() =>
++      expect(screen.getByText(/DONE_CONTENT/i)).toBeInTheDocument(),
++    )
++    expect(screen.queryByText(/DASHBOARD_CONTENT/i)).not.toBeInTheDocument()
++  })
++
++  test('(1.4b) session.center != null + pathname /setup/done → does NOT bounce to /dashboard', async () => {
++    renderDonePath('/setup/done')
++
++    await waitFor(() =>
++      expect(screen.getByText(/DONE_CONTENT/i)).toBeInTheDocument(),
++    )
++  })
++
++  test('(1.4c) AutoSaveIndicator ABSENT from DOM when pathname is /setup/done (Task 1.3 guard)', async () => {
++    renderDonePath('/setup/done')
++
++    await waitFor(() =>
++      expect(screen.getByText(/DONE_CONTENT/i)).toBeInTheDocument(),
++    )
++
++    // Shipped AutoSaveIndicator lives at data-testid="auto-save-indicator"
++    // (per shipped tests). Verify absence at /setup/done — mirrors R1-P29
++    // /welcome posture.
++    expect(
++      screen.queryByTestId('auto-save-indicator'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('(1.4d) inverse — AutoSaveIndicator PRESENT on /setup/spawn (three-state coverage per M-S5)', async () => {
++    renderDonePath('/setup/spawn')
++
++    await waitFor(() =>
++      expect(screen.getByText(/SPAWN_CONTENT/i)).toBeInTheDocument(),
++    )
++
++    // AutoSaveIndicator DOES render on wizard pages that carry a form draft.
++    expect(
++      screen.getByTestId('auto-save-indicator'),
++    ).toBeInTheDocument()
++  })
++
++  test('(1.4e) no-flash across spawn→done transition — AutoSaveIndicator hidden state stable through nav (W-S1)', async () => {
++    // Boot at /setup/spawn (indicator present), navigate to /setup/done
++    // (indicator absent). Assert no one-frame flash — the Task 1.3 pathname
++    // guard suppresses render synchronously.
++    // Simplest form: mount at /setup/done and confirm the indicator is
++    // not in the DOM at any point (the layout's OnboardingChrome renders
++    // it conditionally per pathname, so React never mounts it).
++    renderDonePath('/setup/done')
++
++    await waitFor(() =>
++      expect(screen.getByText(/DONE_CONTENT/i)).toBeInTheDocument(),
++    )
++
++    // Fire an extra tick to confirm the guard held past the initial
++    // render (defensive — Provider's savingState briefly reads 'saved' on
++    // mount from 2-3b's flushWithLatch upstream terminal PUT).
++    await new Promise((r) => setTimeout(r, 50))
++    expect(
++      screen.queryByTestId('auto-save-indicator'),
++    ).not.toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/onboarding/__tests__/SoloFirstClassPage.test.tsx b/classlite-web/src/features/onboarding/__tests__/SoloFirstClassPage.test.tsx
+index 2ba36b5..8af3a1e 100644
+--- a/classlite-web/src/features/onboarding/__tests__/SoloFirstClassPage.test.tsx
++++ b/classlite-web/src/features/onboarding/__tests__/SoloFirstClassPage.test.tsx
+@@ -107,6 +107,12 @@ function renderSoloPage(opts: RenderOptions = {}) {
+             path="/setup/center"
+             element={<div>CENTER_PLACEHOLDER</div>}
+           />
++          {/* Story 2-3c Task 3.4a — placeholder for Save-and-finish-later
++              contract tests (Task 3.3). */}
++          <Route
++            path="/dashboard"
++            element={<div>DASHBOARD_PLACEHOLDER</div>}
++          />
+         </Routes>
+       </MemoryRouter>
+     </QueryClientProvider></I18nextProvider>,
+@@ -296,3 +302,59 @@ describe('AC13 — accessibility gate', () => {
+     expect(await axe(container)).toHaveNoViolations()
+   })
+ })
++
++// ---------------------------------------------------------------------------
++// Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
++// ---------------------------------------------------------------------------
++//
++// Solo path is one step (`/setup/first-class`) so this is the ONE opportunity
++// to save-and-finish-later on the Solo branch — losing it strands the Solo
++// user in the wizard if they need to step away.
++describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
++  test('2xx flush → navigate /dashboard fires (happy path)', async () => {
++    const user = userEvent.setup()
++    renderSoloPage()
++
++    await screen.findByRole('heading', { name: /Create your first class/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressInternalError())
++    renderSoloPage()
++
++    await screen.findByRole('heading', { name: /Create your first class/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressRateLimited(12))
++    renderSoloPage()
++
++    await screen.findByRole('heading', { name: /Create your first class/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/onboarding/__tests__/TemplateSelectPage.test.tsx b/classlite-web/src/features/onboarding/__tests__/TemplateSelectPage.test.tsx
+index 9c12224..8b687ac 100644
+--- a/classlite-web/src/features/onboarding/__tests__/TemplateSelectPage.test.tsx
++++ b/classlite-web/src/features/onboarding/__tests__/TemplateSelectPage.test.tsx
+@@ -468,3 +468,66 @@ describe('AC13 — accessibility gate', () => {
+     expect(await axe(container)).toHaveNoViolations()
+   })
+ })
++
++// ---------------------------------------------------------------------------
++// Story 2-3c Task 3.4 — Save-and-finish-later contract (Murat-S3, 3 sub-tests)
++// ---------------------------------------------------------------------------
++//
++// AC4: "try { await autoSave.flush() } finally { navigate('/dashboard', {
++// replace: true }) }" — try/finally guarantees navigate on flush failure.
++// The 3 sub-tests pin: 2xx flush → navigate, 500 flush → navigate, 429 flush
++// → navigate. User is EXITING; a stalled auto-save must not orphan them.
++describe('Story 2-3c AC4 — Save-and-finish-later contract (Murat-S3)', () => {
++  test('2xx flush → navigate /dashboard fires (happy path)', async () => {
++    const user = userEvent.setup()
++    renderTemplateSelectPageForOperator()
++
++    await screen.findByRole('heading', { name: /Choose a template/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('500 flush → navigate /dashboard STILL fires (try/finally holds)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressInternalError())
++    renderTemplateSelectPageForOperator()
++
++    await screen.findByRole('heading', { name: /Choose a template/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++  })
++
++  test('429 flush with Retry-After → navigate /dashboard STILL fires (no countdown UI — user is exiting)', async () => {
++    const user = userEvent.setup()
++    server.use(errorHandlers.putProgressRateLimited(12))
++    renderTemplateSelectPageForOperator()
++
++    await screen.findByRole('heading', { name: /Choose a template/i })
++
++    await user.click(
++      screen.getByRole('button', { name: /save and finish later/i }),
++    )
++
++    expect(
++      await screen.findByText(/DASHBOARD_PLACEHOLDER/i),
++    ).toBeInTheDocument()
++
++    // Contrast with the spawn-page 429 handling: NO countdown surfaces on
++    // this affordance because the user is leaving the wizard.
++    expect(
++      screen.queryByText(/retry.*in.*\d+/i),
++    ).not.toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/onboarding/api/__tests__/handlers.ts b/classlite-web/src/features/onboarding/api/__tests__/handlers.ts
+index ef5a728..1e87be5 100644
+--- a/classlite-web/src/features/onboarding/api/__tests__/handlers.ts
++++ b/classlite-web/src/features/onboarding/api/__tests__/handlers.ts
+@@ -241,6 +241,29 @@ export const errorHandlers = {
+       }),
+     ),
+ 
++  // Story 2-3c Task 3.4 — Save-and-finish-later flush contract tests
++  // (Murat-S3 3-sub-test × 3 pages). The try/finally in the affordance
++  // handler must guarantee navigate to /dashboard on ANY 5xx / 429 / network
++  // failure — user is EXITING, so a stalled auto-save must not orphan them.
++
++  putProgressInternalError: () =>
++    http.put('/api/onboarding/progress', () =>
++      HttpResponse.json(errorEnvelope('INTERNAL_ERROR', 'Boom'), {
++        status: 500,
++      }),
++    ),
++
++  putProgressRateLimited: (retryAfterSeconds = 12) =>
++    http.put('/api/onboarding/progress', () =>
++      HttpResponse.json(
++        errorEnvelope('RATE_LIMIT_EXCEEDED', 'Too many requests'),
++        {
++          status: 429,
++          headers: { 'Retry-After': String(retryAfterSeconds) },
++        },
++      ),
++    ),
++
+   progressWithPersona: (
+     persona: 'operator' | 'founder' | 'solo_teacher' | null,
+     currentStep: OnboardingProgressResult['currentStep'],
+diff --git a/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts b/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
+index 73ad4d0..cc49124 100644
+--- a/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
++++ b/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
+@@ -1002,3 +1002,61 @@ describe('Story 2-3b i18n parity (R38)', () => {
+     },
+   )
+ })
++
++/**
++ * Story 2-3c — onboarding wizard closer (`/setup/done` celebration screen).
++ *
++ * Closed-enumeration STORY_2_3C_KEYS + prefix-ratchet block mirrors the
++ * 2-3a / 2-3b precedent. Every NEW key added by this story lands in this
++ * array — `onboarding.wizard.saveAndFinishLater` (2-3a) is REUSED, not
++ * duplicated, so it is NOT in this set.
++ *
++ * Prefix ratchet: single allow-list `onboarding.done.*` per A-I3 (tighter
++ * than the story's initial `['onboarding.done.', 'onboarding.wizard.']`
++ * sketch — `wizard.*` is 2-3a's turf, not 2-3c's).
++ *
++ * Interpolation tokens (M-B1 + A-B2, 3 total):
++ *   {{centerName}} {{count}} {{requestId}}
++ * ({{shortCode}} is composed via JS template literal in the tile
++ * component, NOT via i18next interpolation.)
++ */
++export const STORY_2_3C_KEYS = [
++  'onboarding.done.title',
++  'onboarding.done.subtitle.operator',
++  'onboarding.done.subtitle.founder',
++  'onboarding.done.subtitle.solo_teacher',
++  'onboarding.done.stat.classesReady',
++  'onboarding.done.stat.classesReady_one',
++  'onboarding.done.stat.classesReadyLabel',
++  'onboarding.done.stat.teachersInvited',
++  'onboarding.done.stat.teachersInvited_one',
++  'onboarding.done.stat.teachersInvitedLabel',
++  'onboarding.done.stat.subdomain',
++  'onboarding.done.stat.tileAriaLabel',
++  'onboarding.done.openDashboardCta',
++  'onboarding.done.error.generic',
++  'onboarding.done.error.genericWithRequestId',
++  'onboarding.done.error.retryCta',
++  'onboarding.done.error.setupIncomplete',
++  'onboarding.done.error.continueToDashboardCta',
++] as const
++
++describe('Story 2-3c i18n parity (R38)', () => {
++  test('every Story 2-3c i18n key exists in both en.json and vi.json', () => {
++    assertI18nParity(STORY_2_3C_KEYS)
++  })
++
++  test('interpolation-token parity holds across en / vi for every 2-3c key (M-B1 + A-B2)', () => {
++    assertI18nInterpolationParity(STORY_2_3C_KEYS)
++  })
++
++  const ALLOWED_PREFIXES_2_3C = ['onboarding.done.'] as const
++
++  test.each(STORY_2_3C_KEYS)(
++    '%s belongs to a 2-3c allowed prefix (A-I3 single-prefix ratchet)',
++    (key) => {
++      const ok = ALLOWED_PREFIXES_2_3C.some((p) => key.startsWith(p))
++      expect(ok).toBe(true)
++    },
++  )
++})
