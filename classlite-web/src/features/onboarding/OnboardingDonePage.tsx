@@ -39,6 +39,7 @@ import { authKeys } from '@/features/auth/api/authKeys'
 import { useAuth } from '@/hooks/useAuth'
 import { useOnboardingProgress } from '@/features/onboarding/api/useOnboardingProgress'
 import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
+import { teachersInvitedCount } from '@/lib/teachersInvitedCount'
 import DoneHeroPanel, {
   type DoneHeroPersona,
 } from '@/features/onboarding/components/DoneHeroPanel'
@@ -182,28 +183,11 @@ function dispatchNonDoneStep(persona: Persona, step: CurrentStep): string {
   return '/welcome'
 }
 
-// R1-C1-P24: dedup by normalized email (a teacher assigned to N classes counts
-// as 1 invite, not N — copy "M teachers invited" reads more honestly as a
-// people count). R1-C1-P20: whitespace-only `teacherEmail` excluded.
-function deriveTeachersInvitedCount(
-  classesDraft: TemplateDraftPayload['classesDraft'] | undefined,
-  userEmail: string | null | undefined,
-): number {
-  if (classesDraft == null) return 0
-  // W-S3 defensive null-user fallback: selfEmail === '' means we're in a
-  // transient boot-probe state; count everything (dedup'd) rather than
-  // misfiring self-exclusion.
-  const selfEmail = userEmail?.toLowerCase().trim() ?? ''
-  const uniqueEmails = new Set<string>()
-  for (const row of classesDraft) {
-    if (row.teacherEmail == null) continue
-    const normalized = row.teacherEmail.toLowerCase().trim()
-    if (normalized === '') continue
-    if (selfEmail !== '' && normalized === selfEmail) continue
-    uniqueEmails.add(normalized)
-  }
-  return uniqueEmails.size
-}
+// Story 2-4 W-BLOCKER-3 pragmatic port: this file's private
+// `deriveTeachersInvitedCount` moved to `@/lib/teachersInvitedCount` so BOTH
+// Story 2-3c (this page) AND Story 2-4 (dashboard checklist) consume the same
+// implementation. Behavior unchanged — full case-insensitive + trim + Set
+// dedup + whitespace filter + null-user fallback lives in the shared lib.
 
 export default function OnboardingDonePage() {
   const { t } = useTranslation()
@@ -372,7 +356,7 @@ export default function OnboardingDonePage() {
   if (!user) return <OnboardingDonePageSkeleton />
 
   const classCount = spawnedClassIds.length
-  const teachersInvitedCount = deriveTeachersInvitedCount(
+  const teachersInvitedCountValue = teachersInvitedCount(
     templateDraft?.classesDraft,
     user.email,
   )
@@ -388,7 +372,7 @@ export default function OnboardingDonePage() {
       shortCode={session.center.shortCode}
       persona={persona}
       classCount={classCount}
-      teachersInvitedCount={teachersInvitedCount}
+      teachersInvitedCount={teachersInvitedCountValue}
       onOpenDashboard={() => {
         navigate('/dashboard', { replace: true })
       }}

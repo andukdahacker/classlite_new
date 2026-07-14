@@ -1,0 +1,1399 @@
+diff --git a/classlite-web/src/features/dashboard/FinishSetupCard.stories.tsx b/classlite-web/src/features/dashboard/FinishSetupCard.stories.tsx
+new file mode 100644
+index 0000000..8d18f05
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/FinishSetupCard.stories.tsx
+@@ -0,0 +1,139 @@
++/**
++ * FinishSetupCard stories — Story 2-4 Task 3.2.
++ *
++ * ≥8 discrete variants covering:
++ *   - Persona × fraction state (OperatorFreshLanding 4/7, OperatorAllPossible
++ *     4/7 with optional items permanently pending, FounderNoInvites 3/7,
++ *     SoloTeacher 1/4)
++ *   - Snoozed state (returns null — the story renders the pre-snooze card
++ *     so designers can compare)
++ *   - Locale (LocaleViOperator / LocaleViFounder / LocaleViSolo) per
++ *     Vietnamese overflow discipline
++ *
++ * Each story uses a distinct fake `userId` so the module-scope
++ * `useChecklistState` cache does not leak across stories.
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++import type { CenterSummary } from '@/features/auth/api/authKeys'
++
++const CENTER: CenterSummary = {
++  id: 'sb-center',
++  name: 'Saigon English Center',
++  shortCode: 'saigon-english',
++  // eslint-disable-next-line no-restricted-syntax -- brand-color wire format
++  brandColor: '#1e3a8a',
++  logoUrl: null,
++  timezone: 'Asia/Ho_Chi_Minh',
++}
++
++const CTX_POST_2_3C: ChecklistCtx = {
++  currentCenter: CENTER,
++  templateDraft: {
++    selectedTemplateId: 'tpl-1',
++    spawnedClassIds: ['c1', 'c2'],
++    classesDraft: [
++      { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++      { cohortName: 'Batch B', startDate: '2026-08-15', teacherEmail: 'alice@example.com' },
++    ],
++  },
++  teachersInvitedCount: 2,
++}
++
++const CTX_FRESH: ChecklistCtx = {
++  currentCenter: CENTER,
++  templateDraft: null,
++  teachersInvitedCount: 0,
++}
++
++const CTX_FOUNDER_NO_INVITES: ChecklistCtx = {
++  currentCenter: CENTER,
++  templateDraft: {
++    selectedTemplateId: 'tpl-1',
++    spawnedClassIds: ['c1'],
++    classesDraft: [
++      { cohortName: 'First class', startDate: '2026-08-15', teacherEmail: null },
++    ],
++  },
++  teachersInvitedCount: 0,
++}
++
++const meta = {
++  title: 'Dashboard/FinishSetupCard',
++  component: FinishSetupCard,
++  parameters: {
++    layout: 'centered',
++    docs: {
++      description: {
++        component:
++          'Post-onboarding "Finish setting up" checklist card. Renders on `/dashboard` when the visibility gate is open (see AC1). Dismiss dropped from v1 per S-STRONG-13 — Story 2.5 ships the reopen surface.',
++      },
++    },
++  },
++} satisfies Meta<typeof FinishSetupCard>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++export const OperatorFreshLanding: Story = {
++  args: { persona: 'operator', userId: 'sb-fresh', ctx: CTX_FRESH },
++}
++
++export const OperatorAllPossible: Story = {
++  args: { persona: 'operator', userId: 'sb-op-all', ctx: CTX_POST_2_3C },
++}
++
++export const FounderNoInvites: Story = {
++  args: {
++    persona: 'founder',
++    userId: 'sb-fn',
++    ctx: CTX_FOUNDER_NO_INVITES,
++  },
++}
++
++export const SoloTeacher: Story = {
++  args: {
++    persona: 'solo_teacher',
++    userId: 'sb-solo',
++    ctx: { ...CTX_FRESH, teachersInvitedCount: 0 },
++  },
++}
++
++export const LocaleViOperator: Story = {
++  args: { persona: 'operator', userId: 'sb-vi-op', ctx: CTX_POST_2_3C },
++  parameters: { i18n: { locale: 'vi' } },
++}
++
++export const LocaleViFounder: Story = {
++  args: {
++    persona: 'founder',
++    userId: 'sb-vi-fn',
++    ctx: CTX_FOUNDER_NO_INVITES,
++  },
++  parameters: { i18n: { locale: 'vi' } },
++}
++
++export const LocaleViSolo: Story = {
++  args: {
++    persona: 'solo_teacher',
++    userId: 'sb-vi-solo',
++    ctx: { ...CTX_FRESH, teachersInvitedCount: 0 },
++  },
++  parameters: { i18n: { locale: 'vi' } },
++}
++
++// Snoozed — shows the pre-snooze card for design comparison; in real
++// runtime the visibility gate would return null. Documented in the story
++// description below.
++export const Snoozed: Story = {
++  args: { persona: 'operator', userId: 'sb-snoozed', ctx: CTX_POST_2_3C },
++  parameters: {
++    docs: {
++      description: {
++        story:
++          'Design reference for the pre-snooze card. At runtime, clicking "Snooze for a week" hides the card via `useChecklistState.isVisible` — this story renders the pre-snooze state so designers can compare.',
++      },
++    },
++  },
++}
+diff --git a/classlite-web/src/features/dashboard/FinishSetupCard.tsx b/classlite-web/src/features/dashboard/FinishSetupCard.tsx
+new file mode 100644
+index 0000000..630f536
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/FinishSetupCard.tsx
+@@ -0,0 +1,185 @@
++/**
++ * FinishSetupCard — Story 2-4 AC1/AC2/AC3/AC4/AC5.
++ *
++ * The "Finish setting up" card mounted on `/dashboard` after a user
++ * completes onboarding. Renders a persona-specific ordered checklist,
++ * displays the `{completed}/{total}` fraction with a progress bar, and
++ * offers a "Snooze for a week" affordance (Dismiss DROPPED from v1 per
++ * S-STRONG-13 — Story 2.5's Settings → Reopen surface is the recovery
++ * path; shipping Dismiss without it would trap users).
++ *
++ * Visibility gate (AC1) — the card renders ONLY when:
++ *   - `userId != null` (post-auth, not a boot-probe tick)
++ *   - `ctx.currentCenter != null` (center exists)
++ *   - `useChecklistState(userId).isVisible === true` (not snoozed)
++ *
++ * The `currentStep === 'done'` + `persona != null` gates live in the
++ * caller (per-persona body component) — this card doesn't reach for
++ * `useOnboardingProgress`.
++ *
++ * Fraction announcement — the fraction number is wrapped in
++ * `<div aria-live="polite" aria-atomic="true">` [S-STRONG-6] so
++ * screen readers announce state changes as items complete.
++ */
++import { useTranslation } from 'react-i18next'
++import { addBreadcrumb } from '@sentry/react'
++import {
++  checklistDefinition,
++  type ChecklistCtx,
++  type ChecklistItem,
++  type Persona,
++} from '@/features/dashboard/lib/checklistDefinition'
++import { useChecklistState } from '@/features/dashboard/hooks/useChecklistState'
++
++export interface FinishSetupCardProps {
++  persona: Persona
++  userId: string | null
++  ctx: ChecklistCtx
++}
++
++interface RenderedItem {
++  item: ChecklistItem
++  done: boolean
++}
++
++function badgeKeyFor(item: ChecklistItem, done: boolean): string {
++  if (done) return 'dashboard.checklist.badge.done'
++  return `dashboard.checklist.badge.${item.badge}`
++}
++
++export default function FinishSetupCard({
++  persona,
++  userId,
++  ctx,
++}: FinishSetupCardProps) {
++  const { t } = useTranslation()
++  const { isVisible, snooze } = useChecklistState(userId)
++
++  // AC1 gate — visibility depends on all three signals collapsing to true.
++  if (!isVisible) return null
++  if (userId === null) return null
++  if (ctx.currentCenter === null) return null
++
++  const items = checklistDefinition[persona]
++  const rendered: RenderedItem[] = items.map((item) => ({
++    item,
++    done: item.isDone(ctx),
++  }))
++  const completed = rendered.filter((r) => r.done).length
++  const total = rendered.length
++  const percent = total === 0 ? 0 : Math.round((100 * completed) / total)
++
++  const handleSnooze = (): void => {
++    addBreadcrumb({
++      category: 'checklist',
++      message: 'checklist-snoozed',
++      level: 'info',
++      data: { userId, persona, completed, total },
++    })
++    snooze()
++  }
++
++  return (
++    <section
++      data-testid="dashboard-checklist-card"
++      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
++    >
++      <header className="flex items-start justify-between gap-6">
++        <div className="min-w-0">
++          <p className="font-[var(--cl-font-display)] text-sm italic text-slate-500">
++            {t('dashboard.checklist.eyebrow')}
++          </p>
++          <h2 className="mt-1 font-[var(--cl-font-display)] text-2xl italic text-[var(--cl-ink)]">
++            {t(`dashboard.checklist.title.${persona}` as const)}
++          </h2>
++          <p className="mt-2 max-w-prose text-sm text-slate-600">
++            {t(`dashboard.checklist.subtitle.${persona}` as const)}
++          </p>
++        </div>
++        <div className="flex flex-col items-end gap-2">
++          <div
++            aria-live="polite"
++            aria-atomic="true"
++            aria-label={t('dashboard.checklist.fractionAriaLabel', {
++              completed,
++              total,
++            })}
++          >
++            <p
++              data-testid="dashboard-checklist-fraction"
++              className="text-3xl font-semibold text-slate-900"
++            >
++              {completed}
++              <span className="text-xl text-slate-500">/{total}</span>
++            </p>
++          </div>
++          <div
++            data-testid="dashboard-checklist-progress-bar"
++            role="progressbar"
++            aria-label={t('dashboard.checklist.fractionAriaLabel', {
++              completed,
++              total,
++            })}
++            aria-valuemin={0}
++            aria-valuemax={total}
++            aria-valuenow={completed}
++            className="h-2 w-40 overflow-hidden rounded-full bg-slate-100"
++          >
++            <div
++              className="h-full bg-slate-900"
++              style={{ width: `${percent}%` }}
++            />
++          </div>
++        </div>
++      </header>
++
++      <ol className="mt-6 space-y-3">
++        {rendered.map(({ item, done }) => (
++          <li
++            key={item.id}
++            data-testid={`dashboard-checklist-item-${item.id}`}
++            className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
++          >
++            <div className="flex items-center gap-3">
++              <span
++                aria-hidden="true"
++                className={
++                  done
++                    ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700'
++                    : 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400'
++                }
++              >
++                {done ? '✓' : '○'}
++              </span>
++              <span className="text-sm font-medium text-slate-800">
++                {t(item.i18nKey)}
++              </span>
++            </div>
++            <span className="inline-flex items-center gap-2">
++              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
++                {t(badgeKeyFor(item, done))}
++              </span>
++              <span aria-hidden="true" className="text-slate-400">
++                {done ? '✓' : '→'}
++              </span>
++            </span>
++          </li>
++        ))}
++      </ol>
++
++      <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
++        <p className="text-xs text-slate-500">
++          {t('dashboard.checklist.footer.autosave')}
++        </p>
++        <button
++          type="button"
++          data-testid="dashboard-checklist-snooze-cta"
++          onClick={handleSnooze}
++          className="text-sm font-medium text-slate-700 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
++        >
++          {t('dashboard.checklist.snoozeCta')}
++        </button>
++      </footer>
++    </section>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/FirstAIGradeCard.stories.tsx b/classlite-web/src/features/dashboard/FirstAIGradeCard.stories.tsx
+new file mode 100644
+index 0000000..ad37fea
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/FirstAIGradeCard.stories.tsx
+@@ -0,0 +1,72 @@
++/**
++ * FirstAIGradeCard stories — Story 2-4 Task 4.3.
++ *
++ * ≥6 discrete variants exercising:
++ *   - Default (Founder/Solo — identical layout, fixture-driven)
++ *   - LocaleVi
++ *   - Cramped720 (Vietnamese width envelope)
++ *   - ReducedMotion (v1 renders static but locks the contract for
++ *     FU-2-4-F's live pipeline)
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import FirstAIGradeCard from '@/features/dashboard/FirstAIGradeCard'
++
++const meta = {
++  title: 'Dashboard/FirstAIGradeCard',
++  component: FirstAIGradeCard,
++  parameters: {
++    layout: 'centered',
++    docs: {
++      description: {
++        component:
++          'Static AI-graded essay preview for Founder + Solo Teacher personas. Fixture-driven — no wire dependency on Epic 6. Live pipeline lands via FU-2-4-F.',
++      },
++    },
++  },
++} satisfies Meta<typeof FirstAIGradeCard>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++export const Default: Story = {}
++
++export const Founder: Story = {
++  parameters: {
++    docs: { description: { story: 'Founder persona render (identical to Solo).' } },
++  },
++}
++
++export const SoloTeacher: Story = {
++  parameters: {
++    docs: { description: { story: 'Solo Teacher persona render.' } },
++  },
++}
++
++export const LocaleVi: Story = {
++  parameters: { i18n: { locale: 'vi' } },
++}
++
++export const Cramped720: Story = {
++  parameters: {
++    viewport: { defaultViewport: 'tablet' },
++    i18n: { locale: 'vi' },
++    docs: {
++      description: {
++        story:
++          'Vietnamese width envelope at ~720px — verifies excerpt line-clamp holds and criterion labels do not wrap.',
++      },
++    },
++  },
++}
++
++export const ReducedMotion: Story = {
++  parameters: {
++    reducedMotion: 'reduce',
++    docs: {
++      description: {
++        story:
++          'v1 renders static content, so `prefers-reduced-motion: reduce` is a no-op. When FU-2-4-F wires the live pipeline the animation MUST honor this parameter.',
++      },
++    },
++  },
++}
+diff --git a/classlite-web/src/features/dashboard/FirstAIGradeCard.tsx b/classlite-web/src/features/dashboard/FirstAIGradeCard.tsx
+new file mode 100644
+index 0000000..d70bd44
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/FirstAIGradeCard.tsx
+@@ -0,0 +1,134 @@
++/**
++ * FirstAIGradeCard — Story 2-4 AC7.
++ *
++ * Static "how a real AI grade will look" preview mounted for the Founder
++ * and Solo Teacher personas below the FinishSetupCard. Renders a hardcoded
++ * fixture (`sampleAIGrade`) — no wire dependency on Epic 6 (FU-2-4-F
++ * picks up the live pipeline).
++ *
++ * Design notes:
++ *   - Title copy uses "Grading looks like this." [S-STRONG-12 voice
++ *     unification — the earlier "See ClassLite AI in action" read as
++ *     brochure].
++ *   - Inline `<span class="ai-mark">` marker per [A-BLOCKER-4 + S-INFO-17]
++ *     — the canonical `<AiMark>` chip is FU-2-4-C.
++ *   - NO "See how grading works" CTA [S-STRONG-7 — dishonest dead-link];
++ *     the card delivers value inline. FU-2-4-F wires the live click-to-run
++ *     once Epic 6 ships.
++ *   - Band-ring SVG is `role="img"` with `aria-labelledby` pointing at
++ *     both the "Sample band" prefix and the value node (AC16 fold).
++ *   - Motion: v1 renders static; when FU-2-4-F wires the live pipeline it
++ *     MUST respect `prefers-reduced-motion: reduce` [S-INFO-16].
++ */
++import { useTranslation } from 'react-i18next'
++import { sampleAIGrade } from '@/features/dashboard/lib/sampleAIGrade'
++
++export default function FirstAIGradeCard() {
++  const { t } = useTranslation()
++
++  return (
++    <section
++      data-testid="dashboard-first-ai-grade-card"
++      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
++    >
++      <header className="flex items-center gap-3">
++        <h2 className="font-[var(--cl-font-display)] text-2xl italic text-[var(--cl-ink)]">
++          {t('dashboard.aiSample.title')}
++        </h2>
++        {/* TODO(FU-2-4-C): promote to canonical <AiMark> chip. */}
++        <span
++          className="ai-mark inline-flex items-center rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-2 py-0.5 text-xs font-medium text-white"
++          aria-label={t('dashboard.aiSample.aiMarkLabel')}
++        >
++          {t('dashboard.aiSample.aiMarkLabel')}
++        </span>
++      </header>
++
++      <blockquote className="mt-5 line-clamp-3 border-l-4 border-slate-200 pl-4 text-sm italic text-slate-700">
++        {t('dashboard.aiSample.essayExcerpt')}
++      </blockquote>
++
++      <div className="mt-6 flex flex-wrap items-center gap-6">
++        <div className="flex flex-col items-center">
++          <svg
++            role="img"
++            aria-labelledby="ai-band-title ai-band-value"
++            className="h-24 w-24"
++            viewBox="0 0 100 100"
++          >
++            <circle
++              cx="50"
++              cy="50"
++              r="42"
++              fill="none"
++              stroke="var(--cl-line-soft)"
++              strokeWidth="8"
++            />
++            <circle
++              cx="50"
++              cy="50"
++              r="42"
++              fill="none"
++              stroke="var(--cl-ink)"
++              strokeWidth="8"
++              strokeDasharray="264"
++              strokeDashoffset="97"
++              transform="rotate(-90 50 50)"
++            />
++            <text
++              id="ai-band-value"
++              x="50"
++              y="55"
++              textAnchor="middle"
++              className="fill-slate-900 text-xl font-semibold"
++            >
++              {sampleAIGrade.overallBand.toFixed(1)}
++            </text>
++          </svg>
++          <p
++            id="ai-band-title"
++            className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500"
++          >
++            {t('dashboard.aiSample.bandLabel')}
++          </p>
++        </div>
++
++        <ul className="flex-1 space-y-2">
++          {sampleAIGrade.criteria.map((c) => (
++            <li key={c.key} className="flex items-center gap-3">
++              <span className="w-32 shrink-0 text-xs font-medium text-slate-600">
++                {c.label}
++              </span>
++              <div
++                className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"
++                role="progressbar"
++                aria-valuemin={0}
++                aria-valuemax={9}
++                aria-valuenow={c.band}
++                aria-label={`${c.label} ${c.band.toFixed(1)}`}
++              >
++                <div
++                  className="h-full bg-slate-900"
++                  style={{ width: `${(c.band / 9) * 100}%` }}
++                />
++              </div>
++              <span className="w-10 text-right text-sm font-semibold text-slate-900">
++                {c.band.toFixed(1)}
++              </span>
++            </li>
++          ))}
++        </ul>
++      </div>
++
++      <p className="mt-6 border-l-4 border-emerald-200 pl-4 text-sm text-slate-700">
++        {t('dashboard.aiSample.feedbackQuote')}
++      </p>
++
++      <footer className="mt-6 border-t border-slate-100 pt-4">
++        <p className="text-xs text-slate-500">
++          {t('dashboard.aiSample.disclaimer')}
++        </p>
++      </footer>
++    </section>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/SampleDashboardPreview.stories.tsx b/classlite-web/src/features/dashboard/SampleDashboardPreview.stories.tsx
+new file mode 100644
+index 0000000..bef5134
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/SampleDashboardPreview.stories.tsx
+@@ -0,0 +1,44 @@
++/**
++ * SampleDashboardPreview stories — Story 2-4 Task 5.3.
++ *
++ * ≥3 discrete variants (Task 5.3 minimum): OperatorDefault, LocaleVi,
++ * OperatorWithLongCenterName (banner copy interpolates a centerName in a
++ * later revision — for v1 the copy is static, so this story just documents
++ * the intent).
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import SampleDashboardPreview from '@/features/dashboard/SampleDashboardPreview'
++
++const meta = {
++  title: 'Dashboard/SampleDashboardPreview',
++  component: SampleDashboardPreview,
++  parameters: {
++    layout: 'centered',
++    docs: {
++      description: {
++        component:
++          '4-up ghosted-frame stat strip for the Operator persona. Fixture-driven — Epic 8 wires real analytics.',
++      },
++    },
++  },
++} satisfies Meta<typeof SampleDashboardPreview>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++export const OperatorDefault: Story = {}
++
++export const LocaleVi: Story = {
++  parameters: { i18n: { locale: 'vi' } },
++}
++
++export const OperatorWithLongCenterName: Story = {
++  parameters: {
++    docs: {
++      description: {
++        story:
++          'Copy is static in v1, so long center names do not overflow the banner. Documented so future copy revisions (post-Epic 8) can revisit.',
++      },
++    },
++  },
++}
+diff --git a/classlite-web/src/features/dashboard/SampleDashboardPreview.tsx b/classlite-web/src/features/dashboard/SampleDashboardPreview.tsx
+new file mode 100644
+index 0000000..fc7765a
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/SampleDashboardPreview.tsx
+@@ -0,0 +1,60 @@
++/**
++ * SampleDashboardPreview — Story 2-4 AC8.
++ *
++ * Mounted for the Operator persona below the FinishSetupCard. Renders a
++ * 4-up "ghosted frame" pulse-stat strip (per UX §6.4) with em-dash values
++ * and an amber threshold banner explaining the placeholder state. NO wire
++ * dependency — Epic 8 wires real analytics.
++ *
++ * Rationale (AC8): a non-teaching Admin (Operator) wouldn't grade essays,
++ * so the FirstAIGradeCard doesn't land. Center-pulse analytics is the
++ * value they'll compound.
++ */
++import { useTranslation } from 'react-i18next'
++import {
++  sampleOwnerPreview,
++  OWNER_PREVIEW_PLACEHOLDER,
++} from '@/features/dashboard/lib/sampleOwnerPreview'
++
++export default function SampleDashboardPreview() {
++  const { t } = useTranslation()
++
++  return (
++    <section
++      data-testid="dashboard-sample-preview"
++      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
++      aria-labelledby="dashboard-sample-preview-title"
++    >
++      <p
++        id="dashboard-sample-preview-title"
++        role="status"
++        className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-slate-800"
++      >
++        {t('dashboard.samplePreview.thresholdBanner')}
++      </p>
++
++      <ul
++        className="grid grid-cols-2 gap-4 opacity-50 md:grid-cols-4"
++        aria-hidden="false"
++      >
++        {sampleOwnerPreview.map((tile) => (
++          <li
++            key={tile.key}
++            className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-center"
++          >
++            <p className="text-3xl font-semibold text-slate-400">
++              {OWNER_PREVIEW_PLACEHOLDER}
++            </p>
++            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
++              {t(tile.labelKey)}
++            </p>
++          </li>
++        ))}
++      </ul>
++
++      <p className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-500">
++        {t('dashboard.samplePreview.disclaimer')}
++      </p>
++    </section>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/YourClassesRow.stories.tsx b/classlite-web/src/features/dashboard/YourClassesRow.stories.tsx
+new file mode 100644
+index 0000000..54d0b10
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/YourClassesRow.stories.tsx
+@@ -0,0 +1,76 @@
++/**
++ * YourClassesRow stories — Story 2-4 Task 5.6.
++ *
++ * ≥4 discrete variants exercising the AC9 render matrix.
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import YourClassesRow from '@/features/dashboard/YourClassesRow'
++
++const meta = {
++  title: 'Dashboard/YourClassesRow',
++  component: YourClassesRow,
++  parameters: {
++    layout: 'centered',
++    docs: {
++      description: {
++        component:
++          'Preview of up to 2 spawned classes below the persona-value card. Ghost card + dead-link CTA renders when no classes exist.',
++      },
++    },
++  },
++} satisfies Meta<typeof YourClassesRow>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++export const TwoClasses: Story = {
++  args: {
++    centerName: 'Saigon English Center',
++    classesDraft: [
++      {
++        cohortName: 'IELTS Morning',
++        startDate: '2026-08-15',
++        teacherEmail: 'bob@example.com',
++      },
++      {
++        cohortName: 'IELTS Evening',
++        startDate: '2026-08-20',
++        teacherEmail: 'alice@example.com',
++      },
++    ],
++  },
++}
++
++export const OneClass: Story = {
++  args: {
++    centerName: 'Saigon English Center',
++    classesDraft: [
++      {
++        cohortName: 'IELTS Morning',
++        startDate: '2026-08-15',
++        teacherEmail: null,
++      },
++    ],
++  },
++}
++
++export const EmptyGhost: Story = {
++  args: {
++    centerName: 'Saigon English Center',
++    classesDraft: [],
++  },
++}
++
++export const LocaleVi: Story = {
++  args: {
++    centerName: 'Trung tâm Anh ngữ Sài Gòn',
++    classesDraft: [
++      {
++        cohortName: 'Lớp Sáng',
++        startDate: '2026-08-15',
++        teacherEmail: null,
++      },
++    ],
++  },
++  parameters: { i18n: { locale: 'vi' } },
++}
+diff --git a/classlite-web/src/features/dashboard/YourClassesRow.tsx b/classlite-web/src/features/dashboard/YourClassesRow.tsx
+new file mode 100644
+index 0000000..c11b753
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/YourClassesRow.tsx
+@@ -0,0 +1,109 @@
++/**
++ * YourClassesRow — Story 2-4 AC9.
++ *
++ * Renders up to 2 class cards from `templateDraft.classesDraft.slice(0,2)`
++ * below the persona-value card (FirstAIGradeCard for Founder/Solo,
++ * SampleDashboardPreview for Operator). Each card shows the cohort name,
++ * a locale-formatted start date, and a placeholder stat strip (`—` values
++ * — real numbers land Epic 3+ / Epic 5+).
++ *
++ * If `classesDraft` is empty or undefined, render a ghost card with a
++ * dashed-border "+ Create another from template" CTA that routes through
++ * `<DeadLinkTrigger>` (dead-link toast — the templates surface graduates
++ * with Story 3.3).
++ *
++ * XSS safety [W-INFO-17]: `cohortName` is a user-typed string. It renders
++ * via React text-node interpolation (auto-escaped). ARIA labels are
++ * composed via i18n interpolation (`t('...', { name })`), NOT string
++ * concatenation.
++ */
++import { useTranslation } from 'react-i18next'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++import DeadLinkTrigger from '@/features/dashboard/components/DeadLinkTrigger'
++
++export interface YourClassesRowProps {
++  centerName: string
++  classesDraft: TemplateDraftPayload['classesDraft'] | undefined
++}
++
++function formatStartDate(iso: string, locale: string): string {
++  if (iso === '') return ''
++  try {
++    return new Intl.DateTimeFormat(locale, {
++      year: 'numeric',
++      month: 'short',
++      day: 'numeric',
++    }).format(new Date(iso))
++  } catch {
++    return iso
++  }
++}
++
++export default function YourClassesRow({
++  centerName,
++  classesDraft,
++}: YourClassesRowProps) {
++  const { t, i18n } = useTranslation()
++  const locale = i18n.language.startsWith('vi') ? 'vi-VN' : 'en-US'
++  const visible = classesDraft?.slice(0, 2) ?? []
++
++  return (
++    <section
++      data-testid="dashboard-your-classes-row"
++      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
++      aria-labelledby="dashboard-your-classes-heading"
++    >
++      <h2
++        id="dashboard-your-classes-heading"
++        className="font-[var(--cl-font-display)] text-2xl italic text-[var(--cl-ink)]"
++      >
++        {t('dashboard.yourClasses.heading')}
++      </h2>
++
++      {visible.length === 0 ? (
++        <div
++          data-testid="dashboard-your-classes-ghost"
++          className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
++        >
++          <p className="text-sm text-slate-600">
++            {t('dashboard.yourClasses.ghost', { centerName })}
++          </p>
++          <div className="mt-3">
++            <DeadLinkTrigger
++              targetPath="/classes"
++              targetSurface="classes"
++              epicNum={3}
++            >
++              {t('dashboard.yourClasses.createAnotherCta')}
++            </DeadLinkTrigger>
++          </div>
++        </div>
++      ) : (
++        <ul className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
++          {visible.map((cls, idx) => (
++            <li
++              key={`${cls.cohortName}-${idx}`}
++              data-testid={`dashboard-your-classes-card-${idx}`}
++              aria-label={t('dashboard.yourClasses.cardAriaLabel', {
++                name: cls.cohortName,
++              })}
++              className="rounded-lg border border-slate-200 bg-slate-50 p-4"
++            >
++              <p className="text-sm font-semibold text-slate-900">
++                {cls.cohortName}
++              </p>
++              <p className="mt-1 text-xs text-slate-500">
++                {formatStartDate(cls.startDate, locale)}
++              </p>
++              <ul className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
++                <li>— students</li>
++                <li>— sessions</li>
++                <li>— next session</li>
++              </ul>
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/__tests__/FinishSetupCard.test.tsx b/classlite-web/src/features/dashboard/__tests__/FinishSetupCard.test.tsx
+new file mode 100644
+index 0000000..1f00b97
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/FinishSetupCard.test.tsx
+@@ -0,0 +1,243 @@
++/**
++ * Story 2-4 — `FinishSetupCard` red-phase acceptance tests.
++ *
++ * Covers Task 3.3 per AC1/AC2/AC3/AC4/AC5:
++ *   - AC1 gate: renders only when persona != null AND currentCenter != null
++ *     AND currentStep === 'done' AND NOT snoozed (per AC1 8-cell matrix,
++ *     rows 5 + 6)
++ *   - AC2 structure: eyebrow + title + subtitle + fraction + progress bar +
++ *     <ol> task list + footer with snoozeCta button (NO Dismiss per S-STRONG-13)
++ *   - AC2 fraction aria-live wrapper [S-STRONG-6]
++ *   - AC3 per-persona enumeration renders correctly (7 items Operator/Founder,
++ *     4 items Solo Teacher)
++ *   - AC4 snooze click → localStorage write + Sentry breadcrumb + card unmounts
++ *   - Data-testid inventory per M-STRONG-14:
++ *     `dashboard-checklist-card`, `dashboard-checklist-fraction`,
++ *     `dashboard-checklist-progress-bar`, `dashboard-checklist-item-<id>`,
++ *     `dashboard-checklist-snooze-cta`.
++ *
++ * ATDD contract: TS2307 on `@/features/dashboard/FinishSetupCard` is RED.
++ */
++import { render, screen } from '@testing-library/react'
++import userEvent from '@testing-library/user-event'
++import { I18nextProvider } from 'react-i18next'
++import { beforeEach, describe, expect, test, vi } from 'vitest'
++
++const addBreadcrumbSpy = vi.fn()
++vi.mock('@sentry/react', () => ({
++  addBreadcrumb: (...args: unknown[]) => addBreadcrumbSpy(...args),
++}))
++
++import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
++import i18n from '@/lib/i18n'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++import type { CenterSummary } from '@/features/auth/api/authKeys'
++
++const USER_ID = 'user-1'
++const KEY = `classlite_finish_setup_v1_${USER_ID}`
++
++const CENTER: CenterSummary = {
++  id: 'c-1',
++  name: 'Saigon English Center',
++  shortCode: 'saigon-english',
++  // eslint-disable-next-line no-restricted-syntax -- brand-color wire format
++  brandColor: '#1e3a8a',
++  logoUrl: null,
++  timezone: 'Asia/Ho_Chi_Minh',
++}
++
++const CTX_POST_2_3C: ChecklistCtx = {
++  currentCenter: CENTER,
++  templateDraft: {
++    selectedTemplateId: 'tpl-1',
++    spawnedClassIds: ['c1', 'c2'],
++    classesDraft: [
++      { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++      { cohortName: 'Batch B', startDate: '2026-08-15', teacherEmail: 'alice@example.com' },
++    ],
++  },
++  teachersInvitedCount: 2,
++}
++
++function renderCard(props: {
++  persona: 'operator' | 'founder' | 'solo_teacher'
++  userId?: string | null
++  ctx?: ChecklistCtx
++}) {
++  // NB: cannot use `props.userId ?? USER_ID` — nullish-coalescing collapses
++  // an explicit `null` (the AC1 gate case) to the default. Preserve `null`
++  // when the caller passes it; only fall back on `undefined`.
++  const userIdProp = 'userId' in props ? props.userId ?? null : USER_ID
++  return render(
++    <I18nextProvider i18n={i18n}>
++      <FinishSetupCard
++        userId={userIdProp}
++        persona={props.persona}
++        ctx={props.ctx ?? CTX_POST_2_3C}
++      />
++    </I18nextProvider>,
++  )
++}
++
++beforeEach(() => {
++  window.localStorage.clear()
++  addBreadcrumbSpy.mockClear()
++})
++
++describe('FinishSetupCard — Task 3.3 (AC1/AC2/AC3/AC4)', () => {
++  // ---------------------------------------------------------------------
++  // AC2 structure
++  // ---------------------------------------------------------------------
++  test('renders eyebrow + persona-specific title + subtitle + fraction + <ol> tasks + snoozeCta', () => {
++    renderCard({ persona: 'operator' })
++
++    expect(screen.getByTestId('dashboard-checklist-card')).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.checklist.eyebrow') as string),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.checklist.title.operator') as string),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.checklist.subtitle.operator') as string),
++    ).toBeInTheDocument()
++
++    expect(screen.getByTestId('dashboard-checklist-fraction')).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-checklist-progress-bar')).toBeInTheDocument()
++    // Task list is <ol>
++    expect(screen.getByRole('list')).toBeInTheDocument()
++    // Snooze button present; Dismiss REMOVED per S-STRONG-13
++    expect(screen.getByTestId('dashboard-checklist-snooze-cta')).toBeInTheDocument()
++    expect(screen.queryByText(/dismiss/i)).not.toBeInTheDocument()
++  })
++
++  // ---------------------------------------------------------------------
++  // AC2 fraction aria-live wrapper [S-STRONG-6]
++  // ---------------------------------------------------------------------
++  test('fraction is wrapped in aria-live="polite" aria-atomic="true"', () => {
++    renderCard({ persona: 'operator' })
++    const fraction = screen.getByTestId('dashboard-checklist-fraction')
++    const wrapper = fraction.closest('[aria-live]')
++    expect(wrapper).not.toBeNull()
++    expect(wrapper).toHaveAttribute('aria-live', 'polite')
++    expect(wrapper).toHaveAttribute('aria-atomic', 'true')
++  })
++
++  // ---------------------------------------------------------------------
++  // AC3 per-persona item count contracts
++  // ---------------------------------------------------------------------
++  test('Operator renders 7 <li> items per mockup s09', () => {
++    renderCard({ persona: 'operator' })
++    expect(screen.getAllByRole('listitem')).toHaveLength(7)
++  })
++
++  test('Founder renders 7 <li> items (identical to Operator)', () => {
++    renderCard({ persona: 'founder' })
++    expect(screen.getAllByRole('listitem')).toHaveLength(7)
++  })
++
++  test('Solo Teacher renders 4 <li> items', () => {
++    renderCard({ persona: 'solo_teacher', ctx: { ...CTX_POST_2_3C, teachersInvitedCount: 0 } })
++    expect(screen.getAllByRole('listitem')).toHaveLength(4)
++  })
++
++  test('every <li> has a `dashboard-checklist-item-<id>` testid', () => {
++    renderCard({ persona: 'operator' })
++    for (const id of [
++      'centerCreated',
++      'templatePicked',
++      'firstClassesSpawned',
++      'teachersInvited',
++      'enrolStudents',
++      'createMoreClasses',
++      'addResources',
++    ]) {
++      expect(screen.getByTestId(`dashboard-checklist-item-${id}`)).toBeInTheDocument()
++    }
++  })
++
++  // ---------------------------------------------------------------------
++  // Fraction display correctness
++  // ---------------------------------------------------------------------
++  test('Operator post-2-3c fraction displays "4/7 complete"', () => {
++    renderCard({ persona: 'operator' })
++    const fraction = screen.getByTestId('dashboard-checklist-fraction')
++    expect(fraction.textContent).toMatch(/4\s*\/\s*7/)
++  })
++
++  test('Operator fresh state fraction displays "1/7 complete"', () => {
++    renderCard({
++      persona: 'operator',
++      ctx: { currentCenter: CENTER, templateDraft: null, teachersInvitedCount: 0 },
++    })
++    const fraction = screen.getByTestId('dashboard-checklist-fraction')
++    expect(fraction.textContent).toMatch(/1\s*\/\s*7/)
++  })
++
++  // ---------------------------------------------------------------------
++  // AC4 snooze click contract
++  // ---------------------------------------------------------------------
++  test('snooze click → localStorage write + Sentry breadcrumb `checklist-snoozed` + card unmounts', async () => {
++    const user = userEvent.setup()
++    renderCard({ persona: 'operator' })
++
++    await user.click(screen.getByTestId('dashboard-checklist-snooze-cta'))
++
++    expect(screen.queryByTestId('dashboard-checklist-card')).not.toBeInTheDocument()
++    expect(window.localStorage.getItem(KEY)).not.toBeNull()
++    expect(addBreadcrumbSpy).toHaveBeenCalledWith(
++      expect.objectContaining({
++        category: 'checklist',
++        message: 'checklist-snoozed',
++        data: expect.objectContaining({
++          userId: USER_ID,
++          persona: 'operator',
++          completed: 4,
++          total: 7,
++        }),
++      }),
++    )
++  })
++
++  test('AC1 gate: userId === null → card does NOT render (localStorage is null-scoped)', () => {
++    renderCard({ persona: 'operator', userId: null })
++    expect(screen.queryByTestId('dashboard-checklist-card')).not.toBeInTheDocument()
++  })
++
++  test('AC1 gate: currentCenter === null → card does NOT render', () => {
++    renderCard({
++      persona: 'operator',
++      ctx: { currentCenter: null as never, templateDraft: null, teachersInvitedCount: 0 },
++    })
++    expect(screen.queryByTestId('dashboard-checklist-card')).not.toBeInTheDocument()
++  })
++
++  test('AC1 gate: pre-seeded snoozedUntil > Date.now() → card does NOT render', () => {
++    window.localStorage.setItem(
++      KEY,
++      JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
++    )
++    renderCard({ persona: 'operator' })
++    expect(screen.queryByTestId('dashboard-checklist-card')).not.toBeInTheDocument()
++  })
++
++  // ---------------------------------------------------------------------
++  // Item done/pending render
++  // ---------------------------------------------------------------------
++  test('done items render with "Done" badge; pending required items render with "Required" badge', () => {
++    renderCard({ persona: 'operator' })
++
++    const centerCreated = screen.getByTestId('dashboard-checklist-item-centerCreated')
++    expect(centerCreated.textContent).toContain(i18n.t('dashboard.checklist.badge.done') as string)
++
++    const enrolStudents = screen.getByTestId('dashboard-checklist-item-enrolStudents')
++    expect(enrolStudents.textContent).toContain(
++      i18n.t('dashboard.checklist.badge.comingSoon') as string,
++    )
++
++    const createMoreClasses = screen.getByTestId('dashboard-checklist-item-createMoreClasses')
++    expect(createMoreClasses.textContent).toContain(
++      i18n.t('dashboard.checklist.badge.optional') as string,
++    )
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/__tests__/FirstAIGradeCard.test.tsx b/classlite-web/src/features/dashboard/__tests__/FirstAIGradeCard.test.tsx
+new file mode 100644
+index 0000000..c101563
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/FirstAIGradeCard.test.tsx
+@@ -0,0 +1,91 @@
++/**
++ * FirstAIGradeCard — Story 2-4 Task 4.4 inline tests.
++ *
++ * TEST-FE-2 N/A per M-INFO-20: this card is fixture-driven and has no
++ * fetch state, so the loading/success/error trilogy does not apply.
++ */
++import { render, screen } from '@testing-library/react'
++import { I18nextProvider } from 'react-i18next'
++import { describe, expect, test } from 'vitest'
++
++import FirstAIGradeCard from '@/features/dashboard/FirstAIGradeCard'
++import i18n from '@/lib/i18n'
++import { sampleAIGrade } from '@/features/dashboard/lib/sampleAIGrade'
++
++function renderCard() {
++  return render(
++    <I18nextProvider i18n={i18n}>
++      <FirstAIGradeCard />
++    </I18nextProvider>,
++  )
++}
++
++describe('FirstAIGradeCard — AC7 static fixture render', () => {
++  test('renders the AC7 root testid', () => {
++    renderCard()
++    expect(
++      screen.getByTestId('dashboard-first-ai-grade-card'),
++    ).toBeInTheDocument()
++  })
++
++  test('renders the AI-mark span with the aiMarkLabel', () => {
++    const { container } = renderCard()
++    const aiMark = container.querySelector('.ai-mark')
++    expect(aiMark).not.toBeNull()
++    expect(aiMark?.textContent).toContain(
++      i18n.t('dashboard.aiSample.aiMarkLabel') as string,
++    )
++  })
++
++  test('renders the essay excerpt copy', () => {
++    renderCard()
++    expect(
++      screen.getByText(i18n.t('dashboard.aiSample.essayExcerpt') as string),
++    ).toBeInTheDocument()
++  })
++
++  test('renders the overall band score with 1 decimal inside the band-ring SVG', () => {
++    const { container } = renderCard()
++    const bandValue = container.querySelector('#ai-band-value')
++    expect(bandValue).not.toBeNull()
++    expect(bandValue?.textContent).toBe(sampleAIGrade.overallBand.toFixed(1))
++  })
++
++  test('renders one progressbar per criterion with aria-valuenow set', () => {
++    renderCard()
++    const bars = screen.getAllByRole('progressbar')
++    expect(bars).toHaveLength(sampleAIGrade.criteria.length)
++    for (const c of sampleAIGrade.criteria) {
++      const bar = bars.find(
++        (b) => b.getAttribute('aria-label') === `${c.label} ${c.band.toFixed(1)}`,
++      )
++      expect(bar).toBeDefined()
++      expect(bar?.getAttribute('aria-valuenow')).toBe(String(c.band))
++    }
++  })
++
++  test('band-ring SVG is role="img" with aria-labelledby wiring [AC16]', () => {
++    const { container } = renderCard()
++    const svg = container.querySelector('svg[role="img"]')
++    expect(svg).not.toBeNull()
++    const labelledBy = svg?.getAttribute('aria-labelledby') ?? ''
++    expect(labelledBy).toContain('ai-band-title')
++    expect(labelledBy).toContain('ai-band-value')
++  })
++
++  test('renders the feedback quote and disclaimer', () => {
++    renderCard()
++    expect(
++      screen.getByText(i18n.t('dashboard.aiSample.feedbackQuote') as string),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.aiSample.disclaimer') as string),
++    ).toBeInTheDocument()
++  })
++
++  test('does NOT render an exploreCta CTA [S-STRONG-7]', () => {
++    renderCard()
++    expect(screen.queryByText(/see how grading works/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/explore/i)).not.toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/__tests__/SampleDashboardPreview.test.tsx b/classlite-web/src/features/dashboard/__tests__/SampleDashboardPreview.test.tsx
+new file mode 100644
+index 0000000..115aedf
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/SampleDashboardPreview.test.tsx
+@@ -0,0 +1,69 @@
++/**
++ * SampleDashboardPreview — Story 2-4 Task 5.4 inline tests.
++ *
++ * TEST-FE-2 N/A per M-INFO-20: fixture-driven, no fetch state.
++ */
++import { render, screen, within } from '@testing-library/react'
++import { I18nextProvider } from 'react-i18next'
++import { describe, expect, test } from 'vitest'
++
++import SampleDashboardPreview from '@/features/dashboard/SampleDashboardPreview'
++import i18n from '@/lib/i18n'
++import {
++  sampleOwnerPreview,
++  OWNER_PREVIEW_PLACEHOLDER,
++} from '@/features/dashboard/lib/sampleOwnerPreview'
++
++function renderCard() {
++  return render(
++    <I18nextProvider i18n={i18n}>
++      <SampleDashboardPreview />
++    </I18nextProvider>,
++  )
++}
++
++describe('SampleDashboardPreview — AC8 ghosted 4-tile strip', () => {
++  test('renders the AC8 root testid', () => {
++    renderCard()
++    expect(screen.getByTestId('dashboard-sample-preview')).toBeInTheDocument()
++  })
++
++  test('renders the threshold banner copy', () => {
++    renderCard()
++    expect(
++      screen.getByText(
++        i18n.t('dashboard.samplePreview.thresholdBanner') as string,
++      ),
++    ).toBeInTheDocument()
++  })
++
++  test('renders one em-dash value per tile', () => {
++    renderCard()
++    const dashes = screen.getAllByText(OWNER_PREVIEW_PLACEHOLDER)
++    expect(dashes).toHaveLength(sampleOwnerPreview.length)
++  })
++
++  test('renders each tile label from the fixture', () => {
++    renderCard()
++    for (const tile of sampleOwnerPreview) {
++      expect(
++        screen.getByText(i18n.t(tile.labelKey) as string),
++      ).toBeInTheDocument()
++    }
++  })
++
++  test('renders the AC8 disclaimer', () => {
++    const { container } = renderCard()
++    // Scope to the last <p> — the threshold banner is also a <p>, so a
++    // top-level getByText would match either. Assert both bands render.
++    expect(container.textContent).toContain(
++      i18n.t('dashboard.samplePreview.disclaimer') as string,
++    )
++    const section = screen.getByTestId('dashboard-sample-preview')
++    expect(
++      within(section).getByText(
++        i18n.t('dashboard.samplePreview.disclaimer') as string,
++      ),
++    ).toBeInTheDocument()
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/__tests__/YourClassesRow.test.tsx b/classlite-web/src/features/dashboard/__tests__/YourClassesRow.test.tsx
+new file mode 100644
+index 0000000..dbce741
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/YourClassesRow.test.tsx
+@@ -0,0 +1,105 @@
++/**
++ * YourClassesRow — Story 2-4 Task 5.7 inline tests + AC9 XSS-safety belt.
++ */
++import { render, screen } from '@testing-library/react'
++import { I18nextProvider } from 'react-i18next'
++import { MemoryRouter } from 'react-router'
++import { Toaster } from '@/components/ui/sonner'
++import { beforeEach, describe, expect, test, vi } from 'vitest'
++
++const addBreadcrumbSpy = vi.fn()
++vi.mock('@sentry/react', () => ({
++  addBreadcrumb: (...args: unknown[]) => addBreadcrumbSpy(...args),
++}))
++
++import YourClassesRow from '@/features/dashboard/YourClassesRow'
++import i18n from '@/lib/i18n'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++type Draft = TemplateDraftPayload['classesDraft']
++
++const DRAFT_TWO: Draft = [
++  { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++  { cohortName: 'Batch B', startDate: '2026-08-20', teacherEmail: 'alice@example.com' },
++]
++
++const DRAFT_THREE: Draft = [
++  ...(DRAFT_TWO ?? []),
++  { cohortName: 'Batch C', startDate: '2026-09-01', teacherEmail: null },
++]
++
++function renderRow(props: {
++  centerName?: string
++  classesDraft?: Draft
++}) {
++  return render(
++    <MemoryRouter>
++      <I18nextProvider i18n={i18n}>
++        <YourClassesRow
++          centerName={props.centerName ?? 'Saigon English Center'}
++          classesDraft={props.classesDraft}
++        />
++        <Toaster richColors closeButton />
++      </I18nextProvider>
++    </MemoryRouter>,
++  )
++}
++
++beforeEach(() => {
++  addBreadcrumbSpy.mockClear()
++})
++
++describe('YourClassesRow — AC9 render + XSS-safety', () => {
++  test('renders the AC9 root testid + heading', () => {
++    renderRow({ classesDraft: DRAFT_TWO })
++    expect(screen.getByTestId('dashboard-your-classes-row')).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.yourClasses.heading') as string),
++    ).toBeInTheDocument()
++  })
++
++  test('renders classesDraft.slice(0, 2) — 3 rows in shows 2 cards', () => {
++    renderRow({ classesDraft: DRAFT_THREE })
++    expect(screen.getByTestId('dashboard-your-classes-card-0')).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-your-classes-card-1')).toBeInTheDocument()
++    expect(screen.queryByTestId('dashboard-your-classes-card-2')).not.toBeInTheDocument()
++  })
++
++  test('renders ghost card + DeadLinkTrigger CTA when classesDraft is empty', () => {
++    renderRow({ classesDraft: [] })
++    const ghost = screen.getByTestId('dashboard-your-classes-ghost')
++    expect(ghost).toBeInTheDocument()
++    // The CTA copy contains `+` which is a regex-special char; assert via
++    // textContent rather than a regex.
++    expect(ghost.textContent).toContain(
++      i18n.t('dashboard.yourClasses.createAnotherCta') as string,
++    )
++    // Confirm the CTA is a button (DeadLinkTrigger wraps in <button>).
++    expect(ghost.querySelector('button')).not.toBeNull()
++  })
++
++  test('renders ghost card when classesDraft is undefined', () => {
++    renderRow({ classesDraft: undefined })
++    expect(screen.getByTestId('dashboard-your-classes-ghost')).toBeInTheDocument()
++  })
++
++  test('interpolates centerName into the ghost copy', () => {
++    renderRow({ classesDraft: [], centerName: 'Hanoi Center' })
++    expect(screen.getByTestId('dashboard-your-classes-ghost').textContent).toContain(
++      'Hanoi Center',
++    )
++  })
++
++  test('AC9 XSS-safety [W-INFO-17]: <script> in cohortName renders as text-node', () => {
++    const evil = '<script>alert(1)</script>'
++    const { container } = renderRow({
++      classesDraft: [
++        { cohortName: evil, startDate: '2026-08-15', teacherEmail: null },
++      ],
++    })
++    // No <script> was executed / attached
++    expect(container.querySelector('script')).toBeNull()
++    // The escaped text lands in the DOM as a text node
++    expect(container.textContent).toContain(evil)
++  })
++})

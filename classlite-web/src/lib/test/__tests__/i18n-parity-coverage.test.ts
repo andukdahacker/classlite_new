@@ -798,9 +798,15 @@ describe('Story 1-7c i18n parity (R38)', () => {
  *
  * Closed-enumeration STORY_2_3A_KEYS mirrors the 1-9d precedent — every new
  * key gets a `describe.each` ratchet claiming an allowed prefix so a future
- * orphan under `onboarding.` OR `dashboard.finishSetup.` fails CI. Also
+ * orphan under `onboarding.` OR `dashboard.welcomeBack.` fails CI. Also
  * exercises `assertI18nInterpolationParity` (Murat-S2 fold) so a Vietnamese
  * translator can't rename `{{seconds}}` → `{{giay}}` without CI catching it.
+ *
+ * Story 2-4 AC13 atomic rename: the 3 originally-shipped
+ * `dashboard.finishSetup.*` keys are reparented to `dashboard.welcomeBack.*`
+ * (see STORY_2_4_KEYS block below). Both STORY_2_3A_KEYS and STORY_2_4_KEYS
+ * list them — the 2-3a block claims them as its historical debt, the 2-4
+ * block claims them as its ongoing prefix ratchet.
  */
 export const STORY_2_3A_KEYS = [
   'onboarding.wizard.brand',
@@ -861,9 +867,11 @@ export const STORY_2_3A_KEYS = [
   'onboarding.persona.error.retryCta',
   'onboarding.center.error.userAlreadyHasCenterGeneric',
   'onboarding.center.error.brandColorInvalid',
-  'dashboard.finishSetup.banner',
-  'dashboard.finishSetup.continueCta',
-  'dashboard.finishSetup.awaitingNextStep',
+  // Story 2-4 AC13 4-file atomic rename: `dashboard.finishSetup.*` renamed
+  // to `dashboard.welcomeBack.*` (also enumerated in STORY_2_4_KEYS).
+  'dashboard.welcomeBack.banner',
+  'dashboard.welcomeBack.continueCta',
+  'dashboard.welcomeBack.awaitingNextStep',
 ] as const
 
 describe('Story 2-3a i18n parity (R38)', () => {
@@ -875,7 +883,7 @@ describe('Story 2-3a i18n parity (R38)', () => {
     assertI18nInterpolationParity(STORY_2_3A_KEYS)
   })
 
-  const ALLOWED_PREFIXES = ['onboarding.', 'dashboard.finishSetup.'] as const
+  const ALLOWED_PREFIXES = ['onboarding.', 'dashboard.welcomeBack.'] as const
 
   test.each(STORY_2_3A_KEYS)(
     '%s belongs to a 2-3a allowed prefix',
@@ -896,8 +904,8 @@ describe('Story 2-3a i18n parity (R38)', () => {
  * `onboarding.solo.*`, or `onboarding.wizard.*` fails CI.
  *
  * Prefix ratchet allows: onboarding.template.* / onboarding.spawn.* /
- * onboarding.solo.* / onboarding.wizard.* / dashboard.finishSetup.*
- * (Murat-S1 fold).
+ * onboarding.solo.* / onboarding.wizard.* / dashboard.welcomeBack.*
+ * (Murat-S1 fold; 2-4 AC13 rename from `dashboard.finishSetup.*`).
  *
  * Interpolation tokens (Murat-S2, 10 total):
  *   {{index}} {{seconds}} {{n}} {{max}} {{userFullName}}
@@ -991,7 +999,7 @@ describe('Story 2-3b i18n parity (R38)', () => {
     'onboarding.spawn.',
     'onboarding.solo.',
     'onboarding.wizard.',
-    'dashboard.finishSetup.',
+    'dashboard.welcomeBack.', // 2-4 AC13 rename from `dashboard.finishSetup.`
   ] as const
 
   test.each(STORY_2_3B_KEYS)(
@@ -1055,6 +1063,126 @@ describe('Story 2-3c i18n parity (R38)', () => {
     '%s belongs to a 2-3c allowed prefix (A-I3 single-prefix ratchet)',
     (key) => {
       const ok = ALLOWED_PREFIXES_2_3C.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})
+
+/**
+ * Closed-enumeration STORY_2_4_KEYS + prefix-ratchet block mirrors the
+ * 2-3c precedent. Story 2-4 owns the post-onboarding checklist card + first
+ * AI grade card + sample owner preview + Your Classes row on `/dashboard`.
+ *
+ * Prefix ratchet: 6-prefix allow-list per AC13 —
+ *   `dashboard.welcomeHeading` | `dashboard.welcomeBack.` | `dashboard.checklist.`
+ *   | `dashboard.aiSample.` | `dashboard.samplePreview.` | `dashboard.yourClasses.`
+ *   | `dashboard.deadLink.`
+ *
+ * Interpolation tokens covered (`assertI18nInterpolationParity` over ALL 42
+ * keys per M-BLOCKER-5): `{{name}}`, `{{completed}}`, `{{total}}`,
+ * `{{centerName}}`, `{{epicNum}}`. Additional tokens hidden in Vietnamese
+ * variants are surfaced by the helper's per-key token-set comparison.
+ *
+ * AC13 atomic-commit contract: the 3 shipped `dashboard.finishSetup.*`
+ * keys are RENAMED to `dashboard.welcomeBack.*` in the same commit as
+ * `TeacherDashboard.tsx`'s 3 `t()` sites + `STORY_2_3A_KEYS` array
+ * (lines 864-866) + `ALLOWED_PREFIXES` (line 878) + JSDoc (line 801) +
+ * `STORY_2_3B_KEYS` ALLOWED_PREFIXES_2_3B (line 994). This file is one
+ * of the 4 files that MUST land atomically.
+ *
+ * RED-PHASE contract (post `/bmad-tea AT 2-4`):
+ *   All 42 keys below are missing from en.json + vi.json until Amelia
+ *   lands Task 8.1 (add keys) + Task 6.5 (delete + rename shipped keys).
+ *   `npm run i18n-parity` reports 42 missing keys per locale at first run.
+ *
+ * Note: This block is NOT hoisted above the 2-3a/2-3b/2-3c blocks — those
+ * blocks reference `dashboard.finishSetup.*` in their ALLOWED_PREFIXES arrays.
+ * The 4-file atomic commit renames those references simultaneously.
+ */
+export const STORY_2_4_KEYS = [
+  // welcome heading (1)
+  'dashboard.welcomeHeading',
+  // checklist header + copy (10)
+  'dashboard.checklist.eyebrow',
+  'dashboard.checklist.title.operator',
+  'dashboard.checklist.title.founder',
+  'dashboard.checklist.title.solo_teacher',
+  'dashboard.checklist.subtitle.operator',
+  'dashboard.checklist.subtitle.founder',
+  'dashboard.checklist.subtitle.solo_teacher',
+  'dashboard.checklist.fractionAriaLabel',
+  'dashboard.checklist.snoozeCta',
+  'dashboard.checklist.footer.autosave',
+  // checklist item names (8 — per AC3 mockup s09 fidelity; Solo Teacher
+  // uses the singular `firstClassSpawned.name` variant, Operator/Founder
+  // share the plural `firstClassesSpawned.name`)
+  'dashboard.checklist.item.centerCreated.name',
+  'dashboard.checklist.item.templatePicked.name',
+  'dashboard.checklist.item.firstClassesSpawned.name',
+  'dashboard.checklist.item.firstClassSpawned.name',
+  'dashboard.checklist.item.teachersInvited.name',
+  'dashboard.checklist.item.enrolStudents.name',
+  'dashboard.checklist.item.createMoreClasses.name',
+  'dashboard.checklist.item.addResources.name',
+  // checklist item badges (4)
+  'dashboard.checklist.badge.done',
+  'dashboard.checklist.badge.required',
+  'dashboard.checklist.badge.optional',
+  'dashboard.checklist.badge.comingSoon',
+  // AI sample card (7)
+  'dashboard.aiSample.title',
+  'dashboard.aiSample.essayExcerpt',
+  'dashboard.aiSample.feedbackQuote',
+  'dashboard.aiSample.disclaimer',
+  'dashboard.aiSample.bandLabel',
+  'dashboard.aiSample.aiMarkLabel',
+  'dashboard.aiSample.criterionAriaLabel',
+  // sample owner preview (6)
+  'dashboard.samplePreview.thresholdBanner',
+  'dashboard.samplePreview.disclaimer',
+  'dashboard.samplePreview.stat.sessionsToday',
+  'dashboard.samplePreview.stat.gradingQueue',
+  'dashboard.samplePreview.stat.atRiskStudents',
+  'dashboard.samplePreview.stat.attendance',
+  // your classes row (7)
+  'dashboard.yourClasses.heading',
+  'dashboard.yourClasses.ghost',
+  'dashboard.yourClasses.cardAriaLabel',
+  'dashboard.yourClasses.createAnotherCta',
+  'dashboard.yourClasses.placeholder.students',
+  'dashboard.yourClasses.placeholder.sessions',
+  'dashboard.yourClasses.placeholder.nextSession',
+  // dead-link toast (1)
+  'dashboard.deadLink.notReady',
+  // reparented from `dashboard.finishSetup.*` (AC13 4-file atomic rename)
+  'dashboard.welcomeBack.banner',
+  'dashboard.welcomeBack.continueCta',
+  'dashboard.welcomeBack.awaitingNextStep',
+] as const
+
+describe('Story 2-4 i18n parity (R38)', () => {
+  test('every Story 2-4 i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_4_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL 42 keys (M-BLOCKER-5 — no filtered subset)', () => {
+    assertI18nInterpolationParity(STORY_2_4_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_4 = [
+    'dashboard.welcomeHeading',
+    'dashboard.welcomeBack.',
+    'dashboard.checklist.',
+    'dashboard.aiSample.',
+    'dashboard.samplePreview.',
+    'dashboard.yourClasses.',
+    'dashboard.deadLink.',
+  ] as const
+
+  test.each(STORY_2_4_KEYS)(
+    '%s belongs to a 2-4 allowed prefix (AC13 6-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_4.some((p) => key.startsWith(p))
       expect(ok).toBe(true)
     },
   )

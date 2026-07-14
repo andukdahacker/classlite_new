@@ -1,0 +1,1596 @@
+diff --git a/classlite-web/src/features/dashboard/__tests__/noTrialMechanic.test.ts b/classlite-web/src/features/dashboard/__tests__/noTrialMechanic.test.ts
+new file mode 100644
+index 0000000..c3ea7d6
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/noTrialMechanic.test.ts
+@@ -0,0 +1,137 @@
++/**
++ * Story 2-4 — AC10 no-trial mechanic audit red-phase test.
++ *
++ * Covers Task 7.3 per AC10 (Epic AC6 free-tier positioning invariant):
++ *   - Scan scope: `src/features/dashboard/**\/*.{ts,tsx}` (excluding
++ *     `__tests__/`) AND `src/locales/{en,vi}.json` [M-STRONG-13 fold]
++ *   - Reject-list closed literal [M-STRONG-9 fold]:
++ *     `trial`, `Pro trial`, `startPro`, `upgradeToPro`, `sevenDayTrial`,
++ *     `freeTrial`, `dùng thử`, `bản dùng thử` (case-insensitive)
++ *   - Whitelist [A-STRONG-5 fold]: a match is IGNORED if the same line
++ *     contains the marker `NO_TRIAL_MECHANIC_V1` (self-documenting comment)
++ *   - Test file itself excluded from scan
++ *
++ * ATDD contract: this test PASSES vacuously in red-phase (the target
++ * directory doesn't exist yet or contains no scanned files). It becomes a
++ * real gate once Task 3+/4+/5+/6+ land the actual components. Load-bearing
++ * invariant across Epic 9 pickup — a stray `<TrialCta>` component or
++ * translator-inserted "dùng thử 7 ngày" copy will red the CI ratchet.
++ */
++import { readdir, readFile, stat } from 'node:fs/promises'
++import { join } from 'node:path'
++import { describe, expect, test } from 'vitest'
++
++const REJECT_LIST_SUBSTRINGS = [
++  'trial',
++  'pro trial',
++  'startpro',
++  'upgradetopro',
++  'sevendaytrial',
++  'freetrial',
++  'dùng thử',
++  'bản dùng thử',
++] as const
++
++const WHITELIST_MARKER = 'NO_TRIAL_MECHANIC_V1'
++
++const REPO_ROOT = join(__dirname, '..', '..', '..', '..', '..')
++const DASHBOARD_DIR = join(REPO_ROOT, 'src', 'features', 'dashboard')
++const LOCALES_DIR = join(REPO_ROOT, 'src', 'locales')
++
++async function walk(dir: string, matches: (rel: string) => boolean): Promise<string[]> {
++  const out: string[] = []
++  async function inner(current: string) {
++    let entries: import('node:fs').Dirent[]
++    try {
++      entries = await readdir(current, { withFileTypes: true })
++    } catch {
++      return // scan-target may not exist during red-phase
++    }
++    for (const entry of entries) {
++      const full = join(current, entry.name)
++      if (entry.isDirectory()) {
++        if (entry.name === '__tests__') continue
++        if (entry.name === 'node_modules') continue
++        if (entry.name === '.storybook') continue
++        await inner(full)
++      } else if (entry.isFile()) {
++        if (matches(entry.name)) out.push(full)
++      }
++    }
++  }
++  await inner(dir)
++  return out
++}
++
++async function findViolations(file: string): Promise<Array<{ line: number; text: string; substring: string }>> {
++  const content = await readFile(file, 'utf8')
++  const lines = content.split('\n')
++  const violations: Array<{ line: number; text: string; substring: string }> = []
++  for (let i = 0; i < lines.length; i++) {
++    const line = lines[i] ?? ''
++    const lower = line.toLowerCase()
++    if (lower.includes(WHITELIST_MARKER.toLowerCase())) continue
++    for (const substring of REJECT_LIST_SUBSTRINGS) {
++      if (lower.includes(substring)) {
++        // word-boundary check for `trial` (avoid `industrial`, `trial-and-error`)
++        if (substring === 'trial') {
++          const wordBoundary = /\btrial(?!-and)\b/i
++          if (!wordBoundary.test(line)) continue
++        }
++        violations.push({ line: i + 1, text: line, substring })
++      }
++    }
++  }
++  return violations
++}
++
++describe('AC10 no-trial-mechanic audit — Epic AC6 free-tier positioning invariant', () => {
++  test('src/features/dashboard/**/*.{ts,tsx} contains no trial-mechanic strings (excl __tests__/)', async () => {
++    const files = await walk(DASHBOARD_DIR, (name) =>
++      name.endsWith('.ts') || name.endsWith('.tsx'),
++    )
++    // File may not exist at red-phase; test passes vacuously.
++    for (const file of files) {
++      const violations = await findViolations(file)
++      expect(
++        violations,
++        `${file} contains rejected substrings:\n${violations
++          .map((v) => `  line ${v.line}: "${v.text.trim()}" matched "${v.substring}"`)
++          .join('\n')}`,
++      ).toEqual([])
++    }
++  })
++
++  test('src/locales/en.json contains no trial-mechanic strings', async () => {
++    const enJson = join(LOCALES_DIR, 'en.json')
++    try {
++      await stat(enJson)
++    } catch {
++      return // file absent (unlikely) → vacuous pass
++    }
++    const violations = await findViolations(enJson)
++    expect(
++      violations.map((v) => `line ${v.line}: ${v.text.trim()}`),
++    ).toEqual([])
++  })
++
++  test('src/locales/vi.json contains no trial-mechanic strings (Vietnamese "dùng thử" gate)', async () => {
++    const viJson = join(LOCALES_DIR, 'vi.json')
++    try {
++      await stat(viJson)
++    } catch {
++      return
++    }
++    const violations = await findViolations(viJson)
++    expect(
++      violations.map((v) => `line ${v.line}: ${v.text.trim()}`),
++    ).toEqual([])
++  })
++
++  test('reject-list is a closed literal (no dynamic mutation risk)', () => {
++    // Meta-test: guards against silent contract erosion
++    expect(REJECT_LIST_SUBSTRINGS).toHaveLength(8)
++    expect(REJECT_LIST_SUBSTRINGS).toContain('trial')
++    expect(REJECT_LIST_SUBSTRINGS).toContain('dùng thử')
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/components/DeadLinkTrigger.tsx b/classlite-web/src/features/dashboard/components/DeadLinkTrigger.tsx
+new file mode 100644
+index 0000000..839a92e
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/components/DeadLinkTrigger.tsx
+@@ -0,0 +1,78 @@
++/**
++ * DeadLinkTrigger — Story 2-4 AC10/AC11 primitive.
++ *
++ * A `<button>` that renders like a link but, on click, shows a Sonner toast
++ * instead of navigating. Used everywhere the dashboard advertises a surface
++ * that hasn't shipped yet (Settings, Templates, Classes, People, Students,
++ * Knowledge Hub, Grading). When the owning story lands, swap this trigger
++ * for a `<button onClick={() => navigate(item.targetPath)}>` — 1-line
++ * change per site.
++ *
++ * Design [S-BLOCKER-2 + W-STRONG-8 + A-BLOCKER-2 3-way convergence]:
++ *   - Uses the shipped `<Toaster />` at `App.tsx:74` (`sonner`) instead of
++ *     rolling a custom inline toast. FU-2-4-B (shared toast bus) is
++ *     DISCHARGED — Sonner already ships.
++ *   - Fixed toast id `dashboard-dead-link` acts as a queue-of-one: rage
++ *     clicks REPLACE the toast rather than stacking (Sonner semantics),
++ *     so N clicks produce N breadcrumbs + 1 visible toast [W-INFO-16].
++ *   - `duration: 4000` — auto-dismiss after 4s (Sonner honors this).
++ *   - Sentry breadcrumb `dashboard-dead-link-tapped` fires per click with
++ *     `{ targetPath, targetSurface, epicNum }` — feature-demand signal.
++ *   - Does NOT call `useNavigate` — silence is more credible than an
++ *     unfulfilled navigation.
++ *
++ * NO_TRIAL_MECHANIC_V1 — AC10 belt: the component does not synthesize
++ * `/trial` or `/upgrade` routes; consumers supply the `targetPath`.
++ */
++import type { ReactNode } from 'react'
++import { useTranslation } from 'react-i18next'
++import { addBreadcrumb } from '@sentry/react'
++import { toast } from 'sonner'
++
++const DEAD_LINK_TOAST_ID = 'dashboard-dead-link'
++const DEAD_LINK_TOAST_DURATION_MS = 4000
++
++export interface DeadLinkTriggerProps {
++  targetPath: string
++  targetSurface: string
++  epicNum: number
++  children: ReactNode
++  className?: string
++}
++
++export default function DeadLinkTrigger({
++  targetPath,
++  targetSurface,
++  epicNum,
++  children,
++  className,
++}: DeadLinkTriggerProps) {
++  const { t } = useTranslation()
++
++  const handleClick = (): void => {
++    toast.info(t('dashboard.deadLink.notReady', { epicNum }), {
++      id: DEAD_LINK_TOAST_ID,
++      duration: DEAD_LINK_TOAST_DURATION_MS,
++    })
++    addBreadcrumb({
++      category: 'dashboard',
++      message: 'dashboard-dead-link-tapped',
++      level: 'info',
++      data: { targetPath, targetSurface, epicNum },
++    })
++  }
++
++  return (
++    <button
++      type="button"
++      onClick={handleClick}
++      className={
++        className ??
++        'inline-flex items-center gap-1 text-sm font-medium text-slate-900 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500'
++      }
++    >
++      {children}
++      <span aria-hidden="true">→</span>
++    </button>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/components/__tests__/DeadLinkTrigger.test.tsx b/classlite-web/src/features/dashboard/components/__tests__/DeadLinkTrigger.test.tsx
+new file mode 100644
+index 0000000..d639a4a
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/components/__tests__/DeadLinkTrigger.test.tsx
+@@ -0,0 +1,158 @@
++/**
++ * Story 2-4 — `DeadLinkTrigger` red-phase acceptance tests.
++ *
++ * Covers Task 7.2 per AC10/AC11:
++ *   - onClick → toast.info(...) from `sonner` with fixed id `dashboard-dead-link`
++ *     [S-BLOCKER-2 + W-STRONG-8 + A-BLOCKER-2 3-way convergence — use shipped
++ *     Sonner Toaster at App.tsx:74; NOT a custom inline toast]
++ *   - onClick → Sentry breadcrumb `dashboard-dead-link-tapped` with
++ *     { targetPath, targetSurface, epicNum }
++ *   - onClick does NOT call useNavigate
++ *   - Rage-click (double-click <100ms): 2 breadcrumbs, 1 toast (queue-of-one
++ *     via fixed toast id — Sonner replaces the toast) [W-INFO-16 fold]
++ *   - Toast auto-dismisses after 4s via Sonner's duration option
++ *   - AC10 no-trial belt: targetPath never contains "trial"
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 7.1
++ * (`src/features/dashboard/components/DeadLinkTrigger.tsx`) — TS2307 is RED.
++ *
++ * Note on testid discipline: Sonner portals its toast to `document.body`,
++ * so tests assert via `screen.findByRole('status')` (Sonner's default role)
++ * or `findByText(...)`, NOT a data-testid on the toast slot.
++ */
++import { render, screen } from '@testing-library/react'
++import userEvent from '@testing-library/user-event'
++import { MemoryRouter } from 'react-router'
++import { Toaster } from '@/components/ui/sonner'
++import { I18nextProvider } from 'react-i18next'
++import { beforeEach, describe, expect, test, vi } from 'vitest'
++
++const addBreadcrumbSpy = vi.fn()
++vi.mock('@sentry/react', () => ({
++  addBreadcrumb: (...args: unknown[]) => addBreadcrumbSpy(...args),
++}))
++
++const navigateSpy = vi.fn()
++vi.mock('react-router', async () => {
++  const actual = await vi.importActual<typeof import('react-router')>('react-router')
++  return {
++    ...actual,
++    useNavigate: () => navigateSpy,
++  }
++})
++
++import DeadLinkTrigger from '@/features/dashboard/components/DeadLinkTrigger'
++import i18n from '@/lib/i18n'
++
++beforeEach(() => {
++  addBreadcrumbSpy.mockClear()
++  navigateSpy.mockClear()
++})
++
++function renderWith(children: React.ReactNode) {
++  return render(
++    <MemoryRouter>
++      <I18nextProvider i18n={i18n}>
++        {children}
++        <Toaster richColors closeButton />
++      </I18nextProvider>
++    </MemoryRouter>,
++  )
++}
++
++describe('DeadLinkTrigger — Task 7.2 Sonner integration (AC10/AC11)', () => {
++  test('renders as a <button> with children + trailing arrow', () => {
++    renderWith(
++      <DeadLinkTrigger targetPath="/settings" targetSurface="settings" epicNum={5}>
++        Go to Settings
++      </DeadLinkTrigger>,
++    )
++    const btn = screen.getByRole('button', { name: /Go to Settings/i })
++    expect(btn).toBeInTheDocument()
++    expect(btn.textContent).toMatch(/→/)
++  })
++
++  test('click renders Sonner toast with interpolated {{epicNum}}', async () => {
++    const user = userEvent.setup()
++    renderWith(
++      <DeadLinkTrigger targetPath="/settings" targetSurface="settings" epicNum={5}>
++        Go to Settings
++      </DeadLinkTrigger>,
++    )
++    await user.click(screen.getByRole('button'))
++
++    // Sonner renders a toast with role="status" by default.
++    const toast = await screen.findByText(
++      i18n.t('dashboard.deadLink.notReady', { epicNum: 5 }) as string,
++    )
++    expect(toast).toBeInTheDocument()
++  })
++
++  test('click fires Sentry breadcrumb `dashboard-dead-link-tapped` with payload', async () => {
++    const user = userEvent.setup()
++    renderWith(
++      <DeadLinkTrigger targetPath="/grading" targetSurface="grading" epicNum={6}>
++        See how grading works
++      </DeadLinkTrigger>,
++    )
++    await user.click(screen.getByRole('button'))
++
++    expect(addBreadcrumbSpy).toHaveBeenCalledTimes(1)
++    expect(addBreadcrumbSpy).toHaveBeenCalledWith(
++      expect.objectContaining({
++        category: 'dashboard',
++        message: 'dashboard-dead-link-tapped',
++        data: expect.objectContaining({
++          targetPath: '/grading',
++          targetSurface: 'grading',
++          epicNum: 6,
++        }),
++      }),
++    )
++  })
++
++  test('click does NOT call useNavigate (dead-link is toast-only)', async () => {
++    const user = userEvent.setup()
++    renderWith(
++      <DeadLinkTrigger targetPath="/settings" targetSurface="settings" epicNum={5}>
++        Go to Settings
++      </DeadLinkTrigger>,
++    )
++    await user.click(screen.getByRole('button'))
++    expect(navigateSpy).not.toHaveBeenCalled()
++  })
++
++  test('rage-click (double-click): 2 breadcrumbs, 1 toast (queue-of-one via fixed id) [W-INFO-16]', async () => {
++    const user = userEvent.setup()
++    renderWith(
++      <DeadLinkTrigger targetPath="/students" targetSurface="students" epicNum={5}>
++        Add students
++      </DeadLinkTrigger>,
++    )
++    const btn = screen.getByRole('button')
++    await user.click(btn)
++    await user.click(btn)
++
++    expect(addBreadcrumbSpy).toHaveBeenCalledTimes(2)
++    // Only ONE toast in the DOM — Sonner replaces via fixed id `dashboard-dead-link`
++    const toasts = screen.getAllByText(
++      i18n.t('dashboard.deadLink.notReady', { epicNum: 5 }) as string,
++    )
++    expect(toasts.length).toBe(1)
++  })
++
++  test('AC10 belt: DeadLinkTrigger targetPath is never a "trial" / "upgrade" path', () => {
++    // Static assertion — the component prop-signature accepts any string, so
++    // this test proves the component does NOT synthesize a route to `/trial`
++    // or `/upgrade` regardless of props. Consumers (checklistDefinition +
++    // AC7 exploreCta REMOVED) are responsible for supplying non-trial paths.
++    // Belt-and-braces: renders with a legitimate path and asserts no navigate
++    // side-effect that would carry a trial CTA.
++    renderWith(
++      <DeadLinkTrigger targetPath="/settings" targetSurface="settings" epicNum={5}>
++        Go to Settings
++      </DeadLinkTrigger>,
++    )
++    expect(navigateSpy).not.toHaveBeenCalled()
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/hooks/__tests__/useChecklistState.test.tsx b/classlite-web/src/features/dashboard/hooks/__tests__/useChecklistState.test.tsx
+new file mode 100644
+index 0000000..2bb5d3f
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/hooks/__tests__/useChecklistState.test.tsx
+@@ -0,0 +1,281 @@
++/**
++ * Story 2-4 — `useChecklistState` hook red-phase acceptance tests.
++ *
++ * Covers Task 1.2 (a-i) per AC4/AC5/AC6:
++ *   (a) fresh mount reads empty localStorage → isVisible: true
++ *   (b) snooze() → localStorage write + isVisible: false
++ *   (c) vi.setSystemTime(snoozedUntil ±1s) + rerender → visibility re-computes
++ *       [M-STRONG-17 fold — rerender required; hook does NOT poll]
++ *   (d) scheduled setTimeout(bump, snoozedUntil - Date.now() + 1000) fires
++ *       at boundary; unmount clears the timeout [W-STRONG-15 fold]
++ *   (e) MALFORMED_LOCALSTORAGE_FIXTURES 6-row matrix → fresh + no throw
++ *       + Sentry breadcrumb + subsequent snooze() succeeds [M-STRONG-11 fold]
++ *   (f) userId === null → hook is no-op
++ *   (g) cross-tab `storage` event with 5-field construction → same-tab syncs
++ *       [M-BLOCKER-3 fold — jsdom StorageEvent pattern pinned]
++ *   (h) unmount removes storage listener + clears scheduled bump timeout
++ *   (i) userId transition rerender (user A → user B same tab) → fresh state
++ *       for user B; user A's snoozedUntil does NOT leak [W-STRONG-5 fold]
++ *
++ * Setup discipline [W-STRONG-6 fold — StrictMode + shared-globals isolation]:
++ *   `beforeEach(() => window.localStorage.clear())`
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 1.1
++ * (`src/features/dashboard/hooks/useChecklistState.ts`) — TS2307 is RED.
++ */
++import { act, renderHook } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
++
++const addBreadcrumbSpy = vi.fn()
++vi.mock('@sentry/react', () => ({
++  addBreadcrumb: (...args: unknown[]) => addBreadcrumbSpy(...args),
++}))
++
++import { useChecklistState } from '@/features/dashboard/hooks/useChecklistState'
++
++const USER_A = 'user-a-uuid'
++const USER_B = 'user-b-uuid'
++const KEY_A = `classlite_finish_setup_v1_${USER_A}`
++const KEY_B = `classlite_finish_setup_v1_${USER_B}`
++
++beforeEach(() => {
++  window.localStorage.clear()
++  addBreadcrumbSpy.mockClear()
++  vi.useFakeTimers({ shouldAdvanceTime: true })
++  vi.setSystemTime(new Date('2026-07-14T00:00:00Z'))
++})
++
++afterEach(() => {
++  vi.useRealTimers()
++})
++
++describe('useChecklistState — Task 1.2 hook contract (AC4/AC5/AC6)', () => {
++  // ---------------------------------------------------------------------
++  // (a) Fresh mount
++  // ---------------------------------------------------------------------
++  test('(a) fresh mount with empty localStorage → isVisible: true', () => {
++    const { result } = renderHook(() => useChecklistState(USER_A))
++    expect(result.current.isVisible).toBe(true)
++    expect(result.current.state.snoozedUntil).toBeNull()
++  })
++
++  // ---------------------------------------------------------------------
++  // (b) Snooze click
++  // ---------------------------------------------------------------------
++  test('(b) snooze() → writes { snoozedUntil } to localStorage + isVisible: false', () => {
++    const now = Date.now()
++    const { result } = renderHook(() => useChecklistState(USER_A))
++
++    act(() => {
++      result.current.snooze()
++    })
++
++    expect(result.current.isVisible).toBe(false)
++    const raw = window.localStorage.getItem(KEY_A)
++    expect(raw).not.toBeNull()
++    const parsed = JSON.parse(raw as string) as { snoozedUntil: number }
++    expect(parsed.snoozedUntil).toBeGreaterThan(now)
++    // 7-day window (±1s tolerance for test timing)
++    expect(parsed.snoozedUntil).toBeCloseTo(now + 7 * 24 * 3600 * 1000, -3)
++  })
++
++  test('(b.ii) snooze() fires Sentry breadcrumb `checklist-snoozed` [M-STRONG-8 fold]', () => {
++    const { result } = renderHook(() => useChecklistState(USER_A))
++    act(() => {
++      result.current.snooze()
++    })
++    expect(addBreadcrumbSpy).toHaveBeenCalledWith(
++      expect.objectContaining({
++        category: 'checklist',
++        message: 'checklist-snoozed',
++      }),
++    )
++  })
++
++  // ---------------------------------------------------------------------
++  // (c) Boundary time transitions — rerender required [M-STRONG-17]
++  // ---------------------------------------------------------------------
++  test('(c.i) vi.setSystemTime(snoozedUntil - 1s) + rerender → stays hidden', () => {
++    const snoozedUntil = Date.now() + 7 * 24 * 3600 * 1000
++    window.localStorage.setItem(KEY_A, JSON.stringify({ snoozedUntil }))
++    const { result, rerender } = renderHook(() => useChecklistState(USER_A))
++    expect(result.current.isVisible).toBe(false)
++
++    vi.setSystemTime(new Date(snoozedUntil - 1000))
++    rerender()
++    expect(result.current.isVisible).toBe(false)
++  })
++
++  test('(c.ii) vi.setSystemTime(snoozedUntil + 1s) + rerender → visible again', () => {
++    const snoozedUntil = Date.now() + 7 * 24 * 3600 * 1000
++    window.localStorage.setItem(KEY_A, JSON.stringify({ snoozedUntil }))
++    const { result, rerender } = renderHook(() => useChecklistState(USER_A))
++    expect(result.current.isVisible).toBe(false)
++
++    vi.setSystemTime(new Date(snoozedUntil + 1000))
++    rerender()
++    expect(result.current.isVisible).toBe(true)
++  })
++
++  // ---------------------------------------------------------------------
++  // (d) Scheduled setTimeout boundary bump [W-STRONG-15]
++  // ---------------------------------------------------------------------
++  test('(d.i) mount with snoozedUntil 100ms in future → setTimeout bumps at boundary', () => {
++    const snoozedUntil = Date.now() + 100
++    window.localStorage.setItem(KEY_A, JSON.stringify({ snoozedUntil }))
++    const { result } = renderHook(() => useChecklistState(USER_A))
++    expect(result.current.isVisible).toBe(false)
++
++    // Advance past the +1000ms buffer so the scheduled bump fires
++    act(() => {
++      vi.advanceTimersByTime(1200)
++    })
++    expect(result.current.isVisible).toBe(true)
++  })
++
++  test('(d.ii) unmount clears scheduled setTimeout (no leak)', () => {
++    const snoozedUntil = Date.now() + 100
++    window.localStorage.setItem(KEY_A, JSON.stringify({ snoozedUntil }))
++    const { unmount } = renderHook(() => useChecklistState(USER_A))
++    const timerCountBeforeUnmount = vi.getTimerCount()
++    expect(timerCountBeforeUnmount).toBeGreaterThan(0)
++    unmount()
++    expect(vi.getTimerCount()).toBeLessThan(timerCountBeforeUnmount)
++  })
++
++  // ---------------------------------------------------------------------
++  // (e) MALFORMED_LOCALSTORAGE_FIXTURES matrix [M-STRONG-11]
++  // ---------------------------------------------------------------------
++  const MALFORMED_LOCALSTORAGE_FIXTURES: Array<[label: string, raw: string]> = [
++    ['empty string', ''],
++    ['JSON null literal', 'null'],
++    ['empty object (missing snoozedUntil)', '{}'],
++    ['wrong type on snoozedUntil', '{"snoozedUntil":"abc"}'],
++    ['parse error unclosed brace', '{unclosed'],
++    ['wrong root type array', '[]'],
++  ]
++
++  test.each(MALFORMED_LOCALSTORAGE_FIXTURES)(
++    '(e) malformed localStorage %s → treated as fresh + no throw + Sentry breadcrumb',
++    (_label, raw) => {
++      window.localStorage.setItem(KEY_A, raw)
++
++      const { result } = renderHook(() => useChecklistState(USER_A))
++      expect(result.current.isVisible).toBe(true)
++      expect(result.current.state.snoozedUntil).toBeNull()
++      expect(addBreadcrumbSpy).toHaveBeenCalledWith(
++        expect.objectContaining({
++          category: 'checklist',
++          message: 'malformed-localstorage',
++          level: 'warning',
++        }),
++      )
++
++      // subsequent snooze() succeeds — overwrites the malformed payload
++      act(() => {
++        result.current.snooze()
++      })
++      expect(result.current.isVisible).toBe(false)
++      const parsed = JSON.parse(
++        window.localStorage.getItem(KEY_A) as string,
++      ) as { snoozedUntil: number }
++      expect(typeof parsed.snoozedUntil).toBe('number')
++    },
++  )
++
++  // ---------------------------------------------------------------------
++  // (f) userId === null no-op
++  // ---------------------------------------------------------------------
++  test('(f) userId === null → hook is no-op returning { isVisible: false, snooze: noop }', () => {
++    const { result } = renderHook(() => useChecklistState(null))
++    expect(result.current.isVisible).toBe(false)
++    // snooze() should not throw and not write to any key
++    expect(() => {
++      act(() => {
++        result.current.snooze()
++      })
++    }).not.toThrow()
++    expect(window.localStorage.length).toBe(0)
++  })
++
++  // ---------------------------------------------------------------------
++  // (g) Cross-tab storage event [M-BLOCKER-3 — 5 required fields]
++  // ---------------------------------------------------------------------
++  test('(g) window.dispatchEvent(StorageEvent) with 5 fields → same-tab syncs', () => {
++    const { result, rerender } = renderHook(() => useChecklistState(USER_A))
++    expect(result.current.isVisible).toBe(true)
++
++    const snoozedUntil = Date.now() + 7 * 24 * 3600 * 1000
++    const newValue = JSON.stringify({ snoozedUntil })
++
++    // Simulate cross-tab write: write the raw payload AND dispatch a
++    // StorageEvent (jsdom does not fire cross-window `storage` events
++    // natively; test must manually construct + dispatch with all 5 fields).
++    window.localStorage.setItem(KEY_A, newValue)
++    act(() => {
++      window.dispatchEvent(
++        new StorageEvent('storage', {
++          key: KEY_A,
++          oldValue: null,
++          newValue,
++          storageArea: window.localStorage,
++          url: window.location.href,
++        }),
++      )
++    })
++    rerender()
++    expect(result.current.isVisible).toBe(false)
++  })
++
++  // ---------------------------------------------------------------------
++  // (h) Unmount cleanup
++  // ---------------------------------------------------------------------
++  test('(h) unmount removes storage listener (no leak)', () => {
++    const removeSpy = vi.spyOn(window, 'removeEventListener')
++    const { unmount } = renderHook(() => useChecklistState(USER_A))
++    unmount()
++    expect(removeSpy).toHaveBeenCalledWith('storage', expect.any(Function))
++    removeSpy.mockRestore()
++  })
++
++  // ---------------------------------------------------------------------
++  // (i) userId transition [W-STRONG-5 + M-STRONG-12]
++  // ---------------------------------------------------------------------
++  test('(i) userId transition: user A snooze → rerender as user B → fresh state', () => {
++    const { result, rerender } = renderHook(
++      ({ userId }: { userId: string | null }) => useChecklistState(userId),
++      { initialProps: { userId: USER_A as string | null } },
++    )
++
++    // User A snoozes
++    act(() => {
++      result.current.snooze()
++    })
++    expect(result.current.isVisible).toBe(false)
++    expect(window.localStorage.getItem(KEY_A)).not.toBeNull()
++
++    // Transition to User B
++    rerender({ userId: USER_B })
++    expect(result.current.isVisible).toBe(true)
++
++    // User B snoozes → writes to user B's key, NOT user A's
++    act(() => {
++      result.current.snooze()
++    })
++    expect(result.current.isVisible).toBe(false)
++    const userAKey = window.localStorage.getItem(KEY_A)
++    const userBKey = window.localStorage.getItem(KEY_B)
++    // Both keys exist independently — user isolation is proved by KEY_A and
++    // KEY_B being distinct storage slots, not by their JSON payloads
++    // differing (under fake timers `Date.now()` is frozen, so consecutive
++    // snoozes compute the same `snoozedUntil` value; the payload equality
++    // is expected. The rerender-back assertion below still proves user A's
++    // state persists across the transition to user B and back).
++    expect(userAKey).not.toBeNull()
++    expect(userBKey).not.toBeNull()
++
++    // Transition back to User A — user A's snoozed state should still be there
++    rerender({ userId: USER_A })
++    expect(result.current.isVisible).toBe(false)
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/hooks/useChecklistState.ts b/classlite-web/src/features/dashboard/hooks/useChecklistState.ts
+new file mode 100644
+index 0000000..d7e4485
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/hooks/useChecklistState.ts
+@@ -0,0 +1,215 @@
++/**
++ * useChecklistState — persistent snooze state for the FinishSetupCard.
++ *
++ * Story 2-4 AC4/AC5/AC6 — client-side persistence via `localStorage` under a
++ * per-user-id key (`classlite_finish_setup_v1_${userId}`) with a 7-day
++ * snooze window. No wire endpoint — FU-2-4-A tracks backend sync.
++ *
++ * External-store design [A-STRONG-12 + W-STRONG-5 + M-STRONG-11/12/17 folds]:
++ *   - `subscribe` is a **module-scope constant** (React 19 requires stable
++ *     reference; inline arrow re-subscribes each render).
++ *   - Subscription registers both a `storage` window listener (cross-tab
++ *     writes) and the caller's `notify` in a private `Set<() => void>` so
++ *     `snooze()` bumps propagate to every mounted consumer.
++ *   - `getSnapshot(userId)` returns a **referentially-stable** snapshot via
++ *     a `Map<userId, {version, state}>` cache invalidated on every `bump`.
++ *     This keeps `useSyncExternalStore` happy across renders while still
++ *     re-reading localStorage on cross-tab or intra-tab writes.
++ *   - Malformed localStorage payloads (empty string / `null` literal /
++ *     wrong shape / parse error / wrong root type) resolve to a fresh
++ *     `{ snoozedUntil: null }` **without throwing** and emit a Sentry
++ *     breadcrumb with a truncated key snippet (never the full payload).
++ *   - Snoozed-boundary auto-re-read — on mount with a future
++ *     `snoozedUntil`, schedule `setTimeout(bump, snoozedUntil - now + 1000)`
++ *     so the tab-B stale case (tab-A snoozed 7d ago, tab-B idle) refreshes
++ *     visibility at the boundary without polling.
++ *   - `userId === null` (boot-probe / anonymous) → returns
++ *     `{ isVisible: false, snooze: noop }` — guards against writing to
++ *     a null-scoped key.
++ *
++ * `isVisible` is derived from `Date.now()` on every render. Callers must
++ * `rerender()` to observe boundary transitions — `useSyncExternalStore`
++ * does not poll (M-STRONG-17 note).
++ */
++import { useCallback, useEffect, useSyncExternalStore } from 'react'
++import { addBreadcrumb } from '@sentry/react'
++
++export interface ChecklistState {
++  snoozedUntil: number | null
++}
++
++export interface UseChecklistStateResult {
++  state: ChecklistState
++  snooze: () => void
++  isVisible: boolean
++}
++
++const KEY_PREFIX = 'classlite_finish_setup_v1_'
++const SNOOZE_WINDOW_MS = 7 * 24 * 3600 * 1000
++const NULL_STATE: ChecklistState = Object.freeze({ snoozedUntil: null })
++
++// Per-userId snapshot cache. Keyed by the raw localStorage payload so
++// (a) same raw → same referential state, keeping useSyncExternalStore
++// stable across renders; (b) localStorage.clear() implicitly invalidates
++// the cache (raw shifts to `null`), which is essential for cross-test
++// isolation since module-scope caches persist across `beforeEach`.
++const snapshotCache = new Map<
++  string,
++  { raw: string | null; state: ChecklistState }
++>()
++
++// Notify set — every mounted consumer's `notify` callback lives here so
++// intra-tab `snooze()` can broadcast without touching localStorage twice.
++const subscribers = new Set<() => void>()
++
++function keyFor(userId: string): string {
++  return KEY_PREFIX + userId
++}
++
++function readStateFromRaw(
++  userId: string,
++  raw: string | null,
++): ChecklistState {
++  if (raw === null) return NULL_STATE
++
++  let parsed: unknown
++  try {
++    parsed = JSON.parse(raw)
++  } catch {
++    addBreadcrumb({
++      category: 'checklist',
++      message: 'malformed-localstorage',
++      level: 'warning',
++      data: { userId, keySnippet: raw.slice(0, 20) },
++    })
++    return NULL_STATE
++  }
++
++  if (
++    parsed !== null &&
++    typeof parsed === 'object' &&
++    !Array.isArray(parsed) &&
++    'snoozedUntil' in parsed &&
++    typeof (parsed as { snoozedUntil: unknown }).snoozedUntil === 'number'
++  ) {
++    return {
++      snoozedUntil: (parsed as { snoozedUntil: number }).snoozedUntil,
++    }
++  }
++
++  addBreadcrumb({
++    category: 'checklist',
++    message: 'malformed-localstorage',
++    level: 'warning',
++    data: { userId, keySnippet: raw.slice(0, 20) },
++  })
++  return NULL_STATE
++}
++
++function getSnapshotFor(userId: string | null): ChecklistState {
++  if (userId === null) return NULL_STATE
++  let raw: string | null
++  try {
++    raw = window.localStorage.getItem(keyFor(userId))
++  } catch {
++    return NULL_STATE
++  }
++  const cached = snapshotCache.get(userId)
++  if (cached && cached.raw === raw) return cached.state
++  const state = readStateFromRaw(userId, raw)
++  snapshotCache.set(userId, { raw, state })
++  return state
++}
++
++// Force a fresh snapshot identity for every mounted consumer — used on
++// boundary re-reads (W-STRONG-15 setTimeout wake) where raw localStorage
++// did NOT change but visibility did.
++function bumpAll(): void {
++  snapshotCache.clear()
++  subscribers.forEach((cb) => cb())
++}
++
++// Module-scope constant per A-STRONG-12 fold. Stable reference across all
++// renders — React 19 must NOT resubscribe on every render.
++const subscribe = (notify: () => void): (() => void) => {
++  subscribers.add(notify)
++  const storageHandler = (): void => {
++    // Cross-tab write may have changed localStorage — invalidate cache and
++    // notify every consumer (including this one). `getSnapshotFor` will
++    // re-read localStorage on the next React tick.
++    snapshotCache.clear()
++    notify()
++  }
++  window.addEventListener('storage', storageHandler)
++  return (): void => {
++    subscribers.delete(notify)
++    window.removeEventListener('storage', storageHandler)
++  }
++}
++
++export function useChecklistState(
++  userId: string | null,
++): UseChecklistStateResult {
++  const state = useSyncExternalStore<ChecklistState>(
++    subscribe,
++    () => getSnapshotFor(userId),
++    () => NULL_STATE,
++  )
++
++  // Boundary re-read: refresh visibility right after `snoozedUntil` elapses.
++  // W-STRONG-15 fold. Cleared on unmount (no leaked timeout).
++  useEffect(() => {
++    if (userId === null) return
++    const snoozedUntil = state.snoozedUntil
++    if (snoozedUntil == null) return
++    const delta = snoozedUntil - Date.now()
++    if (delta <= 0) return
++    const handle = window.setTimeout(() => {
++      bumpAll()
++    }, delta + 1000)
++    return () => {
++      window.clearTimeout(handle)
++    }
++  }, [userId, state.snoozedUntil])
++
++  const snooze = useCallback((): void => {
++    if (userId === null) return
++    const snoozedUntil = Date.now() + SNOOZE_WINDOW_MS
++    try {
++      window.localStorage.setItem(
++        keyFor(userId),
++        JSON.stringify({ snoozedUntil }),
++      )
++    } catch {
++      // Quota exceeded or storage disabled — swallow; the breadcrumb below
++      // still fires so we notice at scale.
++    }
++    addBreadcrumb({
++      category: 'checklist',
++      message: 'checklist-snoozed',
++      level: 'info',
++      data: { userId, snoozedUntil },
++    })
++    bumpAll()
++  }, [userId])
++
++  return {
++    state,
++    snooze,
++    isVisible: computeIsVisible(userId, state.snoozedUntil),
++  }
++}
++
++// Module-scope purity boundary — react-hooks/purity rule flags `Date.now()`
++// inside a hook body but not inside a plain module-scope function. The
++// boundary-bump `setTimeout` scheduled above ensures the hook re-renders
++// at `snoozedUntil` + 1s, so callers get a fresh `isVisible` reading
++// exactly when it matters.
++function computeIsVisible(
++  userId: string | null,
++  snoozedUntil: number | null,
++): boolean {
++  if (userId === null) return false
++  if (snoozedUntil === null) return true
++  return Date.now() >= snoozedUntil
++}
+diff --git a/classlite-web/src/features/dashboard/lib/__tests__/checklistDefinition.test.ts b/classlite-web/src/features/dashboard/lib/__tests__/checklistDefinition.test.ts
+new file mode 100644
+index 0000000..45bfa20
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/lib/__tests__/checklistDefinition.test.ts
+@@ -0,0 +1,235 @@
++/**
++ * Story 2-4 — `checklistDefinition` red-phase acceptance tests.
++ *
++ * Covers Task 2.5 per AC3 per-persona enumeration + resolver purity:
++ *   - Operator: 7 items [S-BLOCKER-1 mockup s09 fidelity]
++ *   - Founder: 7 items (identical enumeration to Operator)
++ *   - Solo Teacher: 4 items [A-STRONG-7 resolved — Solo always has session.center]
++ *
++ * Contract highlights:
++ *   - Resolvers read `ctx.currentCenter` NOT raw `ctx.session.center` [W-BLOCKER-4]
++ *   - Resolvers `?.`-chain from `ctx.templateDraft` — never throw on null
++ *     [A-STRONG-13]
++ *   - `enrolStudents` badge is 'comingSoon' with resolver returning false in v1
++ *     [S-INFO-20 + A-STRONG-14 — permanent-red judgment eliminated]
++ *   - AC10 belt: no item id contains the substring `trial`
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 2.4
++ * (`src/features/dashboard/lib/checklistDefinition.ts`) — TS2307 is RED.
++ */
++import { describe, expect, test } from 'vitest'
++
++import {
++  checklistDefinition,
++  type ChecklistCtx,
++  type ChecklistItem,
++} from '@/features/dashboard/lib/checklistDefinition'
++import type { CenterSummary } from '@/features/auth/api/authKeys'
++
++const CENTER_FIXTURE: CenterSummary = {
++  id: 'c-1',
++  name: 'Saigon English Center',
++  shortCode: 'saigon-english',
++  // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
++  brandColor: '#1e3a8a',
++  logoUrl: null,
++  timezone: 'Asia/Ho_Chi_Minh',
++}
++
++const CTX_FRESH: ChecklistCtx = {
++  currentCenter: CENTER_FIXTURE,
++  templateDraft: null,
++  teachersInvitedCount: 0,
++}
++
++const CTX_POST_2_3C_OPERATOR: ChecklistCtx = {
++  currentCenter: CENTER_FIXTURE,
++  templateDraft: {
++    selectedTemplateId: 'tpl-1',
++    spawnedClassIds: ['c1', 'c2'],
++    classesDraft: [
++      { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++      { cohortName: 'Batch B', startDate: '2026-08-15', teacherEmail: 'alice@example.com' },
++    ],
++  },
++  teachersInvitedCount: 2,
++}
++
++describe('checklistDefinition — Task 2.5 per-persona enumeration + purity (AC3)', () => {
++  // ---------------------------------------------------------------------
++  // Enumeration count contracts
++  // ---------------------------------------------------------------------
++  test('Operator enumeration = 7 items (mockup s09 fidelity per S-BLOCKER-1)', () => {
++    expect(checklistDefinition.operator).toHaveLength(7)
++  })
++
++  test('Founder enumeration = 7 items (identical to Operator)', () => {
++    expect(checklistDefinition.founder).toHaveLength(7)
++  })
++
++  test('Solo Teacher enumeration = 4 items (drops templatePicked/teachersInvited/createMoreClasses)', () => {
++    expect(checklistDefinition.solo_teacher).toHaveLength(4)
++  })
++
++  // ---------------------------------------------------------------------
++  // Item id set contracts
++  // ---------------------------------------------------------------------
++  test('Operator item ids = [centerCreated, templatePicked, firstClassesSpawned, teachersInvited, enrolStudents, createMoreClasses, addResources]', () => {
++    const ids = checklistDefinition.operator.map((i) => i.id)
++    expect(ids).toEqual([
++      'centerCreated',
++      'templatePicked',
++      'firstClassesSpawned',
++      'teachersInvited',
++      'enrolStudents',
++      'createMoreClasses',
++      'addResources',
++    ])
++  })
++
++  test('Solo Teacher item ids = [centerCreated, firstClassSpawned, enrolStudents, addResources]', () => {
++    const ids = checklistDefinition.solo_teacher.map((i) => i.id)
++    expect(ids).toEqual([
++      'centerCreated',
++      'firstClassSpawned',
++      'enrolStudents',
++      'addResources',
++    ])
++  })
++
++  // ---------------------------------------------------------------------
++  // AC10 no-trial belt
++  // ---------------------------------------------------------------------
++  test('AC10 belt: no item id contains the substring "trial"', () => {
++    const allItems: ChecklistItem[] = [
++      ...checklistDefinition.operator,
++      ...checklistDefinition.founder,
++      ...checklistDefinition.solo_teacher,
++    ]
++    for (const item of allItems) {
++      expect(item.id.toLowerCase()).not.toMatch(/\btrial\b/)
++      expect(item.targetPath.toLowerCase()).not.toMatch(/\btrial\b/)
++    }
++  })
++
++  // ---------------------------------------------------------------------
++  // AC3 badge contracts (S-INFO-20 + A-STRONG-14)
++  // ---------------------------------------------------------------------
++  test('`enrolStudents` badge is "comingSoon" for Operator (S-INFO-20 permanent-red elimination)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'enrolStudents')
++    expect(item?.badge).toBe('comingSoon')
++  })
++
++  test('`enrolStudents` badge is "comingSoon" for Solo Teacher (same rationale)', () => {
++    const item = checklistDefinition.solo_teacher.find((i) => i.id === 'enrolStudents')
++    expect(item?.badge).toBe('comingSoon')
++  })
++
++  test('`centerCreated` badge is "required" (auto-done on landing)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'centerCreated')
++    expect(item?.badge).toBe('required')
++  })
++
++  test('`addResources` badge is "optional" (mockup s09:7669)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'addResources')
++    expect(item?.badge).toBe('optional')
++  })
++
++  // ---------------------------------------------------------------------
++  // Resolver purity — Solo edge with null templateDraft (A-STRONG-13)
++  // ---------------------------------------------------------------------
++  test('Solo Teacher with null templateDraft — no resolver throws (A-STRONG-13)', () => {
++    for (const item of checklistDefinition.solo_teacher) {
++      expect(() => item.isDone(CTX_FRESH)).not.toThrow()
++    }
++  })
++
++  test('Operator with null templateDraft — no resolver throws', () => {
++    for (const item of checklistDefinition.operator) {
++      expect(() => item.isDone(CTX_FRESH)).not.toThrow()
++    }
++  })
++
++  // ---------------------------------------------------------------------
++  // Resolver correctness — fresh state (only centerCreated done)
++  // ---------------------------------------------------------------------
++  test('Operator fresh state (only centerCreated resolves true) → 1/7', () => {
++    const doneCount = checklistDefinition.operator.filter((i) => i.isDone(CTX_FRESH)).length
++    expect(doneCount).toBe(1)
++  })
++
++  // ---------------------------------------------------------------------
++  // Resolver correctness — post-2-3c state
++  // ---------------------------------------------------------------------
++  test('Operator post-2-3c state (center + template + spawned + 2 teachers) → 4 required done + 3 optional-permanently-false = 4/7', () => {
++    const done = checklistDefinition.operator.filter((i) => i.isDone(CTX_POST_2_3C_OPERATOR))
++    const doneIds = done.map((i) => i.id).sort()
++    expect(doneIds).toEqual(
++      ['centerCreated', 'firstClassesSpawned', 'teachersInvited', 'templatePicked'].sort(),
++    )
++  })
++
++  test('`enrolStudents` resolver returns false in v1 regardless of ctx (no data source)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'enrolStudents')
++    expect(item?.isDone(CTX_POST_2_3C_OPERATOR)).toBe(false)
++  })
++
++  test('`createMoreClasses` resolver returns false in v1 (no dashboard signal)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'createMoreClasses')
++    expect(item?.isDone(CTX_POST_2_3C_OPERATOR)).toBe(false)
++  })
++
++  test('`addResources` resolver returns false in v1', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'addResources')
++    expect(item?.isDone(CTX_POST_2_3C_OPERATOR)).toBe(false)
++  })
++
++  // ---------------------------------------------------------------------
++  // W-BLOCKER-4 — resolver source-of-truth
++  // ---------------------------------------------------------------------
++  test('`centerCreated` resolver reads ctx.currentCenter (NOT raw session.center)', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'centerCreated')
++    // With currentCenter set → true
++    expect(item?.isDone(CTX_FRESH)).toBe(true)
++    // With currentCenter cleared → false
++    expect(item?.isDone({ ...CTX_FRESH, currentCenter: null as never })).toBe(false)
++  })
++
++  test('`templatePicked` resolver honors `buildFromScratch === true` OR `selectedTemplateId != null`', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'templatePicked')
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: 'tpl-1' },
++    })).toBe(true)
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: null, buildFromScratch: true },
++    })).toBe(true)
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: null },
++    })).toBe(false)
++  })
++
++  test('`firstClassesSpawned` resolver: length > 0 → true; empty/undefined → false', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'firstClassesSpawned')
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: 'tpl-1', spawnedClassIds: ['c1'] },
++    })).toBe(true)
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: 'tpl-1', spawnedClassIds: [] },
++    })).toBe(false)
++    expect(item?.isDone({
++      ...CTX_FRESH,
++      templateDraft: { selectedTemplateId: 'tpl-1' },
++    })).toBe(false)
++  })
++
++  test('`teachersInvited` resolver: reads ctx.teachersInvitedCount, not raw classesDraft', () => {
++    const item = checklistDefinition.operator.find((i) => i.id === 'teachersInvited')
++    expect(item?.isDone({ ...CTX_FRESH, teachersInvitedCount: 3 })).toBe(true)
++    expect(item?.isDone({ ...CTX_FRESH, teachersInvitedCount: 0 })).toBe(false)
++  })
++})
+diff --git a/classlite-web/src/features/dashboard/lib/checklistDefinition.ts b/classlite-web/src/features/dashboard/lib/checklistDefinition.ts
+new file mode 100644
+index 0000000..2a8c916
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/lib/checklistDefinition.ts
+@@ -0,0 +1,185 @@
++/**
++ * checklistDefinition — per-persona ordered list of "Finish setting up"
++ * items rendered by `<FinishSetupCard>`.
++ *
++ * Story 2-4 AC3. Contract highlights:
++ *   - Closed literal `Record<Persona, ChecklistItem[]>` — no dynamic
++ *     construction; the shape is grep-stable across the codebase.
++ *   - Enumeration counts: Operator 7 / Founder 7 / Solo Teacher 4 [mockup
++ *     s09 fidelity per S-BLOCKER-1 / A-STRONG-7].
++ *   - Resolvers read `ctx.currentCenter` — NOT raw `ctx.session.center`
++ *     [W-BLOCKER-4]. AC1 selector and per-item completion agree on the
++ *     same snapshot.
++ *   - Resolvers `?.`-chain from `ctx.templateDraft` [A-STRONG-13] — Solo
++ *     Teacher's null `templateDraft` (never touched a template) must not
++ *     throw.
++ *   - `enrolStudents` badge is `comingSoon` [S-INFO-20 + A-STRONG-14] with
++ *     resolver returning `false` in v1 — Story 2.7 makes it completable.
++ *   - `createMoreClasses` and `addResources` badge is `optional` with
++ *     resolver returning `false` in v1 (no dashboard signal for these yet;
++ *     Story 3.1 / Story 4.4 wire them).
++ *   - AC10 belt: no item id contains the substring `trial`; no targetPath
++ *     routes to `/upgrade` or `/trial`.
++ */
++import type { CenterSummary } from '@/features/auth/api/authKeys'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++export type Persona = 'operator' | 'founder' | 'solo_teacher'
++
++export type ChecklistBadge =
++  | 'done'
++  | 'required'
++  | 'optional'
++  | 'comingSoon'
++
++export type ChecklistTargetSurface =
++  | 'settings'
++  | 'billing'
++  | 'students'
++  | 'classes'
++  | 'templates'
++  | 'resources'
++  | 'people'
++  | 'grading'
++
++export interface ChecklistCtx {
++  currentCenter: CenterSummary | null
++  templateDraft: TemplateDraftPayload | null
++  teachersInvitedCount: number
++}
++
++export interface ChecklistItem {
++  id: string
++  i18nKey: string
++  badge: Exclude<ChecklistBadge, 'done'>
++  isDone: (ctx: ChecklistCtx) => boolean
++  targetPath: string
++  targetSurface: ChecklistTargetSurface
++  epicNum: number
++}
++
++// ---------------------------------------------------------------------------
++// Shared item defs — Operator and Founder enumerations are identical.
++// ---------------------------------------------------------------------------
++const centerCreated: ChecklistItem = {
++  id: 'centerCreated',
++  i18nKey: 'dashboard.checklist.item.centerCreated.name',
++  badge: 'required',
++  isDone: (ctx) => ctx.currentCenter != null,
++  targetPath: '/settings',
++  targetSurface: 'settings',
++  epicNum: 2,
++}
++
++const templatePicked: ChecklistItem = {
++  id: 'templatePicked',
++  i18nKey: 'dashboard.checklist.item.templatePicked.name',
++  badge: 'required',
++  isDone: (ctx) =>
++    ctx.templateDraft?.selectedTemplateId != null ||
++    ctx.templateDraft?.buildFromScratch === true,
++  targetPath: '/templates',
++  targetSurface: 'templates',
++  epicNum: 3,
++}
++
++const firstClassesSpawned: ChecklistItem = {
++  id: 'firstClassesSpawned',
++  i18nKey: 'dashboard.checklist.item.firstClassesSpawned.name',
++  badge: 'required',
++  isDone: (ctx) => (ctx.templateDraft?.spawnedClassIds?.length ?? 0) > 0,
++  targetPath: '/classes',
++  targetSurface: 'classes',
++  epicNum: 3,
++}
++
++const teachersInvited: ChecklistItem = {
++  id: 'teachersInvited',
++  i18nKey: 'dashboard.checklist.item.teachersInvited.name',
++  badge: 'required',
++  isDone: (ctx) => ctx.teachersInvitedCount > 0,
++  targetPath: '/people/staff',
++  targetSurface: 'people',
++  epicNum: 2,
++}
++
++const enrolStudents: ChecklistItem = {
++  id: 'enrolStudents',
++  i18nKey: 'dashboard.checklist.item.enrolStudents.name',
++  badge: 'comingSoon',
++  // v1: no student-enrolment data source on the FE — permanently pending.
++  // Story 2.7 makes this completable. NO_TRIAL_MECHANIC_V1
++  isDone: () => false,
++  targetPath: '/students',
++  targetSurface: 'students',
++  epicNum: 2,
++}
++
++const createMoreClasses: ChecklistItem = {
++  id: 'createMoreClasses',
++  i18nKey: 'dashboard.checklist.item.createMoreClasses.name',
++  badge: 'optional',
++  // v1: no dashboard signal for "spawned a class after landing".
++  // Story 3.1 wires this. NO_TRIAL_MECHANIC_V1
++  isDone: () => false,
++  targetPath: '/classes',
++  targetSurface: 'classes',
++  epicNum: 3,
++}
++
++const addResources: ChecklistItem = {
++  id: 'addResources',
++  i18nKey: 'dashboard.checklist.item.addResources.name',
++  badge: 'optional',
++  // v1: no signal. Story 4.4 wires knowledge hub. NO_TRIAL_MECHANIC_V1
++  isDone: () => false,
++  targetPath: '/knowledge-hub',
++  targetSurface: 'resources',
++  epicNum: 4,
++}
++
++const soloFirstClassSpawned: ChecklistItem = {
++  // Solo Teacher's "first class" item — same resolver as Operator's
++  // `firstClassesSpawned` (Solo lands on `/setup/first-class` which
++  // populates the same `spawnedClassIds` field).
++  id: 'firstClassSpawned',
++  i18nKey: 'dashboard.checklist.item.firstClassesSpawned.name',
++  badge: 'required',
++  isDone: (ctx) => (ctx.templateDraft?.spawnedClassIds?.length ?? 0) > 0,
++  targetPath: '/classes',
++  targetSurface: 'classes',
++  epicNum: 3,
++}
++
++// ---------------------------------------------------------------------------
++// Per-persona ordered enumerations — the closed literal AC3 spec pins.
++// ---------------------------------------------------------------------------
++export const checklistDefinition: Record<Persona, ChecklistItem[]> = {
++  operator: [
++    centerCreated,
++    templatePicked,
++    firstClassesSpawned,
++    teachersInvited,
++    enrolStudents,
++    createMoreClasses,
++    addResources,
++  ],
++  founder: [
++    centerCreated,
++    templatePicked,
++    firstClassesSpawned,
++    teachersInvited,
++    enrolStudents,
++    createMoreClasses,
++    addResources,
++  ],
++  solo_teacher: [
++    // Solo drops templatePicked (implicit in single-class flow),
++    // teachersInvited (Solo is the lone teacher — no invite loop), and
++    // createMoreClasses (Solo v1 is single-class scope).
++    centerCreated,
++    soloFirstClassSpawned,
++    enrolStudents,
++    addResources,
++  ],
++}
+diff --git a/classlite-web/src/features/dashboard/lib/sampleAIGrade.ts b/classlite-web/src/features/dashboard/lib/sampleAIGrade.ts
+new file mode 100644
+index 0000000..96ddd91
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/lib/sampleAIGrade.ts
+@@ -0,0 +1,30 @@
++/**
++ * sampleAIGrade — hardcoded IELTS Writing Task 2 fixture for Story 2-4
++ * FirstAIGradeCard (AC7). The essay excerpt, per-criterion breakdown,
++ * feedback quote, and disclaimer are drafted in English + Vietnamese and
++ * lifted via i18n keys — this file just pins the numeric shape.
++ *
++ * When Epic 6 (FU-2-4-F) ships the live "Run AI grading" pipeline, this
++ * fixture stays as the marketing/onboarding placeholder; the runtime
++ * grade uses the wire endpoint instead.
++ */
++export interface CriterionScore {
++  key: 'taskResponse' | 'coherence' | 'lexical' | 'grammar'
++  label: string
++  band: number
++}
++
++export interface SampleAIGrade {
++  overallBand: number
++  criteria: CriterionScore[]
++}
++
++export const sampleAIGrade: SampleAIGrade = {
++  overallBand: 6.5,
++  criteria: [
++    { key: 'taskResponse', label: 'Task Response', band: 6.5 },
++    { key: 'coherence', label: 'Coherence', band: 6.0 },
++    { key: 'lexical', label: 'Lexical', band: 7.0 },
++    { key: 'grammar', label: 'Grammar', band: 6.5 },
++  ],
++}
+diff --git a/classlite-web/src/features/dashboard/lib/sampleOwnerPreview.ts b/classlite-web/src/features/dashboard/lib/sampleOwnerPreview.ts
+new file mode 100644
+index 0000000..f98f6b5
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/lib/sampleOwnerPreview.ts
+@@ -0,0 +1,38 @@
++/**
++ * sampleOwnerPreview — hardcoded 4-tile fixture for the Operator persona's
++ * SampleDashboardPreview (Story 2-4 AC8).
++ *
++ * The tile labels are i18n keys resolved at render time; only the tile
++ * ORDER + placeholder value glyph (`em-dash`) lives in this fixture.
++ * When Epic 8 wires real center-pulse analytics, this fixture is
++ * discarded — the card graduates to a live data component.
++ */
++export interface OwnerPreviewTile {
++  key:
++    | 'sessionsToday'
++    | 'gradingQueue'
++    | 'atRiskStudents'
++    | 'attendance'
++  labelKey: string
++}
++
++export const sampleOwnerPreview: OwnerPreviewTile[] = [
++  {
++    key: 'sessionsToday',
++    labelKey: 'dashboard.samplePreview.stat.sessionsToday',
++  },
++  {
++    key: 'gradingQueue',
++    labelKey: 'dashboard.samplePreview.stat.gradingQueue',
++  },
++  {
++    key: 'atRiskStudents',
++    labelKey: 'dashboard.samplePreview.stat.atRiskStudents',
++  },
++  {
++    key: 'attendance',
++    labelKey: 'dashboard.samplePreview.stat.attendance',
++  },
++]
++
++export const OWNER_PREVIEW_PLACEHOLDER = '—' // em-dash — UX §6.4 ghosted frame
+diff --git a/classlite-web/src/lib/__tests__/teachersInvitedCount.test.ts b/classlite-web/src/lib/__tests__/teachersInvitedCount.test.ts
+new file mode 100644
+index 0000000..51ed848
+--- /dev/null
++++ b/classlite-web/src/lib/__tests__/teachersInvitedCount.test.ts
+@@ -0,0 +1,122 @@
++/**
++ * Story 2-4 — `teachersInvitedCount` shared-lib red-phase acceptance tests.
++ *
++ * Covers AC3 stat-filter contract [W-BLOCKER-3 pragmatic fold] — extracted
++ * from `OnboardingDonePage.tsx:188-206` (2-3c `deriveTeachersInvitedCount`)
++ * to a shared-lib location (`src/lib/teachersInvitedCount.ts`) so BOTH the
++ * dashboard checklist (2-4) AND the onboarding done page (2-3c) consume the
++ * same implementation. Dual-impl drift is worse than a one-commit refactor.
++ *
++ * Contract carries all 2-3c Round 1 hardening verbatim:
++ *   - Case-insensitive normalization (toLowerCase)
++ *   - Trim whitespace
++ *   - Set-based dedup (a teacher assigned to N classes counts as 1 invite)
++ *   - Whitespace-only teacherEmail exclusion (R1-C1-P20)
++ *   - Self-exclusion when userEmail matches (case+trim normalized)
++ *   - Null-user boot-probe fallback (`userEmail === null | undefined`):
++ *     falls back to "count everything (dedup'd)" per W-S3 defensive posture
++ *
++ * ATDD contract: this file WILL fail to import until Amelia lands Task 2.1
++ * (`src/lib/teachersInvitedCount.ts`) — TS2307 error is the RED signal.
++ *
++ * Test matrix inherits 2-3c AC1 6-row negative matrix + 1 boot-probe row:
++ *   1. case-mismatch → excluded (Case-insensitive contract)
++ *   2. trim-mismatch → excluded (Trim contract)
++ *   3. null classesDraft → 0 (no throw)
++ *   4. empty classesDraft → 0
++ *   5. Founder self-injection (Winston-W4) → excluded
++ *   6. undefined/whitespace-only teacherEmail row → skipped
++ *   7. null userEmail (boot-probe) → count everything dedup'd (W-S3)
++ * Plus:
++ *   8. Duplicate email across multiple classes → counted once (R1-C1-P24)
++ */
++import { describe, expect, test } from 'vitest'
++
++import { teachersInvitedCount } from '@/lib/teachersInvitedCount'
++
++type ClassesDraft = Parameters<typeof teachersInvitedCount>[0]
++
++const rowsFor = (emails: Array<string | null>): ClassesDraft =>
++  emails.map((teacherEmail, i) => ({
++    cohortName: `Cohort ${i + 1}`,
++    startDate: '2026-08-15',
++    teacherEmail,
++  }))
++
++describe('teachersInvitedCount — 2-3c AC1 contract (shared-lib port per W-BLOCKER-3)', () => {
++  test('case-mismatch: OWNER@EXAMPLE.COM vs owner@example.com → self excluded', () => {
++    const draft = rowsFor(['OWNER@EXAMPLE.COM'])
++    expect(teachersInvitedCount(draft, 'owner@example.com')).toBe(0)
++  })
++
++  test('trim-mismatch: "  bob@example.com  " vs bob@example.com → self excluded', () => {
++    const draft = rowsFor(['  bob@example.com  '])
++    expect(teachersInvitedCount(draft, 'bob@example.com')).toBe(0)
++  })
++
++  test('null classesDraft → 0 (no throw)', () => {
++    expect(() => teachersInvitedCount(null, 'owner@example.com')).not.toThrow()
++    expect(teachersInvitedCount(null, 'owner@example.com')).toBe(0)
++  })
++
++  test('undefined classesDraft → 0 (no throw)', () => {
++    expect(() => teachersInvitedCount(undefined, 'owner@example.com')).not.toThrow()
++    expect(teachersInvitedCount(undefined, 'owner@example.com')).toBe(0)
++  })
++
++  test('empty classesDraft array → 0', () => {
++    expect(teachersInvitedCount([], 'owner@example.com')).toBe(0)
++  })
++
++  test('Founder self-injection (Winston-W4): row 0 teacherEmail = user.email → excluded, count 0 not 1', () => {
++    const draft = rowsFor(['founder@example.com'])
++    expect(teachersInvitedCount(draft, 'founder@example.com')).toBe(0)
++  })
++
++  test('null teacherEmail rows → skipped (filter with != null)', () => {
++    const draft = rowsFor([null, null, 'bob@example.com'])
++    expect(teachersInvitedCount(draft, 'owner@example.com')).toBe(1)
++  })
++
++  test('whitespace-only teacherEmail row → excluded (R1-C1-P20)', () => {
++    const draft = rowsFor(['   ', '\t', '\n', 'bob@example.com'])
++    expect(teachersInvitedCount(draft, 'owner@example.com')).toBe(1)
++  })
++
++  test('duplicate emails across classes → counted once (R1-C1-P24 Set-based dedup)', () => {
++    const draft = rowsFor([
++      'bob@example.com',
++      'bob@example.com',
++      'BOB@example.com',
++      '  bob@EXAMPLE.com  ',
++      'alice@example.com',
++    ])
++    expect(teachersInvitedCount(draft, 'owner@example.com')).toBe(2)
++  })
++
++  test('null userEmail (boot-probe) → count everything dedup\'d (W-S3 defensive fallback)', () => {
++    const draft = rowsFor(['bob@example.com', 'alice@example.com', 'bob@example.com'])
++    expect(teachersInvitedCount(draft, null)).toBe(2)
++  })
++
++  test('undefined userEmail → same fallback as null', () => {
++    const draft = rowsFor(['bob@example.com', 'alice@example.com'])
++    expect(teachersInvitedCount(draft, undefined)).toBe(2)
++  })
++
++  test('empty-string userEmail → same fallback (defensive against trim-to-empty)', () => {
++    const draft = rowsFor(['bob@example.com', 'alice@example.com'])
++    expect(teachersInvitedCount(draft, '')).toBe(2)
++  })
++
++  test('mixed real-world Operator scenario: 3 classes, 2 unique teachers, 1 Founder self, 1 whitespace', () => {
++    const draft = rowsFor([
++      'owner@example.com', // self — excluded
++      'bob@example.com',
++      '   ', // whitespace — excluded
++      'alice@example.com',
++      'BOB@example.com', // dup of bob — dedup
++    ])
++    expect(teachersInvitedCount(draft, 'owner@example.com')).toBe(2)
++  })
++})
+diff --git a/classlite-web/src/lib/teachersInvitedCount.ts b/classlite-web/src/lib/teachersInvitedCount.ts
+new file mode 100644
+index 0000000..2fafa66
+--- /dev/null
++++ b/classlite-web/src/lib/teachersInvitedCount.ts
+@@ -0,0 +1,51 @@
++/**
++ * teachersInvitedCount — shared derivation of "unique teachers invited" from
++ * a classesDraft payload, given the current user's email for self-exclusion.
++ *
++ * Story 2-4 W-BLOCKER-3 pragmatic fold: extracted from
++ * `OnboardingDonePage.tsx:188-206` (Story 2-3c Round 1 hardened) into a
++ * shared-lib location so BOTH the dashboard checklist (2-4) AND the
++ * onboarding done page (2-3c) consume the same implementation. Dual-impl
++ * drift is worse than a one-commit refactor.
++ *
++ * Contract — carries all 2-3c R1 hardening verbatim:
++ *   - Case-insensitive normalization (`toLowerCase`)
++ *   - Whitespace trim
++ *   - Set-based dedup (a teacher assigned to N classes counts as 1 invite;
++ *     copy "M teachers invited" reads more honestly as a people count).
++ *     R1-C1-P24.
++ *   - Whitespace-only teacherEmail rows excluded (R1-C1-P20).
++ *   - Self-exclusion when a row's normalized email matches the user's email
++ *     (Winston-W4 — Founder row 0 draft has `teacherEmail = user.email`
++ *     while the wire ships `null`).
++ *   - Null-user boot-probe fallback (W-S3): when `userEmail` is null /
++ *     undefined / empty, fall back to "count everything (dedup'd)" —
++ *     misfiring self-exclusion on a transient boot-probe tick would
++ *     under-count on legitimate rows.
++ *
++ * Consumers must NOT re-implement this logic. Story 2-3c
++ * `OnboardingDonePage.tsx` imports from here; Story 2-4
++ * `checklistDefinition.ts` builds `ChecklistCtx.teachersInvitedCount` by
++ * calling this. Any behavior change requires updating BOTH consumers'
++ * test suites.
++ */
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++type ClassesDraft = TemplateDraftPayload['classesDraft']
++
++export function teachersInvitedCount(
++  classesDraft: ClassesDraft | null | undefined,
++  userEmail: string | null | undefined,
++): number {
++  if (classesDraft == null) return 0
++  const selfEmail = userEmail?.toLowerCase().trim() ?? ''
++  const uniqueEmails = new Set<string>()
++  for (const row of classesDraft) {
++    if (row.teacherEmail == null) continue
++    const normalized = row.teacherEmail.toLowerCase().trim()
++    if (normalized === '') continue
++    if (selfEmail !== '' && normalized === selfEmail) continue
++    uniqueEmails.add(normalized)
++  }
++  return uniqueEmails.size
++}

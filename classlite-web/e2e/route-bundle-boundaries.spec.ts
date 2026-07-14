@@ -508,4 +508,60 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       ).toEqual([])
     }
   })
+
+  test('Story 2-4 — TeacherDashboard chunk contains checklist testid + dashboard testids are NOT in onboarding chunks (AC15)', async () => {
+    // Story 2-4 AC15 fold [A-STRONG-11] — Rolldown minifies identifiers, so
+    // `toContain('FinishSetupCard')` on chunk bytes would false-negative.
+    // Instead we assert on the `data-testid="dashboard-checklist-card"`
+    // string literal, which survives minification.
+    //
+    // The 3 dashboard-owned testids (checklist-card / first-ai-grade-card /
+    // sample-preview) MUST appear in the TeacherDashboard chunk and MUST NOT
+    // appear in ANY onboarding chunk (deep-import discipline W-S4 + AC15).
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const teacherChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    const onboardingChunkFiles = files.filter((f: string) =>
+      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+
+    expect(
+      teacherChunkFiles.length,
+      'TeacherDashboard chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const teacherContents = teacherChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // TeacherDashboard chunk MUST contain the checklist card testid
+    expect(
+      teacherContents,
+      'TeacherDashboard chunk missing `dashboard-checklist-card` testid — FinishSetupCard did not co-locate into the dashboard chunk',
+    ).toContain('dashboard-checklist-card')
+
+    // Onboarding chunks MUST NOT contain ANY of the 3 dashboard testids
+    const DASHBOARD_TESTIDS_LEAK_CHECK = [
+      'dashboard-checklist-card',
+      'dashboard-first-ai-grade-card',
+      'dashboard-sample-preview',
+    ]
+    for (const chunkFile of onboardingChunkFiles) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      for (const testid of DASHBOARD_TESTIDS_LEAK_CHECK) {
+        expect(
+          content,
+          `onboarding chunk ${chunkFile} leaked dashboard testid "${testid}" — deep-import discipline violated`,
+        ).not.toContain(testid)
+      }
+    }
+  })
 })

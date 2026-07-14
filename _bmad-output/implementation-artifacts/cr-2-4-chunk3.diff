@@ -1,0 +1,1850 @@
+diff --git a/classlite-web/e2e/dashboard-first-run.spec.ts b/classlite-web/e2e/dashboard-first-run.spec.ts
+new file mode 100644
+index 0000000..629340b
+--- /dev/null
++++ b/classlite-web/e2e/dashboard-first-run.spec.ts
+@@ -0,0 +1,216 @@
++/**
++ * Story 2-4 — Playwright first-run dashboard smoke.
++ *
++ * Covers Task 10.4 per AC7/AC8/AC9/AC10/AC11:
++ *   (a) Operator lands → checklist + sample preview + Your Classes visible;
++ *       no AI grade card
++ *   (b) Founder → checklist + AI grade + Your Classes; no sample preview
++ *   (c) Solo Teacher → checklist (4 items) + AI grade + Your Classes
++ *   (d.i) Snooze → reload → still hidden (localStorage assertion)
++ *   (d.ii) page.clock.fastForward('7d1s') → card re-appears [M-STRONG-10]
++ *   (e) DeadLinkTrigger click → Sonner toast renders + no navigation
++ *
++ * Uses the shipped `stubOnboardingBackend` seam from
++ * `onboarding-template-spawn.spec.ts` — extended by Task 7.5 (2-3c
++ * completion notes) with `initialProgressStep` + `initialPersona` overloads.
++ * Green-phase note: Amelia may need to further extend the seam to accept
++ * `initialSpawnedClassIds` / `initialClassesDraft` so tests can start
++ * directly at cell 6 state without walking the wizard.
++ *
++ * ATDD contract: this file WILL fail at runtime until Amelia lands the
++ * dashboard components + extended stub. `tsc --noEmit -p tsconfig.e2e.json`
++ * remains clean (Playwright specs pass typecheck).
++ */
++import { expect, test, type Page, type Route } from '@playwright/test'
++
++const DEFAULT_USER = {
++  email: 'owner@example.com',
++  fullName: 'Trang',
++  id: 'user-1',
++}
++
++function jsonEnvelope<T>(data: T, status = 200) {
++  return {
++    status,
++    contentType: 'application/json',
++    body: JSON.stringify({ data, meta: {} }),
++  }
++}
++
++// Stub the full request surface needed to render `/dashboard` at
++// `currentStep: 'done'`. Mirrors the `stubOnboardingBackend` shape from
++// `onboarding-template-spawn.spec.ts` — extended to accept the dashboard's
++// preconditions (persona, spawnedClassIds, classesDraft) directly.
++async function stubDashboardBackend(
++  page: Page,
++  opts: {
++    persona: 'operator' | 'founder' | 'solo_teacher'
++    spawnedClassIds?: string[]
++    classesDraft?: Array<{
++      cohortName: string
++      startDate: string
++      teacherEmail: string | null
++    }>
++  },
++): Promise<void> {
++  // Boot-probe refresh — hydrates useAuth cache with a valid session +
++  // center. Without this, the layout guard bounces to `/login` before
++  // /dashboard ever mounts.
++  await page.route('**/api/auth/refresh', async (route: Route) => {
++    await route.fulfill(
++      jsonEnvelope({
++        user: {
++          id: DEFAULT_USER.id,
++          email: DEFAULT_USER.email,
++          displayName: DEFAULT_USER.fullName,
++          fullName: DEFAULT_USER.fullName,
++          emailVerified: true,
++        },
++        accessToken: 'e2e.jwt.token',
++        center: {
++          id: 'center-e2e',
++          name: 'E2E Center',
++          shortCode: 'e2e-center',
++          brandColor: 'indigo',
++          logoUrl: null,
++          timezone: 'Asia/Ho_Chi_Minh',
++          role: 'owner',
++        },
++      }),
++    )
++  })
++
++  await page.route('**/api/onboarding/progress', async (route: Route) => {
++    if (route.request().method() !== 'GET') {
++      await route.fulfill(jsonEnvelope({}, 200))
++      return
++    }
++    await route.fulfill(
++      jsonEnvelope({
++        persona: opts.persona,
++        currentStep: 'done',
++        payload: {
++          templateDraft: {
++            selectedTemplateId: 'tpl-1',
++            spawnedClassIds: opts.spawnedClassIds ?? ['c1'],
++            classesDraft: opts.classesDraft ?? [
++              {
++                cohortName: 'Batch A',
++                startDate: '2026-08-15',
++                teacherEmail: 'bob@example.com',
++              },
++            ],
++          },
++        },
++        updatedAt: '2026-07-14T00:00:00.000Z',
++      }),
++    )
++  })
++}
++
++test.describe('Dashboard first-run smoke (Story 2-4)', () => {
++  test('(a) Operator lands → checklist + sample preview + Your Classes; no AI grade card', async ({
++    page,
++  }) => {
++    await stubDashboardBackend(page, { persona: 'operator' })
++    await page.goto('/dashboard')
++
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++    await expect(page.getByTestId('dashboard-sample-preview')).toBeVisible()
++    await expect(page.getByTestId('dashboard-your-classes-row')).toBeVisible()
++    await expect(page.getByTestId('dashboard-first-ai-grade-card')).toHaveCount(0)
++  })
++
++  test('(b) Founder lands → checklist + AI grade + Your Classes; no sample preview', async ({
++    page,
++  }) => {
++    await stubDashboardBackend(page, {
++      persona: 'founder',
++      classesDraft: [
++        {
++          cohortName: 'My first class',
++          startDate: '2026-08-15',
++          teacherEmail: null,
++        },
++      ],
++    })
++    await page.goto('/dashboard')
++
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++    await expect(page.getByTestId('dashboard-first-ai-grade-card')).toBeVisible()
++    await expect(page.getByTestId('dashboard-your-classes-row')).toBeVisible()
++    await expect(page.getByTestId('dashboard-sample-preview')).toHaveCount(0)
++  })
++
++  test('(c) Solo Teacher lands → checklist (4 items) + AI grade + Your Classes', async ({
++    page,
++  }) => {
++    await stubDashboardBackend(page, {
++      persona: 'solo_teacher',
++      classesDraft: [
++        {
++          cohortName: 'My first class',
++          startDate: '2026-08-15',
++          teacherEmail: DEFAULT_USER.email,
++        },
++      ],
++    })
++    await page.goto('/dashboard')
++
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++    await expect(page.getByTestId('dashboard-first-ai-grade-card')).toBeVisible()
++    await expect(page.getByTestId('dashboard-your-classes-row')).toBeVisible()
++    await expect(page.getByRole('listitem')).toHaveCount(4)
++  })
++
++  test('(d.i) Snooze → reload → still hidden (localStorage persistence)', async ({
++    page,
++  }) => {
++    await stubDashboardBackend(page, { persona: 'operator' })
++    await page.goto('/dashboard')
++
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++    await page.getByTestId('dashboard-checklist-snooze-cta').click()
++    await expect(page.getByTestId('dashboard-checklist-card')).toHaveCount(0)
++
++    // Verify localStorage persistence
++    const rawStorage = await page.evaluate(() =>
++      window.localStorage.getItem('classlite_finish_setup_v1_user-1'),
++    )
++    expect(rawStorage).not.toBeNull()
++
++    await page.reload()
++    await expect(page.getByTestId('dashboard-checklist-card')).toHaveCount(0)
++  })
++
++  test('(d.ii) page.clock.fastForward("7d1s") → card re-appears [M-STRONG-10]', async ({
++    page,
++  }) => {
++    await page.clock.install()
++    await stubDashboardBackend(page, { persona: 'operator' })
++    await page.goto('/dashboard')
++
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++    await page.getByTestId('dashboard-checklist-snooze-cta').click()
++    await expect(page.getByTestId('dashboard-checklist-card')).toHaveCount(0)
++
++    await page.clock.fastForward('7d1s')
++    await expect(page.getByTestId('dashboard-checklist-card')).toBeVisible()
++  })
++
++  test('(e) DeadLinkTrigger click → Sonner toast + no navigation', async ({
++    page,
++  }) => {
++    await stubDashboardBackend(page, { persona: 'operator' })
++    await page.goto('/dashboard')
++
++    // Click any checklist-item dead-link (e.g. `enrolStudents`)
++    const enrolStudentsBtn = page.getByTestId('dashboard-checklist-item-enrolStudents')
++    await enrolStudentsBtn.getByRole('button').click()
++
++    // Sonner toast renders (role="status" by default)
++    await expect(page.getByRole('status')).toBeVisible()
++    // URL did not change
++    await expect(page).toHaveURL(/\/dashboard(?:$|[/?#])/)
++  })
++})
+diff --git a/classlite-web/e2e/route-bundle-boundaries.spec.ts b/classlite-web/e2e/route-bundle-boundaries.spec.ts
+index 94fda06..c51a05b 100644
+--- a/classlite-web/e2e/route-bundle-boundaries.spec.ts
++++ b/classlite-web/e2e/route-bundle-boundaries.spec.ts
+@@ -508,4 +508,60 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
+       ).toEqual([])
+     }
+   })
++
++  test('Story 2-4 — TeacherDashboard chunk contains checklist testid + dashboard testids are NOT in onboarding chunks (AC15)', async () => {
++    // Story 2-4 AC15 fold [A-STRONG-11] — Rolldown minifies identifiers, so
++    // `toContain('FinishSetupCard')` on chunk bytes would false-negative.
++    // Instead we assert on the `data-testid="dashboard-checklist-card"`
++    // string literal, which survives minification.
++    //
++    // The 3 dashboard-owned testids (checklist-card / first-ai-grade-card /
++    // sample-preview) MUST appear in the TeacherDashboard chunk and MUST NOT
++    // appear in ANY onboarding chunk (deep-import discipline W-S4 + AC15).
++    expect(
++      existsSync(DIST_DIR),
++      'dist/assets/ not built — run `npm run build` before this Playwright spec',
++    ).toBe(true)
++    const files = readdirSync(DIST_DIR)
++
++    const teacherChunkFiles = files.filter((f: string) =>
++      /^TeacherDashboard-[\w-]+\.js$/.test(f),
++    )
++    const onboardingChunkFiles = files.filter((f: string) =>
++      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage)-[\w-]+\.js$/.test(
++        f,
++      ),
++    )
++
++    expect(
++      teacherChunkFiles.length,
++      'TeacherDashboard chunk missing from dist/',
++    ).toBeGreaterThan(0)
++
++    const teacherContents = teacherChunkFiles
++      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
++      .join('\n')
++
++    // TeacherDashboard chunk MUST contain the checklist card testid
++    expect(
++      teacherContents,
++      'TeacherDashboard chunk missing `dashboard-checklist-card` testid — FinishSetupCard did not co-locate into the dashboard chunk',
++    ).toContain('dashboard-checklist-card')
++
++    // Onboarding chunks MUST NOT contain ANY of the 3 dashboard testids
++    const DASHBOARD_TESTIDS_LEAK_CHECK = [
++      'dashboard-checklist-card',
++      'dashboard-first-ai-grade-card',
++      'dashboard-sample-preview',
++    ]
++    for (const chunkFile of onboardingChunkFiles) {
++      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
++      for (const testid of DASHBOARD_TESTIDS_LEAK_CHECK) {
++        expect(
++          content,
++          `onboarding chunk ${chunkFile} leaked dashboard testid "${testid}" — deep-import discipline violated`,
++        ).not.toContain(testid)
++      }
++    }
++  })
+ })
+diff --git a/classlite-web/src/features/dashboard/FounderDashboardBody.tsx b/classlite-web/src/features/dashboard/FounderDashboardBody.tsx
+new file mode 100644
+index 0000000..19b0ab3
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/FounderDashboardBody.tsx
+@@ -0,0 +1,34 @@
++/**
++ * FounderDashboardBody — Story 2-4 Task 6.2 (S-STRONG-11 UX-3 fold).
++ *
++ * Founder persona composition — checklist + AI-graded essay preview +
++ * Your Classes row. Identical layout to Solo Teacher; differs only in
++ * checklist enumeration (7 items vs 4).
++ */
++import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
++import FirstAIGradeCard from '@/features/dashboard/FirstAIGradeCard'
++import YourClassesRow from '@/features/dashboard/YourClassesRow'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++export interface FounderDashboardBodyProps {
++  userId: string | null
++  ctx: ChecklistCtx
++  centerName: string
++  classesDraft: TemplateDraftPayload['classesDraft'] | undefined
++}
++
++export default function FounderDashboardBody({
++  userId,
++  ctx,
++  centerName,
++  classesDraft,
++}: FounderDashboardBodyProps) {
++  return (
++    <div className="mt-6 space-y-6">
++      <FinishSetupCard persona="founder" userId={userId} ctx={ctx} />
++      <FirstAIGradeCard />
++      <YourClassesRow centerName={centerName} classesDraft={classesDraft} />
++    </div>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/OperatorDashboardBody.tsx b/classlite-web/src/features/dashboard/OperatorDashboardBody.tsx
+new file mode 100644
+index 0000000..74adeb7
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/OperatorDashboardBody.tsx
+@@ -0,0 +1,38 @@
++/**
++ * OperatorDashboardBody — Story 2-4 Task 6.2 (S-STRONG-11 UX-3 fold).
++ *
++ * Composes the Operator persona's post-onboarding surface:
++ *   1. `<FinishSetupCard>` (visibility gate lives inside the card)
++ *   2. `<SampleDashboardPreview>` (ghosted analytics — Operator's value)
++ *   3. `<YourClassesRow>` (up to 2 spawned classes)
++ *
++ * Extracted now (not deferred to Story 2.6) so the per-role route split
++ * later becomes a routing swap, not a body rewrite.
++ */
++import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
++import SampleDashboardPreview from '@/features/dashboard/SampleDashboardPreview'
++import YourClassesRow from '@/features/dashboard/YourClassesRow'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++export interface OperatorDashboardBodyProps {
++  userId: string | null
++  ctx: ChecklistCtx
++  centerName: string
++  classesDraft: TemplateDraftPayload['classesDraft'] | undefined
++}
++
++export default function OperatorDashboardBody({
++  userId,
++  ctx,
++  centerName,
++  classesDraft,
++}: OperatorDashboardBodyProps) {
++  return (
++    <div className="mt-6 space-y-6">
++      <FinishSetupCard persona="operator" userId={userId} ctx={ctx} />
++      <SampleDashboardPreview />
++      <YourClassesRow centerName={centerName} classesDraft={classesDraft} />
++    </div>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/SoloTeacherDashboardBody.tsx b/classlite-web/src/features/dashboard/SoloTeacherDashboardBody.tsx
+new file mode 100644
+index 0000000..1417af0
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/SoloTeacherDashboardBody.tsx
+@@ -0,0 +1,34 @@
++/**
++ * SoloTeacherDashboardBody — Story 2-4 Task 6.2 (S-STRONG-11 UX-3 fold).
++ *
++ * Solo Teacher composition — 4-item checklist + AI-graded essay preview +
++ * Your Classes row. Same layout as Founder; checklist enumeration is
++ * shorter (per checklistDefinition.ts).
++ */
++import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
++import FirstAIGradeCard from '@/features/dashboard/FirstAIGradeCard'
++import YourClassesRow from '@/features/dashboard/YourClassesRow'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++
++export interface SoloTeacherDashboardBodyProps {
++  userId: string | null
++  ctx: ChecklistCtx
++  centerName: string
++  classesDraft: TemplateDraftPayload['classesDraft'] | undefined
++}
++
++export default function SoloTeacherDashboardBody({
++  userId,
++  ctx,
++  centerName,
++  classesDraft,
++}: SoloTeacherDashboardBodyProps) {
++  return (
++    <div className="mt-6 space-y-6">
++      <FinishSetupCard persona="solo_teacher" userId={userId} ctx={ctx} />
++      <FirstAIGradeCard />
++      <YourClassesRow centerName={centerName} classesDraft={classesDraft} />
++    </div>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/TeacherDashboard.stories.tsx b/classlite-web/src/features/dashboard/TeacherDashboard.stories.tsx
+new file mode 100644
+index 0000000..1e40ea9
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/TeacherDashboard.stories.tsx
+@@ -0,0 +1,179 @@
++/**
++ * TeacherDashboard stories — Story 2-4 Task 6.7.
++ *
++ * ≥8 discrete variants (M-INFO-18 pragmatic — Size-M): OperatorPostOnboarding,
++ * FounderPostOnboarding, SoloTeacherPostOnboarding, MidWizardNoCenter,
++ * PostCenterIncomplete, LocaleViOperator, OperatorSnoozed (W-INFO-20),
++ * FounderSnoozed (W-INFO-20).
++ */
++import type { Meta, StoryObj } from '@storybook/react-vite'
++import { HttpResponse, http } from 'msw'
++import { queryClient } from '@/lib/query-client'
++import { authKeys } from '@/features/auth/api/authKeys'
++import TeacherDashboard from '@/features/dashboard/TeacherDashboard'
++
++type Persona = 'operator' | 'founder' | 'solo_teacher'
++
++const CENTER = {
++  id: 'sb-center',
++  name: 'Saigon English Center',
++  shortCode: 'saigon-english',
++  // eslint-disable-next-line no-restricted-syntax -- brand-color wire format
++  brandColor: '#1e3a8a' as string | null,
++  logoUrl: null,
++  timezone: 'Asia/Ho_Chi_Minh',
++}
++
++function seedSession(withCenter: boolean) {
++  queryClient.setQueryData(authKeys.session(), {
++    user: {
++      id: 'sb-user',
++      email: 'owner@example.com',
++      fullName: 'Trang',
++      emailVerified: true,
++    },
++    accessToken: 'sb.jwt',
++    center: withCenter ? CENTER : null,
++  })
++}
++
++function progressHandler(
++  persona: Persona | null,
++  currentStep:
++    | 'persona'
++    | 'center'
++    | 'template'
++    | 'spawn'
++    | 'solo_first_class'
++    | 'done',
++) {
++  return http.get('/api/onboarding/progress', () =>
++    HttpResponse.json({
++      data: {
++        persona,
++        currentStep,
++        payload: {
++          templateDraft: {
++            selectedTemplateId: 'tpl-1',
++            spawnedClassIds: ['c1', 'c2'],
++            classesDraft: [
++              {
++                cohortName: 'IELTS Morning',
++                startDate: '2026-08-15',
++                teacherEmail: 'bob@example.com',
++              },
++              {
++                cohortName: 'IELTS Evening',
++                startDate: '2026-08-20',
++                teacherEmail: 'alice@example.com',
++              },
++            ],
++          },
++        },
++        updatedAt: '2026-07-14T00:00:00.000Z',
++      },
++      meta: {},
++    }),
++  )
++}
++
++const meta = {
++  title: 'Dashboard/TeacherDashboard',
++  component: TeacherDashboard,
++  parameters: {
++    layout: 'fullscreen',
++    docs: {
++      description: {
++        component:
++          'Post-onboarding dashboard shell for the teacher lazy chunk. Composes welcome banner, welcome heading, and a persona-branched body (Operator / Founder / Solo Teacher).',
++      },
++    },
++  },
++  decorators: [
++    (Story, ctx) => {
++      const meta = ctx.parameters?.storyMeta as
++        | { persona: Persona | null; withCenter: boolean; currentStep: string }
++        | undefined
++      if (meta) {
++        seedSession(meta.withCenter)
++      }
++      return Story()
++    },
++  ],
++} satisfies Meta<typeof TeacherDashboard>
++
++export default meta
++type Story = StoryObj<typeof meta>
++
++export const OperatorPostOnboarding: Story = {
++  parameters: {
++    storyMeta: { persona: 'operator', withCenter: true, currentStep: 'done' },
++    msw: { handlers: [progressHandler('operator', 'done')] },
++  },
++}
++
++export const FounderPostOnboarding: Story = {
++  parameters: {
++    storyMeta: { persona: 'founder', withCenter: true, currentStep: 'done' },
++    msw: { handlers: [progressHandler('founder', 'done')] },
++  },
++}
++
++export const SoloTeacherPostOnboarding: Story = {
++  parameters: {
++    storyMeta: {
++      persona: 'solo_teacher',
++      withCenter: true,
++      currentStep: 'done',
++    },
++    msw: { handlers: [progressHandler('solo_teacher', 'done')] },
++  },
++}
++
++export const MidWizardNoCenter: Story = {
++  parameters: {
++    storyMeta: { persona: null, withCenter: false, currentStep: 'persona' },
++    msw: { handlers: [progressHandler(null, 'persona')] },
++  },
++}
++
++export const PostCenterIncomplete: Story = {
++  parameters: {
++    storyMeta: { persona: 'operator', withCenter: true, currentStep: 'template' },
++    msw: { handlers: [progressHandler('operator', 'template')] },
++  },
++}
++
++export const LocaleViOperator: Story = {
++  parameters: {
++    storyMeta: { persona: 'operator', withCenter: true, currentStep: 'done' },
++    msw: { handlers: [progressHandler('operator', 'done')] },
++    i18n: { locale: 'vi' },
++  },
++}
++
++export const OperatorSnoozed: Story = {
++  parameters: {
++    storyMeta: { persona: 'operator', withCenter: true, currentStep: 'done' },
++    msw: { handlers: [progressHandler('operator', 'done')] },
++    docs: {
++      description: {
++        story:
++          'FinishSetupCard is snoozed via `localStorage` — the sample preview + Your Classes row still render. Set the snooze key manually in the story preview if you want to see this state live.',
++      },
++    },
++  },
++}
++
++export const FounderSnoozed: Story = {
++  parameters: {
++    storyMeta: { persona: 'founder', withCenter: true, currentStep: 'done' },
++    msw: { handlers: [progressHandler('founder', 'done')] },
++    docs: {
++      description: {
++        story:
++          'Founder equivalent of OperatorSnoozed — AI grade card + Your Classes stay visible when the checklist is snoozed.',
++      },
++    },
++  },
++}
+diff --git a/classlite-web/src/features/dashboard/TeacherDashboard.tsx b/classlite-web/src/features/dashboard/TeacherDashboard.tsx
+index ae16e7f..d3a02db 100644
+--- a/classlite-web/src/features/dashboard/TeacherDashboard.tsx
++++ b/classlite-web/src/features/dashboard/TeacherDashboard.tsx
+@@ -6,109 +6,262 @@
+  * entry so Rolldown can emit a focused bundle that pre-auth and student
+  * sessions never pull in.
+  *
+- * Routing-level role gating (block teachers from `/student`, block
+- * students from `/dashboard`, etc.) ships with Story 2-6 (roles &
+- * authorization). Story 1-7b ships a single-heading placeholder.
++ * Story 2-4 shell — three interlocking pieces per AC1 / AC12:
++ *   1. `<WelcomeBackBanner>` (extracted 2-3a/b logic) — mounts when
++ *      onboarding is incomplete.
++ *   2. `<WelcomeHeading>` — always renders once the session settles.
++ *   3. Per-persona body dispatch — `<OperatorDashboardBody>` /
++ *      `<FounderDashboardBody>` / `<SoloTeacherDashboardBody>` — each
++ *      composes FinishSetupCard + persona-value card + YourClassesRow.
+  *
+- * Story 2-3a AC11 (Sally-S3 fold) — welcome-back banner for users who
+- * clicked "Save and finish later" in the onboarding wizard. Reads
+- * `useOnboardingProgress()` + `useCurrentCenter()`:
+- *   - Mid-wizard user (has picked persona but not created center) → banner
+- *     "Continue setup →" navigates to `/setup/center`.
+- *   - Post-center but pre-completion (center exists, currentStep !== 'done')
+- *     → banner points at `/setup/template`.
+- * The banner is the seam Story 2.4's "Finish setting up" card grows into.
++ * Loading / error handling (AC1 8-cell matrix):
++ *   - `useAuth().isLoading` true OR progress in flight → `<DashboardSkeleton>`
++ *   - `progress.isError` + no cached `stableProps` → inline `<Alert>` with
++ *     retry (routing NEVER auto-fires from an error state).
++ *   - `progress.isError` + prior valid snapshot → the stableProps latch
++ *     retains the last-good render so a window-focus refetch race does
++ *     NOT unmount the card mid-interaction [W-BLOCKER-2].
++ *
++ * `stableProps` render-latch pattern mirrors the 2-3c precedent
++ * (`OnboardingDonePage.tsx`). The first valid `{ progress.data,
++ * currentCenter, user }` snapshot is captured; subsequent transient
++ * `undefined` progress.data values do NOT reset it. The latch resets
++ * only when a NEW non-transient snapshot arrives that fails the AC1 gate.
+  */
++import { useEffect, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+-import { useNavigate } from 'react-router'
+-// Deep import (rather than the `@/features/onboarding` barrel) so the
+-// teacher-dashboard chunk stays isolated from the onboarding pages. Winston-W5
+-// route-bundle-boundaries spec asserts this — importing from the barrel would
+-// drag OnboardingLayout / PersonaSelectPage / CenterSetupPage into the
+-// TeacherDashboard chunk. Deep import bypasses the barrel edge.
+ import { useOnboardingProgress } from '@/features/onboarding/api/useOnboardingProgress'
++import { useAuth } from '@/hooks/useAuth'
+ import { useCurrentCenter } from '@/hooks/useCurrentCenter'
++import { teachersInvitedCount } from '@/lib/teachersInvitedCount'
++import type { CenterSummary } from '@/features/auth/api/authKeys'
++import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++import WelcomeBackBanner, {
++  type BannerBranch,
++} from '@/features/dashboard/WelcomeBackBanner'
++import OperatorDashboardBody from '@/features/dashboard/OperatorDashboardBody'
++import FounderDashboardBody from '@/features/dashboard/FounderDashboardBody'
++import SoloTeacherDashboardBody from '@/features/dashboard/SoloTeacherDashboardBody'
++import type { ChecklistCtx } from '@/features/dashboard/lib/checklistDefinition'
++
++type Persona = 'operator' | 'founder' | 'solo_teacher'
++type CurrentStep =
++  | 'persona'
++  | 'center'
++  | 'template'
++  | 'spawn'
++  | 'solo_first_class'
++  | 'done'
++
++interface StableSnapshot {
++  persona: Persona
++  currentStep: CurrentStep
++  templateDraft: TemplateDraftPayload | null
++  currentCenter: CenterSummary
++  userId: string
++  userEmail: string
++  userDisplayName: string
++}
++
++// Content-equality check for the render-latch. Compares by the ID fields
++// (persona / userId / center) plus a JSON stringify of the mutable
++// `templateDraft`. Cheap enough per render; prevents the useState updater
++// from thrashing when `computeStableSnapshot` returns a new object with
++// identical content each render.
++function snapshotContentEqual(
++  a: StableSnapshot,
++  b: StableSnapshot,
++): boolean {
++  if (a.persona !== b.persona) return false
++  if (a.currentStep !== b.currentStep) return false
++  if (a.currentCenter.id !== b.currentCenter.id) return false
++  if (a.userId !== b.userId) return false
++  if (a.userEmail !== b.userEmail) return false
++  if (a.userDisplayName !== b.userDisplayName) return false
++  return (
++    JSON.stringify(a.templateDraft) === JSON.stringify(b.templateDraft)
++  )
++}
++
++function DashboardSkeleton() {
++  return (
++    <div
++      data-testid="dashboard-skeleton"
++      aria-busy="true"
++      className="space-y-6"
++    >
++      <div className="h-9 w-64 animate-pulse rounded bg-slate-200" />
++      <div className="h-40 animate-pulse rounded-2xl bg-slate-200" />
++      <div className="h-40 animate-pulse rounded-2xl bg-slate-200" />
++      <div className="h-40 animate-pulse rounded-2xl bg-slate-200" />
++    </div>
++  )
++}
++
++interface ProgressData {
++  currentStep?: CurrentStep
++  persona?: Persona | null
++  payload?: { templateDraft?: TemplateDraftPayload | null } | null
++}
++
++function computeStableSnapshot(
++  progressData: ProgressData | undefined,
++  currentCenter: CenterSummary | null,
++  user: ReturnType<typeof useAuth>['user'],
++): StableSnapshot | null {
++  if (progressData == null) return null
++  if (user == null) return null
++  const persona = progressData.persona ?? null
++  if (persona === null) return null
++  if (currentCenter == null) return null
++  if (progressData.currentStep !== 'done') return null
++  return {
++    persona,
++    currentStep: 'done',
++    templateDraft: progressData.payload?.templateDraft ?? null,
++    currentCenter,
++    userId: user.id,
++    userEmail: user.email,
++    userDisplayName: user.displayName,
++  }
++}
+ 
+ export default function TeacherDashboard() {
+   const { t } = useTranslation()
+-  const navigate = useNavigate()
+   const progress = useOnboardingProgress()
+   const currentCenter = useCurrentCenter()
++  const { isLoading: authLoading, user } = useAuth()
++
++  // Loading gate — session boot-probe OR progress in flight
++  const progressData = progress.data as ProgressData | undefined
++  const currentStep = progressData?.currentStep
++  const persona = progressData?.persona ?? null
++
++  // stableProps render-latch (AC1a per W-BLOCKER-2). Once a valid cell-6
++  // snapshot arrives, retain it in `useState` across window-focus refetch
++  // races that transiently return `undefined`. The `content-equality` check
++  // below prevents an infinite render loop: `computeStableSnapshot`
++  // returns a new object literal each render, but as long as its content
++  // has not changed we keep the previous `latch` reference so React sees
++  // no state change and the effect does not fire a new render.
++  const fresh = computeStableSnapshot(progressData, currentCenter, user)
++  const [latch, setLatch] = useState<StableSnapshot | null>(null)
+ 
+-  const currentStep = progress.data?.currentStep
+-  const persona = progress.data?.persona ?? null
++  // `setLatch()` in an effect is normally an anti-pattern (derived state
++  // should be memoized), but this is a genuine latch: it needs to persist
++  // across renders in which `fresh` transiently narrows to `null` (window
++  // focus refetch race). The content-equality check in the functional
++  // updater is what keeps this from thrashing — a same-content `fresh`
++  // returns the previous reference, so React short-circuits the render.
++  useEffect(() => {
++    if (fresh !== null) {
++      // eslint-disable-next-line react-hooks/set-state-in-effect
++      setLatch((prev) =>
++        prev !== null && snapshotContentEqual(prev, fresh) ? prev : fresh,
++      )
++      return
++    }
++    if (
++      progressData !== undefined &&
++      progress.isFetching === false &&
++      progress.isError === false &&
++      (progressData.currentStep !== 'done' ||
++        (progressData.persona ?? null) === null)
++    ) {
++      setLatch((prev) => (prev === null ? prev : null))
++    }
++  }, [fresh, progressData, progress.isFetching, progress.isError])
++
++  // ------ Loading ------
++  if (authLoading || progress.isLoading) {
++    return <DashboardSkeleton />
++  }
++
++  // ------ Welcome-back banner branches (AC1 cells 2/3/4/7) ------
++  // Story 2-4 AC1 matrix relaxes the shipped 2-3a `!== 'persona'` exclusion:
++  // when the dashboard has NO other content to show (currentStep is any
++  // pre-'done' step, no center yet), the banner is the sole surface — even
++  // for a fresh account still on the persona-pick step.
+   const midWizardNoCenter =
+     currentCenter === null &&
+     currentStep !== undefined &&
+-    currentStep !== 'persona' &&
+     currentStep !== 'done'
+   const postCenterIncomplete =
+     currentCenter !== null &&
+     currentStep !== undefined &&
+     currentStep !== 'done'
+-  // R1-P8: fall back to a "resume" banner when the progress GET failed but
+-  // the user has no center — they need the affordance even when we can't
+-  // read the step field.
+   const progressUnknownNoCenter =
+     currentCenter === null && progress.isError
+ 
+-  const showBanner =
+-    midWizardNoCenter || postCenterIncomplete || progressUnknownNoCenter
++  let bannerBranch: BannerBranch | null = null
++  if (midWizardNoCenter) bannerBranch = 'midWizardNoCenter'
++  else if (postCenterIncomplete) bannerBranch = 'postCenterIncomplete'
++  else if (progressUnknownNoCenter) bannerBranch = 'progressUnknownNoCenter'
++
++  // Also cover the AC1 cell 4 branch: currentStep === 'done' but persona
++  // is null — treat as postCenterIncomplete "awaitingNextStep" copy.
++  const awaitingNextStep =
++    currentCenter !== null && currentStep === 'done' && persona === null
++  if (awaitingNextStep) bannerBranch = 'postCenterIncomplete'
++
++  // ------ Welcome heading ------
++  const displayName = user?.displayName ?? user?.email ?? ''
++
++  const welcomeHeading = (
++    <h1
++      data-testid="teacher-dashboard-heading"
++      className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]"
++    >
++      {t('dashboard.welcomeHeading', { name: displayName })}
++    </h1>
++  )
++
++  // ------ Cell 5 / 6 (persona-value bodies via stableProps latch) ------
++  const snapshot = fresh ?? latch
++  const showBody =
++    snapshot !== null && bannerBranch === null
++
++  const checklistCtx: ChecklistCtx | null = snapshot
++    ? {
++        currentCenter: snapshot.currentCenter,
++        templateDraft: snapshot.templateDraft,
++        teachersInvitedCount: teachersInvitedCount(
++          snapshot.templateDraft?.classesDraft,
++          snapshot.userEmail,
++        ),
++      }
++    : null
+ 
+   return (
+     <>
+-      {showBanner ? (
+-        <div
+-          data-testid="dashboard-finish-setup-banner"
+-          role="status"
+-          className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-4"
+-        >
+-          <div className="flex items-center justify-between gap-4">
+-            <p className="text-sm text-slate-800">
+-              {postCenterIncomplete && persona === null
+-                ? // R1-P38 (R1-D2) + Amelia-S2 amendment: with 2-3b live, the
+-                  // CTA target is persona-derived. Persona=null retains the
+-                  // stopgap "awaitingNextStep" copy — no clear destination
+-                  // if the wire never persisted a persona.
+-                  t('dashboard.finishSetup.awaitingNextStep')
+-                : t('dashboard.finishSetup.banner')}
+-            </p>
+-            {midWizardNoCenter || progressUnknownNoCenter ? (
+-              <button
+-                type="button"
+-                onClick={() =>
+-                  navigate('/setup/center', { replace: true })
+-                }
+-                className="text-sm font-medium text-slate-900 underline"
+-                data-testid="dashboard-finish-setup-cta"
+-              >
+-                {t('dashboard.finishSetup.continueCta')}
+-              </button>
+-            ) : postCenterIncomplete && persona !== null ? (
+-              <button
+-                type="button"
+-                onClick={() => {
+-                  const target =
+-                    persona === 'solo_teacher'
+-                      ? '/setup/first-class'
+-                      : '/setup/template'
+-                  navigate(target, { replace: true })
+-                }}
+-                className="text-sm font-medium text-slate-900 underline"
+-                data-testid="dashboard-finish-setup-cta"
+-              >
+-                {t('dashboard.finishSetup.continueCta')}
+-              </button>
+-            ) : null}
+-          </div>
+-        </div>
++      {bannerBranch !== null ? (
++        <WelcomeBackBanner branch={bannerBranch} persona={persona} />
++      ) : null}
++      {welcomeHeading}
++      {showBody && snapshot !== null && checklistCtx !== null ? (
++        snapshot.persona === 'operator' ? (
++          <OperatorDashboardBody
++            userId={snapshot.userId}
++            ctx={checklistCtx}
++            centerName={snapshot.currentCenter.name}
++            classesDraft={snapshot.templateDraft?.classesDraft}
++          />
++        ) : snapshot.persona === 'founder' ? (
++          <FounderDashboardBody
++            userId={snapshot.userId}
++            ctx={checklistCtx}
++            centerName={snapshot.currentCenter.name}
++            classesDraft={snapshot.templateDraft?.classesDraft}
++          />
++        ) : (
++          <SoloTeacherDashboardBody
++            userId={snapshot.userId}
++            ctx={checklistCtx}
++            centerName={snapshot.currentCenter.name}
++            classesDraft={snapshot.templateDraft?.classesDraft}
++          />
++        )
+       ) : null}
+-      <h1
+-        data-testid="teacher-dashboard-heading"
+-        className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]"
+-      >
+-        {t('app.welcome')}
+-      </h1>
+     </>
+   )
+ }
+diff --git a/classlite-web/src/features/dashboard/WelcomeBackBanner.tsx b/classlite-web/src/features/dashboard/WelcomeBackBanner.tsx
+new file mode 100644
+index 0000000..52440f5
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/WelcomeBackBanner.tsx
+@@ -0,0 +1,78 @@
++/**
++ * WelcomeBackBanner — extracted from the shipped Story 2-3a/b/c
++ * `TeacherDashboard.tsx` welcome-back logic (Task 6.1 fold, S-STRONG-11
++ * per-persona body split precursor).
++ *
++ * Renders the "resume onboarding" banner when a user with an incomplete
++ * wizard state lands on `/dashboard`. Three shipped branches, unchanged
++ * from 2-3a AC11 / 2-3b R1-P38 / 2-3c R1-P8:
++ *
++ *   - `midWizardNoCenter` — persona picked, no center → CTA to `/setup/center`
++ *   - `postCenterIncomplete` — center exists, currentStep !== 'done' → CTA
++ *     persona-derived (`/setup/template` or `/setup/first-class`)
++ *   - `progressUnknownNoCenter` — progress GET failed AND no center →
++ *     fall-back to `/setup/center`
++ *
++ * Copy uses the AC13-renamed `dashboard.welcomeBack.*` keys (was
++ * `dashboard.finishSetup.*` pre-rename).
++ */
++import { useTranslation } from 'react-i18next'
++import { useNavigate } from 'react-router'
++
++export type BannerBranch =
++  | 'midWizardNoCenter'
++  | 'postCenterIncomplete'
++  | 'progressUnknownNoCenter'
++
++export interface WelcomeBackBannerProps {
++  branch: BannerBranch
++  persona: 'operator' | 'founder' | 'solo_teacher' | null
++}
++
++export default function WelcomeBackBanner({
++  branch,
++  persona,
++}: WelcomeBackBannerProps) {
++  const { t } = useTranslation()
++  const navigate = useNavigate()
++
++  const isPostCenterIncomplete = branch === 'postCenterIncomplete'
++  const isAwaitingNextStep = isPostCenterIncomplete && persona === null
++
++  const goResume = (): void => {
++    if (branch === 'midWizardNoCenter' || branch === 'progressUnknownNoCenter') {
++      navigate('/setup/center', { replace: true })
++      return
++    }
++    // postCenterIncomplete with persona known
++    const target =
++      persona === 'solo_teacher' ? '/setup/first-class' : '/setup/template'
++    navigate(target, { replace: true })
++  }
++
++  return (
++    <div
++      data-testid="dashboard-finish-setup-banner"
++      role="status"
++      className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-4"
++    >
++      <div className="flex items-center justify-between gap-4">
++        <p className="text-sm text-slate-800">
++          {isAwaitingNextStep
++            ? t('dashboard.welcomeBack.awaitingNextStep')
++            : t('dashboard.welcomeBack.banner')}
++        </p>
++        {!isAwaitingNextStep ? (
++          <button
++            type="button"
++            onClick={goResume}
++            className="text-sm font-medium text-slate-900 underline"
++            data-testid="dashboard-finish-setup-cta"
++          >
++            {t('dashboard.welcomeBack.continueCta')}
++          </button>
++        ) : null}
++      </div>
++    </div>
++  )
++}
+diff --git a/classlite-web/src/features/dashboard/__tests__/TeacherDashboard.test.tsx b/classlite-web/src/features/dashboard/__tests__/TeacherDashboard.test.tsx
+new file mode 100644
+index 0000000..095234c
+--- /dev/null
++++ b/classlite-web/src/features/dashboard/__tests__/TeacherDashboard.test.tsx
+@@ -0,0 +1,462 @@
++/**
++ * Story 2-4 — `TeacherDashboard` red-phase acceptance tests.
++ *
++ * This is the FIRST test file for `TeacherDashboard.tsx` [A-STRONG-8 fold].
++ * Includes shipped-behavior REGRESSION BASELINE for the 3 welcome-back
++ * banner branches (`midWizardNoCenter` / `postCenterIncomplete` /
++ * `progressUnknownNoCenter`) — otherwise the AC12 i18n rename silently
++ * regresses shipped behavior.
++ *
++ * Covers Task 6.6 per AC1/AC12/AC13/AC16/AC17:
++ *   - AC1 8-cell loading/error/state matrix (see Dev Notes §"Task 6.6 MSW
++ *     handler catalog" — 12 rows including 6b/6c persona split)
++ *   - AC12 3-way mutex assertion — welcome-back-banner XOR FinishSetupCard;
++ *     persona-value cards XOR each other [W-STRONG-14 + M-STRONG-15]
++ *   - AC13 shipped banner behavior under RENAMED i18n keys
++ *     (dashboard.welcomeBack.*)
++ *   - AC16 axe zero violations — 3 personas × 2 locales at cell 6 (default)
++ *     + 3 personas at cell 5 (snoozed) = 9 axe renders
++ *   - AC17 shipped-banner regression baseline block
++ *
++ * Uses the shipped MSW `progressWithPersona(persona, currentStep, payload)`
++ * factory at `handlers.ts:267` + `queryClient.setQueryData(authKeys.session(), ...)`
++ * for `useCurrentCenter` injection.
++ *
++ * ATDD contract: TS2307 on `@/features/dashboard/TeacherDashboard` will NOT
++ * fire (file exists) — RED signal here is on shipped-behavior tests
++ * that use RENAMED i18n keys (dashboard.welcomeBack.*) which don't exist
++ * until Task 6.5 lands. Plus TS2307 on the new body components
++ * (OperatorDashboardBody / FounderDashboardBody / SoloTeacherDashboardBody)
++ * imported transitively.
++ */
++import { QueryClientProvider } from '@tanstack/react-query'
++import { render, screen, waitFor, within } from '@testing-library/react'
++import { MemoryRouter, Route, Routes } from 'react-router'
++import { axe } from 'vitest-axe'
++import 'vitest-axe/extend-expect'
++import { I18nextProvider } from 'react-i18next'
++import { beforeEach, describe, expect, test } from 'vitest'
++
++import { authKeys, type Session } from '@/features/auth/api/authKeys'
++import { onboardingKeys } from '@/features/onboarding/api/onboardingKeys'
++import TeacherDashboard from '@/features/dashboard/TeacherDashboard'
++import i18n from '@/lib/i18n'
++import { createTestQueryClient } from '@/lib/query-client'
++import { server } from '@/test/msw-server'
++
++import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
++
++beforeEach(() => {
++  server.use(...onboardingHandlers)
++  window.localStorage.clear()
++})
++
++// ---------------------------------------------------------------------------
++// Fixtures
++// ---------------------------------------------------------------------------
++
++const USER_ID = 'user-1'
++const USER_EMAIL = 'owner@example.com'
++const USER_DISPLAY_NAME = 'Trang'
++
++function makeSession(overrides?: Partial<Session>): Session {
++  return {
++    user: {
++      id: USER_ID,
++      email: USER_EMAIL,
++      fullName: USER_DISPLAY_NAME,
++      emailVerified: true,
++    } as unknown as Session['user'],
++    accessToken: 'a.b.c',
++    center: {
++      id: 'c-1',
++      name: 'Saigon English Center',
++      shortCode: 'saigon-english',
++      // eslint-disable-next-line no-restricted-syntax -- brand-color wire format
++      brandColor: '#1e3a8a',
++      logoUrl: null,
++      timezone: 'Asia/Ho_Chi_Minh',
++    },
++    ...overrides,
++  }
++}
++
++type Persona = 'operator' | 'founder' | 'solo_teacher'
++
++interface SeedProgressArgs {
++  persona: Persona | null
++  currentStep:
++    | 'persona'
++    | 'center'
++    | 'template'
++    | 'spawn'
++    | 'solo_first_class'
++    | 'done'
++  spawnedClassIds?: string[]
++  classesDraft?: Array<{
++    cohortName: string
++    startDate: string
++    teacherEmail: string | null
++  }>
++}
++
++function seedProgress(
++  queryClient: ReturnType<typeof createTestQueryClient>,
++  args: SeedProgressArgs,
++) {
++  queryClient.setQueryData(onboardingKeys.progress(), {
++    persona: args.persona,
++    currentStep: args.currentStep,
++    payload: {
++      templateDraft: {
++        selectedTemplateId: 'tpl-1',
++        spawnedClassIds: args.spawnedClassIds,
++        classesDraft: args.classesDraft,
++      },
++    },
++    updatedAt: new Date('2026-07-14T00:00:00Z').toISOString(),
++  })
++}
++
++function renderShell(opts: {
++  session: Session | null
++  progressArgs?: SeedProgressArgs
++  locale?: 'en' | 'vi'
++}) {
++  const queryClient = createTestQueryClient()
++  if (opts.session) {
++    queryClient.setQueryData(authKeys.session(), opts.session)
++  }
++  if (opts.progressArgs) {
++    seedProgress(queryClient, opts.progressArgs)
++  }
++  if (opts.locale) {
++    void i18n.changeLanguage(opts.locale)
++  }
++  return render(
++    <QueryClientProvider client={queryClient}>
++      <I18nextProvider i18n={i18n}>
++        <MemoryRouter initialEntries={['/dashboard']}>
++          <Routes>
++            <Route path="/dashboard" element={<TeacherDashboard />} />
++          </Routes>
++        </MemoryRouter>
++      </I18nextProvider>
++    </QueryClientProvider>,
++  )
++}
++
++// ---------------------------------------------------------------------------
++// AC17 — shipped welcome-back-banner REGRESSION baseline (under RENAMED keys)
++// ---------------------------------------------------------------------------
++describe('TeacherDashboard — shipped banner regression baseline [AC17]', () => {
++  test('renders welcome-back banner in midWizardNoCenter branch under renamed key', async () => {
++    renderShell({
++      session: makeSession({ center: null }),
++      progressArgs: { persona: 'operator', currentStep: 'center' },
++    })
++    expect(
++      await screen.findByTestId('dashboard-finish-setup-banner'),
++    ).toBeInTheDocument()
++    // Copy resolves via renamed dashboard.welcomeBack.banner key
++    expect(
++      screen.getByText(i18n.t('dashboard.welcomeBack.banner') as string),
++    ).toBeInTheDocument()
++  })
++
++  test('renders welcome-back banner in postCenterIncomplete branch under renamed CTA key', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: { persona: 'operator', currentStep: 'template' },
++    })
++    expect(
++      await screen.findByTestId('dashboard-finish-setup-banner'),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByText(i18n.t('dashboard.welcomeBack.continueCta') as string),
++    ).toBeInTheDocument()
++  })
++
++  test('renders welcome-back banner in awaitingNextStep branch (persona:null + currentStep:done) under renamed key', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: { persona: null, currentStep: 'done' },
++    })
++    expect(
++      await screen.findByText(
++        i18n.t('dashboard.welcomeBack.awaitingNextStep') as string,
++      ),
++    ).toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC12 — welcome heading interpolation with user.displayName [A-BLOCKER-1]
++// ---------------------------------------------------------------------------
++describe('TeacherDashboard — welcome heading [AC12]', () => {
++  test('welcome heading interpolates user.displayName', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: { persona: 'operator', currentStep: 'done', spawnedClassIds: ['c1'] },
++    })
++    expect(
++      await screen.findByText(
++        i18n.t('dashboard.welcomeHeading', { name: USER_DISPLAY_NAME }) as string,
++      ),
++    ).toBeInTheDocument()
++  })
++
++  test('when useAuth().isLoading is true → heading renders skeleton (no crash on null user)', async () => {
++    // Session is null (transient boot-probe) → skeleton, not throw
++    renderShell({ session: null })
++    // No heading text yet; skeleton has no user-facing text
++    // (Green-phase: assert Skeleton component present via testid)
++    expect(screen.queryByTestId('teacher-dashboard-heading')).not.toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC1 — 8-cell loading/error/state matrix (12 rows counting persona split)
++// ---------------------------------------------------------------------------
++describe('TeacherDashboard — AC1 loading/error/state matrix (12-cell mutex)', () => {
++  test('Cell 2: session.center=null + currentStep=persona → banner (midWizardNoCenter); no card', async () => {
++    renderShell({
++      session: makeSession({ center: null }),
++      progressArgs: { persona: null, currentStep: 'persona' },
++    })
++    expect(
++      await screen.findByTestId('dashboard-finish-setup-banner'),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-checklist-card'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 3: session.center=valid + currentStep=template → banner (postCenterIncomplete); no card', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: { persona: 'operator', currentStep: 'template' },
++    })
++    expect(
++      await screen.findByTestId('dashboard-finish-setup-banner'),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-checklist-card'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 4: currentStep=done + persona=null → banner (awaitingNextStep); no card', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: { persona: null, currentStep: 'done', spawnedClassIds: ['c1'] },
++    })
++    expect(
++      await screen.findByText(
++        i18n.t('dashboard.welcomeBack.awaitingNextStep') as string,
++      ),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-checklist-card'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 5: currentStep=done + persona=operator + snoozed → no card + no banner + sample preview visible', async () => {
++    window.localStorage.setItem(
++      `classlite_finish_setup_v1_${USER_ID}`,
++      JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
++    )
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'operator',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++        classesDraft: [
++          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++        ],
++      },
++    })
++    await waitFor(() =>
++      expect(screen.getByTestId('dashboard-sample-preview')).toBeInTheDocument(),
++    )
++    expect(
++      screen.queryByTestId('dashboard-checklist-card'),
++    ).not.toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-finish-setup-banner'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 6a Operator: currentStep=done + persona=operator + not snoozed → card + sample preview + YourClassesRow', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'operator',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++        classesDraft: [
++          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++        ],
++      },
++    })
++    expect(
++      await screen.findByTestId('dashboard-checklist-card'),
++    ).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-sample-preview')).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-your-classes-row')).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-first-ai-grade-card'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 6b Founder: currentStep=done + persona=founder + not snoozed → card + AI grade + YourClassesRow', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'founder',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++        classesDraft: [
++          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: null },
++        ],
++      },
++    })
++    expect(
++      await screen.findByTestId('dashboard-checklist-card'),
++    ).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-first-ai-grade-card')).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-your-classes-row')).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-sample-preview'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('Cell 6c Solo Teacher: currentStep=done + persona=solo_teacher → card (4 items) + AI grade + YourClassesRow', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'solo_teacher',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++        classesDraft: [
++          { cohortName: 'My first class', startDate: '2026-08-15', teacherEmail: USER_EMAIL },
++        ],
++      },
++    })
++    const card = await screen.findByTestId('dashboard-checklist-card')
++    expect(card).toBeInTheDocument()
++    expect(screen.getByTestId('dashboard-first-ai-grade-card')).toBeInTheDocument()
++    // Solo Teacher checklist = 4 items (scoped within the checklist card so
++    // the AI-grade card's criterion <li>s and YourClassesRow's card <li>s
++    // don't inflate the count).
++    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
++  })
++
++  test('Cell 7: progress.isError + session.center=null → banner (progressUnknownNoCenter); no card', async () => {
++    renderShell({
++      session: makeSession({ center: null }),
++      // No progressArgs → progress is not seeded → treated as error-adjacent
++    })
++    // Shipped `progressUnknownNoCenter` branch triggers when progress fetch
++    // has error state; without seed, useOnboardingProgress fetches from MSW
++    // — dev must seed error handler at green-phase.
++    // Red-phase: this test documents the contract.
++    await waitFor(() =>
++      expect(screen.queryByTestId('dashboard-finish-setup-banner')).toBeInTheDocument(),
++    )
++    expect(
++      screen.queryByTestId('dashboard-checklist-card'),
++    ).not.toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC12 3-way mutex assertion
++// ---------------------------------------------------------------------------
++describe('TeacherDashboard — AC12 3-way mutex', () => {
++  test('WelcomeBackBanner XOR FinishSetupCard (never both, never neither in a valid state)', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'operator',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++      },
++    })
++    await screen.findByTestId('dashboard-checklist-card')
++    expect(
++      screen.queryByTestId('dashboard-finish-setup-banner'),
++    ).not.toBeInTheDocument()
++  })
++
++  test('FirstAIGradeCard XOR SampleDashboardPreview (persona-branch)', async () => {
++    renderShell({
++      session: makeSession(),
++      progressArgs: {
++        persona: 'operator',
++        currentStep: 'done',
++        spawnedClassIds: ['c1'],
++        classesDraft: [
++          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++        ],
++      },
++    })
++    expect(
++      await screen.findByTestId('dashboard-sample-preview'),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByTestId('dashboard-first-ai-grade-card'),
++    ).not.toBeInTheDocument()
++  })
++})
++
++// ---------------------------------------------------------------------------
++// AC16 axe matrix — 9 renders (3 personas × 2 locales at cell 6 + 3 snoozed)
++// ---------------------------------------------------------------------------
++describe('TeacherDashboard — AC16 axe zero-violations matrix', () => {
++  const PERSONAS: Persona[] = ['operator', 'founder', 'solo_teacher']
++  const LOCALES: Array<'en' | 'vi'> = ['en', 'vi']
++
++  test.each(PERSONAS.flatMap((persona) => LOCALES.map((locale) => [persona, locale] as const)))(
++    'cell 6 axe (%s × %s) — zero violations',
++    async (persona, locale) => {
++      const { container } = renderShell({
++        session: makeSession(),
++        progressArgs: {
++          persona,
++          currentStep: 'done',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
++          ],
++        },
++        locale,
++      })
++      await screen.findByTestId('dashboard-checklist-card')
++      expect(await axe(container)).toHaveNoViolations()
++    },
++  )
++
++  test.each(PERSONAS)(
++    'cell 5 axe (%s snoozed) — zero violations on shell + persona-value card + Your Classes',
++    async (persona) => {
++      window.localStorage.setItem(
++        `classlite_finish_setup_v1_${USER_ID}`,
++        JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
++      )
++      const { container } = renderShell({
++        session: makeSession(),
++        progressArgs: {
++          persona,
++          currentStep: 'done',
++          spawnedClassIds: ['c1'],
++          classesDraft: [
++            { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: null },
++          ],
++        },
++      })
++      await screen.findByTestId('dashboard-your-classes-row')
++      expect(await axe(container)).toHaveNoViolations()
++    },
++  )
++})
+diff --git a/classlite-web/src/features/onboarding/OnboardingDonePage.tsx b/classlite-web/src/features/onboarding/OnboardingDonePage.tsx
+index 6820834..d637e8e 100644
+--- a/classlite-web/src/features/onboarding/OnboardingDonePage.tsx
++++ b/classlite-web/src/features/onboarding/OnboardingDonePage.tsx
+@@ -39,6 +39,7 @@ import { authKeys } from '@/features/auth/api/authKeys'
+ import { useAuth } from '@/hooks/useAuth'
+ import { useOnboardingProgress } from '@/features/onboarding/api/useOnboardingProgress'
+ import type { TemplateDraftPayload } from '@/lib/onboardingPayload'
++import { teachersInvitedCount } from '@/lib/teachersInvitedCount'
+ import DoneHeroPanel, {
+   type DoneHeroPersona,
+ } from '@/features/onboarding/components/DoneHeroPanel'
+@@ -182,28 +183,11 @@ function dispatchNonDoneStep(persona: Persona, step: CurrentStep): string {
+   return '/welcome'
+ }
+ 
+-// R1-C1-P24: dedup by normalized email (a teacher assigned to N classes counts
+-// as 1 invite, not N — copy "M teachers invited" reads more honestly as a
+-// people count). R1-C1-P20: whitespace-only `teacherEmail` excluded.
+-function deriveTeachersInvitedCount(
+-  classesDraft: TemplateDraftPayload['classesDraft'] | undefined,
+-  userEmail: string | null | undefined,
+-): number {
+-  if (classesDraft == null) return 0
+-  // W-S3 defensive null-user fallback: selfEmail === '' means we're in a
+-  // transient boot-probe state; count everything (dedup'd) rather than
+-  // misfiring self-exclusion.
+-  const selfEmail = userEmail?.toLowerCase().trim() ?? ''
+-  const uniqueEmails = new Set<string>()
+-  for (const row of classesDraft) {
+-    if (row.teacherEmail == null) continue
+-    const normalized = row.teacherEmail.toLowerCase().trim()
+-    if (normalized === '') continue
+-    if (selfEmail !== '' && normalized === selfEmail) continue
+-    uniqueEmails.add(normalized)
+-  }
+-  return uniqueEmails.size
+-}
++// Story 2-4 W-BLOCKER-3 pragmatic port: this file's private
++// `deriveTeachersInvitedCount` moved to `@/lib/teachersInvitedCount` so BOTH
++// Story 2-3c (this page) AND Story 2-4 (dashboard checklist) consume the same
++// implementation. Behavior unchanged — full case-insensitive + trim + Set
++// dedup + whitespace filter + null-user fallback lives in the shared lib.
+ 
+ export default function OnboardingDonePage() {
+   const { t } = useTranslation()
+@@ -372,7 +356,7 @@ export default function OnboardingDonePage() {
+   if (!user) return <OnboardingDonePageSkeleton />
+ 
+   const classCount = spawnedClassIds.length
+-  const teachersInvitedCount = deriveTeachersInvitedCount(
++  const teachersInvitedCountValue = teachersInvitedCount(
+     templateDraft?.classesDraft,
+     user.email,
+   )
+@@ -388,7 +372,7 @@ export default function OnboardingDonePage() {
+       shortCode={session.center.shortCode}
+       persona={persona}
+       classCount={classCount}
+-      teachersInvitedCount={teachersInvitedCount}
++      teachersInvitedCount={teachersInvitedCountValue}
+       onOpenDashboard={() => {
+         navigate('/dashboard', { replace: true })
+       }}
+diff --git a/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts b/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
+index f381280..28761ee 100644
+--- a/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
++++ b/classlite-web/src/lib/test/__tests__/i18n-parity-coverage.test.ts
+@@ -798,9 +798,15 @@ describe('Story 1-7c i18n parity (R38)', () => {
+  *
+  * Closed-enumeration STORY_2_3A_KEYS mirrors the 1-9d precedent — every new
+  * key gets a `describe.each` ratchet claiming an allowed prefix so a future
+- * orphan under `onboarding.` OR `dashboard.finishSetup.` fails CI. Also
++ * orphan under `onboarding.` OR `dashboard.welcomeBack.` fails CI. Also
+  * exercises `assertI18nInterpolationParity` (Murat-S2 fold) so a Vietnamese
+  * translator can't rename `{{seconds}}` → `{{giay}}` without CI catching it.
++ *
++ * Story 2-4 AC13 atomic rename: the 3 originally-shipped
++ * `dashboard.finishSetup.*` keys are reparented to `dashboard.welcomeBack.*`
++ * (see STORY_2_4_KEYS block below). Both STORY_2_3A_KEYS and STORY_2_4_KEYS
++ * list them — the 2-3a block claims them as its historical debt, the 2-4
++ * block claims them as its ongoing prefix ratchet.
+  */
+ export const STORY_2_3A_KEYS = [
+   'onboarding.wizard.brand',
+@@ -861,9 +867,11 @@ export const STORY_2_3A_KEYS = [
+   'onboarding.persona.error.retryCta',
+   'onboarding.center.error.userAlreadyHasCenterGeneric',
+   'onboarding.center.error.brandColorInvalid',
+-  'dashboard.finishSetup.banner',
+-  'dashboard.finishSetup.continueCta',
+-  'dashboard.finishSetup.awaitingNextStep',
++  // Story 2-4 AC13 4-file atomic rename: `dashboard.finishSetup.*` renamed
++  // to `dashboard.welcomeBack.*` (also enumerated in STORY_2_4_KEYS).
++  'dashboard.welcomeBack.banner',
++  'dashboard.welcomeBack.continueCta',
++  'dashboard.welcomeBack.awaitingNextStep',
+ ] as const
+ 
+ describe('Story 2-3a i18n parity (R38)', () => {
+@@ -875,7 +883,7 @@ describe('Story 2-3a i18n parity (R38)', () => {
+     assertI18nInterpolationParity(STORY_2_3A_KEYS)
+   })
+ 
+-  const ALLOWED_PREFIXES = ['onboarding.', 'dashboard.finishSetup.'] as const
++  const ALLOWED_PREFIXES = ['onboarding.', 'dashboard.welcomeBack.'] as const
+ 
+   test.each(STORY_2_3A_KEYS)(
+     '%s belongs to a 2-3a allowed prefix',
+@@ -896,8 +904,8 @@ describe('Story 2-3a i18n parity (R38)', () => {
+  * `onboarding.solo.*`, or `onboarding.wizard.*` fails CI.
+  *
+  * Prefix ratchet allows: onboarding.template.* / onboarding.spawn.* /
+- * onboarding.solo.* / onboarding.wizard.* / dashboard.finishSetup.*
+- * (Murat-S1 fold).
++ * onboarding.solo.* / onboarding.wizard.* / dashboard.welcomeBack.*
++ * (Murat-S1 fold; 2-4 AC13 rename from `dashboard.finishSetup.*`).
+  *
+  * Interpolation tokens (Murat-S2, 10 total):
+  *   {{index}} {{seconds}} {{n}} {{max}} {{userFullName}}
+@@ -991,7 +999,7 @@ describe('Story 2-3b i18n parity (R38)', () => {
+     'onboarding.spawn.',
+     'onboarding.solo.',
+     'onboarding.wizard.',
+-    'dashboard.finishSetup.',
++    'dashboard.welcomeBack.', // 2-4 AC13 rename from `dashboard.finishSetup.`
+   ] as const
+ 
+   test.each(STORY_2_3B_KEYS)(
+@@ -1059,3 +1067,116 @@ describe('Story 2-3c i18n parity (R38)', () => {
+     },
+   )
+ })
++
++/**
++ * Closed-enumeration STORY_2_4_KEYS + prefix-ratchet block mirrors the
++ * 2-3c precedent. Story 2-4 owns the post-onboarding checklist card + first
++ * AI grade card + sample owner preview + Your Classes row on `/dashboard`.
++ *
++ * Prefix ratchet: 6-prefix allow-list per AC13 —
++ *   `dashboard.welcomeHeading` | `dashboard.welcomeBack.` | `dashboard.checklist.`
++ *   | `dashboard.aiSample.` | `dashboard.samplePreview.` | `dashboard.yourClasses.`
++ *   | `dashboard.deadLink.`
++ *
++ * Interpolation tokens covered (`assertI18nInterpolationParity` over ALL 42
++ * keys per M-BLOCKER-5): `{{name}}`, `{{completed}}`, `{{total}}`,
++ * `{{centerName}}`, `{{epicNum}}`. Additional tokens hidden in Vietnamese
++ * variants are surfaced by the helper's per-key token-set comparison.
++ *
++ * AC13 atomic-commit contract: the 3 shipped `dashboard.finishSetup.*`
++ * keys are RENAMED to `dashboard.welcomeBack.*` in the same commit as
++ * `TeacherDashboard.tsx`'s 3 `t()` sites + `STORY_2_3A_KEYS` array
++ * (lines 864-866) + `ALLOWED_PREFIXES` (line 878) + JSDoc (line 801) +
++ * `STORY_2_3B_KEYS` ALLOWED_PREFIXES_2_3B (line 994). This file is one
++ * of the 4 files that MUST land atomically.
++ *
++ * RED-PHASE contract (post `/bmad-tea AT 2-4`):
++ *   All 42 keys below are missing from en.json + vi.json until Amelia
++ *   lands Task 8.1 (add keys) + Task 6.5 (delete + rename shipped keys).
++ *   `npm run i18n-parity` reports 42 missing keys per locale at first run.
++ *
++ * Note: This block is NOT hoisted above the 2-3a/2-3b/2-3c blocks — those
++ * blocks reference `dashboard.finishSetup.*` in their ALLOWED_PREFIXES arrays.
++ * The 4-file atomic commit renames those references simultaneously.
++ */
++export const STORY_2_4_KEYS = [
++  // welcome heading (1)
++  'dashboard.welcomeHeading',
++  // checklist header + copy (10)
++  'dashboard.checklist.eyebrow',
++  'dashboard.checklist.title.operator',
++  'dashboard.checklist.title.founder',
++  'dashboard.checklist.title.solo_teacher',
++  'dashboard.checklist.subtitle.operator',
++  'dashboard.checklist.subtitle.founder',
++  'dashboard.checklist.subtitle.solo_teacher',
++  'dashboard.checklist.fractionAriaLabel',
++  'dashboard.checklist.snoozeCta',
++  'dashboard.checklist.footer.autosave',
++  // checklist item names (7 — per AC3 mockup s09 fidelity)
++  'dashboard.checklist.item.centerCreated.name',
++  'dashboard.checklist.item.templatePicked.name',
++  'dashboard.checklist.item.firstClassesSpawned.name',
++  'dashboard.checklist.item.teachersInvited.name',
++  'dashboard.checklist.item.enrolStudents.name',
++  'dashboard.checklist.item.createMoreClasses.name',
++  'dashboard.checklist.item.addResources.name',
++  // checklist item badges (4)
++  'dashboard.checklist.badge.done',
++  'dashboard.checklist.badge.required',
++  'dashboard.checklist.badge.optional',
++  'dashboard.checklist.badge.comingSoon',
++  // AI sample card (6)
++  'dashboard.aiSample.title',
++  'dashboard.aiSample.essayExcerpt',
++  'dashboard.aiSample.feedbackQuote',
++  'dashboard.aiSample.disclaimer',
++  'dashboard.aiSample.bandLabel',
++  'dashboard.aiSample.aiMarkLabel',
++  // sample owner preview (6)
++  'dashboard.samplePreview.thresholdBanner',
++  'dashboard.samplePreview.disclaimer',
++  'dashboard.samplePreview.stat.sessionsToday',
++  'dashboard.samplePreview.stat.gradingQueue',
++  'dashboard.samplePreview.stat.atRiskStudents',
++  'dashboard.samplePreview.stat.attendance',
++  // your classes row (4)
++  'dashboard.yourClasses.heading',
++  'dashboard.yourClasses.ghost',
++  'dashboard.yourClasses.cardAriaLabel',
++  'dashboard.yourClasses.createAnotherCta',
++  // dead-link toast (1)
++  'dashboard.deadLink.notReady',
++  // reparented from `dashboard.finishSetup.*` (AC13 4-file atomic rename)
++  'dashboard.welcomeBack.banner',
++  'dashboard.welcomeBack.continueCta',
++  'dashboard.welcomeBack.awaitingNextStep',
++] as const
++
++describe('Story 2-4 i18n parity (R38)', () => {
++  test('every Story 2-4 i18n key exists in both en.json and vi.json', () => {
++    assertI18nParity(STORY_2_4_KEYS)
++  })
++
++  test('interpolation-token parity holds across en / vi for ALL 42 keys (M-BLOCKER-5 — no filtered subset)', () => {
++    assertI18nInterpolationParity(STORY_2_4_KEYS)
++  })
++
++  const ALLOWED_PREFIXES_2_4 = [
++    'dashboard.welcomeHeading',
++    'dashboard.welcomeBack.',
++    'dashboard.checklist.',
++    'dashboard.aiSample.',
++    'dashboard.samplePreview.',
++    'dashboard.yourClasses.',
++    'dashboard.deadLink.',
++  ] as const
++
++  test.each(STORY_2_4_KEYS)(
++    '%s belongs to a 2-4 allowed prefix (AC13 6-prefix ratchet)',
++    (key) => {
++      const ok = ALLOWED_PREFIXES_2_4.some((p) => key.startsWith(p))
++      expect(ok).toBe(true)
++    },
++  )
++})
+diff --git a/classlite-web/src/locales/en.json b/classlite-web/src/locales/en.json
+index 15f50e5..8829c2d 100644
+--- a/classlite-web/src/locales/en.json
++++ b/classlite-web/src/locales/en.json
+@@ -444,9 +444,48 @@
+   "onboarding.persona.error.retryCta": "Try again",
+   "onboarding.center.error.userAlreadyHasCenterGeneric": "Your account already has a center.",
+   "onboarding.center.error.brandColorInvalid": "Please pick one of the brand colors above.",
+-  "dashboard.finishSetup.banner": "Welcome back — pick up where you left off.",
+-  "dashboard.finishSetup.continueCta": "Continue setup →",
+-  "dashboard.finishSetup.awaitingNextStep": "We'll pick this up when the next step is ready.",
++  "dashboard.welcomeBack.banner": "Welcome back — pick up where you left off.",
++  "dashboard.welcomeBack.continueCta": "Continue setup →",
++  "dashboard.welcomeBack.awaitingNextStep": "We'll pick this up when the next step is ready.",
++  "dashboard.welcomeHeading": "Welcome, {{name}}",
++  "dashboard.checklist.eyebrow": "Finish setting up",
++  "dashboard.checklist.title.operator": "Get your center running",
++  "dashboard.checklist.title.founder": "Get your first class humming",
++  "dashboard.checklist.title.solo_teacher": "Get your workspace going",
++  "dashboard.checklist.subtitle.operator": "Invite teachers, tune sessions, and get the AI grading working for you.",
++  "dashboard.checklist.subtitle.founder": "First class is spun up — a few more touches and you're teaching.",
++  "dashboard.checklist.subtitle.solo_teacher": "Simple workspace, ready when you are — a couple of steps to make it yours.",
++  "dashboard.checklist.fractionAriaLabel": "{{completed}} of {{total}} complete",
++  "dashboard.checklist.snoozeCta": "Snooze for a week",
++  "dashboard.checklist.footer.autosave": "Auto-saves · come back any time from Settings → Setup",
++  "dashboard.checklist.item.centerCreated.name": "Center created",
++  "dashboard.checklist.item.templatePicked.name": "Template picked",
++  "dashboard.checklist.item.firstClassesSpawned.name": "First classes spawned",
++  "dashboard.checklist.item.teachersInvited.name": "Teachers invited",
++  "dashboard.checklist.item.enrolStudents.name": "Enrol students",
++  "dashboard.checklist.item.createMoreClasses.name": "Create more classes",
++  "dashboard.checklist.item.addResources.name": "Add resources",
++  "dashboard.checklist.badge.done": "Done",
++  "dashboard.checklist.badge.required": "Required",
++  "dashboard.checklist.badge.optional": "Optional",
++  "dashboard.checklist.badge.comingSoon": "Coming soon",
++  "dashboard.aiSample.title": "Grading looks like this.",
++  "dashboard.aiSample.essayExcerpt": "Some argue that governments should invest heavily in the arts, while others believe that scientific research is more important. In my opinion, both are essential — but scientific research often addresses more urgent needs. Firstly, science drives medical progress that saves lives every day. Secondly…",
++  "dashboard.aiSample.feedbackQuote": "Strong topic sentence in paragraph 2 — anchors the argument. Try tightening the conclusion (2–3 sentences max).",
++  "dashboard.aiSample.disclaimer": "Sample essay — this is how a real grade will look once your students hand in work.",
++  "dashboard.aiSample.bandLabel": "Sample band",
++  "dashboard.aiSample.aiMarkLabel": "AI",
++  "dashboard.samplePreview.thresholdBanner": "Your center analytics fill in once teachers start grading.",
++  "dashboard.samplePreview.disclaimer": "This is a preview. Real numbers land as your team teaches, grades, and enrols.",
++  "dashboard.samplePreview.stat.sessionsToday": "Sessions today",
++  "dashboard.samplePreview.stat.gradingQueue": "Grading queue",
++  "dashboard.samplePreview.stat.atRiskStudents": "At-risk students",
++  "dashboard.samplePreview.stat.attendance": "Center attendance",
++  "dashboard.yourClasses.heading": "Your classes",
++  "dashboard.yourClasses.ghost": "Your first classes at {{centerName}} will show up here.",
++  "dashboard.yourClasses.cardAriaLabel": "{{name}}",
++  "dashboard.yourClasses.createAnotherCta": "+ Create another from template",
++  "dashboard.deadLink.notReady": "That surface ships with Epic {{epicNum}} — coming soon.",
+   "onboarding.template.eyebrow": "Step {{current}} of {{total}}",
+   "onboarding.template.title": "Choose a template",
+   "onboarding.template.subtitle": "Pick a starter — you can tweak sessions later.",
+diff --git a/classlite-web/src/locales/vi.json b/classlite-web/src/locales/vi.json
+index bfc43ee..66a8e6f 100644
+--- a/classlite-web/src/locales/vi.json
++++ b/classlite-web/src/locales/vi.json
+@@ -444,9 +444,48 @@
+   "onboarding.persona.error.retryCta": "Thử lại",
+   "onboarding.center.error.userAlreadyHasCenterGeneric": "Tài khoản của bạn đã có một trung tâm.",
+   "onboarding.center.error.brandColorInvalid": "Vui lòng chọn một trong các màu thương hiệu ở trên.",
+-  "dashboard.finishSetup.banner": "Chào bạn quay lại — tiếp tục từ nơi bạn dừng.",
+-  "dashboard.finishSetup.continueCta": "Tiếp tục thiết lập →",
+-  "dashboard.finishSetup.awaitingNextStep": "Chúng tôi sẽ tiếp tục khi bước tiếp theo sẵn sàng.",
++  "dashboard.welcomeBack.banner": "Chào bạn quay lại — tiếp tục từ nơi bạn dừng.",
++  "dashboard.welcomeBack.continueCta": "Tiếp tục thiết lập →",
++  "dashboard.welcomeBack.awaitingNextStep": "Chúng tôi sẽ tiếp tục khi bước tiếp theo sẵn sàng.",
++  "dashboard.welcomeHeading": "Chào {{name}}",
++  "dashboard.checklist.eyebrow": "Hoàn tất thiết lập",
++  "dashboard.checklist.title.operator": "Đưa trung tâm vào guồng",
++  "dashboard.checklist.title.founder": "Đưa lớp học đầu vào nhịp",
++  "dashboard.checklist.title.solo_teacher": "Thiết lập không gian làm việc",
++  "dashboard.checklist.subtitle.operator": "Mời giáo viên, tinh chỉnh buổi học và để công cụ chấm AI giúp bạn.",
++  "dashboard.checklist.subtitle.founder": "Lớp đầu tiên đã sẵn sàng — thêm vài chi tiết là bạn có thể giảng dạy.",
++  "dashboard.checklist.subtitle.solo_teacher": "Không gian riêng, sẵn sàng khi bạn cần — một vài bước để biến thành của bạn.",
++  "dashboard.checklist.fractionAriaLabel": "Đã hoàn thành {{completed}} trên {{total}}",
++  "dashboard.checklist.snoozeCta": "Tạm hoãn một tuần",
++  "dashboard.checklist.footer.autosave": "Tự động lưu · quay lại bất kỳ lúc nào từ Cài đặt → Thiết lập",
++  "dashboard.checklist.item.centerCreated.name": "Đã tạo trung tâm",
++  "dashboard.checklist.item.templatePicked.name": "Đã chọn mẫu",
++  "dashboard.checklist.item.firstClassesSpawned.name": "Đã tạo các lớp đầu tiên",
++  "dashboard.checklist.item.teachersInvited.name": "Đã mời giáo viên",
++  "dashboard.checklist.item.enrolStudents.name": "Ghi danh học viên",
++  "dashboard.checklist.item.createMoreClasses.name": "Tạo thêm lớp",
++  "dashboard.checklist.item.addResources.name": "Thêm tài nguyên",
++  "dashboard.checklist.badge.done": "Hoàn thành",
++  "dashboard.checklist.badge.required": "Bắt buộc",
++  "dashboard.checklist.badge.optional": "Tùy chọn",
++  "dashboard.checklist.badge.comingSoon": "Sắp ra mắt",
++  "dashboard.aiSample.title": "Chấm điểm sẽ trông như thế này.",
++  "dashboard.aiSample.essayExcerpt": "Một số ý kiến cho rằng chính phủ nên đầu tư mạnh vào nghệ thuật, trong khi những người khác tin rằng nghiên cứu khoa học quan trọng hơn. Theo tôi, cả hai đều thiết yếu — nhưng nghiên cứu khoa học thường giải quyết những nhu cầu cấp bách hơn. Thứ nhất, khoa học thúc đẩy tiến bộ y học cứu người mỗi ngày. Thứ hai…",
++  "dashboard.aiSample.feedbackQuote": "Câu chủ đề mạnh trong đoạn 2 — neo chắc luận điểm. Hãy thử rút gọn phần kết (2–3 câu là đủ).",
++  "dashboard.aiSample.disclaimer": "Bài mẫu — thực tế bài chấm sẽ trông như thế này khi học viên nộp bài.",
++  "dashboard.aiSample.bandLabel": "Band mẫu",
++  "dashboard.aiSample.aiMarkLabel": "AI",
++  "dashboard.samplePreview.thresholdBanner": "Số liệu trung tâm sẽ hiện ra khi giáo viên bắt đầu chấm bài.",
++  "dashboard.samplePreview.disclaimer": "Đây là bản xem trước. Số liệu thật sẽ hiện dần khi đội ngũ dạy, chấm và ghi danh.",
++  "dashboard.samplePreview.stat.sessionsToday": "Buổi học hôm nay",
++  "dashboard.samplePreview.stat.gradingQueue": "Hàng đợi chấm bài",
++  "dashboard.samplePreview.stat.atRiskStudents": "Học viên cần chú ý",
++  "dashboard.samplePreview.stat.attendance": "Điểm danh toàn trung tâm",
++  "dashboard.yourClasses.heading": "Lớp của bạn",
++  "dashboard.yourClasses.ghost": "Các lớp đầu tiên tại {{centerName}} sẽ xuất hiện ở đây.",
++  "dashboard.yourClasses.cardAriaLabel": "{{name}}",
++  "dashboard.yourClasses.createAnotherCta": "+ Tạo thêm lớp từ mẫu",
++  "dashboard.deadLink.notReady": "Màn hình đó sẽ ra mắt cùng Epic {{epicNum}} — sắp có.",
+   "onboarding.template.eyebrow": "Bước {{current}} trên {{total}}",
+   "onboarding.template.title": "Chọn một mẫu",
+   "onboarding.template.subtitle": "Chọn mẫu khởi đầu — bạn có thể chỉnh sửa các buổi học sau.",
