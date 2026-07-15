@@ -1187,3 +1187,95 @@ describe('Story 2-4 i18n parity (R38)', () => {
     },
   )
 })
+
+/**
+ * Story 2-5a — Center Settings backend + Profile tab keys.
+ * Per-story discharge of R38 (i18n parity, score 6).
+ *
+ * Closed-enumeration STORY_2_5A_KEYS + prefix-ratchet + `assertI18nInterpolationParity`
+ * pattern mirrors STORY_2_4_KEYS above. IANA timezone labels are NOT
+ * i18n'd (rendered as raw identifiers per the pragmatic scope call
+ * documented in the sibling completion-notes).
+ */
+export const STORY_2_5A_KEYS = [
+  // tab strip (4)
+  'settings.tabs.profile',
+  'settings.tabs.terms',
+  'settings.tabs.integrations',
+  'settings.tabs.rooms',
+  // placeholder tab bodies (3) — REMOVED when 2-5b/2-5c land
+  'settings.tabPlaceholder.terms',
+  'settings.tabPlaceholder.integrations',
+  'settings.tabPlaceholder.rooms',
+  // Profile section chrome (5)
+  'settings.profile.sectionHeading',
+  'settings.profile.reopenChecklistCta',
+  'settings.profile.reopenChecklist.toast',
+  'settings.profile.saveCta',
+  'settings.profile.saveInFlight',
+  'settings.profile.saveSuccessToast',
+  // Profile form fields + Zod error keys (18)
+  'settings.profile.form.name.label',
+  'settings.profile.form.name.placeholder',
+  'settings.profile.form.name.errors.required',
+  'settings.profile.form.name.errors.tooLong',
+  'settings.profile.form.contactEmail.label',
+  'settings.profile.form.contactEmail.placeholder',
+  'settings.profile.form.contactEmail.helper',
+  'settings.profile.form.contactEmail.errors.invalid',
+  'settings.profile.form.shortCode.label',
+  'settings.profile.form.shortCode.helperReadOnly',
+  'settings.profile.form.brandColor.label',
+  'settings.profile.form.brandColor.hexLabel',
+  'settings.profile.form.brandColor.hexPlaceholder',
+  'settings.profile.form.brandColor.errors.invalid',
+  'settings.profile.form.logo.label',
+  'settings.profile.form.logo.uploadCta',
+  'settings.profile.form.timezone.label',
+  // About card (4)
+  'settings.profile.about.title',
+  'settings.profile.about.created',
+  'settings.profile.about.by',
+  'settings.profile.about.plan',
+  'settings.profile.about.id',
+  // Danger Zone (3)
+  'settings.profile.dangerZone.title',
+  'settings.profile.dangerZone.transferOwnership',
+  'settings.profile.dangerZone.archiveCenter',
+  // Error catalog (10 — 5-error matrix + generic + genericWithRequestId + tryAgain + fetchWithRequestId + rateLimitWithRetry)
+  'settings.error.fetch',
+  'settings.error.fetchWithRequestId',
+  'settings.error.tryAgain',
+  'settings.error.validation',
+  'settings.error.forbidden',
+  'settings.error.auth',
+  'settings.error.rateLimit',
+  'settings.error.rateLimitWithRetry',
+  'settings.error.generic',
+  'settings.error.genericWithRequestId',
+] as const
+
+describe('Story 2-5a i18n parity (R38)', () => {
+  test('every Story 2-5a i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_5A_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 2-5a keys (M-BLOCKER-5)', () => {
+    assertI18nInterpolationParity(STORY_2_5A_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_5A = [
+    'settings.tabs.',
+    'settings.tabPlaceholder.',
+    'settings.profile.',
+    'settings.error.',
+  ] as const
+
+  test.each(STORY_2_5A_KEYS)(
+    '%s belongs to a 2-5a allowed prefix (AC13 4-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_5A.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})

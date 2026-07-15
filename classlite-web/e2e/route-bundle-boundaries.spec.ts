@@ -564,4 +564,53 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       }
     }
   })
+
+  test('Story 2-5a — SettingsPage chunk contains settings-tab-strip testid; onboarding + dashboard chunks do NOT (AC14)', async () => {
+    // Story 2-5a AC14 [John-S16 cross-chunk sharpening]. The SettingsPage
+    // chunk shares only the deep-imported `useChecklistState` hook with
+    // the dashboard chunk — no full-page-testid overlap. Assert filename
+    // regex + testid substring positive; testid-negative on onboarding +
+    // dashboard chunks.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const settingsChunkFiles = files.filter((f: string) =>
+      /^SettingsPage-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      settingsChunkFiles.length,
+      'SettingsPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const settingsContents = settingsChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // Positive: settings chunk MUST include the tab-strip testid.
+    expect(
+      settingsContents,
+      'SettingsPage chunk missing `settings-tab-strip` testid',
+    ).toContain('settings-tab-strip')
+
+    // Negative: onboarding + dashboard chunks MUST NOT include the
+    // settings-tab-strip testid — deep-import discipline check.
+    const onboardingChunkFiles = files.filter((f: string) =>
+      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+    const dashboardChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    for (const chunkFile of [...onboardingChunkFiles, ...dashboardChunkFiles]) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      expect(
+        content,
+        `${chunkFile} leaked settings testid "settings-tab-strip"`,
+      ).not.toContain('settings-tab-strip')
+    }
+  })
 })

@@ -21,6 +21,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const addBreadcrumbSpy = vi.fn()
@@ -68,13 +69,19 @@ function renderCard(props: {
   // an explicit `null` (the AC1 gate case) to the default. Preserve `null`
   // when the caller passes it; only fall back on `undefined`.
   const userIdProp = 'userId' in props ? props.userId ?? null : USER_ID
+  // Story 2-5a Task 5.5 — FinishSetupCard now uses `useNavigate` for the
+  // graduated `centerCreated → /settings` click. Wrap the tree in a
+  // MemoryRouter so the hook resolves without swapping the whole shipped
+  // 2-4 test harness to a router-based one.
   return render(
     <I18nextProvider i18n={i18n}>
-      <FinishSetupCard
-        userId={userIdProp}
-        persona={props.persona}
-        ctx={props.ctx ?? CTX_POST_2_3C}
-      />
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <FinishSetupCard
+          userId={userIdProp}
+          persona={props.persona}
+          ctx={props.ctx ?? CTX_POST_2_3C}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }

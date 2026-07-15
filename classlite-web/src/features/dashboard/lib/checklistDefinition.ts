@@ -59,6 +59,11 @@ export interface ChecklistItem {
   targetPath: string
   targetSurface: ChecklistTargetSurface
   epicNum: number
+  // Story 2-5a AC12 — when true, FinishSetupCard renders a real `<button
+  // onClick={() => navigate(targetPath)}>` instead of `<DeadLinkTrigger>`.
+  // Only `centerCreated` (target `/settings`) graduates in 2-5a; other
+  // dead-link targets stay unresolved until their owning stories ship.
+  targetShipped?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +77,9 @@ const centerCreated: ChecklistItem = {
   targetPath: '/settings',
   targetSurface: 'settings',
   epicNum: 2,
+  // Story 2-5a AC12 — /settings ships in this story, so FinishSetupCard
+  // navigates instead of firing the DeadLinkTrigger placeholder.
+  targetShipped: true,
 }
 
 const templatePicked: ChecklistItem = {

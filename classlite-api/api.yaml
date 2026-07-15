@@ -684,6 +684,138 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/centers/{id}:
+    get:
+      operationId: getCenterProfile
+      summary: Fetch center profile — Owner-only, tenant-bound (story 2-5a)
+      description: |
+        Returns the caller's center profile (Owner-only per AC2). The
+        path `{id}` MUST equal the caller's tenant-context centerID; a
+        mismatch returns 403 `TENANT_MISMATCH`. `centers` is a global
+        table (no RLS), so the tenant check happens at the handler layer.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Center profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCenterProfile'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: |
+            INSUFFICIENT_ROLE (non-Owner), TENANT_MISMATCH (path id ≠ caller's centerID),
+            or EMAIL_VERIFICATION_REQUIRED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: Center not found (CENTER_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Internal error (INTERNAL_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    patch:
+      operationId: updateCenterProfile
+      summary: Partial-update center profile — Owner-only (story 2-5a)
+      description: |
+        Partial update of name / contactEmail / brandColor / logoUrl / timezone.
+        Only present fields update; omitted fields are left unchanged (COALESCE
+        pattern in the SQL layer). `shortCode` is intentionally absent from
+        the request schema — the Settings UI renders it as a read-only input
+        (AC3) and any client that sends it is silently ignored by the API.
+        Timezone must be one of the 30-entry IANA whitelist (see enum below);
+        anything else returns 422 `UNSUPPORTED_TIMEZONE`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCenterProfileRequest'
+      responses:
+        "200":
+          description: Updated center profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCenterProfile'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: |
+            INSUFFICIENT_ROLE (non-Owner), TENANT_MISMATCH (path id ≠ caller's centerID),
+            or EMAIL_VERIFICATION_REQUIRED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: Center not found (CENTER_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: |
+            Validation failure — name length, invalid contactEmail, or
+            UNSUPPORTED_TIMEZONE (timezone not in 30-entry whitelist).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Internal error (INTERNAL_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/templates:
     get:
       operationId: listTemplates
@@ -1032,6 +1164,82 @@ components:
           nullable: true
           description: Presigned R2 asset URL (finalized in a later story). Nullable in v1.
 
+    UpdateCenterProfileRequest:
+      type: object
+      description: |
+        Story 2-5a partial-update — all fields optional. Only present fields
+        are applied. `shortCode` is intentionally absent per AC3 (rendered
+        read-only in the Settings UI; changing it would break existing
+        class codes).
+
+        Tri-state wire semantics per field (D4 code-review 2026-07-15):
+        - **Key absent** — column unchanged.
+        - **Key present with JSON `null`** — column CLEARED to SQL NULL
+          (nullable fields only: `contactEmail`, `brandColor`, `logoUrl`).
+          `null` on `name` or `timezone` returns 422 (non-nullable).
+        - **Key present with a string value** — column SET to that value.
+        - **Empty string (`""`)** is REJECTED with 422 on every field. The
+          client MUST send explicit `null` to clear; empty-string had no
+          well-defined semantics in v0 and could be persisted as a distinct
+          third state from NULL and a real value.
+
+        Bodies larger than 16 KiB return 413 `PAYLOAD_TOO_LARGE`.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        contactEmail:
+          type: string
+          format: email
+          nullable: true
+          description: |
+            Optional. Persisted to `centers.contact_email`. Used later
+            (FU-2-5-G) as reply-to for staff/student notification emails —
+            consumption is out of scope for story 2-5a.
+        brandColor:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          description: |
+            IANA timezone. MUST be one of the 30-entry whitelist below.
+            Anything else returns 422 UNSUPPORTED_TIMEZONE.
+          enum:
+            - Asia/Ho_Chi_Minh
+            - Asia/Bangkok
+            - Asia/Singapore
+            - Asia/Jakarta
+            - Asia/Manila
+            - Asia/Kuala_Lumpur
+            - Asia/Hong_Kong
+            - Asia/Shanghai
+            - Asia/Taipei
+            - Asia/Seoul
+            - Asia/Tokyo
+            - Asia/Dubai
+            - Asia/Kolkata
+            - Asia/Karachi
+            - Europe/London
+            - Europe/Paris
+            - Europe/Berlin
+            - Europe/Amsterdam
+            - Europe/Madrid
+            - Europe/Warsaw
+            - Europe/Moscow
+            - Europe/Istanbul
+            - America/New_York
+            - America/Chicago
+            - America/Denver
+            - America/Los_Angeles
+            - America/Toronto
+            - America/Sao_Paulo
+            - Australia/Sydney
+            - Pacific/Auckland
+
     OnboardingProgressPayload:
       type: object
       description: |
@@ -1179,6 +1387,49 @@ components:
         persona:
           type: string
           enum: [operator, founder, solo_teacher]
+
+    CenterProfile:
+      type: object
+      description: |
+        Story 2-5a Settings Profile tab payload. Includes contactEmail (new
+        in this story) and googleMeetConnected (existing on the row; used
+        by the Integrations tab in 2-5c).
+      required:
+        - id
+        - name
+        - shortCode
+        - contactEmail
+        - brandColor
+        - logoUrl
+        - timezone
+        - googleMeetConnected
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shortCode:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+          nullable: true
+        brandColor:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          description: IANA timezone (see UpdateCenterProfileRequest enum for the accepted set).
+        googleMeetConnected:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
 
     CreateCenterResult:
       type: object
@@ -1561,6 +1812,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/CreateCenterResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeCenterProfile:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CenterProfile'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

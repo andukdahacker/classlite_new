@@ -246,3 +246,50 @@ type PasswordNotAllowedForOAuthUserError struct{}
 func (e *PasswordNotAllowedForOAuthUserError) Error() string {
 	return "user has google-only account; password not accepted"
 }
+
+// ---------------------------------------------------------------------
+// Story 2-5a — Settings errors.
+// ---------------------------------------------------------------------
+
+// UnsupportedTimezoneError → 422 UNSUPPORTED_TIMEZONE. The caller sent
+// a timezone that is not in the 30-entry IANA whitelist enforced by the
+// Settings service (Winston-S8 fold — the frontend + backend whitelists
+// stay in lockstep via settings_timezone_parity_test.go). Distinct from
+// model.ValidationError so the UI can render a targeted "Not on the
+// supported list" message and the mapper can emit a stable code.
+type UnsupportedTimezoneError struct {
+	Timezone string
+}
+
+func (e *UnsupportedTimezoneError) Error() string {
+	return "unsupported timezone: " + e.Timezone
+}
+
+// TenantMismatchError → 403 TENANT_MISMATCH. The path `{id}` on the
+// Settings endpoints does not match the caller's TenantContext.CenterID.
+// `centers` is a global-no-RLS table (see docs/project-context.md §GO-1),
+// so this handler-layer check is the sole gate protecting a caller from
+// reading or mutating another center's row. Reserved for handler entry
+// (Winston-S3 + John ACCEPT belt-and-suspenders fold).
+type TenantMismatchError struct {
+	PathCenterID    string
+	ContextCenterID string
+}
+
+func (e *TenantMismatchError) Error() string {
+	return "tenant mismatch: path center id does not match session"
+}
+
+// PayloadTooLargeError → 413 PAYLOAD_TOO_LARGE. P14 (2026-07-15 code
+// review): a request body that exceeds the endpoint cap (16 KiB on
+// Settings) previously collapsed into a 422 "invalid JSON" ValidationError
+// (which shipped the raw MaxBytesError bytes surface). 413 is the RFC 7231
+// correct status for "the request is larger than the server is willing to
+// process" and lets the client render targeted "payload too big" UX.
+type PayloadTooLargeError struct {
+	LimitBytes int64
+}
+
+func (e *PayloadTooLargeError) Error() string {
+	return "request body exceeds server limit"
+}

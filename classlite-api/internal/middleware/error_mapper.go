@@ -78,6 +78,10 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var inviteEmailMismatch *service.InviteEmailMismatchError
 		var passwordNotAllowedOAuth *service.PasswordNotAllowedForOAuthUserError
 		var googleIDAlreadyLinked *service.GoogleIDAlreadyLinkedError
+		// Story 2-5a settings errors.
+		var unsupportedTimezone *service.UnsupportedTimezoneError
+		var tenantMismatch *service.TenantMismatchError
+		var payloadTooLarge *service.PayloadTooLargeError
 
 		switch {
 		case errors.As(err, &invalidCreds):
@@ -160,6 +164,18 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			handler.WriteError(w, r, http.StatusConflict,
 				"GOOGLE_ID_ALREADY_LINKED",
 				"Google account is already linked to another user.", nil)
+			return
+		case errors.As(err, &unsupportedTimezone):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"UNSUPPORTED_TIMEZONE", unsupportedTimezone.Error(), nil)
+			return
+		case errors.As(err, &tenantMismatch):
+			handler.WriteError(w, r, http.StatusForbidden,
+				"TENANT_MISMATCH", tenantMismatch.Error(), nil)
+			return
+		case errors.As(err, &payloadTooLarge):
+			handler.WriteError(w, r, http.StatusRequestEntityTooLarge,
+				"PAYLOAD_TOO_LARGE", payloadTooLarge.Error(), nil)
 			return
 		}
 

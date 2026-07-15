@@ -159,6 +159,18 @@ func CenterAndIPKeyFn(r *http.Request) string {
 	return ip
 }
 
+// UserAndIPKeyFn keys by `userID:ip` for authenticated user-scoped endpoints
+// (Story 2-5a settings). Per-user because tab-switching bursts are personal,
+// not per-tenant, and shared-NAT users shouldn't compete on the same bucket.
+// Falls back to pure IP when no TenantContext (already rejected upstream).
+func UserAndIPKeyFn(r *http.Request) string {
+	ip := IPKeyFn(r)
+	if tc, ok := model.TenantFromContext(r.Context()); ok && tc.UserID != "" {
+		return tc.UserID + ":" + ip
+	}
+	return ip
+}
+
 // extractIPFromRequest is the legacy fallback used when ClientIP middleware
 // did not run (e.g., standalone middleware tests).
 func extractIPFromRequest(r *http.Request) string {

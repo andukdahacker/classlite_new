@@ -279,3 +279,103 @@ describe('useChecklistState — Task 1.2 hook contract (AC4/AC5/AC6)', () => {
     expect(result.current.isVisible).toBe(false)
   })
 })
+
+describe('useChecklistState — Story 2-5a Task 5.1 clearSnooze (AC6)', () => {
+  test('snooze → clearSnooze → isVisible: true + localStorage removed', () => {
+    const { result } = renderHook(() => useChecklistState(USER_A))
+
+    act(() => {
+      result.current.snooze()
+    })
+    expect(result.current.isVisible).toBe(false)
+    expect(window.localStorage.getItem(KEY_A)).not.toBeNull()
+
+    act(() => {
+      result.current.clearSnooze()
+    })
+    expect(result.current.isVisible).toBe(true)
+    expect(window.localStorage.getItem(KEY_A)).toBeNull()
+  })
+
+  test('clearSnooze fires `checklist-reopened` Sentry breadcrumb when a key existed', () => {
+    const { result } = renderHook(() => useChecklistState(USER_A))
+    act(() => {
+      result.current.snooze()
+    })
+    addBreadcrumbSpy.mockClear()
+
+    act(() => {
+      result.current.clearSnooze()
+    })
+
+    const reopenedCall = addBreadcrumbSpy.mock.calls.find(
+      (call) => (call[0] as { message?: string }).message === 'checklist-reopened',
+    )
+    expect(reopenedCall).toBeDefined()
+    expect(reopenedCall?.[0]).toMatchObject({
+      category: 'checklist',
+      level: 'info',
+      data: { userId: USER_A },
+    })
+  })
+
+  test('clearSnooze when never snoozed → idempotent, no breadcrumb, no localStorage churn', () => {
+    const { result } = renderHook(() => useChecklistState(USER_A))
+    expect(window.localStorage.getItem(KEY_A)).toBeNull()
+    addBreadcrumbSpy.mockClear()
+
+    act(() => {
+      result.current.clearSnooze()
+    })
+
+    // No key existed → no breadcrumb + no residue.
+    expect(window.localStorage.getItem(KEY_A)).toBeNull()
+    const reopenedCall = addBreadcrumbSpy.mock.calls.find(
+      (call) => (call[0] as { message?: string }).message === 'checklist-reopened',
+    )
+    expect(reopenedCall).toBeUndefined()
+    expect(result.current.isVisible).toBe(true)
+  })
+
+  test('clearSnooze with userId === null → no-op (guards null-scoped key)', () => {
+    // Seed a key for USER_A so we can prove clearSnooze(null) doesn't touch it.
+    window.localStorage.setItem(
+      KEY_A,
+      JSON.stringify({ snoozedUntil: Date.now() + 3600 * 1000 }),
+    )
+    addBreadcrumbSpy.mockClear()
+
+    const { result } = renderHook(() => useChecklistState(null))
+    act(() => {
+      result.current.clearSnooze()
+    })
+    // USER_A's key is untouched — null-userId clearSnooze is a no-op.
+    expect(window.localStorage.getItem(KEY_A)).not.toBeNull()
+    // No breadcrumb.
+    const reopenedCall = addBreadcrumbSpy.mock.calls.find(
+      (call) => (call[0] as { message?: string }).message === 'checklist-reopened',
+    )
+    expect(reopenedCall).toBeUndefined()
+  })
+
+  test('clearSnooze does NOT trigger the malformed-localstorage breadcrumb false-positive', () => {
+    // Regression pin for Amelia-B3: writing `{snoozedUntil: null}` would
+    // trigger readStateFromRaw's typeof-check-fail breadcrumb. clearSnooze
+    // uses removeItem instead, so subsequent reads see raw === null (which
+    // resolves to NULL_STATE without breadcrumb noise).
+    const { result } = renderHook(() => useChecklistState(USER_A))
+    act(() => {
+      result.current.snooze()
+    })
+    addBreadcrumbSpy.mockClear()
+
+    act(() => {
+      result.current.clearSnooze()
+    })
+
+    const malformed = addBreadcrumbSpy.mock.calls.filter(
+      (call) => (call[0] as { message?: string }).message === 'malformed-localstorage',
+    )
+    expect(malformed).toHaveLength(0)
+  })
+})

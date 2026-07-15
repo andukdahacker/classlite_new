@@ -387,6 +387,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/centers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch center profile — Owner-only, tenant-bound (story 2-5a)
+         * @description Returns the caller's center profile (Owner-only per AC2). The
+         *     path `{id}` MUST equal the caller's tenant-context centerID; a
+         *     mismatch returns 403 `TENANT_MISMATCH`. `centers` is a global
+         *     table (no RLS), so the tenant check happens at the handler layer.
+         */
+        get: operations["getCenterProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Partial-update center profile — Owner-only (story 2-5a)
+         * @description Partial update of name / contactEmail / brandColor / logoUrl / timezone.
+         *     Only present fields update; omitted fields are left unchanged (COALESCE
+         *     pattern in the SQL layer). `shortCode` is intentionally absent from
+         *     the request schema — the Settings UI renders it as a read-only input
+         *     (AC3) and any client that sends it is silently ignored by the API.
+         *     Timezone must be one of the 30-entry IANA whitelist (see enum below);
+         *     anything else returns 422 `UNSUPPORTED_TIMEZONE`.
+         */
+        patch: operations["updateCenterProfile"];
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -517,6 +550,30 @@ export interface components {
             logoUrl?: string | null;
         };
         /**
+         * @description Story 2-5a partial-update — all fields optional. Only present fields
+         *     are applied (COALESCE pattern in SQL). `shortCode` is intentionally
+         *     absent per AC3 (rendered read-only in the Settings UI; changing it
+         *     would break existing class codes).
+         */
+        UpdateCenterProfileRequest: {
+            name?: string;
+            /**
+             * Format: email
+             * @description Optional. Persisted to `centers.contact_email`. Used later
+             *     (FU-2-5-G) as reply-to for staff/student notification emails —
+             *     consumption is out of scope for story 2-5a.
+             */
+            contactEmail?: string | null;
+            brandColor?: string | null;
+            logoUrl?: string | null;
+            /**
+             * @description IANA timezone. MUST be one of the 30-entry whitelist below.
+             *     Anything else returns 422 UNSUPPORTED_TIMEZONE.
+             * @enum {string}
+             */
+            timezone?: "Asia/Ho_Chi_Minh" | "Asia/Bangkok" | "Asia/Singapore" | "Asia/Jakarta" | "Asia/Manila" | "Asia/Kuala_Lumpur" | "Asia/Hong_Kong" | "Asia/Shanghai" | "Asia/Taipei" | "Asia/Seoul" | "Asia/Tokyo" | "Asia/Dubai" | "Asia/Kolkata" | "Asia/Karachi" | "Europe/London" | "Europe/Paris" | "Europe/Berlin" | "Europe/Amsterdam" | "Europe/Madrid" | "Europe/Warsaw" | "Europe/Moscow" | "Europe/Istanbul" | "America/New_York" | "America/Chicago" | "America/Denver" | "America/Los_Angeles" | "America/Toronto" | "America/Sao_Paulo" | "Australia/Sydney" | "Pacific/Auckland";
+        };
+        /**
          * @description Typed JSONB payload written to `onboarding_progress.payload`. Story 2.1
          *     pins `schemaVersion: 1`. `templateDraft` remains opaque JSON until
          *     story 2.2 pins its shape.
@@ -594,6 +651,26 @@ export interface components {
         SetPersonaResult: {
             /** @enum {string} */
             persona: "operator" | "founder" | "solo_teacher";
+        };
+        /**
+         * @description Story 2-5a Settings Profile tab payload. Includes contactEmail (new
+         *     in this story) and googleMeetConnected (existing on the row; used
+         *     by the Integrations tab in 2-5c).
+         */
+        CenterProfile: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            shortCode: string;
+            /** Format: email */
+            contactEmail: string | null;
+            brandColor: string | null;
+            logoUrl: string | null;
+            /** @description IANA timezone (see UpdateCenterProfileRequest enum for the accepted set). */
+            timezone: string;
+            googleMeetConnected: boolean;
+            /** Format: date-time */
+            createdAt: string;
         };
         CreateCenterResult: {
             /** Format: uuid */
@@ -796,6 +873,10 @@ export interface components {
         };
         EnvelopeCreateCenterResult: {
             data: components["schemas"]["CreateCenterResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeCenterProfile: {
+            data: components["schemas"]["CenterProfile"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         EnvelopeOnboardingProgress: {
@@ -1665,6 +1746,162 @@ export interface operations {
                 };
             };
             /** @description Slug regeneration exhausted after 5 attempts (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCenterProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Center profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCenterProfile"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description INSUFFICIENT_ROLE (non-Owner), TENANT_MISMATCH (path id ≠ caller's centerID),
+             *     or EMAIL_VERIFICATION_REQUIRED.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Center not found (CENTER_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal error (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateCenterProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCenterProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated center profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCenterProfile"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description INSUFFICIENT_ROLE (non-Owner), TENANT_MISMATCH (path id ≠ caller's centerID),
+             *     or EMAIL_VERIFICATION_REQUIRED.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Center not found (CENTER_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description Validation failure — name length, invalid contactEmail, or
+             *     UNSUPPORTED_TIMEZONE (timezone not in 30-entry whitelist).
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal error (INTERNAL_ERROR) */
             500: {
                 headers: {
                     [name: string]: unknown;

@@ -303,6 +303,35 @@ func main() {
 	mux.Handle("POST /api/templates", templateChain(templateHandler.Create))
 	mux.Handle("POST /api/templates/{id}/spawn", spawnChain(templateHandler.Spawn))
 
+	// Story 2-5a — Settings endpoints. Middleware chain per AC7:
+	//   ExtractTenant → RequireVerifiedEmail → RequireCenterContext →
+	//   RequireRole("owner") → settingsRateLimit → handler
+	//
+	// Bucket is keyed by `userID:ip` (settings tab-switching is bursty
+	// but personal, not tenant-wide). RateLimitByKey emits Retry-After.
+	settingsSvc := service.NewSettingsService(pool, auditSvc, clock.RealClock{})
+	settingsHandler := handler.NewSettingsHandler(settingsSvc, clock.RealClock{})
+	requireOwner := middleware.RequireRole("owner")
+	settingsLimit := middleware.RateLimitByKey(
+		"settings",
+		rate.Every(60*time.Second),
+		60,
+		middleware.UserAndIPKeyFn,
+	)
+	settingsChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireOwner(
+						settingsLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+	mux.Handle("GET /api/centers/{id}", settingsChain(settingsHandler.Get))
+	mux.Handle("PATCH /api/centers/{id}", settingsChain(settingsHandler.Patch))
+
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux
 	corsOrigins := middleware.ParseOrigins(cfg.CORSOrigins)

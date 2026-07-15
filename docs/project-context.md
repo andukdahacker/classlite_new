@@ -1,10 +1,10 @@
 ---
 project_name: 'classlite_new'
 user_name: 'Ducdo'
-date: '2026-05-28'
+date: '2026-07-14'
 sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules']
 status: 'complete'
-rule_count: 82
+rule_count: 83
 optimized_for_llm: true
 ---
 
@@ -1051,6 +1051,28 @@ Atomic commit includes:
 
 Rule: After any change to `api.yaml`, shared types, or generated artifacts, verify all three CI pipelines pass — not just the one you touched.
 
+#### WF-9: External/manual setup tasks — append to docs/manual-setup.md
+*Why:* External work (OAuth apps, DNS, DB provisioning, secrets, third-party dashboard config) can't be committed as code, and gets forgotten between the story that introduces it and the deploy that needs it. `docs/manual-setup.md` is the single source of truth — losing an entry means finding out at cutover time.
+
+**Trigger — must update when a change introduces any of:**
+- New env var required in a non-dev environment (add to the relevant section's Dev/Staging/Prod grid)
+- New third-party service (Google API scope, Resend, R2, Sentry, Polar, etc.)
+- New DNS record or subdomain
+- New Cloudflare Pages / Railway configuration step
+- New secret to generate (`openssl rand`, API keys, HMAC keys)
+- New one-time migration/backfill/manual DB op
+
+**How:**
+- Add tasks to the matching section, or create a new `## Section` if none fits
+- Use `[x]` / `[ ]` / `[-]` (N/A) per environment column
+- Cite the originating story in the section header (e.g. `## Google Meet OAuth (Story 2.5c)`)
+- Reference env-var names exactly as they appear in `.env.example`
+
+**Do not:**
+- Duplicate rows across sections — one canonical row per task
+- Add code-level tasks (migrations, feature flags, tests) — those belong in the story, not here
+- Retroactively mark prod columns `[x]` before the actual prod cutover
+
 #### WF-7: Service boundary — no cross-service source imports
 *Why:* Services are separate deployable units. The contract boundary is the OpenAPI spec and generated clients.
 
@@ -1340,4 +1362,4 @@ slog.Debug("ai job payload", "job", job)
 - Review quarterly for outdated rules
 - Remove rules that become obvious over time or are enforced by tooling
 
-Last Updated: 2026-05-28
+Last Updated: 2026-07-14

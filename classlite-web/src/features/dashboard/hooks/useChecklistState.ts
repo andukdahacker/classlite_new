@@ -41,6 +41,7 @@ export interface ChecklistState {
 export interface UseChecklistStateResult {
   state: ChecklistState
   snooze: () => void
+  clearSnooze: () => void
   isVisible: boolean
 }
 
@@ -227,9 +228,52 @@ export function useChecklistState(
     bumpAll()
   }, [userId])
 
+  // Story 2-5a AC6 — Settings → Re-open setup checklist.
+  //
+  // `localStorage.removeItem` (NOT setItem with {snoozedUntil: null}) per
+  // Amelia-B3 + John ACCEPT fold. Writing null triggers this hook's own
+  // "malformed-localstorage" breadcrumb false-positive at readStateFromRaw
+  // — the `snoozedUntil: null` payload is technically valid but its number
+  // typecheck (`typeof snoozedUntil === 'number'`) rejects it and emits a
+  // warning. Removing the key produces `raw === null` which readStateFromRaw
+  // resolves to NULL_STATE without breadcrumb noise.
+  //
+  // Idempotent: if the key doesn't exist, removeItem is a no-op AND we skip
+  // the Sentry breadcrumb to avoid empty-signal churn (per idempotence test row).
+  const clearSnooze = useCallback((): void => {
+    if (userId === null) return
+    let existed = false
+    try {
+      existed = window.localStorage.getItem(keyFor(userId)) !== null
+    } catch {
+      // Storage read may throw in Safari private mode. Fall through — the
+      // removeItem call below either succeeds silently or throws which we
+      // also swallow.
+    }
+    try {
+      window.localStorage.removeItem(keyFor(userId))
+    } catch {
+      // Storage disabled — same posture as snooze()'s setItem catch.
+    }
+    // P12 (2026-07-15 review): guard `bumpAll()` behind the same
+    // `existed` check as the breadcrumb. When the key wasn't present,
+    // removeItem is a no-op and no subscriber has anything new to read —
+    // firing bumpAll wastes a render tick across every mounted consumer.
+    if (existed) {
+      addBreadcrumb({
+        category: 'checklist',
+        message: 'checklist-reopened',
+        level: 'info',
+        data: { userId },
+      })
+      bumpAll()
+    }
+  }, [userId])
+
   return {
     state,
     snooze,
+    clearSnooze,
     isVisible: computeIsVisible(userId, state.snoozedUntil),
   }
 }

@@ -198,6 +198,19 @@ const baseRoutes: RouteObject[] = [
           return { Component: TeacherDashboard }
         },
       },
+      // Story 2-5a — Owner-only Settings surface. Lazy chunk isolated per
+      // Winston-W5 (route-bundle-boundaries assertion in e2e/); Owner gate
+      // lives inline in SettingsPage until Story 2.6 lands a router-level
+      // errorElement per FU-2-5-H.
+      {
+        path: '/settings',
+        lazy: async () => {
+          const { default: SettingsPage } = await import(
+            '@/features/settings/SettingsPage'
+          )
+          return { Component: SettingsPage }
+        },
+      },
     ],
   },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE

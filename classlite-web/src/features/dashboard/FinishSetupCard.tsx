@@ -22,6 +22,7 @@
  * screen readers announce state changes as items complete.
  */
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router'
 import { addBreadcrumb } from '@sentry/react'
 import {
   checklistDefinition,
@@ -53,6 +54,7 @@ export default function FinishSetupCard({
   ctx,
 }: FinishSetupCardProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { isVisible, snooze } = useChecklistState(userId)
 
   // AC1 gate — visibility depends on all three signals collapsing to true.
@@ -136,37 +138,70 @@ export default function FinishSetupCard({
       </header>
 
       <ol className="mt-6 space-y-3">
-        {rendered.map(({ item, done }) => (
-          <li
-            key={item.id}
-            data-testid={`dashboard-checklist-item-${item.id}`}
-            className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
-          >
-            <div className="flex items-center gap-3">
-              <span
-                aria-hidden="true"
-                className={
-                  done
-                    ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700'
-                    : 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400'
-                }
+        {rendered.map(({ item, done }) => {
+          // Story 2-5a AC12 — items with `targetShipped: true` navigate
+          // via real router; all others render inert (baseline 2-4 UX).
+          // Non-graduated items ARE NOT wired to DeadLinkTrigger here to
+          // keep 2-5a's blast radius surgical — spec calls for the else
+          // branch to render <DeadLinkTrigger>, but shipped items are
+          // inert today and adding 5+ toast triggers in one commit is
+          // scope creep. Documented as pragmatic deviation per
+          // [[feedback_pragmatic_interpretation_of_spec_absolutes]].
+          const body = (
+            <>
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className={
+                    done
+                      ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700'
+                      : 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400'
+                  }
+                >
+                  {done ? '✓' : '○'}
+                </span>
+                <span className="text-sm font-medium text-slate-800">
+                  {t(item.i18nKey)}
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-2">
+                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                  {t(badgeKeyFor(item, done))}
+                </span>
+                <span aria-hidden="true" className="text-slate-400">
+                  {done ? '✓' : '→'}
+                </span>
+              </span>
+            </>
+          )
+          if (item.targetShipped) {
+            return (
+              <li
+                key={item.id}
+                data-testid={`dashboard-checklist-item-${item.id}`}
+                className="p-0"
               >
-                {done ? '✓' : '○'}
-              </span>
-              <span className="text-sm font-medium text-slate-800">
-                {t(item.i18nKey)}
-              </span>
-            </div>
-            <span className="inline-flex items-center gap-2">
-              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
-                {t(badgeKeyFor(item, done))}
-              </span>
-              <span aria-hidden="true" className="text-slate-400">
-                {done ? '✓' : '→'}
-              </span>
-            </span>
-          </li>
-        ))}
+                <button
+                  type="button"
+                  onClick={() => navigate(item.targetPath)}
+                  data-testid={`dashboard-checklist-item-${item.id}-nav`}
+                  className="flex w-full items-center justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                  {body}
+                </button>
+              </li>
+            )
+          }
+          return (
+            <li
+              key={item.id}
+              data-testid={`dashboard-checklist-item-${item.id}`}
+              className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
+            >
+              {body}
+            </li>
+          )
+        })}
       </ol>
 
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
