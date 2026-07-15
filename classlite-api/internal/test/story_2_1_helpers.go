@@ -11,6 +11,7 @@ package test
 
 import (
 	"context"
+	"hash/fnv"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,19 +214,66 @@ func SetUserPersona(t *testing.T, db *TxDB, userID pgtype.UUID, persona string) 
 // t.Cleanup that purges it plus any centers it created. This is the
 // difference between "test leaves residue if it fails between insert and
 // t.Cleanup registration in the caller" and "test never leaks a user."
+//
+// Go's default per-package test parallelism runs multiple test binaries
+// concurrently against the same shared DB. Tests that hardcode a stable
+// email (e.g. "owner@example.com" in a spawn-flow request payload where
+// the service resolves the email back to the fixture user) used to
+// collide on the `idx_users_email` unique index when two packages hit
+// this helper at the same moment. We serialize concurrent calls for the
+// same email via a session-scoped PostgreSQL advisory lock, held for the
+// test lifetime. Callers still see the original email in User.Email and
+// can pass it into downstream request bodies verbatim.
 func CreateUserOnPool(t *testing.T, pool *pgxpool.Pool, email, name string) User {
 	t.Helper()
+
+	// Acquire a dedicated connection so the advisory lock survives across
+	// the test — pool.Exec() would return the connection to the pool and
+	// release the lock immediately.
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire conn for advisory lock: %v", err)
+	}
+	lockKey := advisoryLockKeyForEmail(email)
+	if _, err := conn.Exec(
+		context.Background(),
+		`SELECT pg_advisory_lock($1)`,
+		lockKey,
+	); err != nil {
+		conn.Release()
+		t.Fatalf("pg_advisory_lock(%d) for %q: %v", lockKey, email, err)
+	}
+
 	var id pgtype.UUID
 	if err := pool.QueryRow(context.Background(),
 		`INSERT INTO users (email, full_name, email_verified) VALUES ($1, $2, false) RETURNING id`,
 		email, name,
 	).Scan(&id); err != nil {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockKey)
+		conn.Release()
 		t.Fatalf("create user on pool: %v", err)
 	}
+
 	t.Cleanup(func() {
+		// Purge FIRST (row must be gone before we release the lock,
+		// otherwise a waiting caller sees the row and fails on the unique
+		// index), THEN release the lock, THEN return the connection.
 		PurgeUserAndOwnedCenters(t, pool, id)
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockKey)
+		conn.Release()
 	})
 	return User{ID: id, Email: email, FullName: name}
+}
+
+// advisoryLockKeyForEmail hashes an email into a stable int64 for use as
+// a PostgreSQL advisory-lock key. fnv-1a is fast, deterministic across
+// processes, and — crucially — DOESN'T need to be cryptographic. Same
+// email → same key → concurrent CreateUserOnPool calls serialize.
+func advisoryLockKeyForEmail(email string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte("classlite-test-createuseronpool:"))
+	_, _ = h.Write([]byte(email))
+	return int64(h.Sum64()) // wraps into negatives — pg accepts full bigint
 }
 
 // User is a stripped user shape returned by CreateUserOnPool so callers

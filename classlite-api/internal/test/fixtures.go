@@ -15,11 +15,31 @@ const (
 )
 
 // CreateUser inserts a user with the given email and full name.
+//
+// Serializes with concurrent CreateUserOnPool calls on the same email via
+// a PostgreSQL transaction-scoped advisory lock. Without this, a
+// CreateUserOnPool call in another test binary (Go's default per-package
+// parallelism) could hold a committed row on `owner@example.com` while
+// this SetupDB-wrapped CreateUser tries to insert the same email in its
+// own tx and dies on the `idx_users_email` unique index. pg_advisory_xact_lock
+// contends with pg_advisory_lock on the same key, so blocking here waits
+// for the CreateUserOnPool caller's t.Cleanup to purge the row + release
+// the session lock. Lock releases automatically at tx end (t.Cleanup →
+// tx.Rollback).
 func CreateUser(t *testing.T, db *TxDB, email, fullName string) generated.User {
 	t.Helper()
 
+	ctx := context.Background()
+	if _, err := db.Tx.Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock($1)`,
+		advisoryLockKeyForEmail(email),
+	); err != nil {
+		t.Fatalf("pg_advisory_xact_lock for %q: %v", email, err)
+	}
+
 	queries := generated.New(db)
-	user, err := queries.CreateUser(context.Background(), generated.CreateUserParams{
+	user, err := queries.CreateUser(ctx, generated.CreateUserParams{
 		Email:    email,
 		FullName: fullName,
 	})
