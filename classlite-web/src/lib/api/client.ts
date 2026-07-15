@@ -551,9 +551,22 @@ export interface components {
         };
         /**
          * @description Story 2-5a partial-update — all fields optional. Only present fields
-         *     are applied (COALESCE pattern in SQL). `shortCode` is intentionally
-         *     absent per AC3 (rendered read-only in the Settings UI; changing it
-         *     would break existing class codes).
+         *     are applied. `shortCode` is intentionally absent per AC3 (rendered
+         *     read-only in the Settings UI; changing it would break existing
+         *     class codes).
+         *
+         *     Tri-state wire semantics per field (D4 code-review 2026-07-15):
+         *     - **Key absent** — column unchanged.
+         *     - **Key present with JSON `null`** — column CLEARED to SQL NULL
+         *       (nullable fields only: `contactEmail`, `brandColor`, `logoUrl`).
+         *       `null` on `name` or `timezone` returns 422 (non-nullable).
+         *     - **Key present with a string value** — column SET to that value.
+         *     - **Empty string (`""`)** is REJECTED with 422 on every field. The
+         *       client MUST send explicit `null` to clear; empty-string had no
+         *       well-defined semantics in v0 and could be persisted as a distinct
+         *       third state from NULL and a real value.
+         *
+         *     Bodies larger than 16 KiB return 413 `PAYLOAD_TOO_LARGE`.
          */
         UpdateCenterProfileRequest: {
             name?: string;
