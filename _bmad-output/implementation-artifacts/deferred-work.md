@@ -1,5 +1,21 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-5b (2026-07-15)
+
+- **CR-2-5B-1** — DisallowUnknownFields + JSON UnmarshalTypeError → 422 field-level for all settings handlers. Currently `decodeSettingsJSONBody` swallows type errors as generic "invalid JSON" and accepts extra fields. Same pre-existing gap as CR-2-5A-3 (2-5a) — worth a dedicated cross-handler pass. Priority: **P3**.
+- **CR-2-5B-2** — SEC-1 role revalidation on mutating operations. All 2-5b mutating routes (POST/PATCH/DELETE × terms/holidays/rooms — 9 endpoints) trust JWT `role` claim via `RequireRole("owner")` middleware; a revoked owner's still-valid JWT (up to 15-min TTL) can still mutate. Project-wide gap documented as EDGE-2. Fix requires per-request `userStore.GetByID` in service layer. Priority: **P2**.
+- **CR-2-5B-3** — Backend error-mapper i18n. `ROOM_NAME_TAKEN` mapper emits hardcoded English "A room with this name already exists in this center." + English `details[0].message`. Frontend discriminates on `code` so cosmetic-only in the happy path, but breaks non-English direct-API consumers. Broader fix should i18n every mapped error message via `Accept-Language` header resolution. Priority: **P4**.
+- **CR-2-5B-4** — `TermCalendarTab.tsx` currently at 660 lines (added ~185 for P1 SaveErrorAlert helpers), exceeding the 600-line convention. This is the FU-2-5b-B activation trigger. Extract dialogs + rows to standalone files in a follow-up. Priority: **P3** (bumped from P4).
+- **FU-2-5b-F** — Client-side term overlap advisory warning (AC16 test-coverage bullet). Copy key `settings.terms.overlapAdvisory` was shipped in en+vi + STORY_2_5B_KEYS at green-phase but removed at code review Round 1 D3 (keeping dead copy in parity is misleading). Implement in the TermFormDialog: on submit, if any existing term's date range intersects the new range, render a warning banner (non-blocking — save still succeeds). Owner may proceed knowingly. Priority: **P4**.
+
+## Deferred from: green-phase of story-2-5b (2026-07-15)
+
+- **FU-2-5b-A** — Flaky vitest `RoomsTab.test.tsx > AC5 CRUD via shadcn Dialog > capacity outside 1..500 surfaces inline Zod error`. `roomSchema` DOES enforce `.number().int().min(1).max(500)` with the `settings.rooms.form.capacity.errors.range` copy on all four Zod branches; the failure appears to be in the jsdom + userEvent + RHF `valueAsNumber` sequence not stabilizing the field state before `waitFor` fires. Manual browser test confirms the range validation renders correctly. Retry at code-review time with `fireEvent.change` or `screen.debug()`. Priority: **P4**.
+- **FU-2-5b-B** — Component extraction (7 files): `TermFormDialog`, `HolidayFormDialog`, `RoomFormDialog`, `TermRow`, `HolidayRow`, `RoomRow`, `DeleteConfirmDialog` currently inlined into `TermCalendarTab.tsx` / `RoomsTab.tsx`. Story spec's file inventory lists 7 separate component files. Extract when a third consumer emerges or if the parent files cross the 600-line convention threshold. Priority: **P4**.
+- **FU-2-5b-C** — Per-hook unit tests: `useTerms.test.ts` / `useMutateTerm.test.ts` (and holiday/room variants) folded into tab tests. The tab tests already exercise mutation optimistic triple + cache invalidation flows end-to-end via MSW. Add separate hook tests only if a hook grows non-CRUD logic (WebSocket integration, cross-sibling optimistic reconciliation). Priority: **P4**.
+- **FU-2-5b-D** — Storybook variants for `TermCalendarTab` + `RoomsTab` (≥3 each per DoD-6) — deferred to Round 1 code review, mirrors Story 2-5a's P4 fold pattern. Priority: **P3**.
+- **FU-2-5b-E** — Playwright smoke for full CRUD flow — session-cache seeding still outstanding per FU-2-4-J; blocked on infra not this story. Priority: **P3**.
+
 ## Deferred from: code review of story-2-3c Chunk 1 (2026-07-12)
 
 - R1-C1-W1 Storybook `CENTER` fixture `brandColor: '#1e3a8a' as string | null` with `eslint-disable no-restricted-syntax` comment (`classlite-web/src/features/onboarding/OnboardingDonePage.stories.tsx:445-446`) — fixture-side smell; upstream type or lint rule needs tightening but low impact.

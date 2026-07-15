@@ -816,6 +816,547 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 2-5b — Terms + Holidays + Rooms ====================
+  # 12 endpoints (4 per entity × 3 entities). All Owner-only via the shared
+  # settingsChain middleware (ExtractTenant → RequireVerifiedEmail →
+  # RequireCenterContext → RequireRole("owner") → settingsRateLimit → handler).
+  # AC6: POST/PATCH /api/rooms may return 409 ROOM_NAME_TAKEN on UNIQUE
+  # (center_id, LOWER(name)) collision. AC10: mutating operations emit
+  # `center.{term|holiday|room}.{created|updated|deleted}` audit rows.
+  #
+  # AC7 amended /bmad-code-review 2-5b Round 1 (2026-07-15): terms/holidays/
+  # rooms are tenant-scoped tables with RLS 4-policy per Winston-B2, so the
+  # RLS layer is authoritative for cross-tenant access on path-{id} routes —
+  # a mismatched center_id returns 404 (row invisible under RLS), NOT 403
+  # TENANT_MISMATCH. The 2-5a belt-check pattern (GET/PATCH /api/centers/{id})
+  # exists because `centers` is global-no-RLS and the handler is the only line
+  # of defense. Do NOT add belt-checks to terms/holidays/rooms path-{id}
+  # handlers — the RLS predicate already enforces isolation. See
+  # `terms_rls_test.go`, `holidays_rls_test.go`, `rooms_rls_test.go` for the
+  # 4-policy coverage that makes the belt redundant.
+
+  /api/terms:
+    get:
+      operationId: listTerms
+      summary: List center-scoped terms (story 2-5b)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of terms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTermList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createTerm
+      summary: Create a term (story 2-5b)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTermRequest'
+      responses:
+        "201":
+          description: Created term
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTerm'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (invalid name / end_date < start_date)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/terms/{id}:
+    patch:
+      operationId: updateTerm
+      summary: Partial-update a term (story 2-5b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTermRequest'
+      responses:
+        "200":
+          description: Updated term
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTerm'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: TERM_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteTerm
+      summary: Delete a term (story 2-5b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted (empty body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: TERM_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/holidays:
+    get:
+      operationId: listHolidays
+      summary: List center-scoped holidays (story 2-5b)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of holidays
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeHolidayList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createHoliday
+      summary: Create a holiday (story 2-5b)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHolidayRequest'
+      responses:
+        "201":
+          description: Created holiday
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeHoliday'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/holidays/{id}:
+    patch:
+      operationId: updateHoliday
+      summary: Partial-update a holiday (story 2-5b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHolidayRequest'
+      responses:
+        "200":
+          description: Updated holiday
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeHoliday'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: HOLIDAY_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteHoliday
+      summary: Delete a holiday (story 2-5b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted (empty body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: HOLIDAY_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/rooms:
+    get:
+      operationId: listRooms
+      summary: List center-scoped rooms (story 2-5b)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRoomList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createRoom
+      summary: Create a room (story 2-5b — AC6 unique name-per-center)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomRequest'
+      responses:
+        "201":
+          description: Created room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRoom'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: ROOM_NAME_TAKEN — UNIQUE(center_id, LOWER(name)) collision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/rooms/{id}:
+    patch:
+      operationId: updateRoom
+      summary: Partial-update a room (story 2-5b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoomRequest'
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRoom'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: ROOM_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: ROOM_NAME_TAKEN — UNIQUE(center_id, LOWER(name)) collision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteRoom
+      summary: Delete a room (story 2-5b; Story 3.2 will add ROOM_IN_USE 409)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted (empty body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: ROOM_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/templates:
     get:
       operationId: listTemplates
@@ -1867,6 +2408,234 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/SpawnResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 2-5b — Terms + Holidays + Rooms schemas ----------------
+    Term:
+      # `sessionCount` intentionally omitted from required list per
+      # /bmad-code-review 2-5b Round 1 D2 (2026-07-15): the column is populated
+      # by Story 3.x class scheduling, not by the Story 2-5b Term dialog. v1
+      # responses may omit the field entirely; when present it may be null.
+      # Kept as an optional property so Story 3.x can start writing it without
+      # a wire-breaking change.
+      type: object
+      required: [id, centerId, name, startDate, endDate]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          description: MUST be >= startDate (DB CHECK enforces the invariant).
+        sessionCount:
+          type: integer
+          nullable: true
+          minimum: 1
+
+    CreateTermRequest:
+      type: object
+      required: [name, startDate, endDate]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        sessionCount:
+          type: integer
+          nullable: true
+          minimum: 1
+
+    UpdateTermRequest:
+      type: object
+      description: All fields optional (partial update). Omit to leave unchanged.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        sessionCount:
+          type: integer
+          nullable: true
+          minimum: 1
+
+    Holiday:
+      type: object
+      required: [id, centerId, name, date]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        date:
+          type: string
+          format: date
+
+    CreateHolidayRequest:
+      type: object
+      required: [name, date]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        date:
+          type: string
+          format: date
+
+    UpdateHolidayRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        date:
+          type: string
+          format: date
+
+    Room:
+      type: object
+      required: [id, centerId, name, description, capacity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          nullable: true
+          maxLength: 240
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+
+    CreateRoomRequest:
+      type: object
+      required: [name, capacity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          nullable: true
+          maxLength: 240
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+
+    UpdateRoomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          nullable: true
+          maxLength: 240
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+
+    EnvelopeTermList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Term'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeTerm:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Term'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeHolidayList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Holiday'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeHoliday:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Holiday'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeRoomList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Room'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeRoom:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Room'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

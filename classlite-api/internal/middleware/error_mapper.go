@@ -82,6 +82,8 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var unsupportedTimezone *service.UnsupportedTimezoneError
 		var tenantMismatch *service.TenantMismatchError
 		var payloadTooLarge *service.PayloadTooLargeError
+		// Story 2-5b settings taxonomy errors.
+		var roomNameTaken *service.RoomNameTakenError
 
 		switch {
 		case errors.As(err, &invalidCreds):
@@ -176,6 +178,13 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		case errors.As(err, &payloadTooLarge):
 			handler.WriteError(w, r, http.StatusRequestEntityTooLarge,
 				"PAYLOAD_TOO_LARGE", payloadTooLarge.Error(), nil)
+			return
+		case errors.As(err, &roomNameTaken):
+			// Story 2-5b AC6 — surface as inline field error on `name`, not toast.
+			handler.WriteError(w, r, http.StatusConflict,
+				"ROOM_NAME_TAKEN",
+				"A room with this name already exists in this center.",
+				[]model.FieldError{{Field: "name", Message: "room name must be unique (case-insensitive)"}})
 			return
 		}
 

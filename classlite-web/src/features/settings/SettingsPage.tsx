@@ -22,6 +22,8 @@ import PermissionDenied from '@/components/shared/PermissionDenied'
 // TODO(story-2-6): move to route-level errorElement + role gate per Winston-W-STRONG-9
 import { useSettingsTab, type SettingsTab } from './hooks/useSettingsTab'
 import { ProfileTab } from './ProfileTab'
+import { TermCalendarTab } from './TermCalendarTab'
+import { RoomsTab } from './RoomsTab'
 
 const TAB_ORDER: readonly SettingsTab[] = [
   'profile',
@@ -30,22 +32,19 @@ const TAB_ORDER: readonly SettingsTab[] = [
   'rooms',
 ] as const
 
-interface TabPlaceholderProps {
-  tabId: 'terms' | 'integrations' | 'rooms'
-}
-
-function TabPlaceholder({ tabId }: TabPlaceholderProps): ReactElement {
+// Only `integrations` still renders as a placeholder — 2-5c owns wiring it.
+function IntegrationsPlaceholder(): ReactElement {
   const { t } = useTranslation()
   return (
     <div
       role="tabpanel"
       tabIndex={0}
-      aria-labelledby={`settings-tab-${tabId}`}
-      id={`settings-tabpanel-${tabId}`}
-      data-testid={`settings-tab-placeholder-${tabId}`}
+      aria-labelledby="settings-tab-integrations"
+      id="settings-tabpanel-integrations"
+      data-testid="settings-tab-placeholder-integrations"
       className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500"
     >
-      {t(`settings.tabPlaceholder.${tabId}` as const)}
+      {t('settings.tabPlaceholder.integrations')}
     </div>
   )
 }
@@ -100,24 +99,31 @@ export default function SettingsPage(): ReactElement {
           )
         })}
       </div>
-      {tab === 'profile' ? (
-        centerId ? (
-          <ProfileTab centerId={centerId} />
-        ) : (
-          // Defensive — an Owner reaching /settings without session.center
-          // is a pre-onboarding state that shouldn't exist post-Story 2-4.
-          // Render the fetch-error alert as a safe fallback.
-          <div
-            role="alert"
-            className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900"
-            data-testid="settings-no-center"
-          >
-            {t('settings.error.fetch')}
-          </div>
-        )
-      ) : (
-        <TabPlaceholder tabId={tab} />
-      )}
+      {(() => {
+        if (!centerId) {
+          // Defensive — Owner reaching /settings without session.center is
+          // a pre-onboarding state that shouldn't exist post-Story 2-4.
+          return (
+            <div
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900"
+              data-testid="settings-no-center"
+            >
+              {t('settings.error.fetch')}
+            </div>
+          )
+        }
+        switch (tab) {
+          case 'profile':
+            return <ProfileTab centerId={centerId} />
+          case 'terms':
+            return <TermCalendarTab centerId={centerId} />
+          case 'rooms':
+            return <RoomsTab centerId={centerId} />
+          case 'integrations':
+            return <IntegrationsPlaceholder />
+        }
+      })()}
     </div>
   )
 }

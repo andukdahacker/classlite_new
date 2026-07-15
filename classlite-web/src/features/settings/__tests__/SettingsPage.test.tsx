@@ -120,9 +120,14 @@ describe('SettingsPage — AC1 tab-strip shell + AC2 role gate', () => {
     expect(screen.getByTestId('settings-permission-denied')).toBeInTheDocument()
   })
 
-  test('?tab=terms mounts the Terms placeholder', async () => {
+  test('?tab=terms mounts the TermCalendarTab body (Story 2-5b — placeholder replaced)', async () => {
     renderSettings({ initialEntry: '/settings?tab=terms' })
-    await screen.findByTestId('settings-tab-placeholder-terms')
+    // Story 2-5b landed the real tab body — the 2-5a placeholder testid is
+    // gone and the tabpanel-terms testid ships on the real component.
+    await screen.findByTestId('settings-tabpanel-terms')
+    expect(
+      screen.queryByTestId('settings-tab-placeholder-terms'),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByTestId('settings-tabpanel-profile'),
     ).not.toBeInTheDocument()
@@ -132,7 +137,7 @@ describe('SettingsPage — AC1 tab-strip shell + AC2 role gate', () => {
     renderSettings({ initialEntry: '/settings?tab=xyz' })
     await screen.findByTestId('settings-tabpanel-profile')
     expect(
-      screen.queryByTestId('settings-tab-placeholder-terms'),
+      screen.queryByTestId('settings-tabpanel-terms'),
     ).not.toBeInTheDocument()
   })
 })
@@ -186,10 +191,17 @@ describe('SettingsPage — AC15 accessibility (axe)', () => {
         await i18n.changeLanguage(locale)
         const { container } = renderSettings({ initialEntry: tab.entry })
         // Wait for the tab body to mount so axe scans stable DOM.
+        // Story 2-5b: terms + rooms tabpanels now ship real bodies, not
+        // placeholders — only `integrations` still ships as a placeholder
+        // pending Story 2-5c.
         if (tab.id === 'profile') {
           await screen.findByTestId('settings-profile-name-input')
+        } else if (tab.id === 'integrations') {
+          await screen.findByTestId(
+            'settings-tab-placeholder-integrations',
+          )
         } else {
-          await screen.findByTestId(`settings-tab-placeholder-${tab.id}`)
+          await screen.findByTestId(`settings-tabpanel-${tab.id}`)
         }
         const results = await axe(container)
         expect(results).toHaveNoViolations()

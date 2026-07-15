@@ -332,6 +332,30 @@ func main() {
 	mux.Handle("GET /api/centers/{id}", settingsChain(settingsHandler.Get))
 	mux.Handle("PATCH /api/centers/{id}", settingsChain(settingsHandler.Patch))
 
+	// Story 2-5b — Terms + Holidays + Rooms endpoints (12 routes). Share the
+	// settingsChain wiring above so the same middleware order + rate limit
+	// apply. Every mutating op emits a `center.{term|holiday|room}.{created|
+	// updated|deleted}` audit row inside the service tx.
+	termSvc := service.NewTermService(pool, auditSvc, clock.RealClock{})
+	termHandler := handler.NewTermHandler(termSvc, clock.RealClock{})
+	holidaySvc := service.NewHolidayService(pool, auditSvc, clock.RealClock{})
+	holidayHandler := handler.NewHolidayHandler(holidaySvc, clock.RealClock{})
+	roomSvc := service.NewRoomService(pool, auditSvc, clock.RealClock{})
+	roomHandler := handler.NewRoomHandler(roomSvc, clock.RealClock{})
+
+	mux.Handle("GET /api/terms", settingsChain(termHandler.List))
+	mux.Handle("POST /api/terms", settingsChain(termHandler.Create))
+	mux.Handle("PATCH /api/terms/{id}", settingsChain(termHandler.Update))
+	mux.Handle("DELETE /api/terms/{id}", settingsChain(termHandler.Delete))
+	mux.Handle("GET /api/holidays", settingsChain(holidayHandler.List))
+	mux.Handle("POST /api/holidays", settingsChain(holidayHandler.Create))
+	mux.Handle("PATCH /api/holidays/{id}", settingsChain(holidayHandler.Update))
+	mux.Handle("DELETE /api/holidays/{id}", settingsChain(holidayHandler.Delete))
+	mux.Handle("GET /api/rooms", settingsChain(roomHandler.List))
+	mux.Handle("POST /api/rooms", settingsChain(roomHandler.Create))
+	mux.Handle("PATCH /api/rooms/{id}", settingsChain(roomHandler.Update))
+	mux.Handle("DELETE /api/rooms/{id}", settingsChain(roomHandler.Delete))
+
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux
 	corsOrigins := middleware.ParseOrigins(cfg.CORSOrigins)

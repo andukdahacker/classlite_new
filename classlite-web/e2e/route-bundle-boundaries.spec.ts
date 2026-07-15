@@ -613,4 +613,75 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       ).not.toContain('settings-tab-strip')
     }
   })
+
+  test('Story 2-5b — SettingsPage chunk contains terms + rooms tabpanel testids (AC14)', async () => {
+    // Story 2-5b AC14. After 2-5b lands, the Terms + Rooms tab body components
+    // load-hop into the SettingsPage chunk (via feature-directory deep import,
+    // no barrel — same discipline as 2-5a). Positive: the shipped chunk must
+    // now contain `settings-tabpanel-terms` + `settings-tabpanel-rooms`
+    // testids. Negative: those testids must NOT appear in onboarding /
+    // dashboard chunks.
+    //
+    // Red signal (2026-07-15 expected): as of the ATDD landing, 2-5b ships
+    // placeholder testids (`settings-tab-placeholder-terms` etc.) inside the
+    // SettingsPage chunk — the tabpanel-terms testid does NOT yet appear.
+    // Amelia flips green when `TermCalendarTab.tsx` + `RoomsTab.tsx` land in
+    // Task 6 with `data-testid="settings-tabpanel-{terms|rooms}"` on the
+    // tabpanel container.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const settingsChunkFiles = files.filter((f: string) =>
+      /^SettingsPage-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      settingsChunkFiles.length,
+      'SettingsPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const settingsContents = settingsChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    // Positive: 2-5b tabpanel testids present in the shipped chunk.
+    for (const testid of [
+      'settings-tabpanel-terms',
+      'settings-tabpanel-rooms',
+    ]) {
+      expect(
+        settingsContents,
+        `SettingsPage chunk missing 2-5b tabpanel testid "${testid}"`,
+      ).toContain(testid)
+    }
+
+    // Negative: no cross-chunk leakage into onboarding / dashboard chunks.
+    const onboardingChunkFiles = files.filter((f: string) =>
+      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+    const dashboardChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    for (const chunkFile of [
+      ...onboardingChunkFiles,
+      ...dashboardChunkFiles,
+    ]) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString(
+        'utf8',
+      )
+      for (const testid of [
+        'settings-tabpanel-terms',
+        'settings-tabpanel-rooms',
+      ]) {
+        expect(
+          content,
+          `${chunkFile} leaked 2-5b settings testid "${testid}"`,
+        ).not.toContain(testid)
+      }
+    }
+  })
 })

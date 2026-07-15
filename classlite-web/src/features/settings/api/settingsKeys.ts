@@ -23,4 +23,11 @@ export const settingsKeys = {
       'updateCenterProfile',
       centerId,
     ] as const,
+  // Story 2-5b extension — terms + holidays + rooms.
+  terms: (centerId: string) =>
+    [...settingsKeys.all, 'terms', centerId] as const,
+  holidays: (centerId: string) =>
+    [...settingsKeys.all, 'holidays', centerId] as const,
+  rooms: (centerId: string) =>
+    [...settingsKeys.all, 'rooms', centerId] as const,
 } as const

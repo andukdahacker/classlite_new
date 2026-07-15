@@ -1279,3 +1279,135 @@ describe('Story 2-5a i18n parity (R38)', () => {
     },
   )
 })
+
+/**
+ * Story 2-5b — Center Settings Terms + Holidays + Rooms tabs (ATDD 2026-07-15).
+ * Per-story discharge of R38 (i18n parity, score 6).
+ *
+ * ~55 keys total across 4 surfaces: Terms + Holidays sections (shared tab
+ * body), Rooms tab (incl. synthetic Google Meet row), CRUD dialog copy
+ * (add/edit + delete confirm), and validation error catalog. Prefix ratchet
+ * is tightened to 3 new prefixes (settings.terms., settings.holidays.,
+ * settings.rooms.) since AC13 pins the story's namespace boundary. Shared
+ * `settings.error.*` keys added in 2-5a are re-used without extension.
+ *
+ * Red signal on first run: `assertI18nParity(STORY_2_5B_KEYS)` fails on
+ * every missing key with a readable diff. Amelia flips green by landing
+ * en.json + vi.json entries in Task 8. `assertI18nInterpolationParity`
+ * covers all 3 interpolation tokens: {{count}}, {{name}}, {{requestId}}.
+ */
+export const STORY_2_5B_KEYS = [
+  // Cross-scoped date validator error (shared across terms + holidays).
+  // Added /bmad-code-review 2-5b Round 1 P8 (2026-07-15) — replaces the
+  // per-field label-as-error kludge that rendered "Start date" on any
+  // date parse failure regardless of which field failed.
+  'settings.common.form.date.errors.invalid',
+  // Terms section (12 — was 13; overlapAdvisory removed per Round 1 D3
+  // as advisory-only warning UI is deferred to FU-2-5b-F. Keeping the
+  // key without a render site was misleading dead-copy.)
+  'settings.terms.sectionHeading',
+  'settings.terms.addCta',
+  'settings.terms.empty.headline',
+  'settings.terms.empty.body',
+  'settings.terms.empty.cta',
+  'settings.terms.row.editCta',
+  'settings.terms.row.deleteCta',
+  'settings.terms.state.current',
+  'settings.terms.state.upcoming',
+  'settings.terms.state.past',
+  'settings.terms.saveSuccessToast',
+  'settings.terms.deleteSuccessToast',
+  // Terms form (11)
+  'settings.terms.form.dialogTitleCreate',
+  'settings.terms.form.dialogTitleEdit',
+  'settings.terms.form.name.label',
+  'settings.terms.form.name.placeholder',
+  'settings.terms.form.name.errors.required',
+  'settings.terms.form.name.errors.tooLong',
+  'settings.terms.form.startDate.label',
+  'settings.terms.form.endDate.label',
+  'settings.terms.form.endDate.errors.beforeStart',
+  'settings.terms.form.saveCta',
+  'settings.terms.form.cancelCta',
+  // Terms delete confirm (3)
+  'settings.terms.delete.confirmHeadline',
+  'settings.terms.delete.confirmCta',
+  'settings.terms.delete.cancelCta',
+  // Holidays section (7)
+  'settings.holidays.sectionHeading',
+  'settings.holidays.addCta',
+  'settings.holidays.empty.headline',
+  'settings.holidays.empty.body',
+  'settings.holidays.row.editCta',
+  'settings.holidays.row.deleteCta',
+  'settings.holidays.saveSuccessToast',
+  // Holidays form + delete (9 — +2 error keys added Round 1 P8)
+  'settings.holidays.form.dialogTitleCreate',
+  'settings.holidays.form.dialogTitleEdit',
+  'settings.holidays.form.name.label',
+  'settings.holidays.form.name.errors.required',
+  'settings.holidays.form.name.errors.tooLong',
+  'settings.holidays.form.date.label',
+  'settings.holidays.form.saveCta',
+  'settings.holidays.delete.confirmHeadline',
+  'settings.holidays.delete.confirmCta',
+  // Rooms section (10)
+  'settings.rooms.sectionHeading',
+  'settings.rooms.addCta',
+  'settings.rooms.empty.headline',
+  'settings.rooms.empty.body',
+  'settings.rooms.empty.cta',
+  'settings.rooms.row.editCta',
+  'settings.rooms.row.deleteCta',
+  'settings.rooms.row.capacityLabel',
+  'settings.rooms.saveSuccessToast',
+  'settings.rooms.deleteSuccessToast',
+  // Rooms form (12)
+  'settings.rooms.form.dialogTitleCreate',
+  'settings.rooms.form.dialogTitleEdit',
+  'settings.rooms.form.name.label',
+  'settings.rooms.form.name.placeholder',
+  'settings.rooms.form.name.errors.required',
+  'settings.rooms.form.name.errors.tooLong',
+  'settings.rooms.form.name.errors.taken',
+  'settings.rooms.form.description.label',
+  'settings.rooms.form.description.errors.tooLong',
+  'settings.rooms.form.capacity.label',
+  'settings.rooms.form.capacity.errors.range',
+  'settings.rooms.form.saveCta',
+  'settings.rooms.form.cancelCta',
+  // Rooms delete + synthetic Meet row (5)
+  'settings.rooms.delete.confirmHeadline',
+  'settings.rooms.delete.confirmCta',
+  'settings.rooms.delete.cancelCta',
+  'settings.rooms.synthetic.meet.name',
+  'settings.rooms.synthetic.meet.settingsCta',
+] as const
+
+describe('Story 2-5b i18n parity (R38)', () => {
+  test('every Story 2-5b i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_5B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 2-5b keys (M-BLOCKER-5)', () => {
+    assertI18nInterpolationParity(STORY_2_5B_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_5B = [
+    // `settings.common.` added /bmad-code-review 2-5b Round 1 P8 for the
+    // cross-scoped date-validator key that both terms and holidays share.
+    'settings.common.',
+    'settings.terms.',
+    'settings.holidays.',
+    'settings.rooms.',
+  ] as const
+
+  test.each(STORY_2_5B_KEYS)(
+    '%s belongs to a 2-5b allowed prefix (AC13 3-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_5B.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})
+

@@ -293,3 +293,16 @@ type PayloadTooLargeError struct {
 func (e *PayloadTooLargeError) Error() string {
 	return "request body exceeds server limit"
 }
+
+// RoomNameTakenError → 409 ROOM_NAME_TAKEN. Story 2-5b AC6 pins that a
+// duplicate room name (case-insensitive per UNIQUE(center_id, LOWER(name))
+// index) surfaces as an inline field error on `name`, not a toast. The
+// service catches *pgconn.PgError with Code=="23505" from the sqlc-emitted
+// CreateRoom/UpdateRoom and maps to this error type.
+type RoomNameTakenError struct {
+	Name string
+}
+
+func (e *RoomNameTakenError) Error() string {
+	return "room name already exists in this center: " + e.Name
+}
