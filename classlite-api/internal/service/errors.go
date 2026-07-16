@@ -306,3 +306,76 @@ type RoomNameTakenError struct {
 func (e *RoomNameTakenError) Error() string {
 	return "room name already exists in this center: " + e.Name
 }
+
+// ---------------------------------------------------------------------
+// Story 2-5c — Google Meet OAuth per-center integration errors.
+//
+// Unlike Story 1.6 login OAuth (which flows through 302 redirects and
+// bypasses error_mapper), the Meet OAuth callback IS wrapped in
+// middleware.ErrorMapper — sad-path responses are JSON envelopes with
+// stable error codes per AC5. Success alone returns 302 (browser flow
+// back to /settings?tab=integrations&status=connected).
+// ---------------------------------------------------------------------
+
+// OAuthStateMismatchError → 403 OAUTH_STATE_MISMATCH. Story 2-5c AC7
+// triple-binding: payload.CenterID must equal path{id} AND tc.CenterID,
+// and payload.UserID must equal tc.UserID. Any mismatch → this error.
+// Closes the confused-deputy attack surface where Owner A initiates
+// Connect on Center A + attacker intercepts + swaps in Center B's path.
+type OAuthStateMismatchError struct {
+	Reason string
+}
+
+func (e *OAuthStateMismatchError) Error() string {
+	if e.Reason == "" {
+		return "oauth state binding mismatch"
+	}
+	return "oauth state binding mismatch: " + e.Reason
+}
+
+// OAuthMembershipRevokedError → 403 OAUTH_MEMBERSHIP_REVOKED. Story 2-5c
+// AC5 step 3 fresh membership re-check: between the authorize redirect
+// and Google's callback (up to 10-min TTL window), the Owner may have
+// been demoted or removed from the center. Persisting tokens after a
+// revoke would grant the ex-Owner ongoing access — reject instead.
+type OAuthMembershipRevokedError struct {
+	UserID   string
+	CenterID string
+}
+
+func (e *OAuthMembershipRevokedError) Error() string {
+	return "owner membership revoked between authorize and callback"
+}
+
+// IntegrationConnectFailedError → 502 INTEGRATION_CONNECT_FAILED. Story
+// 2-5c AC5 step 6/10: the OAuth code exchange failed OR the token upsert
+// tx rolled back. Provider identifies which integration surface hit the
+// error (google_meet in v1). UpstreamErr is logged for forensics but
+// never echoed back to the client (opaque Google-side details).
+type IntegrationConnectFailedError struct {
+	Provider    string
+	UpstreamErr string
+}
+
+func (e *IntegrationConnectFailedError) Error() string {
+	return "integration connect failed: " + e.Provider
+}
+
+// IntegrationConnectCanceledError → handled at the handler layer as a 302
+// redirect to /settings?tab=integrations&status=cancelled, NOT a JSON error
+// envelope. Fires when Google's callback returns `?error=access_denied` (or
+// similar) — the user hit Cancel on the consent screen or Google's admin
+// policy blocked the grant. Distinct from IntegrationConnectFailedError so
+// the frontend can render a neutral toast (not the red error banner). The
+// UpstreamReason field carries Google's raw error param for forensics.
+type IntegrationConnectCanceledError struct {
+	Provider       string
+	UpstreamReason string
+}
+
+func (e *IntegrationConnectCanceledError) Error() string {
+	if e.UpstreamReason == "" {
+		return "integration connect canceled: " + e.Provider
+	}
+	return "integration connect canceled: " + e.Provider + " (" + e.UpstreamReason + ")"
+}

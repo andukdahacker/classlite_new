@@ -40,6 +40,17 @@ SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connec
 FROM centers
 WHERE id = $1;
 
+-- name: SetCenterGoogleMeetConnected :execrows
+-- Story 2-5c — flip google_meet_connected flag on Connect / Disconnect.
+-- Called from GoogleMeetService.HandleCallback (true) and .Disconnect
+-- (false) inside the same tx as the center_integrations upsert / delete.
+-- `centers` is global-no-RLS, so the WHERE clause carries the tenant scope
+-- (caller passes tc.CenterID which the callback already verified against
+-- state.CenterID and path{id} per AC5 step 2 triple-binding).
+UPDATE centers
+SET google_meet_connected = $2
+WHERE id = $1;
+
 -- name: UpdateCenter :one
 -- Story 2-5a — Settings Profile tab partial update. sqlc.narg() emits
 -- pgtype.Text for text columns so "field absent" (Valid: false) is

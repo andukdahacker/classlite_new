@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -83,12 +84,17 @@ func main() {
 	// Story 1.6 — Google OAuth wiring. If the operator left the
 	// credentials empty (dev parity), the OAuth endpoints will return 503
 	// instead of redirecting to a misconfigured Google authorize URL.
+	// oauthStateSigner is hoisted to package scope of main() so both the
+	// login OAuth flow (Story 1.6) and Meet OAuth flow (Story 2.5c) share the
+	// same signer instance. Sharing is safe — the signer is stateless and
+	// concurrency-safe under HMAC-SHA256.
+	var oauthStateSigner service.OAuthStateSigner
 	if cfg.GoogleClientID != "" && cfg.OAuthStateSecret != "" {
 		googleClient := service.NewGoogleOAuthClient(
 			cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL,
 		)
-		oauthState := service.NewOAuthStateSigner([]byte(cfg.OAuthStateSecret))
-		authSvc.SetGoogleOAuth(googleClient, oauthState)
+		oauthStateSigner = service.NewOAuthStateSigner([]byte(cfg.OAuthStateSecret))
+		authSvc.SetGoogleOAuth(googleClient, oauthStateSigner)
 	} else {
 		slog.Warn("Google OAuth not configured — /api/auth/google endpoints will 503")
 	}
@@ -355,6 +361,76 @@ func main() {
 	mux.Handle("POST /api/rooms", settingsChain(roomHandler.Create))
 	mux.Handle("PATCH /api/rooms/{id}", settingsChain(roomHandler.Update))
 	mux.Handle("DELETE /api/rooms/{id}", settingsChain(roomHandler.Delete))
+
+	// Story 2-5c — Google Meet OAuth integration endpoints (AC9).
+	//
+	// Authorize + Disconnect ride the shipped settingsChain (Owner-only +
+	// settings rate-limit bucket). Callback rides oauthCallbackChain — SAME
+	// middleware minus RequireRole (the state payload proves Owner intent
+	// and HandleCallback re-checks membership per AC5 step 3). Rate limit
+	// bucket on callback is 5 req/min per (centerID, IP) so an attacker
+	// probing state-mismatch branches gets throttled without harming
+	// legitimate Owners under the same NAT.
+	//
+	// DEVIATION from AC9 pinned in handler package doc: callback URL is
+	// FIXED at /api/centers/callback/google-meet (no `{id}`) — Google OAuth
+	// requires exact-match registered redirect URIs, so a per-center path
+	// is infeasible for multi-tenant OAuth. Double binding (state.CenterID
+	// + tc.CenterID) + fresh membership check discharge the same attack
+	// surface as the story's triple-binding.
+	//
+	// P2 fix (2026-07-16 code review): mirror the login-OAuth guard at
+	// line 91 — if Google client + state secret aren't configured, DON'T
+	// register the Meet routes. Without the guard, dev/staging with empty
+	// creds would ship endpoints backed by a nil oauthStateSigner + empty
+	// Google client — every hit returns OAUTH_NOT_CONFIGURED (503 via
+	// error_mapper), which is noisier than a proper 404 and confuses ops.
+	if cfg.GoogleClientID != "" && cfg.OAuthStateSecret != "" {
+		googleMeetOAuthClient := service.NewGoogleMeetOAuthClient(
+			cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.MeetOAuthRedirectURL,
+		)
+		googleMeetSvc := service.NewGoogleMeetService(
+			pool,
+			googleMeetOAuthClient,
+			oauthStateSigner,
+			auditSvc,
+			clock.RealClock{},
+			cfg.IntegrationsEncryptionKeyBytes,
+		)
+		// P3 fix (2026-07-16 code review): url.JoinPath handles both
+		// `http://localhost:5173/` (dev default, trailing slash) and
+		// `https://app.classlite.app` (prod convention, no slash) without
+		// producing broken `https://app.classlite.appsettings`. Falls back
+		// to `/settings` on any join error so the handler still has a
+		// valid target for the 302 redirect.
+		postConnectURL, err := url.JoinPath(cfg.AppPostLoginURL, "settings")
+		if err != nil {
+			slog.Warn("failed to compose post-connect URL for Meet OAuth; falling back to /settings",
+				"error", err, "app_post_login_url", cfg.AppPostLoginURL)
+			postConnectURL = "/settings"
+		}
+		googleMeetHandler := handler.NewGoogleMeetHandler(googleMeetSvc, clock.RealClock{}, postConnectURL)
+		oauthCallbackLimit := middleware.RateLimitByKey(
+			"oauth_meet_callback",
+			rate.Every(12*time.Second), // 5 req/min
+			5,
+			middleware.CenterAndIPKeyFn,
+		)
+		oauthCallbackChain := func(h middleware.HandlerWithError) http.Handler {
+			return extractTenant(
+				requireVerified(
+					requireCenter(
+						oauthCallbackLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			)
+		}
+		mux.Handle("GET /api/centers/{id}/integrations/google-meet/authorize", settingsChain(googleMeetHandler.Authorize))
+		mux.Handle("DELETE /api/centers/{id}/integrations/google-meet", settingsChain(googleMeetHandler.Disconnect))
+		mux.Handle("GET /api/centers/callback/google-meet", oauthCallbackChain(googleMeetHandler.Callback))
+	} else {
+		slog.Warn("Google Meet OAuth not configured — /api/centers/{id}/integrations/google-meet endpoints will 404")
+	}
 
 	// Middleware chain order (AC11/AC12):
 	// RequestID → ClientIP → Logger → CORS → OriginCheck → global RateLimit → mux

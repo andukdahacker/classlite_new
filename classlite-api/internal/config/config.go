@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -43,6 +44,15 @@ type Config struct {
 	AppApexHost          string
 	AppPostLoginURL      string
 	AppLoginErrorURLBase string
+	// Story 2.5c — Google Meet OAuth integration (per-center, separate from login).
+	// IntegrationsEncryptionKey is base64-encoded 32 bytes; decoded via Validate()
+	// into IntegrationsEncryptionKeyBytes. Dev-mode fallback is a fixed-seed test
+	// key (never used in non-dev). MeetOAuthRedirectURL is the API-hosted callback
+	// endpoint Google 302-redirects to; must match the OAuth client's registered
+	// redirect URI verbatim.
+	IntegrationsEncryptionKey      string
+	IntegrationsEncryptionKeyBytes []byte
+	MeetOAuthRedirectURL           string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -75,6 +85,8 @@ func Load() Config {
 		AppApexHost:          getEnv("APP_APEX_HOST", "localhost:5173"),
 		AppPostLoginURL:      getEnv("APP_POST_LOGIN_URL", "http://localhost:5173/"),
 		AppLoginErrorURLBase: getEnv("APP_LOGIN_ERROR_URL_BASE", "http://localhost:5173/login"),
+		IntegrationsEncryptionKey: getEnv("INTEGRATIONS_ENCRYPTION_KEY", ""),
+		MeetOAuthRedirectURL:      getEnv("MEET_OAUTH_REDIRECT_URL", "http://localhost:8080/api/centers/callback/google-meet"),
 	}
 }
 
@@ -85,18 +97,43 @@ const MinJWTSecretBytes = 32
 // OAuth state HMAC signer.
 const MinOAuthStateSecretBytes = 32
 
+// IntegrationsEncryptionKeyBytes is the exact AES-256-GCM key length used
+// by internal/service/integration_crypto.go (Story 2.5c). Validate()
+// enforces this after base64-decoding INTEGRATIONS_ENCRYPTION_KEY.
+const IntegrationsEncryptionKeyBytesLen = 32
+
+// devIntegrationsEncryptionKey is the fixed-seed 32-byte AES key used ONLY
+// when APP_ENV=development AND INTEGRATIONS_ENCRYPTION_KEY is unset. It is
+// deterministic so dev-mode Seal/Open round-trips work across restarts, but
+// it MUST never appear in non-dev deploys — Validate() rejects an empty
+// INTEGRATIONS_ENCRYPTION_KEY outside development.
+var devIntegrationsEncryptionKey = []byte{
+	0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+	0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+	0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+	0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0,
+}
+
 // GoogleRedirectURLPath is the required path suffix on GOOGLE_REDIRECT_URL.
 // A misconfigured redirect like https://foo.classlite.app/anything would
 // otherwise pass validation and cause an opaque Google-side error at
 // callback time.
 const GoogleRedirectURLPath = "/api/auth/google/callback"
 
+// MeetOAuthRedirectURLPath is the required path suffix on
+// MEET_OAUTH_REDIRECT_URL. Story 2.5c AC9 (as amended 2026-07-16): callback
+// URL is fixed at `/api/centers/callback/google-meet` (no `{id}` — Google
+// requires exact-match registered redirect URIs). Enforce the suffix so an
+// operator-supplied URL pointing at the wrong endpoint surfaces at boot
+// instead of at callback time (matches the GoogleRedirectURLPath pattern).
+const MeetOAuthRedirectURLPath = "/api/centers/callback/google-meet"
+
 // Validate checks that critical configuration values are set.
 // In non-development mode, DATABASE_URL, JWT_SECRET, APP_VERIFY_URL_BASE
 // and APP_RESET_URL_BASE must be non-empty, and JWT_SECRET must be at
 // least MinJWTSecretBytes long (AC15). In development a short or missing
 // JWT_SECRET emits slog.Warn so the developer notices but boot proceeds.
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	if c.AppEnv != "development" {
 		var missing []string
 		if c.DatabaseURL == "" {
@@ -151,6 +188,13 @@ func (c Config) Validate() error {
 		if c.AppLoginErrorURLBase == "" {
 			oauthMissing = append(oauthMissing, "APP_LOGIN_ERROR_URL_BASE")
 		}
+		// Story 2.5c — Google Meet OAuth (per-center integration).
+		if c.IntegrationsEncryptionKey == "" {
+			oauthMissing = append(oauthMissing, "INTEGRATIONS_ENCRYPTION_KEY")
+		}
+		if c.MeetOAuthRedirectURL == "" {
+			oauthMissing = append(oauthMissing, "MEET_OAUTH_REDIRECT_URL")
+		}
 		if len(oauthMissing) > 0 {
 			return fmt.Errorf("required oauth config missing for %s: %s", c.AppEnv, strings.Join(oauthMissing, ", "))
 		}
@@ -167,6 +211,23 @@ func (c Config) Validate() error {
 		if !strings.HasSuffix(c.GoogleRedirectURL, GoogleRedirectURLPath) {
 			return fmt.Errorf("GOOGLE_REDIRECT_URL must end with %q (got %q)", GoogleRedirectURLPath, c.GoogleRedirectURL)
 		}
+		// Story 2.5c — decode INTEGRATIONS_ENCRYPTION_KEY (base64) and assert
+		// exactly 32 bytes so AES-256-GCM Seal/Open never rejects at runtime.
+		decoded, decodeErr := base64.StdEncoding.DecodeString(c.IntegrationsEncryptionKey)
+		if decodeErr != nil {
+			return fmt.Errorf("INTEGRATIONS_ENCRYPTION_KEY must be valid base64 (%s)", decodeErr.Error())
+		}
+		if len(decoded) != IntegrationsEncryptionKeyBytesLen {
+			return fmt.Errorf("INTEGRATIONS_ENCRYPTION_KEY must decode to exactly %d bytes (got %d)",
+				IntegrationsEncryptionKeyBytesLen, len(decoded))
+		}
+		c.IntegrationsEncryptionKeyBytes = decoded
+		if !strings.HasPrefix(c.MeetOAuthRedirectURL, "https://") {
+			return fmt.Errorf("MEET_OAUTH_REDIRECT_URL must use https:// in %s (got %q)", c.AppEnv, c.MeetOAuthRedirectURL)
+		}
+		if !strings.HasSuffix(c.MeetOAuthRedirectURL, MeetOAuthRedirectURLPath) {
+			return fmt.Errorf("MEET_OAUTH_REDIRECT_URL must end with %q (got %q)", MeetOAuthRedirectURLPath, c.MeetOAuthRedirectURL)
+		}
 	} else {
 		if c.JWTSecret != "" && len([]byte(c.JWTSecret)) < MinJWTSecretBytes {
 			slog.Warn("JWT_SECRET is shorter than 32 bytes — fine for dev only",
@@ -175,6 +236,23 @@ func (c Config) Validate() error {
 		if c.OAuthStateSecret != "" && len([]byte(c.OAuthStateSecret)) < MinOAuthStateSecretBytes {
 			slog.Warn("OAUTH_STATE_SECRET is shorter than 32 bytes — fine for dev only",
 				"current_bytes", len([]byte(c.OAuthStateSecret)))
+		}
+		// Story 2.5c — dev-mode Integrations key fallback. If the operator
+		// supplied a value, decode it; otherwise seed the deterministic dev
+		// key so Seal/Open round-trips work locally without extra setup.
+		if c.IntegrationsEncryptionKey == "" {
+			slog.Warn("INTEGRATIONS_ENCRYPTION_KEY unset — falling back to dev-only fixed-seed key (never use outside development)")
+			c.IntegrationsEncryptionKeyBytes = devIntegrationsEncryptionKey
+		} else {
+			decoded, decodeErr := base64.StdEncoding.DecodeString(c.IntegrationsEncryptionKey)
+			if decodeErr != nil {
+				return fmt.Errorf("INTEGRATIONS_ENCRYPTION_KEY must be valid base64 even in dev (%s)", decodeErr.Error())
+			}
+			if len(decoded) != IntegrationsEncryptionKeyBytesLen {
+				return fmt.Errorf("INTEGRATIONS_ENCRYPTION_KEY must decode to exactly %d bytes (got %d)",
+					IntegrationsEncryptionKeyBytesLen, len(decoded))
+			}
+			c.IntegrationsEncryptionKeyBytes = decoded
 		}
 	}
 	return nil
@@ -201,6 +279,8 @@ func (c Config) LogSummary() {
 		"oauth_state_secret_set", c.OAuthStateSecret != "",
 		"app_apex_host", c.AppApexHost,
 		"app_post_login_url_set", c.AppPostLoginURL != "",
+		"integrations_encryption_key_set", c.IntegrationsEncryptionKey != "",
+		"meet_oauth_redirect_url_set", c.MeetOAuthRedirectURL != "",
 	)
 }
 

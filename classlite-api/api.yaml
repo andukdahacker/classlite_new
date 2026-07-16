@@ -1357,6 +1357,181 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 2-5c — Google Meet OAuth integration ====================
+  # 3 endpoints per AC9. Authorize + Disconnect ride the shared settingsChain
+  # (Owner-only). Callback rides oauthCallbackChain — same middleware minus
+  # RequireRole; the state payload proves Owner intent and the service
+  # HandleCallback re-checks membership per AC5 step 3.
+  #
+  # DEVIATION FROM STORY AC9 (pinned in
+  # `internal/handler/google_meet_handler.go` package doc): callback URL is
+  # FIXED at `/api/centers/callback/google-meet` (NO `{id}`). Google OAuth 2.0
+  # requires the redirect_uri to match a registered URI exactly — no template
+  # / wildcard support — so a per-center path is infeasible for multi-tenant
+  # OAuth. Tenant scoping is preserved by the state.CenterID + tc.CenterID
+  # double-binding + fresh membership check per AC5 step 3.
+  #
+  # Rate limits: authorize + disconnect share the `settings` bucket (60/min
+  # per user+ip). Callback uses `oauth_meet_callback` bucket (5/min per
+  # center+ip per Winston-S4 — key by centerID to avoid shared-NAT collision
+  # if 5 legitimate Owners in the same building connect simultaneously).
+
+  /api/centers/{id}/integrations/google-meet/authorize:
+    get:
+      operationId: buildGoogleMeetAuthorizeURL
+      summary: Build Google authorize URL for Meet OAuth connect (story 2-5c)
+      description: |
+        Owner-only. Signs a state token with CenterID + UserID + nonce +
+        10-min TTL and returns Google's authorize URL. The client navigates
+        the browser to `authorizeUrl` via `window.location.assign`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Authorize URL + state expiry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeGoogleMeetAuthorizeResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / TENANT_MISMATCH / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "503":
+          description: OAUTH_NOT_CONFIGURED — Google OAuth env vars unset on the deployment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    delete:
+      operationId: disconnectGoogleMeet
+      summary: Disconnect Google Meet integration for the center (story 2-5c)
+      description: |
+        Owner-only. Deletes the `center_integrations` row for
+        (center_id, 'google_meet') + flips `centers.google_meet_connected`
+        to false + writes an audit row. Idempotent — repeated calls succeed
+        cleanly even when no row exists (returns 204 either way).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Disconnected (no content)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / TENANT_MISMATCH / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/centers/callback/google-meet:
+    get:
+      operationId: googleMeetOAuthCallback
+      summary: Google Meet OAuth 2.0 callback — 302 redirect on success (story 2-5c)
+      description: |
+        Google 302-redirects the browser here after the Owner grants
+        calendar.events scope. Runs the 7-step tx flow per AC5:
+        validate state + fresh membership check → exchange code → seal
+        tokens → upsert integration → flip flag → audit → commit → 302.
+        Sad-path returns a JSON envelope (NOT a redirect) with a stable
+        error code so the SPA surfaces recovery UX and tests can assert.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from Google (opaque to us).
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: HMAC-signed state token issued by the authorize endpoint.
+      responses:
+        "302":
+          description: |
+            Redirect to SPA with `?tab=integrations&status=<result>`. Two flavors:
+              - `status=connected` — success (7-step tx completed, tokens persisted).
+              - `status=cancelled` — user hit Cancel on Google's consent screen
+                (Google `?error=access_denied`); INTEGRATION_CONNECT_CANCELED path,
+                no tokens persisted, no audit row. Frontend renders neutral toast.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: SPA redirect target with tab + status query params.
+        "400":
+          description: OAUTH_STATE_INVALID (bad HMAC / tampered) or OAUTH_STATE_EXPIRED (past 10-min TTL)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: OAUTH_STATE_MISMATCH (state binding failure) or OAUTH_MEMBERSHIP_REVOKED (owner demoted between authorize and callback)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header) — per (centerID, IP) 5/min bucket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "502":
+          description: INTEGRATION_CONNECT_FAILED — Google code exchange failed, membership check errored, or tx rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "503":
+          description: OAUTH_NOT_CONFIGURED — server missing Google OAuth or state-signer configuration (parity with authorize)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/templates:
     get:
       operationId: listTemplates
@@ -2785,6 +2960,36 @@ components:
         oauthEmail:
           type: string
           format: email
+
+    # ---------------- Story 2-5c — Google Meet OAuth integration ----------------
+
+    GoogleMeetAuthorizeResult:
+      type: object
+      required: [authorizeUrl, expiresAt]
+      properties:
+        authorizeUrl:
+          type: string
+          description: |
+            Google's OAuth 2.0 authorize URL with signed state token
+            embedded. The client must navigate the browser to this URL
+            via `window.location.assign` — do NOT fetch it programmatically.
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            UTC timestamp when the signed state token expires (10 min from
+            issue). If the Owner does not complete the Google consent
+            screen before this time, the callback returns 400
+            OAUTH_STATE_EXPIRED and the SPA must call authorize again.
+
+    EnvelopeGoogleMeetAuthorizeResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/GoogleMeetAuthorizeResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
   securitySchemes:
     bearerAuth:

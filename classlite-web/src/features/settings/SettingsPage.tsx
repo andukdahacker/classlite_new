@@ -14,8 +14,11 @@
  * render placeholder EmptyStates that reference their sub-story. Copy
  * removed when 2-5b/2-5c land.
  */
-import type { ReactElement } from 'react'
+import { useLayoutEffect, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate, useLocation } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useRole } from '@/hooks/useRole'
 import PermissionDenied from '@/components/shared/PermissionDenied'
@@ -24,6 +27,15 @@ import { useSettingsTab, type SettingsTab } from './hooks/useSettingsTab'
 import { ProfileTab } from './ProfileTab'
 import { TermCalendarTab } from './TermCalendarTab'
 import { RoomsTab } from './RoomsTab'
+import { IntegrationsTab } from './IntegrationsTab'
+import { settingsKeys } from './api/settingsKeys'
+import { CONNECT_IN_FLIGHT_MARKER_KEY } from './api/connectMarker'
+import type { CenterProfile } from './api/useCenterProfile'
+
+// Story 2-5c AC14 — callback-return toast id (queue-of-one via Sonner id).
+const CONNECT_SUCCESS_TOAST_ID = 'settings-integration-connected'
+// Chunk 3 review 2026-07-16 (B1): symmetric id for cancel-flow neutral toast.
+const CONNECT_CANCELLED_TOAST_ID = 'settings-integration-cancelled'
 
 const TAB_ORDER: readonly SettingsTab[] = [
   'profile',
@@ -32,29 +44,90 @@ const TAB_ORDER: readonly SettingsTab[] = [
   'rooms',
 ] as const
 
-// Only `integrations` still renders as a placeholder — 2-5c owns wiring it.
-function IntegrationsPlaceholder(): ReactElement {
-  const { t } = useTranslation()
-  return (
-    <div
-      role="tabpanel"
-      tabIndex={0}
-      aria-labelledby="settings-tab-integrations"
-      id="settings-tabpanel-integrations"
-      data-testid="settings-tab-placeholder-integrations"
-      className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500"
-    >
-      {t('settings.tabPlaceholder.integrations')}
-    </div>
-  )
-}
-
 export default function SettingsPage(): ReactElement {
   const { t } = useTranslation()
   const { session } = useAuth()
   const role = useRole()
   const { tab, setTab } = useSettingsTab()
   const centerId = session?.center?.id ?? null
+  const location = useLocation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  // Story 2-5c AC14 — callback-return handling. On mount (and whenever the
+  // ?status= query flips), branch on `status`:
+  //   - `connected` + marker present → success toast + strip + invalidate
+  //   - `connected` + no marker (drive-by URL manipulation) → NO toast, strip
+  //   - `cancelled` (Chunk 3 review B1 fix) → neutral toast + strip + clear marker
+  //   - anything else → no-op
+  //
+  // De-dupe: Sonner's `id: <fixed>` collapses a double-invoke into one visible
+  // toast (StrictMode dev + concurrent-mode friendly). `useLayoutEffect` runs
+  // synchronously with the DOM commit so the URL strip happens before any
+  // subsequent-render subscriber can observe the stale param.
+  useLayoutEffect(() => {
+    if (!centerId) return
+    const params = new URLSearchParams(location.search)
+    const status = params.get('status')
+    if (status !== 'connected' && status !== 'cancelled') return
+
+    let marker: string | null = null
+    try {
+      marker = window.sessionStorage.getItem(CONNECT_IN_FLIGHT_MARKER_KEY)
+    } catch {
+      // sessionStorage can throw in private-mode; treat as "no marker".
+    }
+    const strippedParams = new URLSearchParams(location.search)
+    strippedParams.delete('status')
+    const search = strippedParams.toString()
+    navigate(
+      { pathname: location.pathname, search: search ? `?${search}` : '' },
+      { replace: true },
+    )
+
+    // Clear the marker whenever we strip a callback-return status param —
+    // both connected and cancelled complete the in-flight cycle. Skipping
+    // this on the cancelled branch would leak a stale marker into the next
+    // return and could fire a spurious success toast (Chunk 3 review B1).
+    if (marker === '1') {
+      try {
+        window.sessionStorage.removeItem(CONNECT_IN_FLIGHT_MARKER_KEY)
+      } catch {
+        // ignore
+      }
+    }
+
+    if (status === 'connected') {
+      // Drive-by URL defense: only fire the toast when the marker proves this
+      // browser session initiated the connect flow.
+      if (marker !== '1') return
+      // Optimistic set (Chunk 3 review Minor #12): flip the pill to
+      // "Connected" immediately so the success toast and pill agree during
+      // the 200-500ms invalidation refetch window.
+      queryClient.setQueryData<CenterProfile>(
+        settingsKeys.centerProfile(centerId),
+        (prev) => (prev ? { ...prev, googleMeetConnected: true } : prev),
+      )
+      toast.success(t('settings.integrations.googleMeet.connect.success'), {
+        id: CONNECT_SUCCESS_TOAST_ID,
+      })
+      queryClient.invalidateQueries({
+        queryKey: settingsKeys.centerProfile(centerId),
+      })
+    } else {
+      // status === 'cancelled' — Chunk 1 D2 fix landed a 302 to
+      // ?status=cancelled when Google returns ?error=access_denied. Fire a
+      // NEUTRAL toast (not error banner) — the state is fine, the user
+      // simply declined. Marker was cleared above. No invalidate needed
+      // (no server-side state changed).
+      toast.info(t('settings.integrations.googleMeet.connect.cancelled'), {
+        id: CONNECT_CANCELLED_TOAST_ID,
+      })
+    }
+    // ESLint: t + navigate + queryClient are stable identities; centerId +
+    // location.search are the meaningful deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [centerId, location.search])
 
   if (role !== 'owner') {
     return (
@@ -121,7 +194,7 @@ export default function SettingsPage(): ReactElement {
           case 'rooms':
             return <RoomsTab centerId={centerId} />
           case 'integrations':
-            return <IntegrationsPlaceholder />
+            return <IntegrationsTab centerId={centerId} />
         }
       })()}
     </div>

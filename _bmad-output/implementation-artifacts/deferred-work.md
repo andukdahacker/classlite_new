@@ -1,5 +1,49 @@
 # Deferred Work
 
+## Deferred from: code review of story-2-5c (2026-07-16) — Chunk 3 Frontend + Contract
+
+- **CR-2-5C-22** — `?status=connected` skipped when `centerId=null` during session hydration → URL param leaks into browser history → back-button replays toast. Priority: **P3**.
+- **CR-2-5C-23** — `sessionStorage.getItem` throw (Safari private mode) → marker survives → next return double-fires toast. Priority: **P3**.
+- **CR-2-5C-24** — StrictMode double-invoke comment misidentifies dedupe mechanism (Sonner id, not `useLayoutEffect`) — comment cleanup. Priority: **P4**.
+- **CR-2-5C-25** — Disconnect + navigate away race — mutation callback fires on unmounted route (React warning). Priority: **P3**.
+- **CR-2-5C-26** — Optimistic rollback + refetch race on network-partition 500 → toast contradicts pill state. Priority: **P3**.
+- **CR-2-5C-27** — No Zod runtime parse of `CenterProfile` — snake_case/camelCase schema drift causes silent state desync. Priority: **P2**.
+- **CR-2-5C-28** — E2E `test.describe.skip()` shipping (mirrors FU-2-5-N). Even stubbed flow doesn't run — API contract drift will not be caught. Priority: **P2**.
+- **CR-2-5C-29** — E2E `page.route()` intercept only stubs 2 endpoints — unstubbed session/auth fetches will leak to real network on unskip. Priority: **P3**.
+- **CR-2-5C-30** — `IntegrationsTab.test.tsx` mutates `window.location` via `Object.defineProperty` without `afterEach` restore — cross-test pollution risk. Priority: **P3**.
+- **CR-2-5C-31** — `CONNECT_IN_FLIGHT_MARKER_KEY` not namespaced per tenant — multi-tenant browser-session collision. Priority: **P3**.
+- **CR-2-5C-32** — `googleMeetAuthorizeResponseSchema` inlined into hook instead of `lib/schemas.ts` per AC14; loose `z.string().min(1)` for `expiresAt` vs OpenAPI `format: date-time`. Priority: **P3**.
+- **CR-2-5C-33** — Placeholder rows use inline button + toast.info instead of shipped `<DeadLinkTrigger>` per AC1. "Learn more" button toasts the same visible copy — remove or link to real docs when Epic 4 lands. Priority: **P3**.
+- **CR-2-5C-34** — Api.yaml 429 responses don't declare `Retry-After` header under `headers:` (only in description text) — SDK generators miss it. Priority: **P3**.
+- **CR-2-5C-35** — OpenAPI `code` and `state` query params on callback lack `maxLength` — backend enforces but contract silent. Priority: **P4**.
+
+## Deferred from: code review of story-2-5c (2026-07-16) — Chunk 2 Backend Tests
+
+- **CR-2-5C-8** — Handler-layer Disconnect tenant-mismatch test symmetric to the Authorize test. Belt-check regression detection. Priority: **P3**.
+- **CR-2-5C-9** — `defaultCheckOwnerMembership` production path untested — 4 branches (SET LOCAL, GetCenterMemberByUserAndCenter, `pgx.ErrNoRows`, role assertion). Requires real-DB seed of a wrong-role member. Priority: **P2**.
+- **CR-2-5C-10** — 6 in-tx error branches of HandleCallback untested (tx begin, SET LOCAL, SealToken, upsert, SetCenter flag, audit, commit). Requires fault injection at store layer. Priority: **P3**.
+- **CR-2-5C-11** — Concurrent Connect/Disconnect race — two goroutines interleaving upsert + delete + flag flip. Real invariant, hard to test deterministically. Priority: **P3**.
+- **CR-2-5C-12** — RLS empty-tenant-context test (tenant unset → 0 rows visible) — regression detection for `NULLIF(current_setting(..., true), '')` wrapper. Priority: **P3**.
+- **CR-2-5C-13** — RLS provider CHECK constraint rejection test (INSERT provider='zoom' → 23514). Priority: **P4**.
+- **CR-2-5C-14** — `requireOwnerTenantContext` service-layer failure branches (empty tc, malformed UUIDs, non-owner role). 4 defense-in-depth branches. Priority: **P4**.
+- **CR-2-5C-15** — Handler `Callback` missing-tenant-context branch untested — middleware chain regression detection. Priority: **P3**.
+- **CR-2-5C-16** — Callback chain missing `RequireRole` belt-vs-suspenders test. Proves service's Role != "owner" guard catches what middleware skips. Priority: **P3**.
+- **CR-2-5C-17** — `assertMeetErrorCode` skips `requestId` assertion — test server chain needs RequestID middleware. Priority: **P3**.
+- **CR-2-5C-18** — `SetOwnerMembershipCheck` production seam (build-tag concern from Chunk 1). Priority: **P3**.
+- **CR-2-5C-19** — TEST-BE-4 real-DB deviation. Amend project-context.md instead of sweeping test files. Priority: **P2** (documentation debt).
+- **CR-2-5C-20** — Dev-mode wrong-length key rejection test (valid base64, wrong bytes) — only empty + bad-base64 currently covered. Priority: **P3**.
+- **CR-2-5C-21** — Test-hardening pass (bundle): tampered signature-half state, RLS UPDATE reparent positive-control, JSON decode error checks in ErrorMapper tests, authorizeUrl/expiresAt format validation, meetTestKey fallback cleanup, productionBase used in dev fallback test, empty-slice `[]byte{}` key rejection. Priority: **P3**.
+
+## Deferred from: code review of story-2-5c (2026-07-16) — Chunk 1 Backend Security Core
+
+- **CR-2-5C-1** — State replay within 10-min TTL: nonce not persisted in a `used_nonces` table; captured `?state=...` from access logs can be replayed. Google upstream rejects the code as single-use, but security posture is weaker than login flow. Requires new table + cleanup job. Priority: **P3**.
+- **CR-2-5C-2** — Dev encryption key hardcoded (`devIntegrationsEncryptionKey` in `config.go:110-115`) — compiled into every binary. Only exposed if operator sets `APP_ENV=development` in non-dev. Move behind build tag or dev-only fixture file. Priority: **P3**.
+- **CR-2-5C-3** — `expires_at` fabricated to `now + 1h` when Google omits `expires_in`. Story 3.x refresh flow will see fake expiry and skip proactive refresh. Consider nullable column or `expires_from_upstream` bool. Priority: **P2** (before Story 3.x refresh flow lands).
+- **CR-2-5C-4** — `OAuthStatePayload` uses `omitempty` `string` types instead of spec-mandated `uuid.UUID` — runtime `""` guard covers today; ideal fix is discriminated union with `Purpose string` field signed into HMAC payload. Priority: **P3**.
+- **CR-2-5C-5** — CSRF cookie double-submit missing on Meet callback — login flow (`auth_google.go:254-263`) uses HMAC-signed state AND `oauth_state` cookie; Meet flow relies solely on HMAC. Defense-in-depth. Priority: **P3**.
+- **CR-2-5C-6** — `centers.google_meet_connected` UPDATE query lacks RLS-parity guard (`WHERE id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`). Accepted design (`centers` has no RLS); defense-in-depth improvement. Priority: **P4**.
+- **CR-2-5C-7** — `IntegrationConnectFailedError.UpstreamErr` captures raw `err.Error()` from `oauth2.Exchange` — may include OAuth codes / partial token material via x/oauth2 error text. ErrorMapper does not log it today; Task 10 log-scrub only greps literal token names. Add explicit redaction if this ever gets logged. Priority: **P3**.
+
 ## Deferred from: code review of story-2-5b (2026-07-15)
 
 - **CR-2-5B-1** — DisallowUnknownFields + JSON UnmarshalTypeError → 422 field-level for all settings handlers. Currently `decodeSettingsJSONBody` swallows type errors as generic "invalid JSON" and accepts extra fields. Same pre-existing gap as CR-2-5A-3 (2-5a) — worth a dedicated cross-handler pass. Priority: **P3**.

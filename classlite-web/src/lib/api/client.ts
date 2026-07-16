@@ -528,6 +528,60 @@ export interface paths {
         patch: operations["updateRoom"];
         trace?: never;
     };
+    "/api/centers/{id}/integrations/google-meet/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Build Google authorize URL for Meet OAuth connect (story 2-5c)
+         * @description Owner-only. Signs a state token with CenterID + UserID + nonce +
+         *     10-min TTL and returns Google's authorize URL. The client navigates
+         *     the browser to `authorizeUrl` via `window.location.assign`.
+         */
+        get: operations["buildGoogleMeetAuthorizeURL"];
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect Google Meet integration for the center (story 2-5c)
+         * @description Owner-only. Deletes the `center_integrations` row for
+         *     (center_id, 'google_meet') + flips `centers.google_meet_connected`
+         *     to false + writes an audit row. Idempotent — repeated calls succeed
+         *     cleanly even when no row exists (returns 204 either way).
+         */
+        delete: operations["disconnectGoogleMeet"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/centers/callback/google-meet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Meet OAuth 2.0 callback — 302 redirect on success (story 2-5c)
+         * @description Google 302-redirects the browser here after the Owner grants
+         *     calendar.events scope. Runs the 7-step tx flow per AC5:
+         *     validate state + fresh membership check → exchange code → seal
+         *     tokens → upsert integration → flip flag → audit → commit → 302.
+         *     Sad-path returns a JSON envelope (NOT a redirect) with a stable
+         *     error code so the SPA surfaces recovery UX and tests can assert.
+         */
+        get: operations["googleMeetOAuthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -1183,6 +1237,26 @@ export interface components {
             invitedEmail: string;
             /** Format: email */
             oauthEmail: string;
+        };
+        GoogleMeetAuthorizeResult: {
+            /**
+             * @description Google's OAuth 2.0 authorize URL with signed state token
+             *     embedded. The client must navigate the browser to this URL
+             *     via `window.location.assign` — do NOT fetch it programmatically.
+             */
+            authorizeUrl: string;
+            /**
+             * Format: date-time
+             * @description UTC timestamp when the signed state token expires (10 min from
+             *     issue). If the Owner does not complete the Google consent
+             *     screen before this time, the callback returns 400
+             *     OAUTH_STATE_EXPIRED and the SPA must call authorize again.
+             */
+            expiresAt: string;
+        };
+        EnvelopeGoogleMeetAuthorizeResult: {
+            data: components["schemas"]["GoogleMeetAuthorizeResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
     };
     responses: never;
@@ -2838,6 +2912,172 @@ export interface operations {
             };
             /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    buildGoogleMeetAuthorizeURL: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorize URL + state expiry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeGoogleMeetAuthorizeResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / TENANT_MISMATCH / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description OAUTH_NOT_CONFIGURED — Google OAuth env vars unset on the deployment */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    disconnectGoogleMeet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected (no content) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / TENANT_MISMATCH / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    googleMeetOAuthCallback: {
+        parameters: {
+            query: {
+                /** @description Authorization code from Google (opaque to us). */
+                code: string;
+                /** @description HMAC-signed state token issued by the authorize endpoint. */
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success — redirects to `/settings?tab=integrations&status=connected` */
+            302: {
+                headers: {
+                    /** @description SPA redirect target with tab + status query params. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OAUTH_STATE_INVALID (bad HMAC / tampered) or OAUTH_STATE_EXPIRED (past 10-min TTL) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description OAUTH_STATE_MISMATCH (state binding failure) or OAUTH_MEMBERSHIP_REVOKED (owner demoted between authorize and callback) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) — per (centerID, IP) 5/min bucket */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INTEGRATION_CONNECT_FAILED — Google code exchange failed or tx rolled back */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

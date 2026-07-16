@@ -84,6 +84,23 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var payloadTooLarge *service.PayloadTooLargeError
 		// Story 2-5b settings taxonomy errors.
 		var roomNameTaken *service.RoomNameTakenError
+		// Story 2-5c Google Meet OAuth callback errors (JSON envelope path).
+		// OAuthStateInvalidError + OAuthStateExpiredError are shipped by
+		// Story 1.6 for the LOGIN callback via 302 redirect intercept at
+		// auth_handler.GoogleCallback — those never reach ErrorMapper. Meet
+		// callback IS wrapped in ErrorMapper, so the same typed errors
+		// surface as 400 envelopes here per Story 2-5c AC5.
+		var oauthStateInvalid *service.OAuthStateInvalidError
+		var oauthStateExpired *service.OAuthStateExpiredError
+		var oauthStateMismatch *service.OAuthStateMismatchError
+		var oauthMembershipRevoked *service.OAuthMembershipRevokedError
+		var integrationConnectFailed *service.IntegrationConnectFailedError
+		// Meet callback path can also surface OAuthNotConfiguredError when
+		// operator boot missed either GOOGLE_CLIENT_ID or OAUTH_STATE_SECRET
+		// (dev parity or misconfigured non-dev). Login flow catches it at
+		// handler layer (auth_handler.go:439); Meet flow routes through
+		// ErrorMapper so we map it here to 503 to match the login-flow code.
+		var oauthNotConfigured *service.OAuthNotConfiguredError
 
 		switch {
 		case errors.As(err, &invalidCreds):
@@ -185,6 +202,44 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 				"ROOM_NAME_TAKEN",
 				"A room with this name already exists in this center.",
 				[]model.FieldError{{Field: "name", Message: "room name must be unique (case-insensitive)"}})
+			return
+		case errors.As(err, &oauthStateInvalid):
+			handler.WriteError(w, r, http.StatusBadRequest,
+				"OAUTH_STATE_INVALID", "OAuth state token is invalid or tampered.", nil)
+			return
+		case errors.As(err, &oauthStateExpired):
+			handler.WriteError(w, r, http.StatusBadRequest,
+				"OAUTH_STATE_EXPIRED", "OAuth state token has expired — please restart the connect flow.", nil)
+			return
+		case errors.As(err, &oauthStateMismatch):
+			// P5 fix (2026-07-16 code review): do NOT echo the internal
+			// Reason field to the client. It leaks which binding failed
+			// (path-vs-state, session-vs-state, user-vs-state, format-
+			// invalid) and helps an attacker triangulate probes. The
+			// Reason is captured in the error type for server-side logs
+			// only — the client gets a stable, opaque message.
+			slog.Info("oauth state mismatch",
+				"reason", oauthStateMismatch.Reason,
+				"request_id", requestID,
+			)
+			handler.WriteError(w, r, http.StatusForbidden,
+				"OAUTH_STATE_MISMATCH",
+				"OAuth state binding failed.", nil)
+			return
+		case errors.As(err, &oauthMembershipRevoked):
+			handler.WriteError(w, r, http.StatusForbidden,
+				"OAUTH_MEMBERSHIP_REVOKED",
+				"Center membership was revoked before the OAuth flow completed.", nil)
+			return
+		case errors.As(err, &integrationConnectFailed):
+			handler.WriteError(w, r, http.StatusBadGateway,
+				"INTEGRATION_CONNECT_FAILED",
+				"Failed to complete the integration connect flow. Try again in a moment.", nil)
+			return
+		case errors.As(err, &oauthNotConfigured):
+			handler.WriteError(w, r, http.StatusServiceUnavailable,
+				"OAUTH_NOT_CONFIGURED",
+				"OAuth integration is not configured on this server.", nil)
 			return
 		}
 

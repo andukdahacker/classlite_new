@@ -30,4 +30,9 @@ export const settingsKeys = {
     [...settingsKeys.all, 'holidays', centerId] as const,
   rooms: (centerId: string) =>
     [...settingsKeys.all, 'rooms', centerId] as const,
+  // Story 2-5c extension — per-center integration slot. Provider is a
+  // parameter so future providers (google_drive, zoom) plug in without a
+  // key-shape change; today only 'google_meet' is populated.
+  integration: (centerId: string, provider: string) =>
+    [...settingsKeys.all, 'integration', centerId, provider] as const,
 } as const

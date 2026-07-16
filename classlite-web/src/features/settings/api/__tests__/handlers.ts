@@ -374,3 +374,65 @@ export const settingsHandlers2_5b = [
   }),
   http.delete('/api/rooms/:id', () => new HttpResponse(null, { status: 204 })),
 ]
+
+/**
+ * Story 2-5c — Google Meet OAuth handler set. `settingsHandlers2_5c` builds
+ * on 2-5b + 2-5a and adds 2 happy-path routes:
+ *   - GET /api/centers/:id/integrations/google-meet/authorize → { authorizeUrl, expiresAt }
+ *   - DELETE /api/centers/:id/integrations/google-meet → 204
+ *
+ * Fault variants are on `errorHandlers2_5c`. The stub authorizeUrl points at
+ * a fake domain so tests can spy `window.location.assign` without triggering
+ * real navigation.
+ */
+export const STUB_GOOGLE_AUTHORIZE_URL =
+  'https://fake-google.local/oauth?state=stub'
+
+export const settingsHandlers2_5c = [
+  ...settingsHandlers2_5b,
+  http.get(
+    '/api/centers/:id/integrations/google-meet/authorize',
+    () =>
+      HttpResponse.json(
+        envelope({
+          authorizeUrl: STUB_GOOGLE_AUTHORIZE_URL,
+          expiresAt: '2026-07-16T13:00:00.000Z',
+        }),
+      ),
+  ),
+  http.delete(
+    '/api/centers/:id/integrations/google-meet',
+    () => new HttpResponse(null, { status: 204 }),
+  ),
+]
+
+export const errorHandlers2_5c = {
+  authorizeFail500: () =>
+    http.get('/api/centers/:id/integrations/google-meet/authorize', () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Internal error',
+            requestId: 'req-authorize-500',
+            details: null,
+          },
+        },
+        { status: 500 },
+      ),
+    ),
+  disconnectFail500: () =>
+    http.delete('/api/centers/:id/integrations/google-meet', () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Internal error',
+            requestId: 'req-disconnect-500',
+            details: null,
+          },
+        },
+        { status: 500 },
+      ),
+    ),
+}

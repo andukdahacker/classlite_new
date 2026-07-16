@@ -684,4 +684,68 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       }
     }
   })
+
+  test('Story 2-5c — SettingsPage chunk contains Integrations tabpanel + Connect button testids (AC16)', async () => {
+    // Story 2-5c AC16. IntegrationsTab.tsx + ConnectGoogleMeetButton land in
+    // the SettingsPage chunk (deep import, no barrel — Winston-S3 discipline).
+    // Positive: shipped chunk must contain the tabpanel + connect-button
+    // testids. Negative: those testids must NOT appear in onboarding /
+    // dashboard chunks.
+    //
+    // Google OAuth libs live in the API tree, NOT the web bundle — the
+    // frontend only talks to the API endpoint.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const settingsChunkFiles = files.filter((f: string) =>
+      /^SettingsPage-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      settingsChunkFiles.length,
+      'SettingsPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const settingsContents = settingsChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+
+    for (const testid of [
+      'settings-tabpanel-integrations',
+      'settings-connect-google-meet-button',
+    ]) {
+      expect(
+        settingsContents,
+        `SettingsPage chunk missing 2-5c testid "${testid}"`,
+      ).toContain(testid)
+    }
+
+    const onboardingChunkFiles = files.filter((f: string) =>
+      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+    const dashboardChunkFiles = files.filter((f: string) =>
+      /^TeacherDashboard-[\w-]+\.js$/.test(f),
+    )
+    for (const chunkFile of [
+      ...onboardingChunkFiles,
+      ...dashboardChunkFiles,
+    ]) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString(
+        'utf8',
+      )
+      for (const testid of [
+        'settings-tabpanel-integrations',
+        'settings-connect-google-meet-button',
+      ]) {
+        expect(
+          content,
+          `${chunkFile} leaked 2-5c settings testid "${testid}"`,
+        ).not.toContain(testid)
+      }
+    }
+  })
 })

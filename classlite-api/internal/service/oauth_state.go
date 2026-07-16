@@ -47,11 +47,25 @@ const OAuthStateMinSecretBytes = 32
 // IssuedAt is unix-seconds since epoch (matches JWT exp encoding) so
 // payloads are deterministic under MockClock (no monotonic clock
 // component to vary).
+//
+// Story 2.5c — CenterID + UserID are OPTIONAL and populated ONLY for the
+// per-center Google Meet OAuth flow. Login flow (auth_google.go) leaves
+// them empty so existing signed tokens continue to verify identically.
+// Meet callback enforces a triple binding: payload.CenterID == path{id} ==
+// tc.CenterID AND payload.UserID == tc.UserID — any mismatch → 403
+// OAUTH_STATE_MISMATCH (see google_meet.go HandleCallback per AC7).
 type OAuthStatePayload struct {
 	Nonce           string `json:"nonce"`
 	InviteTokenHash string `json:"inviteTokenHash,omitempty"`
 	RedirectTo      string `json:"redirectTo,omitempty"`
 	IssuedAt        int64  `json:"issuedAt"`
+	// CenterID (UUID string) is set by the Meet OAuth authorize handler
+	// so the callback can prove the state was issued for THIS center.
+	CenterID string `json:"centerId,omitempty"`
+	// UserID (UUID string) is set by the Meet OAuth authorize handler
+	// so the callback can prove the state was issued for THIS user (fresh
+	// session — force-logout-between-authorize-and-callback defense).
+	UserID string `json:"userId,omitempty"`
 }
 
 // OAuthStateSigner is the dependency seam AuthService consumes. Production

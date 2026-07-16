@@ -13,9 +13,22 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { axe } from 'vitest-axe'
 import type { ReactNode } from 'react'
+
+// Mock sonner so AC14 callback-return tests can assert toast.success / .info
+// were called with the correct i18n key — matches the project convention
+// (ReopenChecklistCta.test.tsx + ProfileTab.test.tsx use the same pattern).
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+}))
+vi.mock('sonner', () => ({
+  toast: toastMocks,
+  Toaster: () => null,
+}))
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import { createTestQueryClient } from '@/lib/query-client'
@@ -191,15 +204,11 @@ describe('SettingsPage — AC15 accessibility (axe)', () => {
         await i18n.changeLanguage(locale)
         const { container } = renderSettings({ initialEntry: tab.entry })
         // Wait for the tab body to mount so axe scans stable DOM.
-        // Story 2-5b: terms + rooms tabpanels now ship real bodies, not
-        // placeholders — only `integrations` still ships as a placeholder
-        // pending Story 2-5c.
+        // Story 2-5c: all four tabpanels now ship real bodies — the
+        // placeholder branch for `integrations` was removed when
+        // IntegrationsTab replaced it (Story 2-5c Task 6).
         if (tab.id === 'profile') {
           await screen.findByTestId('settings-profile-name-input')
-        } else if (tab.id === 'integrations') {
-          await screen.findByTestId(
-            'settings-tab-placeholder-integrations',
-          )
         } else {
           await screen.findByTestId(`settings-tabpanel-${tab.id}`)
         }
@@ -220,5 +229,75 @@ describe('SettingsPage — AC15 accessibility (axe)', () => {
     const { container } = renderSettings({ role: 'teacher' })
     const results = await axe(container)
     expect(results).toHaveNoViolations()
+  })
+})
+
+// -----------------------------------------------------------------------------
+// Chunk 3 review 2026-07-16 B3 fix: AC14 callback-return handler tests.
+// Three scenarios per Task 6.4 + the Chunk 1 D2 amendment:
+//   (a) `?status=connected` + sessionStorage marker present → success toast
+//       fires, params stripped, marker cleared, centerProfile invalidated.
+//   (b) `?status=connected` WITHOUT marker (drive-by URL manipulation
+//       attempt) → NO toast, params silently stripped, no invalidation.
+//   (c) `?status=cancelled` → neutral (info) toast fires, params stripped,
+//       marker cleared. Symmetric handling of the backend D2 fix path.
+// -----------------------------------------------------------------------------
+describe('SettingsPage — AC14 callback-return handling', () => {
+  const CONNECT_MARKER_KEY = 'meet-connect-in-flight'
+
+  beforeEach(() => {
+    toastMocks.success.mockClear()
+    toastMocks.info.mockClear()
+    toastMocks.error.mockClear()
+  })
+
+  afterEach(() => {
+    try {
+      window.sessionStorage.removeItem(CONNECT_MARKER_KEY)
+    } catch {
+      // ignore
+    }
+  })
+
+  test('?status=connected with marker fires success toast + strips param + clears marker', async () => {
+    window.sessionStorage.setItem(CONNECT_MARKER_KEY, '1')
+    renderSettings({ initialEntry: '/settings?tab=integrations&status=connected' })
+
+    const successCopy = i18n.t('settings.integrations.googleMeet.connect.success')
+    await waitFor(() => {
+      expect(toastMocks.success).toHaveBeenCalledWith(successCopy, expect.any(Object))
+    })
+    // Marker was cleared on the strip path — invariant of the fix.
+    expect(window.sessionStorage.getItem(CONNECT_MARKER_KEY)).toBeNull()
+    // Info toast NOT fired on the connected branch.
+    expect(toastMocks.info).not.toHaveBeenCalled()
+  })
+
+  test('?status=connected WITHOUT marker (drive-by) does NOT fire toast', async () => {
+    // No sessionStorage marker seeded — simulates an attacker crafting the URL.
+    expect(window.sessionStorage.getItem(CONNECT_MARKER_KEY)).toBeNull()
+    renderSettings({ initialEntry: '/settings?tab=integrations&status=connected' })
+
+    // Wait for the tabpanel to render — proves the page mounted + effect ran.
+    await screen.findByTestId('settings-tabpanel-integrations')
+
+    // Drive-by URL must NOT surface the confirmation copy.
+    expect(toastMocks.success).not.toHaveBeenCalled()
+    expect(toastMocks.info).not.toHaveBeenCalled()
+  })
+
+  test('?status=cancelled fires neutral toast + strips param + clears marker (D2 symmetric)', async () => {
+    // Marker was set during authorize; cancel path must clear it so a
+    // subsequent drive-by ?status=connected cannot ride the stale marker.
+    window.sessionStorage.setItem(CONNECT_MARKER_KEY, '1')
+    renderSettings({ initialEntry: '/settings?tab=integrations&status=cancelled' })
+
+    const cancelledCopy = i18n.t('settings.integrations.googleMeet.connect.cancelled')
+    await waitFor(() => {
+      expect(toastMocks.info).toHaveBeenCalledWith(cancelledCopy, expect.any(Object))
+    })
+    expect(window.sessionStorage.getItem(CONNECT_MARKER_KEY)).toBeNull()
+    // Success toast NOT fired on the cancel branch.
+    expect(toastMocks.success).not.toHaveBeenCalled()
   })
 })

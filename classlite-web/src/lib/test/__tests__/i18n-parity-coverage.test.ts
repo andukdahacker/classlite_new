@@ -1203,9 +1203,10 @@ export const STORY_2_5A_KEYS = [
   'settings.tabs.terms',
   'settings.tabs.integrations',
   'settings.tabs.rooms',
-  // placeholder tab bodies (3) — REMOVED when 2-5b/2-5c land
+  // placeholder tab bodies (2 remaining) — REMOVED as sub-stories land.
+  // `settings.tabPlaceholder.integrations` dropped in Story 2-5c green-phase
+  // once IntegrationsTab replaced the placeholder body per AC1.
   'settings.tabPlaceholder.terms',
-  'settings.tabPlaceholder.integrations',
   'settings.tabPlaceholder.rooms',
   // Profile section chrome (5)
   'settings.profile.sectionHeading',
@@ -1406,6 +1407,66 @@ describe('Story 2-5b i18n parity (R38)', () => {
     '%s belongs to a 2-5b allowed prefix (AC13 3-prefix ratchet)',
     (key) => {
       const ok = ALLOWED_PREFIXES_2_5B.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})
+
+/**
+ * Story 2-5c — Google Meet OAuth integration i18n parity block per AC15.
+ * Closed literal (28 keys) + prefix ratchet + interpolation parity.
+ * Red signal on first run: missing keys in en/vi surface as a diff.
+ */
+export const STORY_2_5C_KEYS = [
+  'settings.integrations.section.providers.heading',
+  'settings.integrations.section.providers.description',
+  'settings.integrations.googleMeet.title',
+  'settings.integrations.googleMeet.description',
+  'settings.integrations.googleMeet.state.connected',
+  'settings.integrations.googleMeet.state.disconnected',
+  'settings.integrations.googleMeet.connect.button',
+  'settings.integrations.googleMeet.connect.success',
+  'settings.integrations.googleMeet.connect.error',
+  'settings.integrations.googleMeet.connect.cancelled',
+  'settings.integrations.googleMeet.toggle',
+  'settings.integrations.googleMeet.disconnect.button',
+  'settings.integrations.googleMeet.disconnect.title',
+  'settings.integrations.googleMeet.disconnect.description',
+  'settings.integrations.googleMeet.disconnect.cancel',
+  'settings.integrations.googleMeet.disconnect.confirm',
+  'settings.integrations.googleMeet.disconnect.success',
+  'settings.integrations.googleMeet.disconnect.error',
+  'settings.integrations.googleDrive.title',
+  'settings.integrations.googleDrive.description',
+  'settings.integrations.googleDrive.notReady',
+  'settings.integrations.googleCalendar.title',
+  'settings.integrations.googleCalendar.description',
+  'settings.integrations.googleCalendar.notReady',
+  'settings.integrations.zoom.title',
+  'settings.integrations.zoom.description',
+  'settings.integrations.zoom.notReady',
+  'settings.integrations.placeholder.moreInfo',
+  'settings.integrations.notifications.heading',
+  'settings.integrations.notifications.pending',
+] as const
+
+describe('Story 2-5c i18n parity (R38)', () => {
+  test('every Story 2-5c i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_5C_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 2-5c keys (M-BLOCKER-5)', () => {
+    assertI18nInterpolationParity(STORY_2_5C_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_5C = [
+    'settings.integrations.',
+  ] as const
+
+  test.each(STORY_2_5C_KEYS)(
+    '%s belongs to a 2-5c allowed prefix (AC15 single-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_5C.some((p) => key.startsWith(p))
       expect(ok).toBe(true)
     },
   )

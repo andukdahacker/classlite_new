@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/service"
 )
 
 func reqWithID() *http.Request {
@@ -226,5 +228,129 @@ func TestErrorMapper_NoError(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Story 2-5c Google Meet OAuth callback error mapping tests
+// (Task 4.5 coverage, added 2026-07-16 during Round 1 /bmad-code-review).
+// The Meet callback flows through ErrorMapper (JSON envelope), unlike the
+// login-flow OAuth callback which uses 302 redirects. Verifies each of the
+// 6 new error types lands at the correct HTTP status + code.
+// ---------------------------------------------------------------------
+
+func TestErrorMapper_OAuthStateInvalidError(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.OAuthStateInvalidError{}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "OAUTH_STATE_INVALID" {
+		t.Errorf("expected OAUTH_STATE_INVALID, got %s", body.Error.Code)
+	}
+}
+
+func TestErrorMapper_OAuthStateExpiredError(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.OAuthStateExpiredError{}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "OAUTH_STATE_EXPIRED" {
+		t.Errorf("expected OAUTH_STATE_EXPIRED, got %s", body.Error.Code)
+	}
+}
+
+func TestErrorMapper_OAuthStateMismatchError_DoesNotLeakReason(t *testing.T) {
+	// P5 fix (2026-07-16 code review): mapper MUST NOT echo the internal
+	// Reason field to the client — it lets an attacker learn which of the
+	// four binding checks failed (path-vs-state, session-vs-state,
+	// user-vs-state, format-invalid).
+	const leakyReason = "state center id ≠ path center id"
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.OAuthStateMismatchError{Reason: leakyReason}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "OAUTH_STATE_MISMATCH" {
+		t.Errorf("expected OAUTH_STATE_MISMATCH, got %s", body.Error.Code)
+	}
+	if body.Error.Message != "OAuth state binding failed." {
+		t.Errorf("expected static message, got %q", body.Error.Message)
+	}
+	if strings.Contains(body.Error.Message, leakyReason) {
+		t.Errorf("client message leaks internal Reason field: %q", body.Error.Message)
+	}
+}
+
+func TestErrorMapper_OAuthMembershipRevokedError(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.OAuthMembershipRevokedError{UserID: "u", CenterID: "c"}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "OAUTH_MEMBERSHIP_REVOKED" {
+		t.Errorf("expected OAUTH_MEMBERSHIP_REVOKED, got %s", body.Error.Code)
+	}
+}
+
+func TestErrorMapper_IntegrationConnectFailedError(t *testing.T) {
+	// Also verify UpstreamErr is NEVER echoed to the client (opaque
+	// Google-side details should not leak — see errors.go doc).
+	const upstream = "invalid_grant: token expired"
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.IntegrationConnectFailedError{Provider: "google_meet", UpstreamErr: upstream}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected 502, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "INTEGRATION_CONNECT_FAILED" {
+		t.Errorf("expected INTEGRATION_CONNECT_FAILED, got %s", body.Error.Code)
+	}
+	if strings.Contains(body.Error.Message, upstream) {
+		t.Errorf("client message leaks UpstreamErr: %q", body.Error.Message)
+	}
+}
+
+func TestErrorMapper_OAuthNotConfiguredError(t *testing.T) {
+	// P1 fix (2026-07-16 code review): OAuthNotConfiguredError previously
+	// fell through to the generic 500 fallback. Now maps to 503 to match
+	// the login-flow handler's 503 code (auth_handler.go:439).
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.OAuthNotConfiguredError{}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "OAUTH_NOT_CONFIGURED" {
+		t.Errorf("expected OAUTH_NOT_CONFIGURED, got %s", body.Error.Code)
 	}
 }
