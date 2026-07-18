@@ -68,7 +68,9 @@ func TestCreateCenter_AC02_HappyPath_ReturnsOwnerRoleAndToken(t *testing.T) {
 			AccessToken string `json:"accessToken"`
 			ExpiresAt   string `json:"expiresAt"`
 		} `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -159,7 +161,7 @@ func TestCreateCenter_AC02_SequentialDoublePost_Returns409UserAlreadyHasCenter(t
 // -----------------------------------------------------------------------------
 
 func TestCreateCenter_AC02_ConcurrentDoublePost_BothReturn409NotOne500(t *testing.T) {
-	pool := test.SetupRawPool(t) // Murat-B3: cannot race under SetupDB's single-tx
+	pool := test.SetupRawPool(t)                                 // Murat-B3: cannot race under SetupDB's single-tx
 	user := test.CreateUserOnPool(t, pool, "u@example.com", "U") // green-phase raw-pool fixture
 	test.MarkUserEmailVerifiedOnPool(t, pool, user.ID)
 	t.Cleanup(func() {
@@ -288,15 +290,23 @@ func TestCreateCenter_AC06_AuditFailure_RollsBackWholeTx(t *testing.T) {
 		t.Fatalf("AC6: CreateCenter with broken audit MUST error, got nil")
 	}
 
-	// Assert zero rows across ALL three tables — tx atomicity.
-	// `centers` has no RLS, so the app pool sees it globally.
-	// `center_members` and `audit_logs` are RLS-protected, so query via
-	// the superuser pool — otherwise RLS returns 0 rows against the
-	// classlite_app connection regardless of whether the tx rolled back
-	// (vacuously satisfying the assertion). Hardening applied by
-	// /bmad-tea TA 2-1 after INT-2-4 surfaced the RLS-scope issue.
+	// Assert zero rows across ALL three tables — tx atomicity. Every count
+	// MUST be scoped to THIS user: `go test ./...` runs package test
+	// binaries in parallel against one shared DB, and `centers` has no RLS,
+	// so an unfiltered `count(*) FROM centers` is polluted by centers that
+	// other packages' tests create concurrently (a real flake — passes in
+	// isolation, fails under the full suite). Scope the centers count to
+	// the center this user would own (joined via the owner center_members
+	// row); on a rolled-back tx neither the center nor the membership
+	// persists, so it reads 0 and is immune to concurrent centers.
+	// `center_members` + `audit_logs` are RLS-protected, so all three run
+	// via the superuser pool — otherwise RLS returns 0 rows against the
+	// classlite_app connection regardless of rollback (vacuously satisfying
+	// the assertion). Hardening applied by /bmad-tea TA 2-1 after INT-2-4
+	// surfaced the RLS-scope issue; centers-scope fix applied 2026-07-18.
 	sp := test.SuperuserPool(t)
-	countCenters := test.CountRows(t, pool, "SELECT count(*) FROM centers")
+	countCenters := test.CountRows(t, sp,
+		"SELECT count(*) FROM centers c JOIN center_members m ON m.center_id = c.id WHERE m.user_id = $1", user.ID)
 	countMembers := test.CountRows(t, sp, "SELECT count(*) FROM center_members WHERE user_id = $1", user.ID)
 	countAudit := test.CountRows(t, sp, "SELECT count(*) FROM audit_logs WHERE user_id = $1", user.ID)
 
@@ -380,7 +390,9 @@ func TestCreateCenter_AC06_ExactJsonbShape_BeforeNullAfterPopulated(t *testing.T
 func assertErrorCodeCenter(t *testing.T, body *bytes.Buffer, wantCode string) {
 	t.Helper()
 	var env struct {
-		Error struct{ Code string `json:"code"` } `json:"error"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(body).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v", err)

@@ -34,6 +34,9 @@ function seedSession(withCenter: boolean) {
     },
     accessToken: 'sb.jwt',
     center: withCenter ? CENTER : null,
+    // Story 2.6 (AC2). TeacherDashboard renders for the Teacher persona
+    // — seed a teacher role so useRole() → 'teacher' in the story.
+    role: 'teacher',
   })
 }
 

@@ -65,6 +65,8 @@ function seedSession(client: QueryClient): void {
     user: USER,
     accessToken: 'a.b.c',
     center: CENTER,
+    // Story 2.6 (AC2). Owner default for settings pages.
+    role: 'owner',
   })
 }
 

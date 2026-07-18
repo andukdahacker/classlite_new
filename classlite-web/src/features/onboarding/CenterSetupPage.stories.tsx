@@ -30,6 +30,10 @@ function seedAuthenticatedSession() {
     },
     accessToken: 'sb.jwt',
     center: null,
+    // Story 2.6 (AC2). Storybook seeder must populate role explicitly
+    // — HMR-time deserialize crashes if any writer skips a required
+    // Session field. Pre-center-creation → null.
+    role: null,
   })
 }
 

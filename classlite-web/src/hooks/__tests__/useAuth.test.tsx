@@ -44,6 +44,10 @@ const verifiedSession: Session = {
   },
   accessToken: 'jwt.access',
   center: null,
+  // Story 2.6 (AC2). useAuth doesn't gate on role; keep null so this
+  // fixture stays authentication-focused (no downstream tests assume
+  // a role via useAuth).
+  role: null,
 }
 
 const unverifiedSession: Session = {
@@ -55,6 +59,8 @@ const unverifiedSession: Session = {
   },
   accessToken: null,
   center: null,
+  // Story 2.6 (AC2). Unverified users have no role either.
+  role: null,
 }
 
 describe('useAuth — cache-subscribing version (Story 1-8 AC5)', () => {

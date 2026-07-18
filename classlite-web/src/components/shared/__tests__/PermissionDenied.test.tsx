@@ -83,4 +83,58 @@ describe('PermissionDenied', () => {
     const results = await axe(container)
     expect(results).toHaveNoViolations()
   })
+
+  // Story 2.6 (AC4) — sectionNameKey discriminated union.
+  describe('sectionNameKey — per-section header (Story 2.6 AC4)', () => {
+    test('without sectionNameKey → no section-header sub-title rendered', () => {
+      render(<PermissionDenied requiredRoles={['owner']} />)
+      expect(
+        screen.queryByTestId('permission-denied-section-header'),
+      ).toBeNull()
+    })
+
+    test('sectionNameKey="settings" renders the Settings native-VN+EN header', () => {
+      render(
+        <PermissionDenied requiredRoles={['owner']} sectionNameKey="settings" />,
+      )
+      const header = screen.getByTestId('permission-denied-section-header')
+      expect(header.textContent).toBe(
+        i18n.t('app.permissionDenied.section.settings.header'),
+      )
+    })
+
+    test('sectionNameKey="permissions" renders the Permissions header', () => {
+      render(
+        <PermissionDenied
+          requiredRoles={['owner']}
+          sectionNameKey="permissions"
+        />,
+      )
+      const header = screen.getByTestId('permission-denied-section-header')
+      expect(header.textContent).toBe(
+        i18n.t('app.permissionDenied.section.permissions.header'),
+      )
+    })
+
+    test('sectionNameKey="billing" renders the Billing header', () => {
+      render(
+        <PermissionDenied
+          requiredRoles={['owner']}
+          sectionNameKey="billing"
+        />,
+      )
+      const header = screen.getByTestId('permission-denied-section-header')
+      expect(header.textContent).toBe(
+        i18n.t('app.permissionDenied.section.billing.header'),
+      )
+    })
+
+    test('all sectionNameKey headers exist in en + vi (parity)', () => {
+      assertI18nParity([
+        'app.permissionDenied.section.settings.header',
+        'app.permissionDenied.section.permissions.header',
+        'app.permissionDenied.section.billing.header',
+      ])
+    })
+  })
 })

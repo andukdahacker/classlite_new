@@ -19,9 +19,19 @@ import (
 	"github.com/ducdo/classlite-api/internal/test"
 )
 
-// nonOwnerRoles enumerates every role the system already knows about,
-// minus "owner". AdminInviteStaff must reject all of them.
-var nonOwnerRoles = []string{"teacher", "student", "admin", "viewer"}
+// nonOwnerRoles enumerates every non-Owner+non-Admin role that is DB-legal.
+//
+// Story 2.6 (AC1) added a CHECK constraint restricting center_members.role
+// to {owner, admin, teacher, student} — fabricated values like `viewer`
+// can no longer be persisted, so the "defense in depth against a
+// synthetic role" case is now guarded by the DB itself (SQLSTATE 23514
+// on INSERT) and needs no service-layer test row.
+//
+// Story 2.6 also widened AdminInviteStaff's DB-role allowlist to
+// {owner, admin} — Admin callers are now permitted to invite non-Owner
+// roles — so `admin` moves OUT of this list and into a dedicated
+// success-path test (see the AC9 hierarchy matrix in auth_admin_test.go).
+var nonOwnerRoles = []string{"teacher", "student"}
 
 func TestAdminInviteStaff_AC13_NonOwnerRoles_Rejected(t *testing.T) {
 	for _, role := range nonOwnerRoles {
@@ -41,7 +51,7 @@ func TestAdminInviteStaff_AC13_NonOwnerRoles_Rejected(t *testing.T) {
 				Role:     "owner", // JWT lies — DB is the truth
 			}
 
-			err := svc.AdminInviteStaff(context.Background(), tc, "invitee@example.com", "teacher")
+			_, err := svc.AdminInviteStaff(context.Background(), tc, "invitee@example.com", "teacher")
 			var fe *service.ForbiddenError
 			if !errors.As(err, &fe) {
 				t.Fatalf("role=%s: expected ForbiddenError, got %T (%v)", role, err, err)
@@ -66,7 +76,7 @@ func TestAdminInviteStaff_AC13_MalformedCenterID_Forbidden(t *testing.T) {
 		UserID:   "00000000-0000-0000-0000-000000000001",
 		Role:     "owner",
 	}
-	err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
 	var fe *service.ForbiddenError
 	if !errors.As(err, &fe) {
 		t.Fatalf("malformed CenterID: expected ForbiddenError, got %T (%v)", err, err)
@@ -84,7 +94,7 @@ func TestAdminInviteStaff_AC13_MalformedUserID_Forbidden(t *testing.T) {
 		UserID:   "not-a-uuid",
 		Role:     "owner",
 	}
-	err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
 	var fe *service.ForbiddenError
 	if !errors.As(err, &fe) {
 		t.Fatalf("malformed UserID: expected ForbiddenError, got %T (%v)", err, err)
@@ -109,7 +119,7 @@ func TestAdminInviteStaff_AC13_OwnerSuccess_WritesInviteRow(t *testing.T) {
 		UserID:   test.UUIDString(owner.ID),
 		Role:     "owner",
 	}
-	if err := svc.AdminInviteStaff(context.Background(), tc, "newbie@example.com", "teacher"); err != nil {
+	if _, err := svc.AdminInviteStaff(context.Background(), tc, "newbie@example.com", "teacher"); err != nil {
 		t.Fatalf("owner AdminInviteStaff: %v", err)
 	}
 
@@ -141,7 +151,7 @@ func TestAdminInviteStaff_AC13_RejectionEmitsAuditRow(t *testing.T) {
 		UserID:   test.UUIDString(teacher.ID),
 		Role:     "owner",
 	}
-	_ = svc.AdminInviteStaff(context.Background(), tc, "victim@example.com", "teacher")
+	_, _ = svc.AdminInviteStaff(context.Background(), tc, "victim@example.com", "teacher")
 
 	var rows int
 	_ = db.QueryRow(context.Background(),

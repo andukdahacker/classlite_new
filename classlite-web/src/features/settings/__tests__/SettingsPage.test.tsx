@@ -60,11 +60,17 @@ const CENTER: NonNullable<Session['center']> = {
 }
 /* eslint-enable no-restricted-syntax */
 
-function seedSession(client: QueryClient): void {
+function seedSession(client: QueryClient, role: Role | null = 'owner'): void {
   client.setQueryData<Session>(authKeys.session(), {
     user: USER,
     accessToken: 'a.b.c',
     center: CENTER,
+    // Story 2.6 (AC2). Seed the session-level role so useRole() (post-2.6)
+    // returns the caller's actual role even when the RoleProvider override
+    // isn't wired — the shipped SettingsPage tests still use the
+    // RoleProvider wrapper below, so this field mostly documents the shape
+    // rather than driving behavior in this file.
+    role,
   })
 }
 
@@ -117,21 +123,11 @@ describe('SettingsPage — AC1 tab-strip shell + AC2 role gate', () => {
     await screen.findByTestId('settings-tabpanel-profile')
   })
 
-  test('Teacher role → PermissionDenied inside AppLayout (tab strip absent)', () => {
-    renderSettings({ role: 'teacher' })
-    expect(screen.getByTestId('settings-permission-denied')).toBeInTheDocument()
-    expect(screen.queryByTestId('settings-tab-strip')).not.toBeInTheDocument()
-  })
-
-  test('Admin role → PermissionDenied (Owner-only per v1 AC2)', () => {
-    renderSettings({ role: 'admin' })
-    expect(screen.getByTestId('settings-permission-denied')).toBeInTheDocument()
-  })
-
-  test('Student role → PermissionDenied', () => {
-    renderSettings({ role: 'student' })
-    expect(screen.getByTestId('settings-permission-denied')).toBeInTheDocument()
-  })
+  // Story 2.6 (Task 7.4) — Non-Owner gating moved from SettingsPage inline
+  // branch to a route-level <RouteRoleGate>. The Teacher/Admin/Student
+  // PermissionDenied coverage lives in
+  // `src/routes/__tests__/settings-role-gate.test.tsx`; SettingsPage itself
+  // is only responsible for the rendered tab strip on the Owner path.
 
   test('?tab=terms mounts the TermCalendarTab body (Story 2-5b — placeholder replaced)', async () => {
     renderSettings({ initialEntry: '/settings?tab=terms' })
@@ -218,18 +214,10 @@ describe('SettingsPage — AC15 accessibility (axe)', () => {
     )
   })
 
-  test('Non-Owner (teacher) PermissionDenied has no axe violations (EN)', async () => {
-    const { container } = renderSettings({ role: 'teacher' })
-    const results = await axe(container)
-    expect(results).toHaveNoViolations()
-  })
-
-  test('Non-Owner (teacher) PermissionDenied has no axe violations (VN)', async () => {
-    await i18n.changeLanguage('vi')
-    const { container } = renderSettings({ role: 'teacher' })
-    const results = await axe(container)
-    expect(results).toHaveNoViolations()
-  })
+  // Non-Owner PermissionDenied axe coverage moved to
+  // `src/routes/__tests__/settings-role-gate.test.tsx` (Story 2.6 Task 7.4)
+  // — the route-level gate renders PermissionDenied in a distinct render
+  // tree, so the axe scan needs to happen through the router entry point.
 })
 
 // -----------------------------------------------------------------------------

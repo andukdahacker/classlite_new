@@ -36,6 +36,8 @@ function seedSession(email: string) {
     // Story 2-3a AC9 (Winston-W2) — every session writer, including
     // Storybook decorators, must populate this slot.
     center: null,
+    // Story 2.6 (AC2). Verify-email screen is pre-onboarding — no role.
+    role: null,
   })
 }
 

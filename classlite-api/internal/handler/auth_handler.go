@@ -161,6 +161,10 @@ type userSummary struct {
 type loginResponseBody struct {
 	AccessToken string      `json:"accessToken"`
 	User        userSummary `json:"user"`
+	// Role is nullable per the api.yaml LoginResult schema (Story 2.6 AC2).
+	// *string keeps the JSON null distinct from empty-string; GO-5 forbids
+	// omitempty on response fields so the key is always emitted.
+	Role *string `json:"role"`
 }
 
 type logoutResponseBody struct {
@@ -290,6 +294,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) error {
 			FullName:      res.User.FullName,
 			EmailVerified: res.User.EmailVerified,
 		},
+		Role: nullableRole(res.Role),
 	})
 	return nil
 }
@@ -313,8 +318,20 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) error {
 			FullName:      res.User.FullName,
 			EmailVerified: res.User.EmailVerified,
 		},
+		Role: nullableRole(res.Role),
 	})
 	return nil
+}
+
+// nullableRole maps a service.LoginResult.Role (empty for no-single-
+// membership users) to the wire-shape *string (nil ⇒ JSON null). Story 2.6
+// AC2. Kept as a tiny helper so the two writers (Login + Refresh) stay
+// symmetrical; adding a third writer only needs the same one-liner.
+func nullableRole(role string) *string {
+	if role == "" {
+		return nil
+	}
+	return &role
 }
 
 // Logout implements POST /api/auth/logout (AC5). The clearing cookie is

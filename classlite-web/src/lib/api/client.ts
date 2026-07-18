@@ -420,6 +420,43 @@ export interface paths {
         patch: operations["updateCenterProfile"];
         trace?: never;
     };
+    "/api/centers/{id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner/Admin — invite a staff member (Story 2.6 AC8, FR-11)
+         * @description Creates an `invites` row for the given email + role. The caller must
+         *     be an Owner or Admin per the `RequireRole("owner","admin")`
+         *     middleware; the service then re-fetches the caller's DB role
+         *     (SEC-1) and rejects Admin callers trying to assign Owner
+         *     (`ROLE_ASSIGNMENT_FORBIDDEN`, per FR-11). A duplicate active invite
+         *     (unexpired, unaccepted row on the same center + email) returns 409
+         *     `INVITE_EMAIL_TAKEN` with `details.field = "email"` for inline
+         *     client-side surfacing.
+         *
+         *     Path `{id}` MUST equal the caller's tenant-context centerID; a
+         *     mismatch returns 403 `TENANT_MISMATCH`. The middleware chain is
+         *     `ExtractTenant → RequireVerifiedEmail → RequireCenterContext →
+         *     RequireRole("owner","admin") → settingsRateLimit → handler`.
+         *
+         *     Email delivery is NOT triggered by this endpoint (Epic 7 owns the
+         *     real send path — FU-2-6-A). The invite row is persisted with a
+         *     placeholder hashed token so the accept-invite flow can be tested
+         *     end-to-end today; the raw token is not surfaced back to the caller.
+         */
+        post: operations["inviteStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/terms": {
         parameters: {
             query?: never;
@@ -812,6 +849,17 @@ export interface components {
             /** @description HS256-signed JWT, 15-minute expiry. */
             accessToken: string;
             user: components["schemas"]["UserSummary"];
+            /**
+             * @description Story 2.6 (AC2) — the caller's DB-resolved center_members.role at
+             *     login/refresh time. `null` when the user has no single-membership
+             *     (fresh registration before onboarding OR multi-membership user
+             *     requiring an explicit membership select — deferred to Epic 2+).
+             *     Frontend `Session.role` is populated from this value; `useRole()`
+             *     reads it via the session cache. Parallels the shipped
+             *     `role` field on `AcceptInviteResult` / `CreateCenterResult`.
+             * @enum {string|null}
+             */
+            role: "owner" | "admin" | "teacher" | "student" | null;
         };
         LogoutResult: {
             loggedOut: boolean;
@@ -1257,6 +1305,40 @@ export interface components {
         EnvelopeGoogleMeetAuthorizeResult: {
             data: components["schemas"]["GoogleMeetAuthorizeResult"];
             meta: components["schemas"]["EnvelopeMeta"];
+        };
+        InviteStaffRequest: {
+            /**
+             * Format: email
+             * @description Recipient email. Case-insensitive on the duplicate-invite check
+             *     (matches accept-invite's email_norm semantics from Story 1.5).
+             */
+            email: string;
+            /**
+             * @description Assigned role. Student is NOT a valid value — staff invites are
+             *     distinct from student enrollment (the latter goes through the
+             *     enrollment endpoints, Story 2.7 / Epic 7). FR-11 forbids Admin
+             *     callers from picking `owner` here — the service returns 403
+             *     ROLE_ASSIGNMENT_FORBIDDEN in that case.
+             * @enum {string}
+             */
+            role: "owner" | "admin" | "teacher";
+        };
+        InviteResult: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "teacher";
+            /**
+             * Format: date-time
+             * @description UTC timestamp when the invite lapses. Fixed 7 days from creation
+             *     for the Story 2.6 shipping path (Epic 7 may parameterize).
+             */
+            expiresAt: string;
+        };
+        EnvelopeInviteResult: {
+            data: components["schemas"]["InviteResult"];
         };
     };
     responses: never;
@@ -2201,6 +2283,108 @@ export interface operations {
             };
         };
     };
+    inviteStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteStaffRequest"];
+            };
+        };
+        responses: {
+            /** @description Invite created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeInviteResult"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description INSUFFICIENT_ROLE (Teacher/Student caller), TENANT_MISMATCH
+             *     (path id ≠ caller's centerID), EMAIL_VERIFICATION_REQUIRED, or
+             *     ROLE_ASSIGNMENT_FORBIDDEN (Admin tried to assign Owner —
+             *     Story 2.6 FR-11).
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Center not found (CENTER_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description INVITE_EMAIL_TAKEN — an active (unexpired, unaccepted) invite
+             *     already exists for this email on this center. `details.field =
+             *     "email"` for inline field-error surfacing.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description Validation failure — malformed email, unknown role, or role not
+             *     in `[owner, admin, teacher]` (Student cannot be invited via
+             *     staff invite — the accept-invite flow only creates staff seats).
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal error (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     listTerms: {
         parameters: {
             query?: never;
@@ -3040,7 +3224,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success — redirects to `/settings?tab=integrations&status=connected` */
+            /**
+             * @description Redirect to SPA with `?tab=integrations&status=<result>`. Two flavors:
+             *       - `status=connected` — success (7-step tx completed, tokens persisted).
+             *       - `status=cancelled` — user hit Cancel on Google's consent screen
+             *         (Google `?error=access_denied`); INTEGRATION_CONNECT_CANCELED path,
+             *         no tokens persisted, no audit row. Frontend renders neutral toast.
+             */
             302: {
                 headers: {
                     /** @description SPA redirect target with tab + status query params. */
@@ -3076,8 +3266,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description INTEGRATION_CONNECT_FAILED — Google code exchange failed or tx rolled back */
+            /** @description INTEGRATION_CONNECT_FAILED — Google code exchange failed, membership check errored, or tx rolled back */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description OAUTH_NOT_CONFIGURED — server missing Google OAuth or state-signer configuration (parity with authorize) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

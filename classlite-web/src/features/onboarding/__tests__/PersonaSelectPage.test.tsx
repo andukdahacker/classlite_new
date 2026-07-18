@@ -40,6 +40,8 @@ function seedAuthedNoCenter(client: QueryClient): void {
     } as unknown as Session['user'],
     accessToken: 'a.b.c',
     center: null,
+    // Story 2.6 (AC2). Persona select runs pre-onboarding — no role yet.
+    role: null,
   })
 }
 

@@ -29,6 +29,17 @@ import type { components } from '@/lib/api/client'
 export type UserSummary = components['schemas']['UserSummary']
 
 /**
+ * Role — the four canonical center_members.role values.
+ *
+ * Wire type derives from the api.yaml LoginResult.role enum (Story 2.6
+ * AC2). Duplicated here as a narrow union so consumers can type against
+ * `Role` without pulling `components['schemas']['LoginResult']` in.
+ * The DB CHECK constraint at `20260717120000_add_role_check_center_members`
+ * enforces the same set — code + DB stay locked to the same four values.
+ */
+export type Role = 'owner' | 'admin' | 'teacher' | 'student'
+
+/**
  * CenterSummary — the six-field slice of `CreateCenterResult` that lives on
  * `Session.center` (Story 2-3a AC9). Populated by `useCreateCenter.onSuccess`;
  * defined-as-null on every other Session writer so downstream `useCurrentCenter`
@@ -66,6 +77,26 @@ export interface Session {
   user: UserSummary
   accessToken: string | null
   center: CenterSummary | null
+  /**
+   * Story 2.6 (AC2). The caller's DB-resolved center_members.role at the
+   * moment this cache entry was written. `null` for:
+   *   - post-register / pre-onboarding state (`useRegister.onSuccess`
+   *     writes `role = null` because register mints without a center)
+   *   - pre-Story-2.6 sessions rehydrated via silent refresh (the
+   *     backend now emits `role` on refresh, but a session already in
+   *     the cache from an earlier deploy may still hold `null` until
+   *     the next refresh lands)
+   *
+   * `useRole()` reads this field; `useRoleLoading()` distinguishes the
+   * "boot probe in flight" case from the "session hydrated but role
+   * hasn't landed yet" migration window (CR-2-5A-7 fold).
+   *
+   * Every session writer MUST populate this field explicitly. Missing
+   * the assignment leaves `undefined` in the cache and `useRole` cannot
+   * distinguish "unauthenticated" from "role not yet resolved" — the
+   * `authKeys.test.ts` contract lock catches drift.
+   */
+  role: Role | null
 }
 
 export const authKeys = {

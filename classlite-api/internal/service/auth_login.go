@@ -73,6 +73,12 @@ type LoginResult struct {
 	RefreshExpiresAt time.Time
 	RefreshTTL       time.Duration
 	User             generated.User
+	// Role is the DB-resolved center_members.role at token-mint time,
+	// or "" when the caller has zero-or-multiple memberships. Story 2.6
+	// (AC2) — surfaced on the wire (loginResponseBody.Role, mapped to
+	// api.yaml LoginResult.role as nullable enum) so the frontend
+	// Session cache can populate `Session.role` without decoding the JWT.
+	Role string
 }
 
 // SetPassword writes a hashed password for the given user. Used as a
@@ -256,7 +262,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginResult, e
 	// into the claim so the frontend can render immediately without a
 	// follow-up call. Multi-membership (Epic 2+) leaves claims empty and
 	// requires an explicit membership-select endpoint.
-	access, accessExp, err := s.buildAccessToken(ctx, user.ID)
+	access, accessExp, role, err := s.buildAccessToken(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("sign access token: %w", err)
 	}
@@ -280,6 +286,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginResult, e
 		RefreshExpiresAt: refreshExpiry,
 		RefreshTTL:       refreshTTL,
 		User:             user,
+		Role:             role,
 	}, nil
 }
 
@@ -345,11 +352,15 @@ func (s *AuthService) MintAccessToken(ctx context.Context, userID uuid.UUID, cen
 
 // buildAccessToken signs a 15-minute JWT carrying the user's id and, when
 // the user has exactly ONE active center_members row, the (center_id, role)
-// pair as additional claims.
-func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) (string, time.Time, error) {
+// pair as additional claims. The resolved role is returned as the third
+// value (Story 2.6 AC2) so callers can propagate it onto the wire
+// LoginResult without re-scanning center_members. Empty string when the
+// user has zero or multiple memberships (same condition that leaves the
+// JWT claims empty).
+func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) (string, time.Time, string, error) {
 	uid, err := pgUUIDToGoogle(userID)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
 	claims := AccessClaims{UserID: uid.String()}
 
@@ -375,9 +386,9 @@ func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) 
 
 	signed, err := s.jwt.SignAccess(claims, int(AccessTokenTTL.Seconds()))
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
-	return signed, s.clk.Now().Add(AccessTokenTTL), nil
+	return signed, s.clk.Now().Add(AccessTokenTTL), role, nil
 }
 
 // HashRefreshToken is the canonical hash function used to derive the

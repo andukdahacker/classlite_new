@@ -50,7 +50,7 @@ func TestServiceMutation_AC13_DemotedUser_RejectedDespiteValidJWT(t *testing.T) 
 	}
 
 	// Sanity: the mutation succeeds while the user really is Owner.
-	if err := svc.AdminInviteStaff(context.Background(), tc, "newteacher@example.com", "teacher"); err != nil {
+	if _, err := svc.AdminInviteStaff(context.Background(), tc, "newteacher@example.com", "teacher"); err != nil {
 		t.Fatalf("pre-demotion AdminInviteStaff: expected success, got %v", err)
 	}
 
@@ -63,7 +63,7 @@ func TestServiceMutation_AC13_DemotedUser_RejectedDespiteValidJWT(t *testing.T) 
 	}
 
 	// Same call, same JWT claim — but DB now says teacher. Service must reject.
-	err := svc.AdminInviteStaff(context.Background(), tc, "another@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, "another@example.com", "teacher")
 	var forbiddenErr *service.ForbiddenError
 	if !errors.As(err, &forbiddenErr) {
 		t.Fatalf("post-demotion AdminInviteStaff: expected ForbiddenError (role re-val from DB), got %T (%v). "+
@@ -99,7 +99,7 @@ func TestServiceMutation_AC13_RevokedMember_RejectedDespiteValidJWT(t *testing.T
 		t.Fatalf("revoke owner in DB: %v", err)
 	}
 
-	err := svc.AdminInviteStaff(context.Background(), tc, "another@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, "another@example.com", "teacher")
 	var forbiddenErr *service.ForbiddenError
 	if !errors.As(err, &forbiddenErr) {
 		t.Fatalf("revoked-member call: expected ForbiddenError, got %T (%v). "+

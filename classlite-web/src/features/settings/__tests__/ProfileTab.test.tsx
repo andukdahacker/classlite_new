@@ -60,6 +60,8 @@ function seedSession(client: QueryClient): void {
       logoUrl: null,
       timezone: 'Asia/Ho_Chi_Minh',
     },
+    // Story 2.6 (AC2). Owner default for settings pages.
+    role: 'owner',
   })
 }
 

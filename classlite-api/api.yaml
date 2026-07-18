@@ -816,6 +816,115 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 2.6 — Owner/Admin invites ====================
+  # FR-11 enforcement: only an Owner may assign the Owner role. `RequireRole`
+  # is the fail-fast HTTP gate (rejects Teacher/Student callers); the service
+  # layer's `model.OutranksOwner` guard is the load-bearing FR-11 gate that
+  # blocks an Admin caller from assigning Owner. Both must be present — the
+  # middleware doesn't have DB-role state so it can't tell "Admin invites
+  # Owner" (bad) from "Owner invites Owner" (fine) apart.
+  #
+  # Real email delivery is deferred to Epic 7 (FU-2-6-A). Frontend People/
+  # Invites UI is Epic 7 (FU-2-6-B). This story ships the invite ROW only.
+
+  /api/centers/{id}/invites:
+    post:
+      operationId: inviteStaff
+      summary: Owner/Admin — invite a staff member (Story 2.6 AC8, FR-11)
+      description: |
+        Creates an `invites` row for the given email + role. The caller must
+        be an Owner or Admin per the `RequireRole("owner","admin")`
+        middleware; the service then re-fetches the caller's DB role
+        (SEC-1) and rejects Admin callers trying to assign Owner
+        (`ROLE_ASSIGNMENT_FORBIDDEN`, per FR-11). A duplicate active invite
+        (unexpired, unaccepted row on the same center + email) returns 409
+        `INVITE_EMAIL_TAKEN` with `details.field = "email"` for inline
+        client-side surfacing.
+
+        Path `{id}` MUST equal the caller's tenant-context centerID; a
+        mismatch returns 403 `TENANT_MISMATCH`. The middleware chain is
+        `ExtractTenant → RequireVerifiedEmail → RequireCenterContext →
+        RequireRole("owner","admin") → settingsRateLimit → handler`.
+
+        Email delivery is NOT triggered by this endpoint (Epic 7 owns the
+        real send path — FU-2-6-A). The invite row is persisted with a
+        placeholder hashed token so the accept-invite flow can be tested
+        end-to-end today; the raw token is not surfaced back to the caller.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteStaffRequest'
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeInviteResult'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: |
+            INSUFFICIENT_ROLE (Teacher/Student caller), TENANT_MISMATCH
+            (path id ≠ caller's centerID), EMAIL_VERIFICATION_REQUIRED, or
+            ROLE_ASSIGNMENT_FORBIDDEN (Admin tried to assign Owner —
+            Story 2.6 FR-11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: Center not found (CENTER_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: |
+            INVITE_EMAIL_TAKEN — an active (unexpired, unaccepted) invite
+            already exists for this email on this center. `details.field =
+            "email"` for inline field-error surfacing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: |
+            Validation failure — malformed email, unknown role, or role not
+            in `[owner, admin, teacher]` (Student cannot be invited via
+            staff invite — the accept-invite flow only creates staff seats).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: Internal error (INTERNAL_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5b — Terms + Holidays + Rooms ====================
   # 12 endpoints (4 per entity × 3 entities). All Owner-only via the shared
   # settingsChain middleware (ExtractTenant → RequireVerifiedEmail →
@@ -2065,13 +2174,25 @@ components:
 
     LoginResult:
       type: object
-      required: [accessToken, user]
+      required: [accessToken, user, role]
       properties:
         accessToken:
           type: string
           description: HS256-signed JWT, 15-minute expiry.
         user:
           $ref: '#/components/schemas/UserSummary'
+        role:
+          type: string
+          enum: [owner, admin, teacher, student]
+          nullable: true
+          description: |
+            Story 2.6 (AC2) — the caller's DB-resolved center_members.role at
+            login/refresh time. `null` when the user has no single-membership
+            (fresh registration before onboarding OR multi-membership user
+            requiring an explicit membership select — deferred to Epic 2+).
+            Frontend `Session.role` is populated from this value; `useRole()`
+            reads it via the session cache. Parallels the shipped
+            `role` field on `AcceptInviteResult` / `CreateCenterResult`.
 
     LogoutResult:
       type: object
@@ -2990,6 +3111,55 @@ components:
           $ref: '#/components/schemas/GoogleMeetAuthorizeResult'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 2.6 — Owner/Admin staff invite ----------------
+    InviteStaffRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: |
+            Recipient email. Case-insensitive on the duplicate-invite check
+            (matches accept-invite's email_norm semantics from Story 1.5).
+        role:
+          type: string
+          enum: [owner, admin, teacher]
+          description: |
+            Assigned role. Student is NOT a valid value — staff invites are
+            distinct from student enrollment (the latter goes through the
+            enrollment endpoints, Story 2.7 / Epic 7). FR-11 forbids Admin
+            callers from picking `owner` here — the service returns 403
+            ROLE_ASSIGNMENT_FORBIDDEN in that case.
+
+    InviteResult:
+      type: object
+      required: [id, email, role, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, admin, teacher]
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            UTC timestamp when the invite lapses. Fixed 7 days from creation
+            for the Story 2.6 shipping path (Epic 7 may parameterize).
+
+    EnvelopeInviteResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/InviteResult'
 
   securitySchemes:
     bearerAuth:

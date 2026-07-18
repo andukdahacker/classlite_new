@@ -78,7 +78,7 @@ const SPAWNED_THREE = ['class-0001', 'class-0002', 'class-0003']
 type Persona = 'operator' | 'founder' | 'solo_teacher'
 
 function makeSession(overrides?: Partial<Session>): Session {
-  return {
+  const base: Session = {
     user: {
       id: 'user-1',
       email: USER_EMAIL,
@@ -95,8 +95,11 @@ function makeSession(overrides?: Partial<Session>): Session {
       logoUrl: null,
       timezone: 'Asia/Ho_Chi_Minh',
     },
-    ...overrides,
+    // Story 2.6 (AC2). OnboardingDone lands post-center-creation, so the
+    // caller is the newly-minted Owner per Story 2-1 AC2.
+    role: 'owner',
   }
+  return { ...base, ...overrides }
 }
 
 interface SeedProgressArgs {

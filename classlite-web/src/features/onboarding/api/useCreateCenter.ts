@@ -77,6 +77,12 @@ export function useCreateCenter() {
         // prior state; it doesn't re-derive claims).
         accessToken: data.accessToken,
         center,
+        // Story 2.6 (AC2). Create-center always mints the caller as
+        // Owner per Story 2-1 AC2 — hard-code `'owner'` rather than
+        // reading `data.role` (which is typed as the enum literal
+        // 'owner') so an accidental api.yaml widen (e.g. Epic 9's
+        // multi-role owner tiers) surfaces a compile error here first.
+        role: 'owner',
       })
       // Awaited so downstream navigations (e.g. Story 2.3b's mount reading
       // fresh progress) see the invalidated cache. Fire-and-forget here

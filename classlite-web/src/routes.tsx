@@ -198,18 +198,39 @@ const baseRoutes: RouteObject[] = [
           return { Component: TeacherDashboard }
         },
       },
-      // Story 2-5a — Owner-only Settings surface. Lazy chunk isolated per
-      // Winston-W5 (route-bundle-boundaries assertion in e2e/); Owner gate
-      // lives inline in SettingsPage until Story 2.6 lands a router-level
-      // errorElement per FU-2-5-H.
+      // Story 2-5a + 2.6 (AC6) — Owner-only Settings surface. The
+      // `RouteRoleGate` `element:` wrapper below replaces the inline
+      // `useRole()` + `if (role !== 'owner')` block that shipped in 2-5a
+      // at SettingsPage.tsx:23-25,50,132-138 (deleted in Task 7.3). Uses
+      // an `element:` wrapper NOT `errorElement:` — errorElement fires
+      // on thrown loader/render errors, not policy deny.
       {
         path: '/settings',
         lazy: async () => {
-          const { default: SettingsPage } = await import(
-            '@/features/settings/SettingsPage'
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
           )
-          return { Component: SettingsPage }
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner']}
+                requiredRolesForCopy={['owner']}
+                sectionNameKey="settings"
+              />
+            ),
+          }
         },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { default: SettingsPage } = await import(
+                '@/features/settings/SettingsPage'
+              )
+              return { Component: SettingsPage }
+            },
+          },
+        ],
       },
     ],
   },
@@ -290,10 +311,10 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
-  // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2-6 wires
-  // per-route `errorElement={<PermissionDenied requiredRoles={[...]} />}`
-  // for role-gated routes; this standalone URL renders the
-  // Owner+Admin variant for direct visits.
+  // Story 1-7c AC4 — UX-DR16 orientation screen. Story 2.6 wires
+  // per-route `<RouteRoleGate>` `element:` wrappers for role-gated
+  // routes (AC6). This standalone URL renders the Owner+Admin variant
+  // for direct visits (e.g. deep links from support tickets).
   {
     path: '/permission-denied',
     lazy: async () => {

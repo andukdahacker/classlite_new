@@ -361,6 +361,35 @@ func (e *IntegrationConnectFailedError) Error() string {
 	return "integration connect failed: " + e.Provider
 }
 
+// ---------------------------------------------------------------------
+// Story 2.6 — Owner/Admin staff invite errors.
+// ---------------------------------------------------------------------
+
+// RoleAssignmentForbiddenError → 403 ROLE_ASSIGNMENT_FORBIDDEN. FR-11:
+// only an Owner may assign the Owner role. An Admin caller passes the
+// `RequireRole("owner","admin")` middleware gate but must still be
+// rejected by the service layer when their invite payload names the
+// Owner role. Distinct from *ForbiddenError so the error mapper can
+// surface a targeted code (the frontend renders the copy at
+// `people.invite.error.roleAssignmentForbidden`).
+type RoleAssignmentForbiddenError struct{}
+
+func (e *RoleAssignmentForbiddenError) Error() string {
+	return "only an Owner can assign the Owner role"
+}
+
+// InviteEmailTakenError → 409 INVITE_EMAIL_TAKEN. An active (unexpired,
+// unaccepted) invite row already exists for this email on this center.
+// The error envelope carries `details.field = "email"` so the frontend
+// can render an inline field error rather than a top-of-form toast.
+type InviteEmailTakenError struct {
+	Email string
+}
+
+func (e *InviteEmailTakenError) Error() string {
+	return "active invite already exists for email: " + e.Email
+}
+
 // IntegrationConnectCanceledError → handled at the handler layer as a 302
 // redirect to /settings?tab=integrations&status=cancelled, NOT a JSON error
 // envelope. Fires when Google's callback returns `?error=access_denied` (or

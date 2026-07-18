@@ -63,6 +63,9 @@ const authenticatedVerified: Session = {
   } as unknown as Session['user'],
   accessToken: 'a.b.c',
   center: null,
+  // Story 2.6 (AC2). Onboarding wizard runs pre-center-creation, so no
+  // membership role exists yet — null.
+  role: null,
 }
 
 beforeEach(() => {
@@ -298,6 +301,8 @@ describe('Story 2-3c Task 1.4 — /setup/done route extension', () => {
       logoUrl: null,
       timezone: 'Asia/Ho_Chi_Minh',
     },
+    // Story 2.6 (AC2). /setup/done runs post-center-creation → owner.
+    role: 'owner',
   }
 
   function renderDonePath(path = '/setup/done') {

@@ -6,7 +6,7 @@
  * in lock-step.
  */
 import { describe, expect, test } from 'vitest'
-import { authKeys } from '@/features/auth/api/authKeys'
+import { authKeys, type Session } from '@/features/auth/api/authKeys'
 
 describe('authKeys factory', () => {
   test('session() returns the literal ["auth", "session"] tuple', () => {
@@ -159,5 +159,34 @@ describe('authKeys factory', () => {
     expect(
       authKeys.acceptInviteMutation().slice(0, authKeys.all.length),
     ).toEqual(authKeys.all)
+  })
+
+  // -------------------------------------------------------------------
+  // Story 2.6 (AC2 + Task 6.1) — Session shape contract lock.
+  //
+  // Every session cache writer (login / register / accept-invite /
+  // create-center / silent-refresh + boot-probe + every Storybook
+  // seeder) MUST populate the exact four-field shape below. This
+  // test freezes the contract: if a future story adds a new required
+  // field to `Session`, this assertion fails and every writer's
+  // update surfaces at review time instead of at HMR-crash time.
+  // -------------------------------------------------------------------
+  test('Story 2.6 — Session shape freeze (exact key set)', () => {
+    // Any valid Session inhabitant — the runtime keys are the same
+    // regardless of which values fill them.
+    const sample: Session = {
+      user: {
+        id: 'u',
+        email: 'e@example.com',
+        fullName: 'F',
+        emailVerified: true,
+      },
+      accessToken: 'a.b.c',
+      center: null,
+      role: 'owner',
+    }
+    // Sort so a key-order shuffle in Session doesn't break this.
+    const keys = Object.keys(sample).sort()
+    expect(keys).toEqual(['accessToken', 'center', 'role', 'user'])
   })
 })

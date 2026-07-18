@@ -30,6 +30,8 @@ function seedAuthenticatedSession() {
     },
     accessToken: 'sb.jwt',
     center: null,
+    // Story 2.6 (AC2). Pre-onboarding seeder → null role.
+    role: null,
   })
 }
 
@@ -43,6 +45,8 @@ function seedSessionWithCenter() {
     },
     accessToken: 'sb.jwt',
     center: null,
+    // Story 2.6 (AC2). Pre-onboarding seeder → null role.
+    role: null,
   })
 }
 
@@ -235,6 +239,8 @@ export const AlreadyHasCenter: Story = {
           logoUrl: null,
           timezone: 'Asia/Ho_Chi_Minh',
         },
+        // Story 2.6 (AC2). Center-attached seeder → Owner.
+        role: 'owner',
       })
       return <Story />
     },

@@ -338,6 +338,29 @@ func main() {
 	mux.Handle("GET /api/centers/{id}", settingsChain(settingsHandler.Get))
 	mux.Handle("PATCH /api/centers/{id}", settingsChain(settingsHandler.Patch))
 
+	// Story 2.6 — POST /api/centers/{id}/invites (AC8, FR-11).
+	//
+	// Distinct chain from settingsChain because the RequireRole allowlist
+	// widens to {owner, admin}. Everything else is intentionally identical
+	// (same rate-limit bucket, same tenant-context guards, same ErrorMapper)
+	// so a Teacher/Student caller sees the same 403 shape as on any other
+	// settings route. FR-11 (Admin-invites-Owner rejection) is enforced
+	// inside the service — see invites_handler.go doc.
+	invitesHandler := handler.NewInvitesHandler(authSvc, clock.RealClock{})
+	requireOwnerOrAdmin := middleware.RequireRole("owner", "admin")
+	settingsInviteChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireOwnerOrAdmin(
+						settingsLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+	mux.Handle("POST /api/centers/{id}/invites", settingsInviteChain(invitesHandler.Post))
+
 	// Story 2-5b — Terms + Holidays + Rooms endpoints (12 routes). Share the
 	// settingsChain wiring above so the same middleware order + rate limit
 	// apply. Every mutating op emits a `center.{term|holiday|room}.{created|

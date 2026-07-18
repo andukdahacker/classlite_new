@@ -74,15 +74,20 @@ export function useAcceptInvite(getActiveToken?: GetActiveToken) {
         accessToken: result.accessToken,
         // Story 2-3a AC9 — invited teachers land on a center owned by
         // someone else; `Session.center` remains null in the invitee's
-        // client cache. Story 2.6 role gating will read the caller's
-        // membership via a separate query. Populating this field with the
-        // invite's target center would mislead `useCurrentCenter` selectors.
+        // client cache. Populating this field with the invite's target
+        // center would mislead `useCurrentCenter` selectors.
         center: null,
+        // Story 2.6 (AC2). Accept-invite always returns the newly-minted
+        // membership role in the response body (api.yaml
+        // AcceptInviteResult.role), so this is never null on the happy
+        // path. `useRole()` immediately reflects the invited role.
+        role: result.role,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       broadcastLoginSucceeded({
         user: result.user,
         accessToken: result.accessToken,
+        role: result.role,
       })
       navigate('/dashboard', { replace: true })
     },

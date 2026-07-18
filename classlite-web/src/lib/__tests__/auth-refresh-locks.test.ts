@@ -174,6 +174,7 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
   })
 
   test('200 with valid EnvelopeLoginResult body hydrates the local cache (Story 1-8 AC5 success path)', async () => {
+    // Story 2.6 (AC2) — wire response now carries `role` (nullable enum).
     const payload = {
       user: {
         id: 'user-fresh',
@@ -182,6 +183,7 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
         emailVerified: true,
       },
       accessToken: 'jwt.fresh',
+      role: 'owner' as const,
     }
     server.use(
       http.post('/api/auth/refresh', () =>
@@ -191,8 +193,9 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     const result = await refreshAccessToken()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      // RefreshSessionData shape stays as `{user, accessToken}` — the
-      // `center` field is stitched in at cache-write time (Story 2-3a AC9).
+      // RefreshSessionData shape carries `{user, accessToken, role}`
+      // (Story 2.6). The `center` field is stitched in at cache-write
+      // time (Story 2-3a AC9).
       expect(result.data).toEqual(payload)
     }
     // Cache write stitches `center: null` (no prior center to preserve).

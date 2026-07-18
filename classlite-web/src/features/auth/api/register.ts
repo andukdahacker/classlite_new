@@ -52,6 +52,12 @@ export function useRegister() {
         // Story 2-3a AC9 — `center` starts null; the onboarding wizard's
         // `useCreateCenter` populates it on center creation.
         center: null,
+        // Story 2.6 (AC2). Register mints a token WITHOUT a center, so
+        // there's no membership row to resolve a role from — always
+        // null on the register path. `useRole()` will observe null;
+        // `useRoleLoading()` distinguishes this pre-onboarding state
+        // from an in-flight boot probe.
+        role: null,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       // (P1 amendment 2026-06-25) encodeURIComponent — verifyPollId is

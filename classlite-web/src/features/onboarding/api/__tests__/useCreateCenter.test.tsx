@@ -58,6 +58,8 @@ describe('useCreateCenter — AC7 + AC9 cache-write contract', () => {
       user: stubUser,
       accessToken: 'stale.token',
       center: null,
+      // Story 2.6 (AC2). Pre-create-center session — no membership yet.
+      role: null,
     })
 
     const { result } = renderHook(() => useCreateCenter(), {
@@ -94,6 +96,8 @@ describe('useCreateCenter — AC7 + AC9 cache-write contract', () => {
       user: stubUser,
       accessToken: null,
       center: null,
+      // Story 2.6 (AC2). Pre-create-center session — no membership yet.
+      role: null,
     })
     // Seed a stale progress cache entry.
     client.setQueryData(onboardingKeys.progress(), {
@@ -132,6 +136,8 @@ describe('useCreateCenter — AC7 + AC9 cache-write contract', () => {
       user: stubUser,
       accessToken: 'unchanged.token',
       center: null,
+      // Story 2.6 (AC2). Pre-create-center session — no membership yet.
+      role: null,
     }
     client.setQueryData<Session>(authKeys.session(), initial)
 

@@ -1,18 +1,15 @@
 /**
- * SettingsPage — Story 2-5a AC1 + AC2.
+ * SettingsPage — Story 2-5a AC1 + AC2, Story 2.6 AC6 route-gate migration.
  *
- * `/settings` mounts inside AppLayout with a 4-tab strip. Owner-only —
- * non-Owner (Teacher/Admin/Student) hits `<PermissionDenied>` rendered
- * inline (NOT full-bleed — sidebar + topbar stay visible so the user can
- * navigate away). Route-level errorElement gate lands in Story 2.6 per
- * FU-2-5-H.
+ * `/settings` mounts inside AppLayout with a 4-tab strip. Owner-only.
+ * Story 2.6 replaced the inline `useRole()` + `if (role !== 'owner')`
+ * gate with a route-level `<RouteRoleGate>` `element:` wrapper (see
+ * routes.tsx). The `element:` wrapper — NOT `errorElement:` —
+ * short-circuits to `<PermissionDenied sectionNameKey="settings">` before
+ * this component mounts on a non-Owner request.
  *
  * Tab state lives in the URL: `/settings` (Profile), `/settings?tab=terms`,
  * etc. Invalid `?tab=` falls back to Profile per AC1.
- *
- * Only the Profile tab body ships in 2-5a — Terms/Rooms/Integrations
- * render placeholder EmptyStates that reference their sub-story. Copy
- * removed when 2-5b/2-5c land.
  */
 import { useLayoutEffect, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -20,9 +17,6 @@ import { useNavigate, useLocation } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
-import { useRole } from '@/hooks/useRole'
-import PermissionDenied from '@/components/shared/PermissionDenied'
-// TODO(story-2-6): move to route-level errorElement + role gate per Winston-W-STRONG-9
 import { useSettingsTab, type SettingsTab } from './hooks/useSettingsTab'
 import { ProfileTab } from './ProfileTab'
 import { TermCalendarTab } from './TermCalendarTab'
@@ -47,7 +41,6 @@ const TAB_ORDER: readonly SettingsTab[] = [
 export default function SettingsPage(): ReactElement {
   const { t } = useTranslation()
   const { session } = useAuth()
-  const role = useRole()
   const { tab, setTab } = useSettingsTab()
   const centerId = session?.center?.id ?? null
   const location = useLocation()
@@ -128,14 +121,6 @@ export default function SettingsPage(): ReactElement {
     // location.search are the meaningful deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerId, location.search])
-
-  if (role !== 'owner') {
-    return (
-      <div data-testid="settings-permission-denied">
-        <PermissionDenied requiredRoles={['owner']} />
-      </div>
-    )
-  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">

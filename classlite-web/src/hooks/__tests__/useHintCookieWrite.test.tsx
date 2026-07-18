@@ -61,6 +61,8 @@ const AUTHED_SESSION: Session = {
   },
   accessToken: 'jwt.test',
   center: null,
+  // Story 2.6 (AC2). Hint-cookie writer doesn't gate on role.
+  role: null,
 }
 
 const UNVERIFIED_SESSION: Session = {
@@ -70,6 +72,8 @@ const UNVERIFIED_SESSION: Session = {
   },
   accessToken: null,
   center: null,
+  // Story 2.6 (AC2). Unverified user — no role.
+  role: null,
 }
 
 function mockHostname(host: string): { restore: () => void } {

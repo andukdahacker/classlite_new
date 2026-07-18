@@ -101,6 +101,9 @@ export const handlers = [
     const result: LoginResult = {
       accessToken: 'msw.jwt.signature',
       user: { ...MSW_USER, email: body.email },
+      // Story 2.6 (AC2). MSW default: an already-onboarded Owner. Tests
+      // that need to seed a different role override this handler.
+      role: 'owner',
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },
@@ -118,6 +121,10 @@ export const handlers = [
     const result: LoginResult = {
       accessToken: 'msw.refreshed.jwt',
       user: MSW_USER,
+      // Story 2.6 (AC2). Silent refresh returns the caller's DB role
+      // alongside the fresh JWT — matches the api.yaml LoginResult
+      // amendment.
+      role: 'owner',
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },

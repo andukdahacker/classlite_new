@@ -63,6 +63,14 @@ const SESSION_QUERY_KEY = ['auth', 'session'] as const
 export interface RefreshSessionData {
   user: UserSummary
   accessToken: string
+  /**
+   * Story 2.6 (AC2). Sourced from the wire response's `role` field
+   * (api.yaml LoginResult.role — nullable enum). `null` when the user
+   * has no single membership at token-mint time. Duplicated here to
+   * keep the auth-refresh module import-cycle-free — see the header
+   * comment for the module-load rationale.
+   */
+  role: 'owner' | 'admin' | 'teacher' | 'student' | null
 }
 
 /**
@@ -83,6 +91,10 @@ interface SessionCacheEntry {
     logoUrl: string | null
     timezone: string
   } | null
+  // Story 2.6 (AC2) — see Session.role in authKeys.ts. Kept as a plain
+  // union rather than importing the exported `Role` alias to preserve
+  // the cycle-avoidance rationale documented at the top of this file.
+  role: 'owner' | 'admin' | 'teacher' | 'student' | null
 }
 
 export type RefreshResult =
@@ -249,6 +261,11 @@ async function performNetworkRefresh(): Promise<RefreshResult> {
       data = {
         user: envelope.data.user,
         accessToken: envelope.data.accessToken,
+        // Story 2.6 (AC2). `envelope.data.role` is nullable per api.yaml
+        // LoginResult; `?? null` normalizes `undefined` (e.g. a legacy
+        // gateway response) to the same explicit-null shape callers
+        // expect.
+        role: envelope.data.role ?? null,
       }
     } catch {
       Sentry.captureMessage('auth-refresh: 200 with unparseable body', {
@@ -269,10 +286,18 @@ async function performNetworkRefresh(): Promise<RefreshResult> {
       // fresh cache slot (NEVER `undefined`).
       queryClient.setQueryData(
         SESSION_QUERY_KEY,
-        (previous: SessionCacheEntry | undefined) => ({
-          ...data,
-          center: previous?.center ?? null,
-        }),
+        // TypeScript widens `data` inside the callback; capture in a
+        // const so the ternary below narrows once and the object shape
+        // stays inferable without a type assertion.
+        (previous: SessionCacheEntry | undefined) => {
+          const next: SessionCacheEntry = {
+            user: data!.user,
+            accessToken: data!.accessToken,
+            center: previous?.center ?? null,
+            role: data!.role,
+          }
+          return next
+        },
       )
     }
     channel?.postMessage({
@@ -388,12 +413,23 @@ function hydrateSessionCache(data: RefreshSessionData): void {
   // Story 2-3a AC9: `Session.center` is synthesized here (broadcast payload
   // does not carry it). Prior center is preserved when this sibling tab
   // already had a cache entry — a fresh sibling gets defined-as-null.
+  //
+  // Story 2.6 (AC2): `role` rides on the broadcast payload so a sibling
+  // tab that just missed the refresh network round-trip still lands
+  // with the correct role in its own cache. Same normalization as the
+  // owning-tab writer above — the local `SessionCacheEntry` shape stays
+  // in lockstep with `Session` from authKeys.ts.
   queryClient.setQueryData(
     SESSION_QUERY_KEY,
-    (previous: SessionCacheEntry | undefined) => ({
-      ...data,
-      center: previous?.center ?? null,
-    }),
+    (previous: SessionCacheEntry | undefined) => {
+      const next: SessionCacheEntry = {
+        user: data.user,
+        accessToken: data.accessToken,
+        center: previous?.center ?? null,
+        role: data.role,
+      }
+      return next
+    },
   )
 }
 

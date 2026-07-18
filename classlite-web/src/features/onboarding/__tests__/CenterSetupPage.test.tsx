@@ -42,6 +42,9 @@ function seedAuthed(client: QueryClient): void {
     } as unknown as Session['user'],
     accessToken: 'a.b.c',
     center: null,
+    // Story 2.6 (AC2). Pre-center state — no membership row yet, so no
+    // role. The CenterSetupPage wizard runs before onboarding lands.
+    role: null,
   })
 }
 

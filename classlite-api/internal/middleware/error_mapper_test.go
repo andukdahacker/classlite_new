@@ -354,3 +354,60 @@ func TestErrorMapper_OAuthNotConfiguredError(t *testing.T) {
 		t.Errorf("expected OAUTH_NOT_CONFIGURED, got %s", body.Error.Code)
 	}
 }
+
+// ---------------------------------------------------------------------
+// Story 2.6 Owner/Admin staff invite error mapping tests.
+// ---------------------------------------------------------------------
+
+func TestErrorMapper_RoleAssignmentForbiddenError(t *testing.T) {
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.RoleAssignmentForbiddenError{}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "ROLE_ASSIGNMENT_FORBIDDEN" {
+		t.Errorf("expected ROLE_ASSIGNMENT_FORBIDDEN, got %s", body.Error.Code)
+	}
+	if body.Error.Message != "Only an Owner can assign the Owner role." {
+		t.Errorf("client copy drift: %q", body.Error.Message)
+	}
+	if body.Error.Details != nil {
+		t.Errorf("expected no details field, got %v", body.Error.Details)
+	}
+}
+
+func TestErrorMapper_InviteEmailTakenError_InlineFieldError(t *testing.T) {
+	// AC8: duplicate active invite surfaces as an inline field error on
+	// `email`, mirroring the ROOM_NAME_TAKEN wire shape so the frontend
+	// can render the alert against the input rather than a top-of-form
+	// toast.
+	h := middleware.ErrorMapper(func(w http.ResponseWriter, r *http.Request) error {
+		return &service.InviteEmailTakenError{Email: "bob@example.com"}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, reqWithID())
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", rec.Code)
+	}
+	var body errorEnvelope
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body.Error.Code != "INVITE_EMAIL_TAKEN" {
+		t.Errorf("expected INVITE_EMAIL_TAKEN, got %s", body.Error.Code)
+	}
+	details, ok := body.Error.Details.([]any)
+	if !ok || len(details) != 1 {
+		t.Fatalf("expected 1 field error in details, got %v", body.Error.Details)
+	}
+	fieldErr, ok := details[0].(map[string]any)
+	if !ok {
+		t.Fatalf("field-error shape drift: %v", details[0])
+	}
+	if fieldErr["field"] != "email" {
+		t.Errorf("expected field=email, got %v", fieldErr["field"])
+	}
+}

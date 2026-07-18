@@ -4,7 +4,7 @@
  * seam is non-critical (it is a single-value Provider).
  */
 import { createContext, type ReactNode } from 'react'
-import type { Role } from './useRole'
+import type { Role } from '@/features/auth/api/authKeys'
 
 /**
  * RoleContext — overrideable seam for `useRole()`.

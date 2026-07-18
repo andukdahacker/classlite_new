@@ -67,7 +67,7 @@ const USER_EMAIL = 'owner@example.com'
 const USER_DISPLAY_NAME = 'Trang'
 
 function makeSession(overrides?: Partial<Session>): Session {
-  return {
+  const base: Session = {
     user: {
       id: USER_ID,
       email: USER_EMAIL,
@@ -84,8 +84,12 @@ function makeSession(overrides?: Partial<Session>): Session {
       logoUrl: null,
       timezone: 'Asia/Ho_Chi_Minh',
     },
-    ...overrides,
+    // Story 2.6 (AC2) — TeacherDashboard renders for a Teacher persona;
+    // the seeded session mirrors the on-wire shape a Teacher would have
+    // after login + membership resolve.
+    role: 'teacher',
   }
+  return { ...base, ...overrides }
 }
 
 type Persona = 'operator' | 'founder' | 'solo_teacher'

@@ -55,6 +55,12 @@ export function useLogin() {
         surfaceAuthError: true,
       }),
     onSuccess: (result) => {
+      // Story 2.6 (AC2) — `result.role` is nullable per the api.yaml
+      // LoginResult schema (an unattached / multi-membership user has
+      // no single role at login time). `?? null` normalizes an absent
+      // wire field (legacy gateway, pre-2.6 backend) to the same
+      // explicit-null shape `Session.role` requires.
+      const role = result.role ?? null
       const session: Session = {
         user: result.user,
         accessToken: result.accessToken,
@@ -64,6 +70,7 @@ export function useLogin() {
         // separate onboarding progress query. `null` is the defined absent
         // marker (never `undefined`).
         center: null,
+        role,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
       // Story 1-9a Layer B — broadcast the login to sibling tabs so a
@@ -73,6 +80,7 @@ export function useLogin() {
       broadcastLoginSucceeded({
         user: result.user,
         accessToken: result.accessToken,
+        role,
       })
       // Navigation is the caller's concern (Story 1-9d AC4 amendment).
       // LoginPage runs `navigate(sanitizeNextParam(searchParams.get('next')))`

@@ -84,6 +84,9 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var payloadTooLarge *service.PayloadTooLargeError
 		// Story 2-5b settings taxonomy errors.
 		var roomNameTaken *service.RoomNameTakenError
+		// Story 2.6 Owner/Admin staff invite errors.
+		var roleAssignmentForbidden *service.RoleAssignmentForbiddenError
+		var inviteEmailTaken *service.InviteEmailTakenError
 		// Story 2-5c Google Meet OAuth callback errors (JSON envelope path).
 		// OAuthStateInvalidError + OAuthStateExpiredError are shipped by
 		// Story 1.6 for the LOGIN callback via 302 redirect intercept at
@@ -202,6 +205,23 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 				"ROOM_NAME_TAKEN",
 				"A room with this name already exists in this center.",
 				[]model.FieldError{{Field: "name", Message: "room name must be unique (case-insensitive)"}})
+			return
+		case errors.As(err, &roleAssignmentForbidden):
+			// Story 2.6 FR-11 — Admin caller tried to invite an Owner.
+			// Distinct 403 code from INSUFFICIENT_ROLE so the frontend
+			// renders "Only an Owner can assign the Owner role."
+			handler.WriteError(w, r, http.StatusForbidden,
+				"ROLE_ASSIGNMENT_FORBIDDEN",
+				"Only an Owner can assign the Owner role.", nil)
+			return
+		case errors.As(err, &inviteEmailTaken):
+			// Story 2.6 AC8 — inline field error on `email` mirroring the
+			// ROOM_NAME_TAKEN pattern so the frontend can render the alert
+			// against the email input rather than a top-of-form toast.
+			handler.WriteError(w, r, http.StatusConflict,
+				"INVITE_EMAIL_TAKEN",
+				"An active invite already exists for this email.",
+				[]model.FieldError{{Field: "email", Message: "an active invite already exists"}})
 			return
 		case errors.As(err, &oauthStateInvalid):
 			handler.WriteError(w, r, http.StatusBadRequest,

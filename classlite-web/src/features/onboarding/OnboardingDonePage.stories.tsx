@@ -51,6 +51,9 @@ function seedAuthenticatedSession(overrides: {
       name: overrides.centerName ?? CENTER.name,
       shortCode: overrides.shortCode ?? CENTER.shortCode,
     },
+    // Story 2.6 (AC2). Post-center-creation → Owner. Storybook seeder
+    // must populate role explicitly per Task 6.2 grep contract.
+    role: 'owner',
   })
 }
 

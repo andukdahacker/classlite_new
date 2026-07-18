@@ -14,18 +14,39 @@
  * a role string — adding a Teacher-only variant later is a new branch
  * + a new i18n key + a new test case.
  *
- * Story 2-6 wires per-route `errorElement={<PermissionDenied requiredRoles={[...]} />}`
- * so the route layer owns gating. Today only the standalone
- * `/permission-denied` URL is reachable; it renders the OwnerAdmin
- * variant as the default for the bare URL.
+ * Story 2.6 wires per-route `<RouteRoleGate>` `element:` wrapper on
+ * guarded routes (see components/shared/RouteRoleGate.tsx) — NOT
+ * `errorElement`, which fires on thrown loader/render errors rather
+ * than policy deny.
+ *
+ * Story 2.6 also introduces the `sectionNameKey?: SectionNameKey`
+ * discriminated union — a native-grammar per-section header rendered
+ * under the title so the user learns which surface is gated
+ * (Settings / Permissions / Billing). Discriminated union NOT raw string
+ * per UX-2 (never concatenate translated strings with raw values —
+ * would ship a VN grammar bug via Sally-BLOCKER-2 in party-mode review).
  */
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 export type PermissionDeniedRoles = ['owner', 'admin'] | ['owner']
 
+/**
+ * SectionNameKey — the closed set of gated surfaces that PermissionDenied
+ * knows how to name. New surfaces MUST add a new key here + i18n copy
+ * for both locales; the union prevents a caller from passing an
+ * arbitrary string that would fail the i18n lookup at runtime.
+ *
+ * `'settings'` is the only consumer today (Story 2.6 AC6); `'permissions'`
+ * and `'billing'` are pre-loaded so Epic 4/8 (permissions matrix) and
+ * Epic 9 (billing) can consume them without a fragmenting i18n copy
+ * change per-story.
+ */
+export type SectionNameKey = 'settings' | 'permissions' | 'billing'
+
 export interface PermissionDeniedProps {
   requiredRoles: PermissionDeniedRoles
+  sectionNameKey?: SectionNameKey
 }
 
 function bodyKey(requiredRoles: PermissionDeniedRoles): string {
@@ -42,6 +63,7 @@ function requiredRoleSummaryKey(requiredRoles: PermissionDeniedRoles): string {
 
 export default function PermissionDenied({
   requiredRoles,
+  sectionNameKey,
 }: PermissionDeniedProps) {
   const { t } = useTranslation()
   return (
@@ -52,6 +74,14 @@ export default function PermissionDenied({
       <h1 className="font-[var(--cl-font-display)] text-3xl text-[var(--cl-ink)]">
         {t('app.permissionDenied.title')}
       </h1>
+      {sectionNameKey ? (
+        <p
+          data-testid="permission-denied-section-header"
+          className="mt-1 font-[var(--cl-font-body)] text-sm text-[var(--cl-muted)]"
+        >
+          {t(`app.permissionDenied.section.${sectionNameKey}.header`)}
+        </p>
+      ) : null}
       <p className="mt-3 max-w-md font-[var(--cl-font-body)] text-[var(--cl-ink-soft)]">
         {t(bodyKey(requiredRoles))}
       </p>

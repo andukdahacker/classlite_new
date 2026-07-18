@@ -1472,3 +1472,44 @@ describe('Story 2-5c i18n parity (R38)', () => {
   )
 })
 
+// ---------------------------------------------------------------------
+// Story 2.6 (AC10) — pinned STORY_2_6_KEYS closed literal.
+//
+// Post-party-mode-amendment key count ~7 (FR-10 permissions matrix
+// deferred to FU-2-6-E). Groups: 3 PermissionDenied per-section headers
+// (settings/permissions/billing) + 1 RouteAccessCheckingCard label +
+// 2 people.invite.error.* copies for the FR-11 + duplicate wire codes.
+// ---------------------------------------------------------------------
+const STORY_2_6_KEYS = [
+  'app.permissionDenied.section.settings.header',
+  'app.permissionDenied.section.permissions.header',
+  'app.permissionDenied.section.billing.header',
+  'app.routeGate.checkingAccess',
+  'people.invite.error.roleAssignmentForbidden',
+  'people.invite.error.emailTaken',
+] as const
+
+describe('Story 2.6 i18n parity (R38)', () => {
+  test('every Story 2.6 i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_2_6_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 2.6 keys', () => {
+    assertI18nInterpolationParity(STORY_2_6_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_2_6 = [
+    'app.permissionDenied.section.',
+    'app.routeGate.',
+    'people.invite.error.',
+  ] as const
+
+  test.each(STORY_2_6_KEYS)(
+    '%s belongs to a 2.6 allowed prefix (AC10 single-prefix ratchet)',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_2_6.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})
+

@@ -25,6 +25,8 @@ import { RoleProvider } from '@/hooks/RoleContext'
 import type { Role } from '@/hooks/useRole'
 import { useUIStore } from '@/stores/uiStore'
 import { useLanguageStore } from '@/stores/languageStore'
+import { queryClient } from '@/lib/query-client'
+import { authKeys } from '@/features/auth/api/authKeys'
 import { assertI18nParity } from '@/lib/test/i18n-parity'
 import i18n from '@/lib/i18n'
 
@@ -58,6 +60,12 @@ describe('AppLayout', () => {
     // Reset the once-per-session warn flag so the guest-shell warn test
     // can exercise the warn path even when other tests ran first.
     __resetWarnTrackingForTests()
+    // Story 2.6 (Task 6.3) — useRole/useRoleLoading now subscribe to the
+    // module-singleton queryClient, so a prior test's seeded Session
+    // (or a prior file's setup) would leak into this file's RoleProvider-
+    // driven fixtures. Explicit clear of the session slot restores the
+    // "no session" default the shipped guest-shell test relies on.
+    queryClient.removeQueries({ queryKey: authKeys.session() })
   })
 
   describe('guest shell (role=null) — least-privilege default', () => {

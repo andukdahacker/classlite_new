@@ -43,6 +43,8 @@ describe('useCurrentCenter — Story 2-3a AC9', () => {
       user: stubUser,
       accessToken: 'jwt.access',
       center: null,
+      // Story 2.6 (AC2). Center-null branch — role also null.
+      role: null,
     })
     const { result } = renderHook(() => useCurrentCenter(), { wrapper })
     expect(result.current).toBeNull()
@@ -63,6 +65,8 @@ describe('useCurrentCenter — Story 2-3a AC9', () => {
       user: stubUser,
       accessToken: 'jwt.access',
       center,
+      // Story 2.6 (AC2). Center-attached fixture → Owner.
+      role: 'owner',
     })
     const { result } = renderHook(() => useCurrentCenter(), { wrapper })
     expect(result.current).toEqual(center)
