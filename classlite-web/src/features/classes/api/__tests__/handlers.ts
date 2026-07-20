@@ -110,3 +110,80 @@ export const errorHandlers = {
       ),
     ),
 }
+
+// ---------------------------------------------------------------------
+// Story 3.2 — GET /api/classes/{id} (single-class detail read). The only
+// network read the detail shell performs. Fixtures carry full metadata so the
+// Overview tab (AC2) can assert every shipped field.
+// ---------------------------------------------------------------------
+
+export const CLASS_DETAIL_ID = 'cls-detail-1'
+export const FOREIGN_CLASS_ID = 'cls-foreign-1'
+
+/** Rich single-class fixture — every shipped Overview field populated. */
+export const classDetailFull: ClassWire = classWire({
+  id: CLASS_DETAIL_ID,
+  name: 'IELTS Intensive Evening',
+  templateId: null,
+  description: 'Evening cohort targeting Band 7.0 across all skills.',
+  targetBand: 7,
+  primarySkill: 'all_skills',
+  sessionCount: 24,
+  capacity: 18,
+  status: 'active',
+  teacherId: null,
+  pendingTeacherEmail: 'invited-teacher@example.com',
+  startDate: '2026-09-01',
+  endDate: '2026-12-15',
+  color: null,
+  dueDatesEnabled: true,
+})
+
+/** Happy-path detail handler — returns `cls` for any :id. */
+export function classDetailHandlers(cls: ClassWire = classDetailFull) {
+  return [
+    http.get('/api/classes/:id', () => HttpResponse.json(envelope(cls))),
+  ]
+}
+
+/**
+ * 404 CLASS_NOT_FOUND — models BOTH the absent-class case AND the
+ * teacher-targeting-a-foreign-class case (3.1 AC6 teacher-scope 404). The two
+ * are indistinguishable on the wire, which is the AC6 non-leak invariant.
+ */
+export function classDetail404Handlers() {
+  return [
+    http.get('/api/classes/:id', () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: 'CLASS_NOT_FOUND',
+            message: 'class not found',
+            requestId: 'req-detail-404',
+            details: null,
+          },
+        },
+        { status: 404 },
+      ),
+    ),
+  ]
+}
+
+/** Non-404 server error — exercises the shell's inline error+retry state. */
+export function classDetail500Handlers() {
+  return [
+    http.get('/api/classes/:id', () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Internal error',
+            requestId: 'req-detail-500',
+            details: null,
+          },
+        },
+        { status: 500 },
+      ),
+    ),
+  ]
+}

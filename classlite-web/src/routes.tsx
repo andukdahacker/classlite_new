@@ -17,7 +17,9 @@
  */
 import {
   createBrowserRouter,
+  Navigate,
   redirect,
+  useParams,
   type LoaderFunctionArgs,
   type RouteObject,
 } from 'react-router'
@@ -63,6 +65,18 @@ function RouterErrorFallback() {
       </div>
     </div>
   )
+}
+
+// Unknown tab segment under /classes/:id (typo, stale bookmark, a tab removed
+// in a later epic) → redirect to the canonical overview instead of falling
+// through to the global `*` NotFound. Routes the request back through the
+// class-scoped guard (ClassDetailLayout → useClass → localized NotFoundCard for
+// a foreign/absent class), matching the bare-/classes/:id index redirect.
+// Absolute target built from the route param so it stays basename-safe (CR-review P1).
+// eslint-disable-next-line react-refresh/only-export-components -- co-export with `routes`; router entry, not an HMR-refreshable module.
+function ClassTabFallbackRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/classes/${id}/overview`} replace />
 }
 
 // Exported so the routes-seam unit test imports the exact loader the router
@@ -264,6 +278,110 @@ const baseRoutes: RouteObject[] = [
               )
               return { Component: ClassesPage }
             },
+          },
+        ],
+      },
+      // Story 3.2 — /classes/:id tabbed detail shell (screen s08/s09). A
+      // SIBLING of the /classes index group (peers, NOT nested under it) so the
+      // s07 index chunk stays lean and the detail layout ships its own
+      // `ClassDetailLayout-*.js` chunk. Same RouteRoleGate props as the index
+      // (staff-only). The record/ownership authz is the GET 404 inside the
+      // layout (AC6) — the gate is ROLE authz only (two-layer model).
+      {
+        path: '/classes/:id',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="classes"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            // Pathless layout route: ClassDetailLayout owns the detail-head +
+            // tab strip + Loading/Not-found/Error trilogy and renders the
+            // active tab through its own <Outlet />. Deep-imported (NOT the
+            // barrel) so Rolldown emits the dedicated ClassDetailLayout chunk.
+            lazy: async () => {
+              const { default: ClassDetailLayout } = await import(
+                '@/features/classes/ClassDetailLayout'
+              )
+              return { Component: ClassDetailLayout }
+            },
+            children: [
+              // Bare /classes/:id → overview. Element redirect (NOT a loader
+              // redirect) keeps FW-1 clean and never renders an empty body.
+              {
+                index: true,
+                element: <Navigate to="overview" replace />,
+              },
+              {
+                path: 'overview',
+                lazy: async () => {
+                  const { default: OverviewTab } = await import(
+                    '@/features/classes/tabs/OverviewTab'
+                  )
+                  return { Component: OverviewTab }
+                },
+              },
+              {
+                path: 'students',
+                lazy: async () => {
+                  const { default: StudentsTab } = await import(
+                    '@/features/classes/tabs/StudentsTab'
+                  )
+                  return { Component: StudentsTab }
+                },
+              },
+              {
+                path: 'assignments',
+                lazy: async () => {
+                  const { default: AssignmentsTab } = await import(
+                    '@/features/classes/tabs/AssignmentsTab'
+                  )
+                  return { Component: AssignmentsTab }
+                },
+              },
+              {
+                path: 'sessions',
+                lazy: async () => {
+                  const { default: SessionsTab } = await import(
+                    '@/features/classes/tabs/SessionsTab'
+                  )
+                  return { Component: SessionsTab }
+                },
+              },
+              {
+                path: 'materials',
+                lazy: async () => {
+                  const { default: MaterialsTab } = await import(
+                    '@/features/classes/tabs/MaterialsTab'
+                  )
+                  return { Component: MaterialsTab }
+                },
+              },
+              {
+                path: 'analytics',
+                lazy: async () => {
+                  const { default: AnalyticsTab } = await import(
+                    '@/features/classes/tabs/AnalyticsTab'
+                  )
+                  return { Component: AnalyticsTab }
+                },
+              },
+              {
+                // Unknown tab → overview (via the class-scoped guard). CR-review P1.
+                path: '*',
+                element: <ClassTabFallbackRedirect />,
+              },
+            ],
           },
         ],
       },

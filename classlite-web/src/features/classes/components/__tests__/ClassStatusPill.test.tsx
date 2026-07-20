@@ -45,6 +45,33 @@ describe('ClassStatusPill — legal next states only', () => {
       screen.queryByTestId('class-status-option-active'),
     ).not.toBeInTheDocument()
   })
+})
+
+// Story 3.2 (AC5) — the detail-head renders the pill as a READ-ONLY static
+// badge (no `onTransition`). `onTransition?:` is optional; when omitted, even a
+// non-terminal status renders a plain span with no transition affordance.
+describe('ClassStatusPill — read-only static badge (Story 3.2 detail head)', () => {
+  test.each(['upcoming', 'active', 'paused', 'ended'] as const)(
+    '%s with no onTransition renders a static badge, no interactive trigger',
+    (status) => {
+      render(
+        <I18nextProvider i18n={i18n}>
+          <ClassStatusPill status={status} />
+        </I18nextProvider>,
+      )
+      const pill = screen.getByTestId(`class-status-pill-${status}`)
+      expect(pill.tagName).toBe('SPAN')
+      // Not a button/trigger, and no transition menu options exist.
+      expect(pill).not.toHaveAttribute('aria-haspopup')
+      expect(
+        screen.queryByRole('button', {
+          name: i18n.t('classes.transition.trigger', {
+            status: i18n.t(`classes.status.${status}`),
+          }),
+        }),
+      ).not.toBeInTheDocument()
+    },
+  )
 
   // NOTE: the onSelect → onTransition invocation is NOT unit-tested here —
   // Radix DropdownMenu.Item's onSelect fires through a custom pointer-event

@@ -1610,3 +1610,81 @@ describe('Story 3.1 i18n parity', () => {
   )
 })
 
+// ---------------------------------------------------------------------
+// Story 3.2 (AC8) — pinned STORY_3_2_KEYS closed literal. classes.detail.*
+// tabbed detail shell: tab labels + dormant-tab accessible names + detail-head
+// meta + Overview field labels + benefit-copy "coming soon" panels (NO epic /
+// roadmap / date words) + not-found state + right-rail info/Actions labels.
+// Interpolation tokens: head.meta.targetBand {{band}}, overview.teacherPending
+// {{email}}, info.created {{date}}.
+// ---------------------------------------------------------------------
+export const STORY_3_2_KEYS = [
+  'classes.detail.tabs.overview',
+  'classes.detail.tabs.students',
+  'classes.detail.tabs.assignments',
+  'classes.detail.tabs.sessions',
+  'classes.detail.tabs.materials',
+  'classes.detail.tabs.analytics',
+  'classes.detail.tabs.studentsComingSoon',
+  'classes.detail.tabs.assignmentsComingSoon',
+  'classes.detail.tabs.sessionsComingSoon',
+  'classes.detail.tabs.materialsComingSoon',
+  'classes.detail.tabs.analyticsComingSoon',
+  'classes.detail.head.tablistAria',
+  'classes.detail.head.meta.targetBand',
+  'classes.detail.head.meta.noSchedule',
+  'classes.detail.head.comingSoonChip',
+  'classes.detail.loading.aria',
+  'classes.detail.overview.sectionHeading',
+  'classes.detail.overview.fields.status',
+  'classes.detail.overview.fields.teacher',
+  'classes.detail.overview.fields.schedule',
+  'classes.detail.overview.fields.targetBand',
+  'classes.detail.overview.fields.primarySkill',
+  'classes.detail.overview.fields.sessionCount',
+  'classes.detail.overview.fields.capacity',
+  'classes.detail.overview.fields.description',
+  'classes.detail.overview.fields.dueDates',
+  'classes.detail.overview.dueDates.on',
+  'classes.detail.overview.dueDates.off',
+  'classes.detail.overview.teacherAssigned',
+  'classes.detail.overview.teacherPending',
+  'classes.detail.overview.teacherUnassigned',
+  'classes.detail.overview.notSet',
+  'classes.detail.comingSoon.students.title',
+  'classes.detail.comingSoon.students.body',
+  'classes.detail.comingSoon.assignments.title',
+  'classes.detail.comingSoon.assignments.body',
+  'classes.detail.comingSoon.sessions.title',
+  'classes.detail.comingSoon.sessions.body',
+  'classes.detail.comingSoon.materials.title',
+  'classes.detail.comingSoon.materials.body',
+  'classes.detail.comingSoon.analytics.title',
+  'classes.detail.comingSoon.analytics.body',
+  'classes.detail.notFound.headline',
+  'classes.detail.notFound.body',
+  'classes.detail.notFound.backCta',
+  'classes.detail.info.heading',
+  'classes.detail.info.created',
+  'classes.detail.actions.heading',
+  'classes.detail.actions.dormantHint',
+  'classes.detail.actions.viewDetails',
+] as const
+
+describe('Story 3.2 i18n parity', () => {
+  test('every Story 3.2 i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_2_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.2 keys', () => {
+    assertI18nInterpolationParity(STORY_3_2_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_3_2 = ['classes.detail.'] as const
+
+  test.each(STORY_3_2_KEYS)('%s belongs to a 3.2 allowed prefix', (key) => {
+    const ok = ALLOWED_PREFIXES_3_2.some((p) => key.startsWith(p))
+    expect(ok).toBe(true)
+  })
+})
+

@@ -18,6 +18,7 @@ import {
   type ReactElement,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link, useNavigate } from 'react-router'
 import { MoreHorizontal } from 'lucide-react'
 import { useRole } from '@/hooks/useRole'
 import { queryClient } from '@/lib/query-client'
@@ -244,8 +245,13 @@ function ClassRow({
   onEdit: () => void
 }): ReactElement {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const tileColor = cls.color ?? 'var(--cl-accent)'
   const initial = cls.name.trim().charAt(0).toUpperCase() || '?'
+  // Story 3.2 (AC5) — the class name is now the detail link (closes 3.1 AC7's
+  // deferral). The row stays otherwise inert: no full-row pointer/onClick;
+  // interactivity is the name link, the status pill, and the Actions menu only.
+  const detailPath = `/classes/${cls.id}/overview`
 
   return (
     <>
@@ -259,7 +265,12 @@ function ClassRow({
             >
               {initial}
             </span>
-            <span className="font-medium text-slate-900">{cls.name}</span>
+            <Link
+              to={detailPath}
+              className="font-medium text-slate-900 hover:text-[color:var(--cl-accent)] hover:underline"
+            >
+              {cls.name}
+            </Link>
           </div>
         </td>
         <td className="py-3 pr-4 text-slate-600">
@@ -294,6 +305,9 @@ function ClassRow({
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => navigate(detailPath)}>
+                {t('classes.detail.actions.viewDetails')}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={onEdit}>
                 {t('classes.table.editCta')}
               </DropdownMenuItem>

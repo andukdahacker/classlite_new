@@ -791,4 +791,59 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       ).not.toContain('classes-page')
     }
   })
+
+  test('Story 3.2 — ClassDetailLayout ships its own chunk; detail testid absent from the s07 index chunk + onboarding/dashboard/settings', async () => {
+    // Story 3.2 Task 1 / AC7. The /classes/:id detail shell is a SIBLING lazy
+    // group (peers with the s07 index), deep-imported so Rolldown emits a
+    // dedicated `ClassDetailLayout-*.js` chunk. Real boundary assertion:
+    //   Positive — the detail chunk exists and carries the
+    //     `class-detail-layout` root testid.
+    //   Negative (load-bearing) — the s07 `ClassesPage` index chunk did NOT
+    //     grow to absorb the detail layout (deep-import discipline), and the
+    //     testid does not leak into onboarding / dashboard / settings chunks.
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const detailChunkFiles = files.filter((f: string) =>
+      /^ClassDetailLayout-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      detailChunkFiles.length,
+      'ClassDetailLayout chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const detailContents = detailChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    expect(
+      detailContents,
+      'ClassDetailLayout chunk missing `class-detail-layout` root testid',
+    ).toContain('class-detail-layout')
+
+    // The s07 index chunk MUST still exist and MUST NOT contain the detail
+    // layout testid — proves the index chunk did not absorb the detail chunk.
+    const indexChunkFiles = files.filter((f: string) =>
+      /^ClassesPage-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      indexChunkFiles.length,
+      'ClassesPage index chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const otherChunkFiles = files.filter((f: string) =>
+      /^(ClassesPage|OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage|TeacherDashboard|StudentDashboard|SettingsPage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+    for (const chunkFile of otherChunkFiles) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      expect(
+        content,
+        `${chunkFile} leaked detail testid "class-detail-layout"`,
+      ).not.toContain('class-detail-layout')
+    }
+  })
 })

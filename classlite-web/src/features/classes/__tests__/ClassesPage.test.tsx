@@ -15,9 +15,10 @@
 // useRole/useCurrentCenter read the singleton, and RoleProvider bypasses the
 // load-bearing session→useRole chain [Murat-INFO-2, per AppLayout.role-filtering.test].
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
@@ -132,5 +133,79 @@ describe('ClassesPage — AC5 role-scoped visibility (TEST-FE-6)', () => {
     server.use(...classesHandlers)
     renderClassesPage('owner')
     expect(await screen.findByText(classTeacherB.name)).toBeInTheDocument()
+  })
+})
+
+// Story 3.2 (AC5) — the s07 class name becomes the detail link (closes 3.1
+// AC7's deferral). The row stays otherwise inert.
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-probe">{location.pathname}</div>
+}
+
+function renderClassesPageWithNav(role: Role): void {
+  seedSession(role)
+  const client = createTestQueryClient()
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/classes']}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/classes" element={<ClassesPage />} />
+            <Route
+              path="/classes/:id/*"
+              element={<div data-testid="detail-stub" />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nextProvider>,
+  )
+}
+
+describe('ClassesPage — detail link-up (AC5)', () => {
+  test('class name is a link to /classes/{id}/overview', async () => {
+    server.use(...classesHandlers)
+    renderClassesPageWithNav('owner')
+    const link = await screen.findByRole('link', { name: classTeacherA.name })
+    expect(link).toHaveAttribute('href', `/classes/${classTeacherA.id}/overview`)
+  })
+
+  test('actions menu exposes "View details" pointing at the same destination', async () => {
+    server.use(...classesHandlers)
+    const user = userEvent.setup()
+    renderClassesPageWithNav('owner')
+    await screen.findByText(classTeacherA.name)
+
+    await user.click(screen.getByTestId(`class-actions-${classTeacherA.id}`))
+    const viewDetails = await screen.findByText(
+      i18n.t('classes.detail.actions.viewDetails'),
+    )
+    expect(viewDetails).toBeInTheDocument()
+    // Edit item still present (behavior-neutral addition).
+    expect(
+      screen.getByText(i18n.t('classes.table.editCta')),
+    ).toBeInTheDocument()
+  })
+
+  test('row body is inert — the row is not itself a link/button and does not navigate', async () => {
+    server.use(...classesHandlers)
+    const user = userEvent.setup()
+    renderClassesPageWithNav('owner')
+    await screen.findByText(classTeacherA.name)
+
+    // The row is a plain <tr> — no row-level link/button role.
+    const row = screen.getByText(classTeacherA.name).closest('tr') as HTMLElement
+    expect(row).not.toHaveAttribute('role', 'button')
+    expect(within(row).queryByRole('button', { name: /row/i })).toBeNull()
+
+    // Clicking a non-interactive cell (the skill text) does NOT navigate.
+    const skillCell = within(row).getByText(
+      i18n.t(`classes.skill.${classTeacherA.primarySkill}`),
+    )
+    await user.click(skillCell)
+    expect(screen.queryByTestId('detail-stub')).not.toBeInTheDocument()
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/classes')
   })
 })
