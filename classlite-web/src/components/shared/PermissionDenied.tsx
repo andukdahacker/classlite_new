@@ -42,7 +42,7 @@ export type PermissionDeniedRoles = ['owner', 'admin'] | ['owner']
  * Epic 9 (billing) can consume them without a fragmenting i18n copy
  * change per-story.
  */
-export type SectionNameKey = 'settings' | 'permissions' | 'billing'
+export type SectionNameKey = 'settings' | 'permissions' | 'billing' | 'classes'
 
 export interface PermissionDeniedProps {
   requiredRoles: PermissionDeniedRoles

@@ -1513,3 +1513,100 @@ describe('Story 2.6 i18n parity (R38)', () => {
   )
 })
 
+// Story 3.1 (AC9) — pinned STORY_3_1_KEYS closed literal. classes.* index +
+// status tabs/pills + create/edit form + errors, plus the new PermissionDenied
+// section header for the /classes route gate.
+// ---------------------------------------------------------------------
+export const STORY_3_1_KEYS = [
+  'classes.sectionHeading',
+  'classes.createCta',
+  'classes.countLabel_one',
+  'classes.countLabel_other',
+  'classes.scope.all',
+  'classes.scope.own',
+  'classes.statusTabs.ariaLabel',
+  'classes.statusTabs.upcoming',
+  'classes.statusTabs.active',
+  'classes.statusTabs.paused',
+  'classes.statusTabs.ended',
+  'classes.status.upcoming',
+  'classes.status.active',
+  'classes.status.paused',
+  'classes.status.ended',
+  'classes.skill.writing',
+  'classes.skill.speaking',
+  'classes.skill.listening',
+  'classes.skill.reading',
+  'classes.skill.listening_reading',
+  'classes.skill.all_skills',
+  'classes.error.body',
+  'classes.error.retry',
+  'classes.empty.headline',
+  'classes.empty.body',
+  'classes.empty.cta',
+  'classes.emptyTab',
+  'classes.table.columns.class',
+  'classes.table.columns.skill',
+  'classes.table.columns.schedule',
+  'classes.table.columns.students',
+  'classes.table.columns.sessions',
+  'classes.table.columns.status',
+  'classes.table.columns.targetBand',
+  'classes.table.columns.actions',
+  'classes.table.comingSoon',
+  'classes.table.actionsFor',
+  'classes.table.editCta',
+  'classes.transition.trigger',
+  'classes.transition.errors.invalidTransition',
+  'classes.form.createTitle',
+  'classes.form.editTitle',
+  'classes.form.templateLabel',
+  'classes.form.templateNone',
+  'classes.form.prefill.targetBand',
+  'classes.form.prefill.primarySkill',
+  'classes.form.prefill.sessionCount',
+  'classes.form.prefill.color',
+  'classes.form.prefill.toggleAria',
+  'classes.form.sessionPreview_one',
+  'classes.form.sessionPreview_other',
+  'classes.form.nameLabel',
+  'classes.form.descriptionLabel',
+  'classes.form.capacityLabel',
+  'classes.form.startDateLabel',
+  'classes.form.teacherEmailLabel',
+  'classes.form.dueDatesLabel',
+  'classes.form.cancel',
+  'classes.form.save',
+  'classes.form.create',
+  'classes.form.errors.nameRequired',
+  'classes.form.errors.nameMax',
+  'classes.form.errors.dateInvalid',
+  'classes.form.errors.dateTooFar',
+  'classes.form.errors.capacityPositive',
+  'classes.form.errors.teacherEmailInvalid',
+  'app.permissionDenied.section.classes.header',
+] as const
+
+describe('Story 3.1 i18n parity', () => {
+  test('every Story 3.1 i18n key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_1_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.1 keys', () => {
+    assertI18nInterpolationParity(STORY_3_1_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_3_1 = [
+    'classes.',
+    'app.permissionDenied.section.',
+  ] as const
+
+  test.each(STORY_3_1_KEYS)(
+    '%s belongs to a 3.1 allowed prefix',
+    (key) => {
+      const ok = ALLOWED_PREFIXES_3_1.some((p) => key.startsWith(p))
+      expect(ok).toBe(true)
+    },
+  )
+})
+

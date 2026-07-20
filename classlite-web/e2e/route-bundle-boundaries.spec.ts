@@ -748,4 +748,47 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       }
     }
   })
+
+  test('Story 3.1 — ClassesPage ships its own chunk; classes-page testid absent from onboarding + dashboard + settings chunks', async () => {
+    // Story 3.1 Task 7. The /classes index is a dedicated lazy chunk under the
+    // AppLayout group (the create/edit form is a Dialog, not a /classes/new
+    // child route, so a single boundary covers the feature). Positive: the
+    // ClassesPage chunk contains the `classes-page` root testid. Negative: that
+    // testid must NOT leak into onboarding / dashboard / settings chunks
+    // (deep-import discipline — the feature barrel must not drag ClassesPage in).
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const classesChunkFiles = files.filter((f: string) =>
+      /^ClassesPage-[\w-]+\.js$/.test(f),
+    )
+    expect(
+      classesChunkFiles.length,
+      'ClassesPage chunk missing from dist/',
+    ).toBeGreaterThan(0)
+
+    const classesContents = classesChunkFiles
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    expect(
+      classesContents,
+      'ClassesPage chunk missing `classes-page` root testid',
+    ).toContain('classes-page')
+
+    const otherChunkFiles = files.filter((f: string) =>
+      /^(OnboardingLayout|PersonaSelectPage|CenterSetupPage|TemplateSelectPage|ClassSpawnPage|SoloFirstClassPage|OnboardingDonePage|TeacherDashboard|StudentDashboard|SettingsPage)-[\w-]+\.js$/.test(
+        f,
+      ),
+    )
+    for (const chunkFile of otherChunkFiles) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      expect(
+        content,
+        `${chunkFile} leaked classes testid "classes-page"`,
+      ).not.toContain('classes-page')
+    }
+  })
 })

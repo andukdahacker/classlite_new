@@ -1466,6 +1466,261 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 3.1 — Class CRUD & lifecycle ====================
+  # 5 endpoints. All ride the classChain (extractTenant → requireVerified →
+  # requireCenter → ErrorMapper) — NOT owner-gated: teachers must reach these.
+  # List is role-scoped in the handler/service (owner/admin = all center
+  # classes; teacher = own only). Cross-teacher access on {id} endpoints is
+  # 404 CLASS_NOT_FOUND (teacher-sees-nothing), never 403 (AC6).
+  /api/classes:
+    get:
+      operationId: listClasses
+      summary: List classes scoped to caller role (story 3.1 — AC5)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Role-scoped list of classes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClassList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createClass
+      summary: Create a class — status forced to 'upcoming' (story 3.1 — AC1)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClassRequest'
+      responses:
+        "201":
+          description: Created class (status = upcoming)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClass'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (name, capacity, primarySkill, targetBand, dates, teacher assignment, unknown teacherId/templateId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{id}:
+    get:
+      operationId: getClass
+      summary: Get a single class for edit prefill (story 3.1 — AC6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The class
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClass'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateClass
+      summary: Partial-update a class (story 3.1 — AC6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateClassRequest'
+      responses:
+        "200":
+          description: Updated class
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClass'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (incl. unknown teacherId/templateId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{id}/status:
+    post:
+      operationId: transitionClassStatus
+      summary: Enforced lifecycle transition (story 3.1 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassStatusTransitionRequest'
+      responses:
+        "200":
+          description: Transitioned class (updatedAt advanced)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClass'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: INVALID_STATUS_TRANSITION (illegal move) OR garbage status validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5c — Google Meet OAuth integration ====================
   # 3 endpoints per AC9. Authorize + Disconnect ride the shared settingsChain
   # (Owner-only). Callback rides oauthCallbackChain — same middleware minus
@@ -2932,6 +3187,215 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Room'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 3.1 — Class CRUD & lifecycle ----------------
+    ClassStatus:
+      type: string
+      enum: [upcoming, active, paused, ended]
+
+    Class:
+      type: object
+      # All fields required + explicit (nulls not omitted) per GO-5.
+      required:
+        - id
+        - centerId
+        - templateId
+        - name
+        - description
+        - targetBand
+        - primarySkill
+        - sessionCount
+        - capacity
+        - status
+        - teacherId
+        - pendingTeacherEmail
+        - startDate
+        - endDate
+        - color
+        - dueDatesEnabled
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        targetBand:
+          type: number
+          nullable: true
+        primarySkill:
+          type: string
+          nullable: true
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+        sessionCount:
+          type: integer
+          nullable: true
+        capacity:
+          type: integer
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ClassStatus'
+        teacherId:
+          type: string
+          format: uuid
+          nullable: true
+        pendingTeacherEmail:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        dueDatesEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateClassRequest:
+      type: object
+      # name is required (DB NOT NULL, class identity). Every other field is
+      # optional — an excluded template-toggle field is OMITTED so the column
+      # takes its NULL/DB-default (AC2 wire contract). teacher assignment
+      # requiredness is role-conditional and enforced in the service (AC1).
+      required: [name]
+      properties:
+        templateId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          nullable: true
+        targetBand:
+          type: number
+          minimum: 0
+          maximum: 9
+          nullable: true
+        primarySkill:
+          type: string
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+          nullable: true
+        sessionCount:
+          type: integer
+          minimum: 1
+          nullable: true
+        capacity:
+          type: integer
+          minimum: 1
+          nullable: true
+        teacherId:
+          type: string
+          format: uuid
+          nullable: true
+        pendingTeacherEmail:
+          type: string
+          format: email
+          nullable: true
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        color:
+          type: string
+          nullable: true
+
+    UpdateClassRequest:
+      type: object
+      # Partial update — all optional. Absent = unchanged. Nullable fields
+      # CANNOT be cleared to NULL this story (AC6): send a value or omit.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        targetBand:
+          type: number
+          minimum: 0
+          maximum: 9
+        primarySkill:
+          type: string
+          enum: [writing, speaking, listening, reading, listening_reading, all_skills]
+        sessionCount:
+          type: integer
+          minimum: 1
+        capacity:
+          type: integer
+          minimum: 1
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        color:
+          type: string
+        dueDatesEnabled:
+          type: boolean
+        teacherId:
+          type: string
+          format: uuid
+        pendingTeacherEmail:
+          type: string
+          format: email
+
+    ClassStatusTransitionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/ClassStatus'
+
+    EnvelopeClassList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Class'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeClass:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Class'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

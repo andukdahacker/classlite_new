@@ -385,6 +385,25 @@ func main() {
 	mux.Handle("PATCH /api/rooms/{id}", settingsChain(roomHandler.Update))
 	mux.Handle("DELETE /api/rooms/{id}", settingsChain(roomHandler.Delete))
 
+	// Story 3.1 — Class CRUD & lifecycle (5 routes). classChain is NOT
+	// owner-gated (teachers must reach it): extractTenant → requireVerified →
+	// requireCenter → ErrorMapper. List is role-scoped inside the handler
+	// (owner/admin = all center classes; teacher = own only); the {id}
+	// endpoints return 404 CLASS_NOT_FOUND for cross-teacher access (AC6).
+	classHandler := handler.NewClassHandler(classSvc, clock.RealClock{})
+	classChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("GET /api/classes", classChain(classHandler.List))
+	mux.Handle("POST /api/classes", classChain(classHandler.Create))
+	mux.Handle("GET /api/classes/{id}", classChain(classHandler.Get))
+	mux.Handle("PATCH /api/classes/{id}", classChain(classHandler.Update))
+	mux.Handle("POST /api/classes/{id}/status", classChain(classHandler.TransitionStatus))
+
 	// Story 2-5c — Google Meet OAuth integration endpoints (AC9).
 	//
 	// Authorize + Disconnect ride the shipped settingsChain (Owner-only +

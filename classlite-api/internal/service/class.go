@@ -388,6 +388,13 @@ func (s *ClassService) Spawn(
 			TeacherID:           teacherPg,
 			PendingTeacherEmail: pendingText,
 			StartDate:           startPg,
+			// Story 3.1 columns — Spawn seeds a from-template class with the
+			// template's color and no scalar overrides; due dates ship OFF (AC3).
+			Description:      pgtype.Text{},
+			Capacity:         pgtype.Int4{},
+			DueDatesEnabled:  false,
+			EndDate:          pgtype.Date{},
+			Color:            tmpl.Color,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn: insert class[%d]: %w", p.Index, err)

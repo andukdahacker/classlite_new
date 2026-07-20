@@ -232,6 +232,41 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 3.1 — /classes index. Its own lazy chunk under the AppLayout
+      // group, gated to staff (owner/admin/teacher). The create/edit form is a
+      // Dialog (not a /classes/new child route), so this single boundary
+      // covers the feature. Deny copy uses the owner/admin tuple.
+      {
+        path: '/classes',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="classes"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              // Deep import (NOT the barrel) so Rolldown emits a dedicated
+              // `ClassesPage-*.js` chunk instead of folding the feature into
+              // the entry chunk (matches the SettingsPage precedent).
+              const { ClassesPage } = await import(
+                '@/features/classes/ClassesPage'
+              )
+              return { Component: ClassesPage }
+            },
+          },
+        ],
+      },
     ],
   },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
