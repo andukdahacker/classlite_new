@@ -305,8 +305,27 @@ func main() {
 		)
 	}
 
+	// Story 3.3 — template write chain: same shape as templateChain but gates
+	// owner+admin between requireCenter and the handler (SEC-1). GET detail stays
+	// on the open templateChain (the class-creation picker/wizard reads it).
+	requireTemplateWriter := middleware.RequireRole("owner", "admin")
+	templateWriteChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			onboardingLimit(
+				requireVerified(
+					requireCenter(
+						requireTemplateWriter(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+
 	mux.Handle("GET /api/templates", templateChain(templateHandler.List))
 	mux.Handle("POST /api/templates", templateChain(templateHandler.Create))
+	mux.Handle("GET /api/templates/{id}", templateChain(templateHandler.GetByID))
+	mux.Handle("PUT /api/templates/{id}", templateWriteChain(templateHandler.Update))
+	mux.Handle("DELETE /api/templates/{id}", templateWriteChain(templateHandler.Delete))
 	mux.Handle("POST /api/templates/{id}/spawn", spawnChain(templateHandler.Spawn))
 
 	// Story 2-5a — Settings endpoints. Middleware chain per AC7:

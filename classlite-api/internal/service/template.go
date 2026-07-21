@@ -27,19 +27,21 @@ import (
 )
 
 const (
-	templateNameMinLen    = 1
-	templateNameMaxLen    = 120
-	sessionTitleMinLen    = 1
-	sessionTitleMaxLen    = 200
-	sessionCountMin       = 1
-	sessionCountMax       = 100
-	targetBandMin         = 1.0
-	targetBandMax         = 9.0
-	targetBandStep        = 0.5
-	classTemplateEntity   = "class_template"
-	classTemplateAction   = "class_template.created"
-	scopeSystemTemplate   = "system"
-	scopeCenterTemplate   = "center"
+	templateNameMinLen   = 1
+	templateNameMaxLen   = 120
+	sessionTitleMinLen   = 1
+	sessionTitleMaxLen   = 200
+	sessionCountMin      = 1
+	sessionCountMax      = 100
+	targetBandMin        = 1.0
+	targetBandMax        = 9.0
+	targetBandStep       = 0.5
+	classTemplateEntity  = "class_template"
+	classTemplateAction  = "class_template.created"
+	classTemplateUpdated = "class_template.updated"
+	classTemplateDeleted = "class_template.deleted"
+	scopeSystemTemplate  = "system"
+	scopeCenterTemplate  = "center"
 )
 
 // TemplateService handles list + create custom template.
@@ -167,11 +169,12 @@ func (s *TemplateService) CreateCustomTemplate(
 	sessions := make([]model.TemplateSession, 0, len(in.Sessions))
 	for i, s := range in.Sessions {
 		row, err := q.CreateTemplateSession(ctx, generated.CreateTemplateSessionParams{
-			ID:           pgUUID(model.NewID()),
-			TemplateID:   pgUUID(templateID),
-			SessionOrder: int32(i),
-			Title:        strings.TrimSpace(s.Title),
-			Description:  nullableText(s.Description),
+			ID:              pgUUID(model.NewID()),
+			TemplateID:      pgUUID(templateID),
+			SessionOrder:    int32(i),
+			Title:           strings.TrimSpace(s.Title),
+			Description:     nullableText(s.Description),
+			DurationMinutes: nullableDurationInt4(s.Duration),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create template: insert session[%d]: %w", i, err)
@@ -181,6 +184,7 @@ func (s *TemplateService) CreateCustomTemplate(
 			Title:        row.Title,
 			Description:  nullableTextPtr(row.Description),
 			SessionOrder: int(row.SessionOrder),
+			Duration:     int4ToIntPtr(row.DurationMinutes),
 		})
 	}
 
@@ -224,12 +228,13 @@ func (s *TemplateService) CreateCustomTemplate(
 	}, nil
 }
 
-// generatedTemplateToModel converts a sqlc ClassTemplate row into the
-// wire-format model.Template. Scope is derived from the nullable center_id.
+// generatedTemplateToModel converts a sqlc ListAccessibleTemplates row into the
+// wire-format model.Template. Scope is derived from the nullable center_id;
+// UsedCount is the per-tenant class count carried by the query (Story 3.3).
 //
 // R2-P9 — returns an error when the DB Numeric fails to decode. Silent 0
 // would mask a driver/DB bug; callers propagate as INTERNAL_ERROR (500).
-func generatedTemplateToModel(row generated.ClassTemplate) (model.Template, error) {
+func generatedTemplateToModel(row generated.ListAccessibleTemplatesRow) (model.Template, error) {
 	scope := scopeSystemTemplate
 	if row.CenterID.Valid {
 		scope = scopeCenterTemplate
@@ -246,6 +251,7 @@ func generatedTemplateToModel(row generated.ClassTemplate) (model.Template, erro
 		SessionCount: int(row.SessionCount),
 		Color:        nullableTextPtr(row.Color),
 		Scope:        scope,
+		UsedCount:    int(row.UsedCount),
 	}, nil
 }
 
@@ -298,6 +304,13 @@ func validateCreateTemplateInput(in model.CreateTemplateInput) error {
 			fields = append(fields, model.FieldError{Field: fmt.Sprintf("sessions[%d].title", i), Message: "must be at least 1 character"})
 		} else if titleRunes > sessionTitleMaxLen {
 			fields = append(fields, model.FieldError{Field: fmt.Sprintf("sessions[%d].title", i), Message: fmt.Sprintf("must be at most %d characters", sessionTitleMaxLen)})
+		}
+		// CR-3-3 fix — bound the optional session duration here too, mirroring
+		// validateUpdateTemplateInput. Without it an out-of-range create-time
+		// duration sailed past validation and tripped the DB CHECK → 500 instead
+		// of a 422 contract error.
+		if s.Duration != nil && (*s.Duration < sessionDurationMin || *s.Duration > sessionDurationMax) {
+			fields = append(fields, model.FieldError{Field: fmt.Sprintf("sessions[%d].duration", i), Message: fmt.Sprintf("must be between %d and %d minutes", sessionDurationMin, sessionDurationMax)})
 		}
 	}
 

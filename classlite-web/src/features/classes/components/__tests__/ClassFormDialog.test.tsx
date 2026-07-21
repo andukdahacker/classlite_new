@@ -46,7 +46,8 @@ describe('ClassFormDialog', () => {
     server.use(http.get('/api/templates', () => HttpResponse.json(tplEnvelope())))
     renderDialog()
     expect(await screen.findByTestId('class-field-name')).toBeInTheDocument()
-    expect(screen.getByTestId('class-template-picker')).toBeInTheDocument()
+    // The picker now resolves through a loading state (CR-3-1-9) — await it.
+    expect(await screen.findByTestId('class-template-picker')).toBeInTheDocument()
   })
 
   test('selecting a template reveals per-field toggles + session preview', async () => {
@@ -131,5 +132,44 @@ describe('ClassFormDialog', () => {
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured).toHaveProperty('targetBand', TEMPLATE.targetBand)
+  })
+
+  // --- Story 3.3 CR-3-1-9 picker debt ---------------------------------------
+
+  test('picker shows an error + retry when the template list fails to load', async () => {
+    server.use(
+      http.get('/api/templates', () =>
+        HttpResponse.json(
+          { error: { code: 'INTERNAL_ERROR', message: 'boom', requestId: 'r', details: null } },
+          { status: 500 },
+        ),
+      ),
+    )
+    renderDialog()
+    // useListTemplates retries once on 5xx, so the error surfaces after a backoff.
+    expect(
+      await screen.findByTestId('class-template-picker-error', undefined, {
+        timeout: 3000,
+      }),
+    ).toBeInTheDocument()
+    // The bare select must NOT silently render as if there were no templates.
+    expect(screen.queryByTestId('class-template-picker')).not.toBeInTheDocument()
+  })
+
+  test('selecting a template does NOT clobber a user-typed name (CR-3-1-9b)', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/api/templates', () => HttpResponse.json(tplEnvelope())))
+    renderDialog()
+
+    const nameField = await screen.findByTestId('class-field-name')
+    await user.type(nameField, 'My Own Class Name')
+
+    const picker = await screen.findByTestId('class-template-picker')
+    await screen.findByRole('option', { name: TEMPLATE.name })
+    await user.selectOptions(picker, TEMPLATE.id)
+
+    // Name preserved — template scalars prefill but the typed name wins.
+    expect(nameField).toHaveValue('My Own Class Name')
+    expect(await screen.findByTestId('class-template-toggles')).toBeInTheDocument()
   })
 })

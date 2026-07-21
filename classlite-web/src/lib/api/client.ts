@@ -703,6 +703,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a template with its ordered sessions + usedCount (story 3.3)
+         * @description Returns the template scalars, its ordered `sessions[]` (each with an
+         *     optional `duration` in minutes) and `usedCount`. Reads stay OPEN to any
+         *     role with a center (the class-creation picker/wizard consumes this).
+         *     A missing, soft-deleted, or cross-tenant-invisible id → 404
+         *     TEMPLATE_NOT_FOUND (RLS invisibility, no metadata leak). Closes FU-3-1-A.
+         */
+        get: operations["getTemplate"];
+        /**
+         * Update a center-owned template (full replace) — owner+admin (story 3.3)
+         * @description Full-replace update of a `scope:"center"` template: scalars + the entire
+         *     ordered session set (session_count is DERIVED = sessions.length). Atomic:
+         *     updates scalars, deletes+reinserts sessions in order, writes a
+         *     `class_template.updated` audit row. Gated owner+admin (INSUFFICIENT_ROLE
+         *     otherwise). A `scope:"system"` seed → 403 TEMPLATE_READONLY (service-layer
+         *     guard). A cross-tenant id → 404 TEMPLATE_NOT_FOUND.
+         */
+        put: operations["updateTemplate"];
+        post?: never;
+        /**
+         * Soft-delete a center-owned template — owner+admin (story 3.3)
+         * @description Soft delete — sets `deleted_at` so the template drops out of every
+         *     list/detail read while spawned classes keep their `template_id`
+         *     provenance (AC4). Writes a `class_template.deleted` audit row. Gated
+         *     owner+admin. A `scope:"system"` seed → 403 TEMPLATE_READONLY; a
+         *     cross-tenant id → 404 TEMPLATE_NOT_FOUND. Returns 204 (no body).
+         */
+        delete: operations["deleteTemplate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates/{id}/spawn": {
         parameters: {
             query?: never;
@@ -1004,6 +1047,8 @@ export interface components {
         TemplateSessionInput: {
             title: string;
             description: string | null;
+            /** @description Story 3.3 — optional session length in minutes (5–600). Omitted/null leaves it unset. */
+            duration?: number | null;
         };
         Template: {
             /** Format: uuid */
@@ -1016,6 +1061,13 @@ export interface components {
             color: string | null;
             /** @enum {string} */
             scope: "system" | "center";
+            /**
+             * @description Story 3.3 — how many of the caller's classes were created from this
+             *     template (`count(*) FROM classes WHERE template_id = <id>`). RLS
+             *     auto-scopes the count to the caller's tenant, so a shared system
+             *     seed reports each tenant's own usage.
+             */
+            usedCount: number;
         };
         TemplateSession: {
             /** Format: uuid */
@@ -1023,6 +1075,8 @@ export interface components {
             title: string;
             description: string | null;
             sessionOrder: number;
+            /** @description Story 3.3 — session length in minutes (5–600), or null when unset. */
+            duration: number | null;
         };
         ListTemplatesResult: {
             /**
@@ -1046,6 +1100,40 @@ export interface components {
             /** @enum {string} */
             scope: "center";
             sessions: components["schemas"]["TemplateSession"][];
+        };
+        /**
+         * @description Story 3.3 — GET/PUT /api/templates/{id} result. The template scalars +
+         *     usedCount + its ordered session blueprint (each with an optional
+         *     duration). `scope` is "system" for read-only seeds, "center" for
+         *     tenant-owned templates.
+         */
+        TemplateDetail: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            targetBand: number;
+            /** @enum {string} */
+            primarySkill: "writing" | "speaking" | "listening" | "reading" | "listening_reading" | "all_skills";
+            /** @description Derived — equals sessions.length. Never a separate input on update. */
+            sessionCount: number;
+            color: string | null;
+            /** @enum {string} */
+            scope: "system" | "center";
+            usedCount: number;
+            sessions: components["schemas"]["TemplateSession"][];
+        };
+        /**
+         * @description Story 3.3 — full-replace update (symmetric with CreateTemplateRequest but
+         *     without sessionCount, which is DERIVED = sessions.length). Replaces the
+         *     entire ordered session set; session_order = array index.
+         */
+        UpdateTemplateRequest: {
+            name: string;
+            targetBand: number;
+            /** @enum {string} */
+            primarySkill: "writing" | "speaking" | "listening" | "reading" | "listening_reading" | "all_skills";
+            color: string | null;
+            sessions: components["schemas"]["TemplateSessionInput"][];
         };
         SpawnClassInput: {
             cohortName: string;
@@ -1169,6 +1257,10 @@ export interface components {
         };
         EnvelopeCreateTemplateResult: {
             data: components["schemas"]["CreateTemplateResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeTemplateDetail: {
+            data: components["schemas"]["TemplateDetail"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         EnvelopeSpawnResult: {
@@ -3869,6 +3961,227 @@ export interface operations {
                 };
             };
             /** @description Unexpected server error (INTERNAL_ERROR) — C2-02 review fix (was undocumented) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Template detail returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTemplateDetail"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED), caller has no center (CENTER_REQUIRED), or tenant claim invalid (INVALID_TENANT_CLAIM) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Template does not exist, is soft-deleted, or is invisible to caller (TEMPLATE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected server error (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Template updated — returns the new detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTemplateDetail"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Insufficient role for writes (INSUFFICIENT_ROLE), system-seed is read-only (TEMPLATE_READONLY), email not verified, no center, or invalid tenant claim */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Template does not exist, is soft-deleted, or is cross-tenant-invisible (TEMPLATE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request body exceeds the size cap (PAYLOAD_TOO_LARGE / VALIDATION_ERROR) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure (VALIDATION_ERROR) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected server error (INTERNAL_ERROR) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Template soft-deleted (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Insufficient role (INSUFFICIENT_ROLE) or system-seed read-only (TEMPLATE_READONLY) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Template does not exist, already soft-deleted, or cross-tenant-invisible (TEMPLATE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected server error (INTERNAL_ERROR) */
             500: {
                 headers: {
                     [name: string]: unknown;

@@ -98,10 +98,15 @@ func decodeError(err error, limitBytes int64) error {
 	}}}
 }
 
-// maxTemplateBodyBytes caps CreateTemplate to 16 KiB and Spawn to 32 KiB —
-// spawn is bigger because up to 20 classes × ~1.5 KiB each.
+// maxTemplateBodyBytes caps Create/Update to 64 KiB and Spawn to 32 KiB.
+// CR-3-3 fix — Create/Update raised from 16 KiB so a spec-valid template of up
+// to 100 sessions (maxItems: 100, titles ≤200 chars + descriptions) fits well
+// within the cap; at 16 KiB a large-but-valid template was rejected with 413
+// before the session-count validator ran. Spawn stays smaller (up to 20
+// classes × ~1.5 KiB each — no session payload).
 const (
-	maxCreateTemplateBodyBytes = 16 * 1024
+	maxCreateTemplateBodyBytes = 64 * 1024
+	maxUpdateTemplateBodyBytes = 64 * 1024
 	maxSpawnBodyBytes          = 32 * 1024
 	minSystemSeedTemplates     = 5 // per AC1b — Sally-S1 amendment raised from 4 to 5
 )
@@ -122,6 +127,7 @@ func NewTemplateHandler(templateSvc *service.TemplateService, classSvc *service.
 type templateSessionInputBody struct {
 	Title       string  `json:"title"`
 	Description *string `json:"description"`
+	Duration    *int    `json:"duration"`
 }
 
 type createTemplateRequestBody struct {
@@ -129,6 +135,16 @@ type createTemplateRequestBody struct {
 	TargetBand   float64                    `json:"targetBand"`
 	PrimarySkill string                     `json:"primarySkill"`
 	SessionCount int                        `json:"sessionCount"`
+	Color        *string                    `json:"color"`
+	Sessions     []templateSessionInputBody `json:"sessions"`
+}
+
+// updateTemplateRequestBody is the PUT /api/templates/{id} payload (Story 3.3).
+// No sessionCount field — it is DERIVED = len(sessions).
+type updateTemplateRequestBody struct {
+	Name         string                     `json:"name"`
+	TargetBand   float64                    `json:"targetBand"`
+	PrimarySkill string                     `json:"primarySkill"`
 	Color        *string                    `json:"color"`
 	Sessions     []templateSessionInputBody `json:"sessions"`
 }
@@ -197,7 +213,7 @@ func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) error {
 
 	sessions := make([]model.TemplateSessionInput, len(body.Sessions))
 	for i, s := range body.Sessions {
-		sessions[i] = model.TemplateSessionInput{Title: s.Title, Description: s.Description}
+		sessions[i] = model.TemplateSessionInput{Title: s.Title, Description: s.Description, Duration: s.Duration}
 	}
 	in := model.CreateTemplateInput{
 		Name:         body.Name,
@@ -280,5 +296,108 @@ func (h *TemplateHandler) Spawn(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	WriteEnvelope(w, http.StatusCreated, h.clk, result)
+	return nil
+}
+
+// parseTemplateID pulls and validates the {id} path param, returning a 422
+// ValidationError on a malformed UUID (Story 3.3).
+func parseTemplateID(r *http.Request) (uuid.UUID, error) {
+	templateID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		return uuid.UUID{}, model.ValidationError{Fields: []model.FieldError{{
+			Field:   "id",
+			Message: "must be a valid UUID",
+		}}}
+	}
+	return templateID, nil
+}
+
+// GetByID returns a template's detail + ordered sessions + usedCount (AC3).
+// Open to any role with a center. Missing/soft-deleted/cross-tenant → 404
+// TEMPLATE_NOT_FOUND.
+func (h *TemplateHandler) GetByID(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok {
+		return ErrTenantContextMissing
+	}
+	templateID, err := parseTemplateID(r)
+	if err != nil {
+		return err
+	}
+
+	detail, err := h.templateSvc.GetTemplateDetail(r.Context(), tc, templateID)
+	if err != nil {
+		return err
+	}
+
+	WriteEnvelope(w, http.StatusOK, h.clk, detail)
+	return nil
+}
+
+// Update full-replaces a center-owned template (AC4). Gated owner+admin at the
+// route (templateWriteChain). System seed → 403 TEMPLATE_READONLY; cross-tenant
+// → 404 TEMPLATE_NOT_FOUND.
+func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok {
+		return ErrTenantContextMissing
+	}
+	templateID, err := parseTemplateID(r)
+	if err != nil {
+		return err
+	}
+	if !requireJSONContent(w, r) {
+		return nil
+	}
+	if err := preflightContentLength(r, maxUpdateTemplateBodyBytes); err != nil {
+		return err
+	}
+
+	r.Body = http.MaxBytesReader(nil, r.Body, maxUpdateTemplateBodyBytes)
+	var body updateTemplateRequestBody
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		return decodeError(err, maxUpdateTemplateBodyBytes)
+	}
+
+	sessions := make([]model.TemplateSessionInput, len(body.Sessions))
+	for i, s := range body.Sessions {
+		sessions[i] = model.TemplateSessionInput{Title: s.Title, Description: s.Description, Duration: s.Duration}
+	}
+	in := model.UpdateTemplateInput{
+		Name:         body.Name,
+		TargetBand:   body.TargetBand,
+		PrimarySkill: body.PrimarySkill,
+		Color:        body.Color,
+		Sessions:     sessions,
+	}
+
+	detail, err := h.templateSvc.UpdateTemplate(r.Context(), tc, templateID, in)
+	if err != nil {
+		return err
+	}
+
+	WriteEnvelope(w, http.StatusOK, h.clk, detail)
+	return nil
+}
+
+// Delete soft-deletes a center-owned template (AC4) — 204 on success. Gated
+// owner+admin. System seed → 403 TEMPLATE_READONLY; cross-tenant → 404.
+func (h *TemplateHandler) Delete(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok {
+		return ErrTenantContextMissing
+	}
+	templateID, err := parseTemplateID(r)
+	if err != nil {
+		return err
+	}
+
+	if err := h.templateSvc.SoftDeleteTemplate(r.Context(), tc, templateID); err != nil {
+		return err
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

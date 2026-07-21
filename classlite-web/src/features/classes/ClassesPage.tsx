@@ -12,13 +12,14 @@
  * Actions menu.
  */
 import {
+  useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
   type ReactElement,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { MoreHorizontal } from 'lucide-react'
 import { useRole } from '@/hooks/useRole'
 import { queryClient } from '@/lib/query-client'
@@ -88,13 +89,40 @@ export function ClassesPage(): ReactElement {
   const classesQuery = useClasses(centerId, scope)
   const transition = useTransitionClassStatus(centerId ?? '')
 
+  // Story 3.3 — the s20 "Use this template" affordance routes here with
+  // `state.createWithTemplateId`; open the create dialog preselected on it.
+  // CR-3-3 fix — capture the id ONCE into local state (lazy init), then clear
+  // the router state below so it doesn't (a) re-open the dialog on refresh
+  // (history.state survives reload) nor (b) re-preselect on a later manual
+  // "New class". The preselect is reset when the dialog closes.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [initialTemplateId, setInitialTemplateId] = useState<string | null>(
+    () =>
+      (location.state as { createWithTemplateId?: string } | null)
+        ?.createWithTemplateId ?? null,
+  )
+
   const [userTab, setUserTab] = useState<ClassStatus | null>(null)
   const [dialog, setDialog] = useState<{ open: boolean; cls: ClassWire | null }>(
-    { open: false, cls: null },
+    () => ({ open: initialTemplateId !== null, cls: null }),
   )
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(
     null,
   )
+
+  useEffect(() => {
+    // Consume the one-shot navigation state on mount so it does not survive a
+    // page refresh. Router state lives in history.state, so a bare remount
+    // would otherwise re-read it. Local `initialTemplateId` already captured it.
+    if (location.state) {
+      navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: null,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot consume on mount
+  }, [])
 
   const classes = useMemo(() => classesQuery.data ?? [], [classesQuery.data])
   const counts = useMemo(() => countByStatus(classes), [classes])
@@ -224,7 +252,11 @@ export function ClassesPage(): ReactElement {
         <ClassFormDialog
           centerId={centerId ?? ''}
           initial={dialog.cls}
-          onClose={() => setDialog({ open: false, cls: null })}
+          initialTemplateId={dialog.cls === null ? initialTemplateId : null}
+          onClose={() => {
+            setDialog({ open: false, cls: null })
+            setInitialTemplateId(null)
+          }}
         />
       ) : null}
     </div>

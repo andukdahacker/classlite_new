@@ -54,6 +54,12 @@ type ForbiddenError struct {
 
 func (e *ForbiddenError) Error() string { return e.Reason }
 
+// ReasonTemplateReadOnly is the ForbiddenError.Reason the error mapper keys on
+// to emit the TEMPLATE_READONLY 403 code (Story 3.3 — a system-seed template is
+// immutable). Distinct from "insufficient role" so the SPA can render a clear
+// "seeds can't be edited" message instead of a generic role error.
+const ReasonTemplateReadOnly = "template is read-only"
+
 // RefreshTokenInvalidError → 401 REFRESH_TOKEN_INVALID. Covers the
 // lookup-miss-and-no-siblings path: attacker tried a bogus token, no
 // family exists to revoke. Distinct from the reuse-detected case.

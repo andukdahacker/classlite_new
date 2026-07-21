@@ -846,4 +846,53 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       ).not.toContain('class-detail-layout')
     }
   })
+
+  test('Story 3.3 — templates s19/s20/s21 each ship their own chunk, separate from the s07 index + :id detail', async () => {
+    // Story 3.3 Task 8 / AC1. The /classes/templates management group is a
+    // DISTINCT sibling of the /classes/:id detail group. Each screen is
+    // deep-imported so Rolldown emits dedicated chunks; the index/detail/form
+    // testids must NOT leak into the s07 ClassesPage or ClassDetailLayout
+    // chunks (deep-import discipline + route-ordering isolation).
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const templateChunks: Array<[RegExp, string]> = [
+      [/^TemplatesIndexPage-[\w-]+\.js$/, 'templates-index-page'],
+      [/^TemplateDetailPage-[\w-]+\.js$/, 'template-detail-page'],
+      [/^TemplateFormPage-[\w-]+\.js$/, 'template-form-page'],
+    ]
+
+    for (const [pattern, testid] of templateChunks) {
+      const chunkFiles = files.filter((f: string) => pattern.test(f))
+      expect(
+        chunkFiles.length,
+        `template chunk ${pattern} missing from dist/`,
+      ).toBeGreaterThan(0)
+      const contents = chunkFiles
+        .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+        .join('\n')
+      expect(
+        contents,
+        `template chunk ${pattern} missing root testid "${testid}"`,
+      ).toContain(testid)
+    }
+
+    // Negative — the s07 index + :id detail chunks must NOT absorb any of the
+    // template screen testids (proves the templates group is its own boundary).
+    const neighbourChunkFiles = files.filter((f: string) =>
+      /^(ClassesPage|ClassDetailLayout)-[\w-]+\.js$/.test(f),
+    )
+    for (const chunkFile of neighbourChunkFiles) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      for (const [, testid] of templateChunks) {
+        expect(
+          content,
+          `${chunkFile} leaked template testid "${testid}"`,
+        ).not.toContain(testid)
+      }
+    }
+  })
 })

@@ -134,8 +134,12 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			return
 		case errors.As(err, &forbiddenSvc):
 			code := "FORBIDDEN"
-			if forbiddenSvc.Reason == "insufficient role" {
+			switch forbiddenSvc.Reason {
+			case "insufficient role":
 				code = "INSUFFICIENT_ROLE"
+			case service.ReasonTemplateReadOnly:
+				// Story 3.3 — a system-seed template cannot be edited/deleted.
+				code = "TEMPLATE_READONLY"
 			}
 			handler.WriteError(w, r, http.StatusForbidden,
 				code, forbiddenSvc.Error(), nil)

@@ -281,6 +281,68 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 3.3 — /classes/templates management group (screens s19/s20/s21). A
+      // DISTINCT SIBLING of the /classes/:id detail group: the static
+      // `templates` segment outranks the `:id` param (RR v7 specificity), so
+      // `/classes/templates` resolves HERE, never to the :id 404 (the
+      // route-ordering negative in route-bundle-boundaries.spec.ts). Gated
+      // owner+admin (writes surface) — tighter than the staff-wide index. Each
+      // child deep-imported for its own Rolldown chunk.
+      {
+        path: '/classes/templates',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="classes"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { TemplatesIndexPage } = await import(
+                '@/features/classes/TemplatesIndexPage'
+              )
+              return { Component: TemplatesIndexPage }
+            },
+          },
+          {
+            path: 'new',
+            lazy: async () => {
+              const { default: TemplateFormPage } = await import(
+                '@/features/classes/TemplateFormPage'
+              )
+              return { Component: TemplateFormPage }
+            },
+          },
+          {
+            path: ':id',
+            lazy: async () => {
+              const { default: TemplateDetailPage } = await import(
+                '@/features/classes/TemplateDetailPage'
+              )
+              return { Component: TemplateDetailPage }
+            },
+          },
+          {
+            path: ':id/edit',
+            lazy: async () => {
+              const { default: TemplateFormPage } = await import(
+                '@/features/classes/TemplateFormPage'
+              )
+              return { Component: TemplateFormPage }
+            },
+          },
+        ],
+      },
       // Story 3.2 — /classes/:id tabbed detail shell (screen s08/s09). A
       // SIBLING of the /classes index group (peers, NOT nested under it) so the
       // s07 index chunk stays lean and the detail layout ships its own

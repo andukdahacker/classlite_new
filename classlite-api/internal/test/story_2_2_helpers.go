@@ -70,9 +70,26 @@ func newStorySrv2_2(t *testing.T, db storyDB) http.Handler {
 		)
 	}
 
+	// Story 3.3 — write chain gates owner+admin (mirrors main.go templateWriteChain).
+	requireTemplateWriter := middleware.RequireRole("owner", "admin")
+	writeChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			onboardingLimit(
+				requireVerified(
+					requireCenter(
+						requireTemplateWriter(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/templates", chain(templateHandler.List))
 	mux.Handle("POST /api/templates", chain(templateHandler.Create))
+	mux.Handle("GET /api/templates/{id}", chain(templateHandler.GetByID))
+	mux.Handle("PUT /api/templates/{id}", writeChain(templateHandler.Update))
+	mux.Handle("DELETE /api/templates/{id}", writeChain(templateHandler.Delete))
 	mux.Handle("POST /api/templates/{id}/spawn", chain(templateHandler.Spawn))
 	return mux
 }

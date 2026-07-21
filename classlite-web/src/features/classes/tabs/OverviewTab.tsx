@@ -16,9 +16,10 @@
  * dormant/absent (templates CRUD is Story 3.3).
  */
 import { type ReactElement, type ReactNode } from 'react'
-import { useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import i18n from '@/lib/i18n'
+import { Button } from '@/components/ui/button'
 import { useClass } from '../api/useClass'
 import { ClassStatusPill } from '../components/ClassStatusPill'
 import { formatClassDate, formatClassDateRange } from '../lib/formatClassDate'
@@ -26,9 +27,28 @@ import { formatClassDate, formatClassDateRange } from '../lib/formatClassDate'
 export default function OverviewTab(): ReactElement | null {
   const { t } = useTranslation()
   const { id } = useParams()
+  const navigate = useNavigate()
   const { data: cls } = useClass(id)
 
   if (!cls) return null
+
+  // Story 3.3 — Save as template: prefill the create form with the class's
+  // scalars ONLY. A class has no materialized sessions until Story 3.4, so the
+  // template captures scalars, not a session plan (limitation surfaced on-screen).
+  function handleSaveAsTemplate(): void {
+    if (!cls) return
+    navigate('/classes/templates/new', {
+      state: {
+        prefill: {
+          name: cls.name,
+          targetBand: cls.targetBand ?? undefined,
+          primarySkill: cls.primarySkill ?? undefined,
+          color: cls.color ?? undefined,
+          savedAsTemplate: true,
+        },
+      },
+    })
+  }
 
   const schedule = formatClassDateRange(cls.startDate, cls.endDate, i18n.language)
   // The wire carries `teacherId` + `pendingTeacherEmail` only — the resolved
@@ -124,14 +144,23 @@ export default function OverviewTab(): ReactElement | null {
           </p>
         </section>
         <section
-          className="rounded-lg border border-dashed border-slate-300 p-4"
+          className="rounded-lg border border-slate-200 p-4"
           data-testid="class-detail-actions-card"
         >
           <h3 className="mb-2 text-sm font-medium text-slate-900">
             {t('classes.detail.actions.heading')}
           </h3>
-          <p className="text-xs text-slate-400">
-            {t('classes.detail.actions.dormantHint')}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleSaveAsTemplate}
+            data-testid="class-save-as-template"
+          >
+            {t('classes.detail.actions.saveAsTemplate')}
+          </Button>
+          <p className="mt-2 text-xs text-slate-400">
+            {t('classes.detail.actions.saveAsTemplateHint')}
           </p>
         </section>
       </aside>

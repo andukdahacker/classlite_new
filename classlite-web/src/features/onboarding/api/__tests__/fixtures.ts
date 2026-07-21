@@ -42,6 +42,7 @@ export const systemTemplates: Template[] = [
     sessionCount: 12,
     color: '#f59e0b',
     scope: 'system',
+    usedCount: 0,
   },
   {
     id: SYSTEM_TEMPLATE_IDS.speakingMastery,
@@ -51,6 +52,7 @@ export const systemTemplates: Template[] = [
     sessionCount: 12,
     color: '#3b82f6',
     scope: 'system',
+    usedCount: 0,
   },
   {
     id: SYSTEM_TEMPLATE_IDS.foundationListeningReading,
@@ -60,6 +62,7 @@ export const systemTemplates: Template[] = [
     sessionCount: 10,
     color: '#10b981',
     scope: 'system',
+    usedCount: 0,
   },
   {
     id: SYSTEM_TEMPLATE_IDS.starterBand55,
@@ -69,6 +72,7 @@ export const systemTemplates: Template[] = [
     sessionCount: 8,
     color: '#8b5cf6',
     scope: 'system',
+    usedCount: 0,
   },
   {
     id: SYSTEM_TEMPLATE_IDS.academicReading,
@@ -78,6 +82,7 @@ export const systemTemplates: Template[] = [
     sessionCount: 10,
     color: '#14b8a6',
     scope: 'system',
+    usedCount: 0,
   },
 ]
 /* eslint-enable no-restricted-syntax */
@@ -110,6 +115,7 @@ export function centerTemplate(
     // eslint-disable-next-line no-restricted-syntax -- template.color wire value
     color: '#ec4899',
     scope: 'center',
+    usedCount: 0,
     ...overrides,
   }
 }

@@ -15,7 +15,7 @@
  * enabling is an explicit PATCH). Teacher assignment uses a pending-email input
  * (full AssignChip/AssignTeacherComposer reuse deferred — FU-3-1-B).
  */
-import { useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { useForm, useWatch, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
@@ -35,6 +35,7 @@ import { useListTemplates, type Template } from '@/features/onboarding'
 import { useClassSchema, type ClassFormValues } from '../lib/classSchema'
 import { useCreateClass, type CreateClassRequest } from '../api/useCreateClass'
 import { useUpdateClass, type UpdateClassRequest } from '../api/useUpdateClass'
+import { useTemplate } from '../api/useTemplate'
 import type { ClassWire } from '../api/useClasses'
 
 const PREFILL_FIELDS = ['targetBand', 'primarySkill', 'sessionCount', 'color'] as const
@@ -44,12 +45,18 @@ interface ClassFormDialogProps {
   centerId: string
   initial: ClassWire | null
   onClose: () => void
+  /**
+   * Story 3.3 — preselect a template in create mode (the s20 "Use this
+   * template" affordance routes here with the id). Ignored in edit mode.
+   */
+  initialTemplateId?: string | null
 }
 
 export function ClassFormDialog({
   centerId,
   initial,
   onClose,
+  initialTemplateId = null,
 }: ClassFormDialogProps): ReactElement {
   const { t } = useTranslation()
   const isEdit = initial !== null
@@ -70,6 +77,7 @@ export function ClassFormDialog({
     register,
     handleSubmit,
     setValue,
+    getValues,
     control,
     formState: { errors, isSubmitting },
   } = useForm<ClassFormValues>({
@@ -80,10 +88,46 @@ export function ClassFormDialog({
   const selectedTemplateId = useWatch({ control, name: 'templateId' })
   const dueDatesEnabled = useWatch({ control, name: 'dueDatesEnabled' })
 
+  // Story 3.3 "Use this template" — imperative one-time RHF sync of the
+  // preselected template once the (Query-owned) template list has loaded.
+  // Guarded so it runs exactly once; not a data fetch (FW-4 third-party-lib sync).
+  const presetApplied = useRef(false)
+  const templatesData = templatesQuery.data
+  useEffect(() => {
+    if (presetApplied.current || isEdit || !initialTemplateId || !templatesData) {
+      return
+    }
+    const preset = templatesData.find((tpl) => tpl.id === initialTemplateId)
+    if (preset) {
+      applyTemplate(preset)
+      presetApplied.current = true
+    }
+    // applyTemplate is stable enough for a one-shot guarded sync; deps kept lean.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templatesData, initialTemplateId, isEdit])
+
+  // CR-3-1-9(c) / FU-3-1-A — per-session titled preview via the new detail
+  // endpoint (only when a template is selected in create mode).
+  const templatePreview = useTemplate(
+    !isEdit && selectedTemplateId ? selectedTemplateId : null,
+  )
+
   function applyTemplate(template: Template | null): void {
     setValue('templateId', template?.id ?? null)
-    if (!template) return
-    setValue('name', template.name)
+    if (!template) {
+      // CR-3-1-9(b) — "No template" resets cleanly: clear the scalar prefill
+      // fields the previous template seeded so they don't orphan. The name is
+      // left untouched (the user may have typed their own).
+      for (const field of PREFILL_FIELDS) {
+        setValue(field, undefined as never)
+      }
+      setIncluded({ targetBand: true, primarySkill: true, sessionCount: true, color: true })
+      return
+    }
+    // CR-3-1-9(b) — only PREFILL an EMPTY name; never clobber a user-typed one.
+    if (!getValues('name')?.trim()) {
+      setValue('name', template.name)
+    }
     for (const field of PREFILL_FIELDS) {
       setValue(field, templateValueFor(template, field) as never)
     }
@@ -133,24 +177,50 @@ export function ClassFormDialog({
           {!isEdit ? (
             <div className="space-y-2 rounded-md border border-slate-200 p-3">
               <Label>{t('classes.form.templateLabel')}</Label>
-              <select
-                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-                value={selectedTemplateId ?? ''}
-                onChange={(e) =>
-                  applyTemplate(
-                    templatesQuery.data?.find((tpl) => tpl.id === e.target.value) ??
-                      null,
-                  )
-                }
-                data-testid="class-template-picker"
-              >
-                <option value="">{t('classes.form.templateNone')}</option>
-                {templatesQuery.data?.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                  </option>
-                ))}
-              </select>
+              {templatesQuery.isPending ? (
+                <p
+                  className="text-sm text-slate-400"
+                  data-testid="class-template-picker-loading"
+                >
+                  {t('classes.form.templateLoading')}
+                </p>
+              ) : templatesQuery.isError ? (
+                <div
+                  role="alert"
+                  className="flex items-center justify-between gap-2 rounded-md bg-[color:var(--cl-tint-red)] px-3 py-2 text-xs text-[color:var(--cl-red)]"
+                  data-testid="class-template-picker-error"
+                >
+                  <span>{t('classes.form.templateError')}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => templatesQuery.refetch()}
+                  >
+                    {t('classes.form.templateRetry')}
+                  </Button>
+                </div>
+              ) : (
+                <select
+                  className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                  value={selectedTemplateId ?? ''}
+                  onChange={(e) =>
+                    applyTemplate(
+                      templatesQuery.data?.find(
+                        (tpl) => tpl.id === e.target.value,
+                      ) ?? null,
+                    )
+                  }
+                  data-testid="class-template-picker"
+                >
+                  <option value="">{t('classes.form.templateNone')}</option>
+                  {templatesQuery.data?.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {selectedTemplate ? (
                 <div className="space-y-2 pt-1" data-testid="class-template-toggles">
@@ -169,11 +239,22 @@ export function ClassFormDialog({
                       />
                     </div>
                   ))}
-                  <p className="pt-1 text-xs text-slate-400" data-testid="class-session-preview">
+                  <div
+                    className="pt-1 text-xs text-slate-400"
+                    data-testid="class-session-preview"
+                  >
                     {t('classes.form.sessionPreview', {
                       count: selectedTemplate.sessionCount,
                     })}
-                  </p>
+                    {templatePreview.isSuccess &&
+                    templatePreview.data.sessions.length > 0 ? (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4" data-testid="class-session-preview-list">
+                        {templatePreview.data.sessions.map((session) => (
+                          <li key={session.id}>{session.title}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>

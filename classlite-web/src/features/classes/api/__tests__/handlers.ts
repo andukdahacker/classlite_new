@@ -187,3 +187,121 @@ export function classDetail500Handlers() {
     ),
   ]
 }
+
+// --- Story 3.3: templates management (s19 index) -----------------------------
+// Consumed by TemplatesIndexPage.test.tsx, whose RED signal is the missing
+// `@/features/classes/TemplatesIndexPage` module — NOT this file.
+
+export const SEED_TEMPLATE_ID = 'tmpl-seed-1'
+export const CENTER_TEMPLATE_ID = 'tmpl-center-1'
+
+/** Lean templates-list wire alias incl. the new `usedCount` (AC2). */
+export interface TemplateWire {
+  id: string
+  name: string
+  targetBand: number | null
+  primarySkill: string | null
+  sessionCount: number
+  color: string | null
+  scope: 'system' | 'center'
+  usedCount: number
+}
+
+export function templateWire(overrides: Partial<TemplateWire> = {}): TemplateWire {
+  return {
+    id: 'tmpl-default',
+    name: 'Untitled Template',
+    targetBand: 6.5,
+    primarySkill: 'writing',
+    sessionCount: 12,
+    // eslint-disable-next-line no-restricted-syntax -- template.color is an opaque hex wire value
+    color: '#f59e0b',
+    scope: 'center',
+    usedCount: 0,
+    ...overrides,
+  }
+}
+
+/** A read-only system seed (scope:"system") — no edit/delete affordance (AC1). */
+export const templateSeed = templateWire({
+  id: SEED_TEMPLATE_ID,
+  name: 'Writing Bootcamp 6.5',
+  scope: 'system',
+  usedCount: 3,
+})
+
+/** A tenant-owned template (scope:"center") — editable/deletable (AC1). */
+export const templateCustom = templateWire({
+  id: CENTER_TEMPLATE_ID,
+  name: 'My Custom Template',
+  scope: 'center',
+  usedCount: 1,
+})
+
+export const allTemplates: TemplateWire[] = [templateSeed, templateCustom]
+
+export const templatesHandlers = [
+  http.get('/api/templates', () => HttpResponse.json(envelope({ templates: allTemplates }))),
+]
+
+/** Failed list read — exercises the s19 trilogy error state. */
+export function templatesErrorHandlers() {
+  return [
+    http.get('/api/templates', () =>
+      HttpResponse.json(
+        {
+          error: { code: 'INTERNAL_ERROR', message: 'Internal error', requestId: 'req-tpl-500', details: null },
+        },
+        { status: 500 },
+      ),
+    ),
+  ]
+}
+
+// --- Story 3.3: detail (s20) + mutations (s21) -------------------------------
+
+export interface TemplateSessionWire {
+  id: string
+  title: string
+  description: string | null
+  sessionOrder: number
+  duration: number | null
+}
+
+export interface TemplateDetailWire extends TemplateWire {
+  sessions: TemplateSessionWire[]
+}
+
+export function templateDetail(
+  overrides: Partial<TemplateDetailWire> = {},
+): TemplateDetailWire {
+  return {
+    ...templateCustom,
+    sessions: [
+      { id: 's1', title: 'Session One', description: 'Intro', sessionOrder: 0, duration: 60 },
+      { id: 's2', title: 'Session Two', description: null, sessionOrder: 1, duration: null },
+    ],
+    ...overrides,
+  }
+}
+
+/** GET detail handler for a given fixture (default: the center template). */
+export function getTemplateHandlers(detail: TemplateDetailWire = templateDetail()) {
+  return [
+    http.get(`/api/templates/${detail.id}`, () =>
+      HttpResponse.json(envelope(detail)),
+    ),
+  ]
+}
+
+/** GET detail → 404 TEMPLATE_NOT_FOUND (absent / soft-deleted / cross-tenant). */
+export function getTemplateNotFoundHandlers(id: string) {
+  return [
+    http.get(`/api/templates/${id}`, () =>
+      HttpResponse.json(
+        { error: { code: 'TEMPLATE_NOT_FOUND', message: 'Not found', requestId: 'req-404', details: null } },
+        { status: 404 },
+      ),
+    ),
+  ]
+}

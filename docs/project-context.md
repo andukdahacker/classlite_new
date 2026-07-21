@@ -1263,6 +1263,8 @@ If a `tenant_id` field exists in a request struct for deserialization, it must b
 
 RLS policies on tables with soft deletes must include the filter. Alternatively, use a separate archive table.
 
+**Amendment (Story 3.3, 2026-07-20) — enforce the filter at the QUERY layer, not the SELECT policy, for tenant-role soft-deletes.** PostgreSQL rejects a non-owner `UPDATE` when the new row would fall out of the table's SELECT-policy USING set (`ERROR: new row violates row-level security policy`). A policy-level `AND deleted_at IS NULL` therefore makes the soft-delete `UPDATE ... SET deleted_at = now()` itself impossible for the tenant role — the very row it archives becomes policy-invisible mid-statement (reproduced on PG 16; a RESTRICTIVE `FOR SELECT` policy trips it too). For soft-delete tables written under the tenant role, keep the SELECT policy tenant-scope-only and add `AND deleted_at IS NULL` to every read query (`List*`, `Get*ByID`). Prove hiding with an adversarial test that soft-deletes a row then asserts the read predicate returns 0 (see `class_templates`). The "separate archive table" alternative still holds; the policy-level filter only works where writes run as an RLS-bypassing role.
+
 ### Input Validation & Rate Limiting
 
 #### SEC-10: Rate limiting — per-route granularity, not global only

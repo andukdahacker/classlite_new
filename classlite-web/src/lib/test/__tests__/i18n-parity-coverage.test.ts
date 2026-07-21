@@ -1688,3 +1688,121 @@ describe('Story 3.2 i18n parity', () => {
   })
 })
 
+
+const STORY_3_3_KEYS = [
+  'classes.templates.countLabel_one',
+  'classes.templates.countLabel_other',
+  'classes.templates.delete.body',
+  'classes.templates.delete.cancel',
+  'classes.templates.delete.confirm',
+  'classes.templates.delete.error',
+  'classes.templates.delete.title',
+  'classes.templates.delete.usedWarning_one',
+  'classes.templates.delete.usedWarning_other',
+  'classes.templates.detail.bandMeta',
+  'classes.templates.detail.blueprintHeading',
+  'classes.templates.detail.deleteCta',
+  'classes.templates.detail.durationMinutes_one',
+  'classes.templates.detail.durationMinutes_other',
+  'classes.templates.detail.editCta',
+  'classes.templates.detail.noDuration',
+  'classes.templates.detail.noSessions',
+  'classes.templates.detail.notFound.backCta',
+  'classes.templates.detail.notFound.body',
+  'classes.templates.detail.notFound.headline',
+  'classes.templates.detail.sessionMeta_one',
+  'classes.templates.detail.sessionMeta_other',
+  'classes.templates.detail.useCta',
+  'classes.templates.empty.body',
+  'classes.templates.empty.cta',
+  'classes.templates.empty.headline',
+  'classes.templates.error.body',
+  'classes.templates.error.retry',
+  'classes.templates.form.addSession',
+  'classes.templates.form.cancel',
+  'classes.templates.form.colorLabel',
+  'classes.templates.form.create',
+  'classes.templates.form.createTitle',
+  'classes.templates.form.derivedCount_one',
+  'classes.templates.form.derivedCount_other',
+  'classes.templates.form.dragHandleAria',
+  'classes.templates.form.dragHint',
+  'classes.templates.form.editTitle',
+  'classes.templates.form.error',
+  'classes.templates.form.errors.durationRange',
+  'classes.templates.form.errors.nameMax',
+  'classes.templates.form.errors.nameRequired',
+  'classes.templates.form.errors.sessionTitleMax',
+  'classes.templates.form.errors.sessionTitleRequired',
+  'classes.templates.form.errors.sessionsMax',
+  'classes.templates.form.errors.sessionsMin',
+  'classes.templates.form.errors.targetBandRange',
+  'classes.templates.form.errors.targetBandRequired',
+  'classes.templates.form.errors.targetBandStep',
+  'classes.templates.form.nameLabel',
+  'classes.templates.form.primarySkillLabel',
+  'classes.templates.form.removeSessionAria',
+  'classes.templates.form.save',
+  'classes.templates.form.sessionDescriptionPlaceholder',
+  'classes.templates.form.sessionDurationPlaceholder',
+  'classes.templates.form.sessionTitlePlaceholder',
+  'classes.templates.form.sessionsLabel',
+  'classes.templates.form.targetBandLabel',
+  'classes.templates.newCta',
+  'classes.templates.readOnly.body',
+  'classes.templates.readOnly.headline',
+  'classes.templates.saveAsTemplate.limitationNote',
+  'classes.templates.scope.center',
+  'classes.templates.scope.system',
+  'classes.templates.sectionHeading',
+  'classes.templates.table.actionsFor',
+  'classes.templates.table.columns.actions',
+  'classes.templates.table.columns.scope',
+  'classes.templates.table.columns.sessions',
+  'classes.templates.table.columns.skill',
+  'classes.templates.table.columns.template',
+  'classes.templates.table.columns.usedCount',
+  'classes.templates.table.deleteCta',
+  'classes.templates.table.editCta',
+  'classes.templates.table.viewCta',
+  'classes.templates.usedCount_one',
+  'classes.templates.usedCount_other',
+  // AC7 picker loading/error copy (CR-3-1-9 absorbed) + AC9 Save-as-template
+  // copy — Story 3.3 keys that live under the classes.form.* / classes.detail.*
+  // prefixes rather than classes.templates.*, so they carry an explicit
+  // cross-prefix allowance in the ratchet below (CR-3-3 AC10 fix).
+  'classes.form.templateLoading',
+  'classes.form.templateError',
+  'classes.form.templateRetry',
+  'classes.detail.actions.saveAsTemplate',
+  'classes.detail.actions.saveAsTemplateHint',
+] as const
+
+describe('Story 3.3 i18n parity', () => {
+  test('every Story 3.3 template key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_3_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.3 keys', () => {
+    assertI18nInterpolationParity(STORY_3_3_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_3_3 = ['classes.templates.'] as const
+  // The AC7 picker + AC9 Save-as-template keys legitimately extend Story 3.1/3.2
+  // surfaces (ClassFormDialog / OverviewTab), so they sit outside the
+  // classes.templates.* namespace but are still owned by this story.
+  const CROSS_PREFIX_KEYS_3_3 = new Set<string>([
+    'classes.form.templateLoading',
+    'classes.form.templateError',
+    'classes.form.templateRetry',
+    'classes.detail.actions.saveAsTemplate',
+    'classes.detail.actions.saveAsTemplateHint',
+  ])
+
+  test.each(STORY_3_3_KEYS)('%s belongs to a 3.3 allowed prefix', (key) => {
+    const ok =
+      ALLOWED_PREFIXES_3_3.some((p) => key.startsWith(p)) ||
+      CROSS_PREFIX_KEYS_3_3.has(key)
+    expect(ok).toBe(true)
+  })
+})
