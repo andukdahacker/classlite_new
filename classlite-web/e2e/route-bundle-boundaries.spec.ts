@@ -895,4 +895,53 @@ test.describe('Route bundle boundaries — auth / student / teacher (AC2)', () =
       }
     }
   })
+
+  test('Story 3.4 — SchedulePage + MySchedulePage each ship their own chunk; the heavy calendar does NOT leak into the student /my-schedule or dashboard chunks', async () => {
+    // Story 3.4 Task 12 / AC12. /schedule (staff, s13) is deep-imported so the
+    // hand-rolled calendar lands in its own SchedulePage chunk; /my-schedule
+    // (student, s32) is a tiny stub chunk. The workspace testid must NOT leak
+    // into the student stub or the dashboard chunks (deep-import discipline —
+    // students never pull the calendar).
+    expect(
+      existsSync(DIST_DIR),
+      'dist/assets/ not built — run `npm run build` before this Playwright spec',
+    ).toBe(true)
+    const files = readdirSync(DIST_DIR)
+
+    const scheduleChunks = files.filter((f: string) =>
+      /^SchedulePage-[\w-]+\.js$/.test(f),
+    )
+    expect(scheduleChunks.length, 'SchedulePage chunk missing from dist/').toBeGreaterThan(0)
+    const scheduleContents = scheduleChunks
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    expect(scheduleContents, 'SchedulePage chunk missing `schedule-workspace` testid').toContain(
+      'schedule-workspace',
+    )
+
+    const myScheduleChunks = files.filter((f: string) =>
+      /^MySchedulePage-[\w-]+\.js$/.test(f),
+    )
+    expect(myScheduleChunks.length, 'MySchedulePage chunk missing from dist/').toBeGreaterThan(0)
+    const myScheduleContents = myScheduleChunks
+      .map((f: string) => readFileSync(resolve(DIST_DIR, f)).toString('utf8'))
+      .join('\n')
+    expect(myScheduleContents, 'MySchedulePage chunk missing its placeholder testid').toContain(
+      'my-schedule-placeholder',
+    )
+
+    // Negative — the student stub + the dashboard chunks must NOT absorb the
+    // heavy calendar workspace testid.
+    const nonCalendarChunkFiles = files.filter(
+      (f: string) =>
+        /^(MySchedulePage|TeacherDashboard|StudentDashboard|OwnerDashboard)-[\w-]+\.js$/.test(f),
+    )
+    for (const chunkFile of nonCalendarChunkFiles) {
+      const content = readFileSync(resolve(DIST_DIR, chunkFile)).toString('utf8')
+      expect(
+        content,
+        `${chunkFile} leaked the schedule workspace testid "schedule-workspace"`,
+      ).not.toContain('schedule-workspace')
+    }
+  })
 })

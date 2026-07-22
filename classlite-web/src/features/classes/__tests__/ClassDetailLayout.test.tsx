@@ -176,13 +176,14 @@ describe('ClassDetailLayout — routing (AC1)', () => {
       'class-detail-tab-materials',
       'class-detail-tab-analytics',
     ])
-    // Dormant tabs stay in tab order (never `disabled`)...
-    const sessionsTab = screen.getByTestId('class-detail-tab-sessions')
-    expect(sessionsTab).not.toHaveAttribute('disabled')
-    expect(sessionsTab).not.toHaveAttribute('aria-disabled', 'true')
+    // Dormant tabs stay in tab order (never `disabled`)... (Sessions is now LIT
+    // per Story 3.4 AC10 — Students remains the dormant exemplar.)
+    const studentsTab = screen.getByTestId('class-detail-tab-students')
+    expect(studentsTab).not.toHaveAttribute('disabled')
+    expect(studentsTab).not.toHaveAttribute('aria-disabled', 'true')
     // ...and carry "coming soon" in their accessible name (AC8).
-    expect(sessionsTab).toHaveAccessibleName(
-      i18n.t('classes.detail.tabs.sessionsComingSoon'),
+    expect(studentsTab).toHaveAccessibleName(
+      i18n.t('classes.detail.tabs.studentsComingSoon'),
     )
   })
 })
@@ -225,10 +226,10 @@ describe('OverviewTab — real metadata (AC2)', () => {
 })
 
 describe('Dormant tabs (AC3)', () => {
+  // Sessions is LIT per Story 3.4 AC10 — dropped from the dormant table.
   const DORMANT = [
     { path: 'students', testid: 'class-tab-students-coming-soon' },
     { path: 'assignments', testid: 'class-tab-assignments-coming-soon' },
-    { path: 'sessions', testid: 'class-tab-sessions-coming-soon' },
     { path: 'materials', testid: 'class-tab-materials-coming-soon' },
     { path: 'analytics', testid: 'class-tab-analytics-coming-soon' },
   ] as const
@@ -261,10 +262,10 @@ describe('Tab nav + independent caching (AC4)', () => {
     await screen.findByTestId('class-tab-overview')
     await waitFor(() => expect(state.count).toBe(1))
 
-    // Overview -> Sessions (dormant) -> back to Overview.
-    await user.click(screen.getByTestId('class-detail-tab-sessions'))
+    // Overview -> Students (dormant; Sessions is now LIT per 3.4) -> Overview.
+    await user.click(screen.getByTestId('class-detail-tab-students'))
     expect(
-      await screen.findByTestId('class-tab-sessions-coming-soon'),
+      await screen.findByTestId('class-tab-students-coming-soon'),
     ).toBeInTheDocument()
 
     await user.click(screen.getByTestId('class-detail-tab-overview'))

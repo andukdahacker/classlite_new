@@ -1721,6 +1721,364 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 3.4 — Schedule / Sessions ====================
+  # Session CRUD + recurrence + scoped past-immutable mutations. sessionChain =
+  # classChain shape (role enforced in-service; teacher-scope → 404, students →
+  # 403). Recurrence materializes on create (required endDate + 200 cap). Every
+  # mutation carries expectedUpdatedAt (optimistic 409) + applyScope.
+  /api/sessions:
+    get:
+      operationId: listSessions
+      summary: List sessions in a date range, role-scoped (story 3.4 — AC2/AC7)
+      description: |
+        Half-open [from, to) on the local calendar day (starts_at < to). Server
+        caps the window at 92 days (SCHEDULE_RANGE_TOO_WIDE). Teacher sees only
+        their own classes' sessions (absent, not hidden); owner/admin center-wide.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: classId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Date-range list of sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students) / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: SCHEDULE_RANGE_TOO_WIDE (window > 92 days) OR invalid from/to
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createSession
+      summary: Create a session (or a recurring series) (story 3.4 — AC2/AC3)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        "201":
+          description: Created session (or first-of-series) + series metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCreateSessionResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error / RECURRENCE_LIMIT_EXCEEDED / missing endDate on recurring
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get a session + series counts (story 3.4 — AC2)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session + series block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionDetail'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateSession
+      summary: Scoped, past-immutable field edit (story 3.4 — AC2/AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+      responses:
+        "200":
+          description: Updated session (the target)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSession'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SESSION_CONFLICT (stale expectedUpdatedAt)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: SESSION_ALREADY_STARTED (past target) / validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteSession
+      summary: Scoped hard-delete of non-completed rows (story 3.4 — AC2/AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [this, future, all]
+        - name: expectedUpdatedAt
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "204":
+          description: Deleted (no content)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SESSION_CONFLICT (stale expectedUpdatedAt)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: SESSION_ALREADY_STARTED (past target)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/sessions/{id}/cancel:
+    post:
+      operationId: cancelSession
+      summary: Scoped cancel-in-series (keeps rows, FR-17) (story 3.4 — AC2/AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelSessionRequest'
+      responses:
+        "200":
+          description: Cancelled session (the target)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSession'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SESSION_CONFLICT (stale expectedUpdatedAt)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: SESSION_ALREADY_STARTED (past target)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5c — Google Meet OAuth integration ====================
   # 3 endpoints per AC9. Authorize + Disconnect ride the shared settingsChain
   # (Owner-only). Callback rides oauthCallbackChain — same middleware minus
@@ -3656,6 +4014,237 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Class'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 3.4 — Sessions ----------------
+    SessionStatus:
+      type: string
+      enum: [scheduled, cancelled]
+
+    RecurrencePattern:
+      type: string
+      enum: [daily, weekly, custom]
+
+    ApplyScope:
+      type: string
+      enum: [this, future, all]
+
+    Session:
+      type: object
+      # All fields present + explicit (nulls not omitted) per GO-5. className +
+      # classColor are denormalized from the JOIN so the calendar can tint +
+      # label without a second call.
+      required:
+        - id
+        - centerId
+        - classId
+        - className
+        - classColor
+        - topic
+        - startsAt
+        - endsAt
+        - status
+        - cancelledAt
+        - recurrenceGroupId
+        - recurrencePattern
+        - recurrenceTz
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        classColor:
+          type: string
+          nullable: true
+        topic:
+          type: string
+          nullable: true
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        recurrenceGroupId:
+          type: string
+          format: uuid
+          nullable: true
+        recurrencePattern:
+          $ref: '#/components/schemas/RecurrencePattern'
+          nullable: true
+        recurrenceTz:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SessionSeries:
+      type: object
+      # Count oracle for the scope-confirm UI. groupId null = one-off (total 1).
+      required: [groupId, total, upcoming, completed]
+      properties:
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        total:
+          type: integer
+        upcoming:
+          type: integer
+        completed:
+          type: integer
+
+    SessionDetail:
+      type: object
+      required: [session, series]
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        series:
+          $ref: '#/components/schemas/SessionSeries'
+
+    RecurrenceInput:
+      type: object
+      # pattern 'none' → one-off. daily/weekly/custom REQUIRE endDate; weekly +
+      # custom carry weekdays[] (0=Sun … 6=Sat). Generated count capped at 200.
+      required: [pattern]
+      properties:
+        pattern:
+          type: string
+          enum: [none, daily, weekly, custom]
+        weekdays:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+        endDate:
+          type: string
+          format: date
+          nullable: true
+
+    CreateSessionRequest:
+      type: object
+      required: [classId, startsAt, durationMinutes, recurrence]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        topic:
+          type: string
+          maxLength: 200
+          nullable: true
+        startsAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          minimum: 1
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceInput'
+
+    CreateSessionResult:
+      type: object
+      required: [recurrenceGroupId, count, first]
+      properties:
+        recurrenceGroupId:
+          type: string
+          format: uuid
+          nullable: true
+        count:
+          type: integer
+        first:
+          $ref: '#/components/schemas/Session'
+
+    UpdateSessionRequest:
+      type: object
+      # Field edits only (topic/startsAt/durationMinutes/classId). applyScope +
+      # expectedUpdatedAt drive the scoped, past-immutable, optimistic write.
+      required: [applyScope, expectedUpdatedAt]
+      properties:
+        topic:
+          type: string
+          maxLength: 200
+          nullable: true
+        startsAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          minimum: 1
+        classId:
+          type: string
+          format: uuid
+        applyScope:
+          $ref: '#/components/schemas/ApplyScope'
+        expectedUpdatedAt:
+          type: string
+          format: date-time
+
+    CancelSessionRequest:
+      type: object
+      required: [applyScope, expectedUpdatedAt]
+      properties:
+        applyScope:
+          $ref: '#/components/schemas/ApplyScope'
+        expectedUpdatedAt:
+          type: string
+          format: date-time
+
+    EnvelopeSession:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Session'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionDetail:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionDetail'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeCreateSessionResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CreateSessionResult'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

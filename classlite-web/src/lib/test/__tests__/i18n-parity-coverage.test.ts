@@ -1806,3 +1806,119 @@ describe('Story 3.3 i18n parity', () => {
     expect(ok).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------
+// Story 3.4 (AC11) — schedule workspace + session modal + scope-confirm (with
+// {{date}}/{{count}} interpolation) + mySchedule stub + the lit class-detail
+// Sessions tab + the schedule PermissionDenied section header. Ratchet allows
+// schedule.* / mySchedule.*; the classes.detail.sessions.* lit-tab keys +
+// section.schedule.header carry an explicit cross-prefix allowance.
+// ---------------------------------------------------------------------
+const STORY_3_4_KEYS = [
+  'schedule.title',
+  'schedule.newSession',
+  'schedule.today',
+  'schedule.prev',
+  'schedule.next',
+  'schedule.view.legend',
+  'schedule.view.day',
+  'schedule.view.week',
+  'schedule.view.month',
+  'schedule.filter.label',
+  'schedule.filter.allClasses',
+  'schedule.legend.title',
+  'schedule.legend.empty',
+  'schedule.empty.body',
+  'schedule.error.body',
+  'schedule.error.retry',
+  'schedule.moreCount',
+  'schedule.agenda.empty',
+  'schedule.emptySlot.aria',
+  'schedule.block.cancelledPrefix',
+  'schedule.block.recurring',
+  'schedule.block.cancelledPill',
+  'schedule.weekdayShort.0',
+  'schedule.weekdayShort.1',
+  'schedule.weekdayShort.2',
+  'schedule.weekdayShort.3',
+  'schedule.weekdayShort.4',
+  'schedule.weekdayShort.5',
+  'schedule.weekdayShort.6',
+  'schedule.modal.createTitle',
+  'schedule.modal.editTitle',
+  'schedule.modal.subtitle',
+  'schedule.modal.field.class',
+  'schedule.modal.field.date',
+  'schedule.modal.field.startTime',
+  'schedule.modal.field.duration',
+  'schedule.modal.field.topic',
+  'schedule.modal.field.recurrence',
+  'schedule.modal.field.weekdays',
+  'schedule.modal.field.endDate',
+  'schedule.modal.pattern.none',
+  'schedule.modal.pattern.daily',
+  'schedule.modal.pattern.weekly',
+  'schedule.modal.pattern.custom',
+  'schedule.modal.scope.legend',
+  'schedule.modal.scope.this',
+  'schedule.modal.scope.future',
+  'schedule.modal.scope.all',
+  'schedule.modal.scope.countLoading',
+  'schedule.modal.classesError',
+  'schedule.modal.noClasses.body',
+  'schedule.modal.noClasses.cta',
+  'schedule.modal.error.recurrenceLimit',
+  'schedule.modal.error.conflict',
+  'schedule.modal.error.rangeTooWide',
+  'schedule.modal.error.validation',
+  'schedule.modal.error.generic',
+  'schedule.modal.cancelSession',
+  'schedule.modal.deleteSession',
+  'schedule.modal.close',
+  'schedule.modal.save',
+  'schedule.modal.validation.classRequired',
+  'schedule.modal.validation.topicMax',
+  'schedule.modal.validation.dateRequired',
+  'schedule.modal.validation.timeRequired',
+  'schedule.modal.validation.durationRequired',
+  'schedule.modal.validation.endDateRequired',
+  'schedule.modal.validation.weekdaysRequired',
+  'schedule.modal.validation.endDateBeforeStart',
+  'mySchedule.empty.headline',
+  'mySchedule.empty.body',
+  'mySchedule.empty.disclaimer',
+  'classes.detail.sessions.title',
+  'classes.detail.sessions.empty',
+  'classes.detail.sessions.loadError',
+  'classes.detail.sessions.retry',
+  'app.permissionDenied.section.schedule.header',
+] as const
+
+describe('Story 3.4 i18n parity', () => {
+  test('every Story 3.4 schedule key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_4_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.4 keys', () => {
+    assertI18nInterpolationParity(STORY_3_4_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_3_4 = ['schedule.', 'mySchedule.'] as const
+  // The lit class-detail Sessions tab keys + the schedule PermissionDenied
+  // section header extend existing surfaces, so they carry an explicit
+  // cross-prefix allowance (mirrors the STORY_3_3 pattern).
+  const CROSS_PREFIX_KEYS_3_4 = new Set<string>([
+    'classes.detail.sessions.title',
+    'classes.detail.sessions.empty',
+    'classes.detail.sessions.loadError',
+    'classes.detail.sessions.retry',
+    'app.permissionDenied.section.schedule.header',
+  ])
+
+  test.each(STORY_3_4_KEYS)('%s belongs to a 3.4 allowed prefix', (key) => {
+    const ok =
+      ALLOWED_PREFIXES_3_4.some((p) => key.startsWith(p)) ||
+      CROSS_PREFIX_KEYS_3_4.has(key)
+    expect(ok).toBe(true)
+  })
+})

@@ -447,6 +447,67 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 3.4 — /schedule (s13) staff workspace. Own lazy chunk under
+      // AppLayout, gated owner/admin/teacher. Deep-imported so the heavy
+      // hand-rolled calendar does NOT leak into the entry or student chunks.
+      {
+        path: '/schedule',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="schedule"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { SchedulePage } = await import(
+                '@/features/schedule/SchedulePage'
+              )
+              return { Component: SchedulePage }
+            },
+          },
+        ],
+      },
+      // Story 3.4 — /my-schedule (s32) student stub. Own tiny chunk (no
+      // calendar), gated to students. The real enrolled-class view is Epic 7.
+      {
+        path: '/my-schedule',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['student']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="schedule"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { MySchedulePage } = await import(
+                '@/features/schedule/MySchedulePage'
+              )
+              return { Component: MySchedulePage }
+            },
+          },
+        ],
+      },
     ],
   },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE

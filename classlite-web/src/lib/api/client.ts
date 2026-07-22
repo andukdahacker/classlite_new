@@ -618,6 +618,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sessions in a date range, role-scoped (story 3.4 — AC2/AC7)
+         * @description Half-open [from, to) on the local calendar day (starts_at < to). Server
+         *     caps the window at 92 days (SCHEDULE_RANGE_TOO_WIDE). Teacher sees only
+         *     their own classes' sessions (absent, not hidden); owner/admin center-wide.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        /** Create a session (or a recurring series) (story 3.4 — AC2/AC3) */
+        post: operations["createSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a session + series counts (story 3.4 — AC2) */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        /** Scoped hard-delete of non-completed rows (story 3.4 — AC2/AC4) */
+        delete: operations["deleteSession"];
+        options?: never;
+        head?: never;
+        /** Scoped, past-immutable field edit (story 3.4 — AC2/AC4) */
+        patch: operations["updateSession"];
+        trace?: never;
+    };
+    "/api/sessions/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scoped cancel-in-series (keeps rows, FR-17) (story 3.4 — AC2/AC4) */
+        post: operations["cancelSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/centers/{id}/integrations/google-meet/authorize": {
         parameters: {
             query?: never;
@@ -1440,6 +1499,103 @@ export interface components {
         };
         EnvelopeClass: {
             data: components["schemas"]["Class"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @enum {string} */
+        SessionStatus: "scheduled" | "cancelled";
+        /** @enum {string} */
+        RecurrencePattern: "daily" | "weekly" | "custom";
+        /** @enum {string} */
+        ApplyScope: "this" | "future" | "all";
+        Session: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            classColor: string | null;
+            topic: string | null;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            status: components["schemas"]["SessionStatus"];
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: uuid */
+            recurrenceGroupId: string | null;
+            recurrencePattern: components["schemas"]["RecurrencePattern"];
+            recurrenceTz: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SessionSeries: {
+            /** Format: uuid */
+            groupId: string | null;
+            total: number;
+            upcoming: number;
+            completed: number;
+        };
+        SessionDetail: {
+            session: components["schemas"]["Session"];
+            series: components["schemas"]["SessionSeries"];
+        };
+        RecurrenceInput: {
+            /** @enum {string} */
+            pattern: "none" | "daily" | "weekly" | "custom";
+            weekdays?: number[];
+            /** Format: date */
+            endDate?: string | null;
+        };
+        CreateSessionRequest: {
+            /** Format: uuid */
+            classId: string;
+            topic?: string | null;
+            /** Format: date-time */
+            startsAt: string;
+            durationMinutes: number;
+            recurrence: components["schemas"]["RecurrenceInput"];
+        };
+        CreateSessionResult: {
+            /** Format: uuid */
+            recurrenceGroupId: string | null;
+            count: number;
+            first: components["schemas"]["Session"];
+        };
+        UpdateSessionRequest: {
+            topic?: string | null;
+            /** Format: date-time */
+            startsAt?: string;
+            durationMinutes?: number;
+            /** Format: uuid */
+            classId?: string;
+            applyScope: components["schemas"]["ApplyScope"];
+            /** Format: date-time */
+            expectedUpdatedAt: string;
+        };
+        CancelSessionRequest: {
+            applyScope: components["schemas"]["ApplyScope"];
+            /** Format: date-time */
+            expectedUpdatedAt: string;
+        };
+        EnvelopeSession: {
+            data: components["schemas"]["Session"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionDetail: {
+            data: components["schemas"]["SessionDetail"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionList: {
+            data: components["schemas"]["Session"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeCreateSessionResult: {
+            data: components["schemas"]["CreateSessionResult"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         FieldError: {
@@ -3646,6 +3802,448 @@ export interface operations {
                 };
             };
             /** @description INVALID_STATUS_TRANSITION (illegal move) OR garbage status validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listSessions: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                classId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Date-range list of sessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SCHEDULE_RANGE_TOO_WIDE (window > 92 days) OR invalid from/to */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created session (or first-of-series) + series metadata */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCreateSessionResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error / RECURRENCE_LIMIT_EXCEEDED / missing endDate on recurring */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session + series block */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionDetail"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteSession: {
+        parameters: {
+            query: {
+                scope: "this" | "future" | "all";
+                expectedUpdatedAt: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted (no content) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_CONFLICT (stale expectedUpdatedAt) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_ALREADY_STARTED (past target) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated session (the target) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSession"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_CONFLICT (stale expectedUpdatedAt) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_ALREADY_STARTED (past target) / validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Cancelled session (the target) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSession"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_CONFLICT (stale expectedUpdatedAt) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_ALREADY_STARTED (past target) */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -65,11 +65,8 @@ const TABS: readonly TabDef[] = [
     labelKey: 'classes.detail.tabs.assignments',
     comingSoonKey: 'classes.detail.tabs.assignmentsComingSoon',
   },
-  {
-    key: 'sessions',
-    labelKey: 'classes.detail.tabs.sessions',
-    comingSoonKey: 'classes.detail.tabs.sessionsComingSoon',
-  },
+  // Story 3.4 (AC10) — Sessions is LIT (real per-class list); no longer dormant.
+  { key: 'sessions', labelKey: 'classes.detail.tabs.sessions' },
   {
     key: 'materials',
     labelKey: 'classes.detail.tabs.materials',

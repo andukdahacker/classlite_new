@@ -423,6 +423,25 @@ func main() {
 	mux.Handle("PATCH /api/classes/{id}", classChain(classHandler.Update))
 	mux.Handle("POST /api/classes/{id}/status", classChain(classHandler.TransitionStatus))
 
+	// Story 3.4 — Schedule / Sessions (6 routes). Same open chain shape as
+	// classChain (role + teacher-scope enforced in-service). The injected clock
+	// is the now()-floor source that makes past sessions immutable.
+	sessionSvc := service.NewSessionService(pool, auditSvc, clock.RealClock{})
+	sessionHandler := handler.NewSessionHandler(sessionSvc, clock.RealClock{})
+	sessionChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("GET /api/sessions", sessionChain(sessionHandler.List))
+	mux.Handle("POST /api/sessions", sessionChain(sessionHandler.Create))
+	mux.Handle("GET /api/sessions/{id}", sessionChain(sessionHandler.Get))
+	mux.Handle("PATCH /api/sessions/{id}", sessionChain(sessionHandler.Update))
+	mux.Handle("DELETE /api/sessions/{id}", sessionChain(sessionHandler.Delete))
+	mux.Handle("POST /api/sessions/{id}/cancel", sessionChain(sessionHandler.Cancel))
+
 	// Story 2-5c — Google Meet OAuth integration endpoints (AC9).
 	//
 	// Authorize + Disconnect ride the shipped settingsChain (Owner-only +

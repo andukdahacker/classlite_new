@@ -10,7 +10,10 @@
 // error here has a corresponding switch arm in that mapper.
 package service
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // InvalidCredentialsError → 401 INVALID_CREDENTIALS. Used by Login for both
 // the unknown-email path and the wrong-password path so the two cannot be
@@ -394,6 +397,46 @@ type InviteEmailTakenError struct {
 
 func (e *InviteEmailTakenError) Error() string {
 	return "active invite already exists for email: " + e.Email
+}
+
+// ---------------------------------------------------------------------
+// Story 3.4 — Session scheduling errors.
+//
+// These flow through middleware/error_mapper.go. SESSION_NOT_FOUND (404) and
+// SESSION_CONFLICT (409) reuse the legacy model.NotFoundError / model.ConflictError
+// with an explicit Code, so only the three 422-family codes below need their
+// own pointer types (the generic ValidationError arm would collapse them all
+// to VALIDATION_ERROR).
+// ---------------------------------------------------------------------
+
+// SessionAlreadyStartedError → 422 SESSION_ALREADY_STARTED. A mutating scope of
+// 'this' targeted a session whose starts_at is already in the past (immutable —
+// protects 3.5 attendance).
+type SessionAlreadyStartedError struct{}
+
+func (e *SessionAlreadyStartedError) Error() string { return "session has already started" }
+
+// RecurrenceLimitExceededError → 422 RECURRENCE_LIMIT_EXCEEDED. The requested
+// recurrence would materialize more than the per-series cap. MaxReachableDate
+// tells the client the furthest end date reachable for the chosen pattern.
+type RecurrenceLimitExceededError struct {
+	Cap              int
+	MaxReachableDate string
+}
+
+func (e *RecurrenceLimitExceededError) Error() string {
+	return "recurrence exceeds the maximum of " + strconv.Itoa(e.Cap) +
+		" occurrences (furthest reachable end date: " + e.MaxReachableDate + ")"
+}
+
+// ScheduleRangeTooWideError → 422 SCHEDULE_RANGE_TOO_WIDE. A list window wider
+// than the server cap (no unbounded month×JOIN scans).
+type ScheduleRangeTooWideError struct {
+	MaxDays int
+}
+
+func (e *ScheduleRangeTooWideError) Error() string {
+	return "schedule range exceeds the maximum window of " + strconv.Itoa(e.MaxDays) + " days"
 }
 
 // IntegrationConnectCanceledError → handled at the handler layer as a 302

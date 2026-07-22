@@ -104,8 +104,26 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		// handler layer (auth_handler.go:439); Meet flow routes through
 		// ErrorMapper so we map it here to 503 to match the login-flow code.
 		var oauthNotConfigured *service.OAuthNotConfiguredError
+		// Story 3.4 session scheduling 422-family errors (distinct codes the
+		// generic ValidationError arm would otherwise flatten).
+		var sessionAlreadyStarted *service.SessionAlreadyStartedError
+		var recurrenceLimitExceeded *service.RecurrenceLimitExceededError
+		var scheduleRangeTooWide *service.ScheduleRangeTooWideError
 
 		switch {
+		case errors.As(err, &sessionAlreadyStarted):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"SESSION_ALREADY_STARTED",
+				"This session has already started and can no longer be changed.", nil)
+			return
+		case errors.As(err, &recurrenceLimitExceeded):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"RECURRENCE_LIMIT_EXCEEDED", recurrenceLimitExceeded.Error(), nil)
+			return
+		case errors.As(err, &scheduleRangeTooWide):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"SCHEDULE_RANGE_TOO_WIDE", scheduleRangeTooWide.Error(), nil)
+			return
 		case errors.As(err, &invalidCreds):
 			handler.WriteError(w, r, http.StatusUnauthorized,
 				"INVALID_CREDENTIALS", "Email or password is incorrect.", nil)
