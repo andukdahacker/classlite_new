@@ -88,6 +88,9 @@ export function useAcceptInvite(getActiveToken?: GetActiveToken) {
         user: result.user,
         accessToken: result.accessToken,
         role: result.role,
+        // Invited teachers don't own the target center — keep `Session.center`
+        // null in the invitee's cache (see the session write above).
+        center: null,
       })
       navigate('/dashboard', { replace: true })
     },

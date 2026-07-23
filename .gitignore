@@ -18,6 +18,7 @@ build/
 *.dylib
 classlite-api/classlite-api
 classlite-api/api
+classlite-api/bin/
 
 # Go test
 *.test

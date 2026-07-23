@@ -71,6 +71,23 @@ export interface RefreshSessionData {
    * comment for the module-load rationale.
    */
   role: 'owner' | 'admin' | 'teacher' | 'student' | null
+  /**
+   * The caller's single-membership center summary (api.yaml
+   * LoginResult.center), or `null` for a zero-or-multiple-membership user.
+   * Carried on the refresh + broadcast payloads so `Session.center` is
+   * rehydrated on every silent/boot refresh — without it a page reload
+   * (cold cache → boot probe → no prior center to preserve) drops the
+   * center and misroutes resume-onboarding to `/setup/center`. Shape mirrors
+   * `SessionCacheEntry.center` (kept inline for the module-cycle rationale).
+   */
+  center: {
+    id: string
+    name: string
+    shortCode: string
+    brandColor: string | null
+    logoUrl: string | null
+    timezone: string
+  } | null
 }
 
 /**
@@ -266,6 +283,10 @@ async function performNetworkRefresh(): Promise<RefreshResult> {
         // gateway response) to the same explicit-null shape callers
         // expect.
         role: envelope.data.role ?? null,
+        // The refresh response now carries the center summary (api.yaml
+        // LoginResult.center). `?? null` normalizes `undefined` from a legacy
+        // gateway to the explicit-null absent marker.
+        center: envelope.data.center ?? null,
       }
     } catch {
       Sentry.captureMessage('auth-refresh: 200 with unparseable body', {
@@ -293,7 +314,13 @@ async function performNetworkRefresh(): Promise<RefreshResult> {
           const next: SessionCacheEntry = {
             user: data!.user,
             accessToken: data!.accessToken,
-            center: previous?.center ?? null,
+            // Prefer the authoritative center from THIS refresh response;
+            // fall back to any prior cache value (covers a legacy gateway
+            // that omits `center`), else null. This is what makes
+            // `Session.center` durable across a page reload — the boot probe
+            // hits a cold cache (no `previous`) and now hydrates center from
+            // the response instead of dropping it to null.
+            center: data!.center ?? previous?.center ?? null,
             role: data!.role,
           }
           return next
@@ -410,9 +437,11 @@ function hydrateSessionCache(data: RefreshSessionData): void {
   // (Story 1-9a Layer B — refactored into a helper so the two
   // listener arms can't drift apart).
   //
-  // Story 2-3a AC9: `Session.center` is synthesized here (broadcast payload
-  // does not carry it). Prior center is preserved when this sibling tab
-  // already had a cache entry — a fresh sibling gets defined-as-null.
+  // `Session.center` now rides on the broadcast payload (login + refresh
+  // both carry it — api.yaml LoginResult.center), so a sibling tab that just
+  // missed the network round-trip still lands with the correct center. Prefer
+  // the broadcast value; fall back to any prior cache entry (legacy sender
+  // that omits center), else defined-as-null.
   //
   // Story 2.6 (AC2): `role` rides on the broadcast payload so a sibling
   // tab that just missed the refresh network round-trip still lands
@@ -425,7 +454,7 @@ function hydrateSessionCache(data: RefreshSessionData): void {
       const next: SessionCacheEntry = {
         user: data.user,
         accessToken: data.accessToken,
-        center: previous?.center ?? null,
+        center: data.center ?? previous?.center ?? null,
         role: data.role,
       }
       return next

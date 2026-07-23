@@ -72,6 +72,13 @@ export default function SoloFirstClassPage() {
   const templates = useListTemplates()
   const spawn = useSpawnClasses()
   const autoSave = useOnboardingAutoSave()
+  // Depend on the STABLE `scheduleSave` primitive, not the `autoSave` object
+  // (which `useAutoSave` recreates every render). Listing `autoSave` in the
+  // auto-save effect below re-fired it on every `savingState` transition,
+  // producing a self-perpetuating ~1.5s save loop → 429. Mirrors the
+  // ClassSpawnPage R1-C1-P6 fold; the R1-C1-P2 comment claimed this pattern
+  // but still depended on the unstable object.
+  const { scheduleSave } = autoSave
   const schema = useSoloSchema()
 
   const persona = progress.data?.persona ?? null
@@ -166,22 +173,60 @@ export default function SoloFirstClassPage() {
     control: form.control,
     name: 'startDate',
   })
+  // Hold the server-derived draft context (persona + centerDraft +
+  // priorTemplateDraft) in a ref refreshed every render. The auto-save effect
+  // reads the LATEST values from here WITHOUT listing them as dependencies.
+  //
+  // Why: a successful PUT echoes `data.payload` back into the progress query
+  // cache (usePutOnboardingProgress.onSuccess → setQueryData), minting a NEW
+  // `payload`/`centerDraft`/`templateDraft` object every cycle. When those
+  // objects sat in the effect's dep array they changed identity on every save,
+  // re-firing the effect → scheduleSave → PUT → echo → … a self-perpetuating
+  // ~1.5s save loop that 429s the endpoint and flickers the AutoSaveIndicator.
+  // Keeping only user-driven inputs (watched fields, templateId,
+  // buildFromScratch) in the deps below breaks the loop while still capturing
+  // the freshest draft context at schedule time.
+  const saveContextRef = useRef({
+    persona,
+    centerDraft: priorPayload?.centerDraft ?? null,
+    priorTemplateDraft,
+  })
+  useEffect(() => {
+    saveContextRef.current = {
+      persona,
+      centerDraft: priorPayload?.centerDraft ?? null,
+      priorTemplateDraft,
+    }
+  }, [persona, priorPayload?.centerDraft, priorTemplateDraft])
+  // Depend on the stable `user.email` STRING, never the `user` OBJECT.
+  // `useAuth` rebuilds a fresh `user` object literal on every render and
+  // subscribes to the whole query cache, so every auto-save PUT (which writes
+  // the progress cache) re-renders this page with a new-identity `user`. With
+  // `user` in the deps below, that alone re-fired the effect → scheduleSave →
+  // PUT → re-render → … a self-perpetuating ~1.5s loop that 429s and flickers,
+  // independent of (and surviving) the priorTemplateDraft/centerDraft ref fold.
+  const userEmail = user?.email ?? null
   useEffect(() => {
     if (progress.isLoading || progress.isError) return
-    if (!user) return
-    autoSave.scheduleSave({
+    if (!userEmail) return
+    const {
+      persona: currentPersona,
+      centerDraft,
+      priorTemplateDraft: currentTemplateDraft,
+    } = saveContextRef.current
+    scheduleSave({
       schemaVersion: 1,
-      personaChoice: persona,
-      centerDraft: priorPayload?.centerDraft ?? null,
+      personaChoice: currentPersona,
+      centerDraft,
       templateDraft: {
-        ...priorTemplateDraft,
+        ...currentTemplateDraft,
         selectedTemplateId: buildFromScratch ? null : templateId,
         buildFromScratch: buildFromScratch ? true : null,
         classesDraft: [
           {
             cohortName: watchedCohortName ?? '',
             startDate: watchedStartDate ?? '',
-            teacherEmail: user.email,
+            teacherEmail: userEmail,
           },
         ],
       } as unknown as Record<string, unknown>,
@@ -191,13 +236,10 @@ export default function SoloFirstClassPage() {
     watchedStartDate,
     templateId,
     buildFromScratch,
-    autoSave,
-    persona,
-    user,
+    scheduleSave,
+    userEmail,
     progress.isLoading,
     progress.isError,
-    priorPayload?.centerDraft,
-    priorTemplateDraft,
   ])
 
   const retryCountdown = useCountdown({ initialSeconds: 0 })

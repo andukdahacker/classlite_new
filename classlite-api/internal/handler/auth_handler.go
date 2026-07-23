@@ -158,6 +158,18 @@ type userSummary struct {
 	EmailVerified bool   `json:"emailVerified"`
 }
 
+// sessionCenterPayload mirrors api.yaml SessionCenter — the six-field center
+// summary the frontend stores at `Session.center`. Pointer fields for the
+// nullable columns; GO-5 forbids omitempty so every key is always emitted.
+type sessionCenterPayload struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	ShortCode  string  `json:"shortCode"`
+	BrandColor *string `json:"brandColor"`
+	LogoUrl    *string `json:"logoUrl"`
+	Timezone   string  `json:"timezone"`
+}
+
 type loginResponseBody struct {
 	AccessToken string      `json:"accessToken"`
 	User        userSummary `json:"user"`
@@ -165,6 +177,27 @@ type loginResponseBody struct {
 	// *string keeps the JSON null distinct from empty-string; GO-5 forbids
 	// omitempty on response fields so the key is always emitted.
 	Role *string `json:"role"`
+	// Center is nullable per api.yaml LoginResult.center — null for a user
+	// with zero-or-multiple memberships. A non-nil value lets the frontend
+	// rehydrate `Session.center` on login/refresh so a reload no longer
+	// strands a center-owning user on `/setup/center`. GO-5: key always emitted.
+	Center *sessionCenterPayload `json:"center"`
+}
+
+// sessionCenterFromService maps the service center summary to the wire
+// payload, preserving nil (→ JSON null) for the no-single-membership case.
+func sessionCenterFromService(c *service.SessionCenter) *sessionCenterPayload {
+	if c == nil {
+		return nil
+	}
+	return &sessionCenterPayload{
+		ID:         c.ID,
+		Name:       c.Name,
+		ShortCode:  c.ShortCode,
+		BrandColor: c.BrandColor,
+		LogoUrl:    c.LogoUrl,
+		Timezone:   c.Timezone,
+	}
 }
 
 type logoutResponseBody struct {
@@ -294,7 +327,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) error {
 			FullName:      res.User.FullName,
 			EmailVerified: res.User.EmailVerified,
 		},
-		Role: nullableRole(res.Role),
+		Role:   nullableRole(res.Role),
+		Center: sessionCenterFromService(res.Center),
 	})
 	return nil
 }
@@ -318,7 +352,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) error {
 			FullName:      res.User.FullName,
 			EmailVerified: res.User.EmailVerified,
 		},
-		Role: nullableRole(res.Role),
+		Role:   nullableRole(res.Role),
+		Center: sessionCenterFromService(res.Center),
 	})
 	return nil
 }

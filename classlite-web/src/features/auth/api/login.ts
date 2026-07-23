@@ -61,15 +61,19 @@ export function useLogin() {
       // wire field (legacy gateway, pre-2.6 backend) to the same
       // explicit-null shape `Session.role` requires.
       const role = result.role ?? null
+      // The login response now carries the caller's single-membership center
+      // summary (api.yaml LoginResult.center). Hydrating it here — plus on
+      // every silent/boot refresh (auth-refresh.ts) — is what keeps
+      // `Session.center` durable across a full page reload. Previously it was
+      // populated ONLY by `useCreateCenter.onSuccess`, so a reloaded
+      // center-owning user had `Session.center === null` and resume-onboarding
+      // misrouted them back to `/setup/center`. `null` stays the defined
+      // absent marker for a zero-or-multiple-membership user (never undefined).
+      const center = result.center ?? null
       const session: Session = {
         user: result.user,
         accessToken: result.accessToken,
-        // Story 2-3a AC9 — `center` is populated ONLY by
-        // `useCreateCenter.onSuccess`. Login-response Session shape does not
-        // carry center metadata; downstream consumers read the value from the
-        // separate onboarding progress query. `null` is the defined absent
-        // marker (never `undefined`).
-        center: null,
+        center,
         role,
       }
       queryClient.setQueryData<Session>(authKeys.session(), session)
@@ -81,6 +85,7 @@ export function useLogin() {
         user: result.user,
         accessToken: result.accessToken,
         role,
+        center,
       })
       // Navigation is the caller's concern (Story 1-9d AC4 amendment).
       // LoginPage runs `navigate(sanitizeNextParam(searchParams.get('next')))`

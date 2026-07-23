@@ -159,6 +159,10 @@ export default function TeacherDashboard() {
   // Loading gate — session boot-probe OR progress in flight
   const progressData = progress.data as ProgressData | undefined
   const currentStep = progressData?.currentStep
+  // Captured before the aliased-condition consts below (centerCreatedByStep
+  // etc.) so TS's control-flow narrowing of `currentStep` doesn't later reject
+  // this equality as a non-overlapping comparison.
+  const stepIsDone = currentStep === 'done'
   const persona = progressData?.persona ?? null
 
   // stableProps render-latch (AC1a per W-BLOCKER-2). Once a valid cell-6
@@ -206,16 +210,28 @@ export default function TeacherDashboard() {
   // when the dashboard has NO other content to show (currentStep is any
   // pre-'done' step, no center yet), the banner is the sole surface — even
   // for a fresh account still on the persona-pick step.
+  //
+  // "Does a center exist?" must NOT rely on `currentCenter` (session.center)
+  // alone: the wizard only advances PAST `center` (to template/spawn/
+  // solo_first_class/done) AFTER CreateCenter succeeds, so any of those steps
+  // is proof a center exists — a signal that survives a page reload even if
+  // session.center hasn't rehydrated yet (defense-in-depth alongside the
+  // login/refresh center-hydration fix). Without this fallback a reloaded
+  // center-owning user was routed to `/setup/center`, where CreateCenter 409s
+  // (USER_ALREADY_HAS_CENTER) and wedges them. `persona`/`center` steps are
+  // pre-create, so they don't count.
+  const centerCreatedByStep =
+    currentStep !== undefined &&
+    currentStep !== 'persona' &&
+    currentStep !== 'center'
+  const centerExists = currentCenter !== null || centerCreatedByStep
+
   const midWizardNoCenter =
-    currentCenter === null &&
-    currentStep !== undefined &&
-    currentStep !== 'done'
+    !centerExists && currentStep !== undefined && !stepIsDone
   const postCenterIncomplete =
-    currentCenter !== null &&
-    currentStep !== undefined &&
-    currentStep !== 'done'
+    centerExists && currentStep !== undefined && !stepIsDone
   const progressUnknownNoCenter =
-    currentCenter === null && progress.isError
+    currentCenter === null && !centerCreatedByStep && progress.isError
 
   let bannerBranch: BannerBranch | null = null
   if (midWizardNoCenter) bannerBranch = 'midWizardNoCenter'
@@ -224,8 +240,7 @@ export default function TeacherDashboard() {
 
   // Also cover the AC1 cell 4 branch: currentStep === 'done' but persona
   // is null — treat as postCenterIncomplete "awaitingNextStep" copy.
-  const awaitingNextStep =
-    currentCenter !== null && currentStep === 'done' && persona === null
+  const awaitingNextStep = centerExists && stepIsDone && persona === null
   if (awaitingNextStep) bannerBranch = 'postCenterIncomplete'
 
   // ------ Welcome heading ------

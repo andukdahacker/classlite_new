@@ -91,7 +91,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, rawToken string) (*Logi
 		return nil, fmt.Errorf("get user after refresh: %w", err)
 	}
 
-	access, accessExp, role, err := s.buildAccessToken(ctx, rotated.UserID)
+	access, accessExp, role, center, err := s.buildAccessToken(ctx, rotated.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("sign access token: %w", err)
 	}
@@ -116,6 +116,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, rawToken string) (*Logi
 		RefreshTTL:       refreshTTL,
 		User:             user,
 		Role:             role,
+		Center:           center,
 	}, nil
 }
 

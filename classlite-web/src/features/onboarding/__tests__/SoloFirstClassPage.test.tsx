@@ -13,8 +13,9 @@
  * ATDD contract: SoloFirstClassPage module does not exist yet.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { axe } from 'vitest-axe'
@@ -119,6 +120,81 @@ function renderSoloPage(opts: RenderOptions = {}) {
   )
   return { ...utils, queryClient }
 }
+
+// ---------------------------------------------------------------------------
+// Regression — auto-save must NOT self-perpetuate a loop.
+// ---------------------------------------------------------------------------
+//
+// A successful PUT /api/onboarding/progress echoes the server payload back
+// into the progress query cache (usePutOnboardingProgress.onSuccess →
+// setQueryData). A real backend echo is not byte-identical (server-normalized
+// / server-managed fields), so React Query's structural sharing hands back a
+// NEW payload identity every save. Combined with `useAuth` rebuilding a fresh
+// `user` object each render (it subscribes to the whole cache and re-renders
+// every consumer on any cache write), the auto-save effect used to re-fire on
+// every echo → scheduleSave → PUT → echo → … a ~1.5s loop that 429s and
+// flickers even with ZERO user input.
+//
+// This test installs a *differing-echo* PUT handler (the byte-identical mock
+// used elsewhere would be collapsed by structural sharing and mask the bug)
+// and asserts the PUT count stays BOUNDED with no user interaction.
+const realDelay = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+
+describe('Regression — auto-save does not loop with no user input', () => {
+  test('PUT count stays bounded over ~4s despite a differing server echo', async () => {
+    // Differing echo: mint a fresh server-managed `centerDraft` every save so
+    // structural sharing cannot collapse the payload identity (mirrors a real
+    // backend). This is exactly what previously churned the effect deps.
+    let nonce = 0
+    server.use(
+      http.put('/api/onboarding/progress', async ({ request }) => {
+        nonce += 1
+        const body = (await request.json()) as {
+          currentStep: string
+          payload: Record<string, unknown>
+        }
+        return HttpResponse.json({
+          data: {
+            currentStep: body.currentStep,
+            payload: { ...body.payload, centerDraft: { serverNonce: nonce } },
+            updatedAt: '2026-07-10T12:00:00.000Z',
+          },
+          meta: { serverTime: '2026-07-10T12:00:00.000Z' },
+        })
+      }),
+    )
+
+    let putCount = 0
+    server.events.on('request:start', ({ request }) => {
+      if (
+        request.method === 'PUT' &&
+        request.url.endsWith('/api/onboarding/progress')
+      ) {
+        putCount += 1
+      }
+    })
+
+    renderSoloPage()
+    await screen.findByRole('heading', { name: /Create your first class/i })
+
+    // Let startup settle: the mount/hydration save fires once (debounce 1500ms).
+    await waitFor(() => expect(putCount).toBeGreaterThanOrEqual(1), {
+      timeout: 3_000,
+    })
+    // Allow any remaining startup churn (templates auto-pick, form reset) to
+    // flush into the debounce window and settle.
+    await realDelay(1_800)
+    const settledCount = putCount
+
+    // No user input from here. A non-looping page issues ZERO further PUTs
+    // across the next ~4s (2+ debounce windows). Pre-fix this climbed ~1/1.5s.
+    await realDelay(4_000)
+    expect(putCount).toBe(settledCount)
+    // Sanity: the whole window stayed small — a loop would be ~6+ here.
+    expect(putCount).toBeLessThanOrEqual(3)
+  }, 15_000)
+})
 
 // -------------------- AC8: Solo layout + LOCKED teacher --------------------
 describe('AC8 — Solo Teacher single-class variant', () => {

@@ -136,6 +136,96 @@ func TestLoginHandler_AC01_SuccessEnvelopeShape(t *testing.T) {
 	}
 }
 
+// TestLoginHandler_ReturnsCenterForSingleMembershipOwner proves the login
+// response carries the caller's center summary (api.yaml LoginResult.center).
+// This is the durability contract that lets the frontend rehydrate
+// `Session.center` on every login/refresh — without it a reloaded
+// center-owning user looked center-less and resume-onboarding misrouted them
+// back to /setup/center (409 wedge).
+func TestLoginHandler_ReturnsCenterForSingleMembershipOwner(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "owner@example.com", "Owner")
+	centerID := test.SeedCenterForUser(t, db, user.ID)
+
+	authSvc := newAuthHandlerService(t, db)
+	_ = authSvc.SetPassword(context.Background(), user.ID, "ValidPass123!")
+	h := handler.NewAuthHandler(authSvc, handler.CookieConfig{
+		Domain: ".classlite.app", Secure: true, SameSite: http.SameSiteLaxMode,
+	})
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    "owner@example.com",
+		"password": "ValidPass123!",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%q)", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Center *struct {
+				ID        string `json:"id"`
+				Name      string `json:"name"`
+				ShortCode string `json:"shortCode"`
+				Timezone  string `json:"timezone"`
+			} `json:"center"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if resp.Data.Center == nil {
+		t.Fatalf("data.center: expected the owner's center summary, got null")
+	}
+	if got := resp.Data.Center.ID; got != test.UUIDString(centerID) {
+		t.Errorf("data.center.id: expected %q, got %q", test.UUIDString(centerID), got)
+	}
+	if resp.Data.Center.Name != "Test Center" {
+		t.Errorf("data.center.name: expected %q, got %q", "Test Center", resp.Data.Center.Name)
+	}
+	if resp.Data.Center.ShortCode == "" {
+		t.Error("data.center.shortCode: expected non-empty")
+	}
+	if resp.Data.Center.Timezone == "" {
+		t.Error("data.center.timezone: expected non-empty")
+	}
+}
+
+// TestLoginHandler_CenterNullForUserWithoutMembership proves the symmetric
+// case: a user with zero memberships gets `center: null` (never undefined /
+// omitted — GO-5), matching the null `role`.
+func TestLoginHandler_CenterNullForUserWithoutMembership(t *testing.T) {
+	db := test.SetupDB(t)
+	user := test.CreateUser(t, db, "nobody@example.com", "Nobody")
+
+	authSvc := newAuthHandlerService(t, db)
+	_ = authSvc.SetPassword(context.Background(), user.ID, "ValidPass123!")
+	h := handler.NewAuthHandler(authSvc, handler.CookieConfig{
+		Domain: ".classlite.app", Secure: true, SameSite: http.SameSiteLaxMode,
+	})
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    "nobody@example.com",
+		"password": "ValidPass123!",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%q)", rec.Code, rec.Body.String())
+	}
+	// The key must be present and explicitly null (GO-5: never omitempty).
+	if !strings.Contains(rec.Body.String(), `"center":null`) {
+		t.Errorf("expected data.center to be explicit null, got body=%q", rec.Body.String())
+	}
+}
+
 func newAuthHandlerService(t *testing.T, db *test.TxDB) *service.AuthService {
 	t.Helper()
 	hasher := service.BcryptHasher{Cost: 4}

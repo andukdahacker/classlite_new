@@ -14,6 +14,7 @@
  * RED phase: @/features/onboarding/CenterSetupPage doesn't exist yet.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { HttpResponse, http } from 'msw'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'vitest-axe'
@@ -285,6 +286,59 @@ describe('CenterSetupPage — AC11 save-and-finish-later', () => {
     await waitFor(() =>
       expect(screen.getByText('dashboard reached')).toBeInTheDocument(),
     )
+  })
+})
+
+// Regression guard for the auto-save feedback loop (2026-07-23).
+//
+// The auto-save effect used to list the whole `autoSave` context object in
+// its dependency array. `useAutoSave` returns a fresh object literal every
+// render, so each `savingState` transition (idle→saving→saved) recreated the
+// object, re-ran the effect, and scheduled ANOTHER debounced PUT — a
+// self-perpetuating ~1.5s save loop that hammered PUT /api/onboarding/progress
+// into a 429 and made the submit button (disabled while saving) flicker. The
+// fix depends on the STABLE `scheduleSave` primitive instead, so the effect
+// only fires on real field edits.
+describe('CenterSetupPage — auto-save loop regression', () => {
+  test('a single edit produces one PUT that does NOT self-perpetuate after the save settles', async () => {
+    let putCount = 0
+    // Counting PUT handler — registered last so it wins over the default
+    // onboardingHandlers PUT for this test.
+    server.use(
+      http.put('/api/onboarding/progress', async ({ request }) => {
+        putCount += 1
+        const body = (await request.json()) as {
+          currentStep: string
+          payload: unknown
+        }
+        return HttpResponse.json({
+          data: {
+            currentStep: body.currentStep,
+            payload: body.payload,
+            updatedAt: '2026-07-23T00:00:00.000Z',
+          },
+          meta: { serverTime: '2026-07-23T00:00:00.000Z' },
+        })
+      }),
+    )
+
+    const { user } = renderPage()
+    const nameInput = await screen.findByLabelText(
+      i18n.t('onboarding.center.form.nameLabel'),
+    )
+    await user.type(nameInput, 'Loop Guard Center')
+
+    // The debounced PUT lands ~1500ms after the last keystroke.
+    await waitFor(() => expect(putCount).toBeGreaterThanOrEqual(1), {
+      timeout: 3000,
+    })
+    const settledCount = putCount
+
+    // Wait ~2 more debounce windows with NO further edits. Pre-fix, the
+    // savingState churn would have scheduled at least one more PUT here;
+    // post-fix the count must stay put.
+    await new Promise((resolve) => setTimeout(resolve, 3500))
+    expect(putCount).toBe(settledCount)
   })
 })
 

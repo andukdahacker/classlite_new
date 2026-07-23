@@ -20,6 +20,22 @@ Monorepo with three independent services:
 
 ## Quick Start
 
+One command brings up the whole stack — Postgres (+pgAdmin), migrations, the
+Go API, the React dashboard, and the Astro landing site — and tears it down on
+Ctrl-C:
+
+```bash
+cp .env.example .env   # first time only, then edit
+./scripts/dev.sh       # DB + migrate + API + web + landing; Ctrl-C stops everything (data preserved)
+```
+
+Flags: `--clean` wipes the DB volume on exit · `--seed` runs `scripts/seed.sh`
+after migrating · `--no-web` skips the dashboard · `--no-landing` skips the
+landing site.
+
+<details>
+<summary>Manual steps (what <code>dev.sh</code> automates)</summary>
+
 ```bash
 # 1. Copy environment variables
 cp .env.example .env
@@ -39,6 +55,7 @@ cd classlite-web && npm install && npm run dev
 # 6. Start Astro landing (in another terminal)
 cd classlite-landing && npm install && npm run dev
 ```
+</details>
 
 ## Services
 
@@ -53,6 +70,7 @@ cd classlite-landing && npm install && npm run dev
 
 | Script | Description |
 |--------|-------------|
+| `scripts/dev.sh` | One-command local stack: DB + migrate + API + web + landing, clean teardown on Ctrl-C |
 | `scripts/codegen.sh` | Run sqlc + openapi-typescript + openapi-zod-client |
 | `scripts/migrate.sh` | Database migrations (up/down/create) |
 | `scripts/seed.sh` | Seed local database with test data |

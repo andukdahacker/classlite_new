@@ -33,6 +33,7 @@ import {
 } from './lib/centerSetupSchema'
 import { slugifyPreview } from './lib/slugPreview'
 import { getInitials } from './lib/letterMark'
+import { useCurrentCenter } from '@/hooks/useCurrentCenter'
 import { useCreateCenter } from './api/useCreateCenter'
 import { useOnboardingProgress } from './api/useOnboardingProgress'
 import { usePutOnboardingProgress } from './api/usePutOnboardingProgress'
@@ -79,9 +80,20 @@ export default function CenterSetupPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const progress = useOnboardingProgress()
+  const currentCenter = useCurrentCenter()
   const createCenter = useCreateCenter()
   const putProgress = usePutOnboardingProgress()
   const autoSave = useOnboardingAutoSave()
+  // Depend on the STABLE `scheduleSave` primitive, NOT the `autoSave` object.
+  // `useAutoSave` returns a fresh object literal every render, so listing
+  // `autoSave` in the effect below re-fired it on every `savingState`
+  // transition (idle→saving→saved) — each save recreated the object, which
+  // re-ran the effect, which scheduled another save: a self-perpetuating
+  // ~1.5s auto-save loop that hammered PUT progress into a 429 and made the
+  // submit button (disabled while `savingState === 'saving'`) flicker.
+  // `scheduleSave` is a stable `useCallback`, so the effect now only fires on
+  // real field edits. Mirrors the ClassSpawnPage R1-C1-P6 fold.
+  const { scheduleSave } = autoSave
   const schema = useCenterSetupSchema()
 
   const [errorState, setErrorState] = useState<CenterErrorState | null>(null)
@@ -139,7 +151,7 @@ export default function CenterSetupPage() {
   useEffect(() => {
     if (progress.isLoading) return
     if ((watchedName ?? '').trim().length === 0) return
-    autoSave.scheduleSave({
+    scheduleSave({
       schemaVersion: 1,
       personaChoice: progress.data?.persona ?? null,
       centerDraft: {
@@ -152,7 +164,7 @@ export default function CenterSetupPage() {
   }, [
     watchedName,
     watchedBrandColor,
-    autoSave,
+    scheduleSave,
     progress.data?.persona,
     progress.isLoading,
   ])
@@ -161,6 +173,22 @@ export default function CenterSetupPage() {
   useEffect(() => {
     if (!progress.data) return
     const { persona, currentStep } = progress.data
+    // A center already exists (durable across reloads via the login/refresh
+    // center hydration), yet progress still bookmarks the `center` step — so
+    // the drift branches below (which only redirect for template/spawn/
+    // solo_first_class/done/persona) would leave the user parked on the
+    // create form, where CreateCenter 409s (USER_ALREADY_HAS_CENTER) and
+    // wedges them. Bounce to /dashboard, which resolves the correct resume
+    // step. Skipped mid-submit so the legit create→advance transition (which
+    // sets session.center then navigates itself) is not interrupted.
+    if (
+      currentStep === 'center' &&
+      currentCenter !== null &&
+      !onboardingSubmitFlag.current
+    ) {
+      navigate('/dashboard', { replace: true })
+      return
+    }
     if (currentStep === 'done') {
       navigate('/dashboard', { replace: true })
       return
@@ -194,7 +222,7 @@ export default function CenterSetupPage() {
         currentStep === 'template' ? '/setup/template' : '/setup/spawn'
       navigate(target, { replace: true })
     }
-  }, [progress.data, navigate])
+  }, [progress.data, currentCenter, navigate])
 
   const submitDisabled =
     createCenter.isPending ||

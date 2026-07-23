@@ -172,6 +172,22 @@ import { StudentCard } from '@/features/students';
 import { StudentCard } from '@/features/students/components/StudentCard';
 ```
 
+#### TS-8: The fetch layer attaches the `Authorization: Bearer` access token — cookies alone do not authenticate
+*Why:* The Go API's `ExtractTenant` middleware authenticates **only** on the `Authorization: Bearer <accessToken>` header. The httpOnly refresh cookie authorizes exactly one endpoint — `POST /api/auth/refresh`. The access token is minted by login / silent-refresh / accept-invite and stored in the `['auth','session']` Query cache (`Session.accessToken`); `apiFetch` reads it from the cache at call time and sets the header on every request. Omitting the header 401s every protected request, which trips the TS-5 refresh path and — since the retry still lacks the header — bounces the user back to `/login` (the "signup/login redirects to login" loop, fixed 2026-07-23). Reading the token at call time (not once per closure) is load-bearing: the post-refresh retry must pick up the freshly-rotated token.
+
+```ts
+// correct — apiFetch (src/lib/api-fetch.ts) reads the cached token per call
+const token = queryClient.getQueryData<Session>(['auth','session'])?.accessToken
+const headers = new Headers(init.headers)
+if (token) headers.set('Authorization', `Bearer ${token}`)
+fetch(path, { credentials: 'include', ...init, headers })
+
+// incorrect — cookies only; ExtractTenant returns 401 AUTH_REQUIRED
+fetch(path, { credentials: 'include', ...init })
+```
+
+Regression coverage: `src/lib/__tests__/api-fetch.test.ts` ("attaches Authorization: Bearer…", "omits Authorization when no access token", "retry after a 401 refresh carries the freshly-rotated access token"). MSW mocks ignore auth headers, so a test that only mocks responses will NOT catch a missing Bearer — assert the header explicitly.
+
 ### Go
 
 #### GO-1: TenantContext required on every store method — no exceptions
@@ -359,6 +375,20 @@ useEffect(() => {
 ```
 
 Permitted `useEffect` uses: DOM imperative operations, third-party library integration, subscription cleanup. Never for fetching, loading state, or mutation triggers.
+
+**Effect dependencies must be stable references — never a hook/context object that is recreated every render.** A debounced auto-save effect is a permitted use (a mutation *trigger* driven by watched form values), but its dependency array must list the stable primitives it actually calls, never the wrapping object. The onboarding auto-save loop (fixed 2026-07-23) listed the whole `useOnboardingAutoSave()` context object — which `useAutoSave` recreates on every render — as a dependency. Each save flipped `savingState` (`idle→saving→saved`), recreating the object, re-running the effect, scheduling another debounced PUT: a self-perpetuating ~1.5s save loop that hammered the API into a 429 and flickered the save-gated submit button. Destructure the stable `useCallback` (`const { scheduleSave } = autoSave`) and depend on that.
+
+```ts
+// correct — depend on the stable useCallback primitive
+const { scheduleSave } = useOnboardingAutoSave()
+useEffect(() => { scheduleSave(payload) }, [watchedName, scheduleSave])
+
+// incorrect — the object identity churns on every savingState transition
+const autoSave = useOnboardingAutoSave()
+useEffect(() => { autoSave.scheduleSave(payload) }, [watchedName, autoSave]) // infinite loop
+```
+
+Regression coverage: `CenterSetupPage.test.tsx` ("a single edit produces one PUT that does NOT self-perpetuate…"). Mirrors the FW-5 Zustand note — unstable references produce infinite loops under concurrent rendering.
 
 #### FW-5: Zustand stores are isolated — never import store inside store
 *Why:* Cross-store imports create circular dependencies and break React 19 concurrent mode hydration. Compose stores at the component boundary.

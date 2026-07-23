@@ -79,6 +79,26 @@ type LoginResult struct {
 	// api.yaml LoginResult.role as nullable enum) so the frontend
 	// Session cache can populate `Session.role` without decoding the JWT.
 	Role string
+	// Center is the caller's single-membership center summary, or nil when
+	// the caller has zero-or-multiple memberships (same condition that
+	// leaves Role empty and the JWT center claim unset). Surfaced on the
+	// wire (api.yaml LoginResult.center) so the frontend rehydrates
+	// `Session.center` on every login AND silent/boot refresh — without it,
+	// a center-owning user's session loses its center on a page reload and
+	// resume-onboarding misroutes back to `/setup/center`.
+	Center *SessionCenter
+}
+
+// SessionCenter mirrors the frontend `CenterSummary` cache slice — the
+// six-field center summary that lives on `Session.center`. Sourced from the
+// single-membership `center_members` row resolved during token mint.
+type SessionCenter struct {
+	ID         string
+	Name       string
+	ShortCode  string
+	BrandColor *string
+	LogoUrl    *string
+	Timezone   string
 }
 
 // SetPassword writes a hashed password for the given user. Used as a
@@ -262,7 +282,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginResult, e
 	// into the claim so the frontend can render immediately without a
 	// follow-up call. Multi-membership (Epic 2+) leaves claims empty and
 	// requires an explicit membership-select endpoint.
-	access, accessExp, role, err := s.buildAccessToken(ctx, user.ID)
+	access, accessExp, role, center, err := s.buildAccessToken(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("sign access token: %w", err)
 	}
@@ -287,6 +307,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginResult, e
 		RefreshTTL:       refreshTTL,
 		User:             user,
 		Role:             role,
+		Center:           center,
 	}, nil
 }
 
@@ -357,10 +378,10 @@ func (s *AuthService) MintAccessToken(ctx context.Context, userID uuid.UUID, cen
 // LoginResult without re-scanning center_members. Empty string when the
 // user has zero or multiple memberships (same condition that leaves the
 // JWT claims empty).
-func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) (string, time.Time, string, error) {
+func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) (string, time.Time, string, *SessionCenter, error) {
 	uid, err := pgUUIDToGoogle(userID)
 	if err != nil {
-		return "", time.Time{}, "", err
+		return "", time.Time{}, "", nil, err
 	}
 	claims := AccessClaims{UserID: uid.String()}
 
@@ -373,6 +394,7 @@ func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) 
 	// claims when the user has exactly one membership.
 	var centerID pgtype.UUID
 	var role string
+	var center *SessionCenter
 	var cnt int
 	if err := s.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM center_members WHERE user_id = $1`, userID).Scan(&cnt); err == nil && cnt == 1 {
@@ -381,14 +403,46 @@ func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) 
 		if scanErr := row.Scan(&centerID, &role); scanErr == nil && centerID.Valid {
 			claims.CenterID = uuid.UUID(centerID.Bytes).String()
 			claims.Role = role
+			// Resolve the center summary so the frontend can rehydrate
+			// `Session.center` on login/refresh (durable across reloads).
+			// `centers` is a global no-RLS table, so this read is safe from
+			// the unscoped login context. A lookup miss is non-fatal — the
+			// token still mints; the frontend just falls back to null.
+			center = s.resolveSessionCenter(ctx, centerID)
 		}
 	}
 
 	signed, err := s.jwt.SignAccess(claims, int(AccessTokenTTL.Seconds()))
 	if err != nil {
-		return "", time.Time{}, "", err
+		return "", time.Time{}, "", nil, err
 	}
-	return signed, s.clk.Now().Add(AccessTokenTTL), role, nil
+	return signed, s.clk.Now().Add(AccessTokenTTL), role, center, nil
+}
+
+// resolveSessionCenter fetches the six-field center summary for a resolved
+// single-membership center id. Returns nil on any lookup error (non-fatal —
+// see buildAccessToken). `centers` is global (no RLS), so this is safe from
+// the unscoped login/refresh context.
+func (s *AuthService) resolveSessionCenter(ctx context.Context, centerID pgtype.UUID) *SessionCenter {
+	c, err := generated.New(s.db).GetCenterByID(ctx, centerID)
+	if err != nil {
+		return nil
+	}
+	summary := &SessionCenter{
+		ID:        uuid.UUID(c.ID.Bytes).String(),
+		Name:      c.Name,
+		ShortCode: c.ShortCode,
+		Timezone:  c.Timezone,
+	}
+	if c.BrandColor.Valid {
+		v := c.BrandColor.String
+		summary.BrandColor = &v
+	}
+	if c.LogoUrl.Valid {
+		v := c.LogoUrl.String
+		summary.LogoUrl = &v
+	}
+	return summary
 }
 
 // HashRefreshToken is the canonical hash function used to derive the

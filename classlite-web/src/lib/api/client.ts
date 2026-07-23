@@ -1000,6 +1000,26 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        /**
+         * @description The caller's single-membership center summary, resolved server-side at
+         *     login/refresh time from `center_members` (same single-membership
+         *     heuristic that bakes the JWT `centerId` claim). Mirrors the frontend
+         *     `CenterSummary` cache slice (`Session.center`). Present so a
+         *     center-owning user's `Session.center` survives a full page reload —
+         *     previously it was only populated by the in-session CreateCenter
+         *     response and was lost on the boot-probe refresh (cold cache), which
+         *     misrouted resume-onboarding back to `/setup/center`.
+         */
+        SessionCenter: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            shortCode: string;
+            brandColor: string | null;
+            logoUrl: string | null;
+            /** @description Center's timezone in IANA format. */
+            timezone: string;
+        };
         LoginResult: {
             /** @description HS256-signed JWT, 15-minute expiry. */
             accessToken: string;
@@ -1015,6 +1035,14 @@ export interface components {
              * @enum {string|null}
              */
             role: "owner" | "admin" | "teacher" | "student" | null;
+            /**
+             * @description The caller's owned center summary, or `null` for a user with
+             *     zero-or-multiple memberships (same condition that leaves `role`
+             *     null and the JWT center claim empty). Lets the frontend rehydrate
+             *     `Session.center` on every login AND silent/boot refresh, so a
+             *     reload no longer strands a center-owning user on `/setup/center`.
+             */
+            center: components["schemas"]["SessionCenter"] | null;
         };
         LogoutResult: {
             loggedOut: boolean;

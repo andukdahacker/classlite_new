@@ -30,8 +30,15 @@
  * imported transitively.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+} from 'react-router'
 import { HttpResponse, http } from 'msw'
 import { axe } from 'vitest-axe'
 import 'vitest-axe/extend-expect'
@@ -200,6 +207,111 @@ describe('TeacherDashboard — shipped banner regression baseline [AC17]', () =>
         i18n.t('dashboard.welcomeBack.awaitingNextStep') as string,
       ),
     ).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Center-durability resume-routing regression — a reloaded center-owning user
+// whose `session.center` hasn't rehydrated must NOT be misrouted to the create
+// form (where CreateCenter 409s and wedges them). "Center exists" falls back
+// to `currentStep` having advanced PAST `center`, which only happens after the
+// center is created.
+// ---------------------------------------------------------------------------
+describe('TeacherDashboard — center-durability resume routing regression', () => {
+  async function renderWithResumeRoutes(opts: {
+    session: Session | null
+    progressArgs: SeedProgressArgs
+  }) {
+    const queryClient = createTestQueryClient()
+    if (opts.session) {
+      queryClient.setQueryData(authKeys.session(), opts.session)
+    }
+    seedProgress(queryClient, opts.progressArgs)
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18n}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <Routes>
+              <Route path="/dashboard" element={<TeacherDashboard />} />
+              <Route
+                path="/setup/center"
+                element={<div>NAME_YOUR_CENTER</div>}
+              />
+              <Route
+                path="/setup/first-class"
+                element={<div>CREATE_FIRST_CLASS</div>}
+              />
+              <Route
+                path="/setup/template"
+                element={<div>PICK_TEMPLATE</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </I18nextProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  test('session.center=null but currentStep advanced (solo_first_class) → Continue routes to /setup/first-class, NOT /setup/center', async () => {
+    const user = userEvent.setup()
+    await renderWithResumeRoutes({
+      session: makeSession({ center: null }),
+      progressArgs: { persona: 'solo_teacher', currentStep: 'solo_first_class' },
+    })
+    await user.click(await screen.findByTestId('dashboard-finish-setup-cta'))
+    // The wizard only reaches solo_first_class AFTER the center is created, so
+    // a missing session.center (e.g. not-yet-rehydrated on reload) must NOT
+    // misroute to the create form where CreateCenter would 409.
+    expect(await screen.findByText('CREATE_FIRST_CLASS')).toBeInTheDocument()
+    expect(screen.queryByText('NAME_YOUR_CENTER')).not.toBeInTheDocument()
+  })
+
+  test('session.center=null AND currentStep=center → Continue still routes to /setup/center (genuine pre-create user)', async () => {
+    const user = userEvent.setup()
+    await renderWithResumeRoutes({
+      session: makeSession({ center: null }),
+      progressArgs: { persona: 'operator', currentStep: 'center' },
+    })
+    await user.click(await screen.findByTestId('dashboard-finish-setup-cta'))
+    expect(await screen.findByText('NAME_YOUR_CENTER')).toBeInTheDocument()
+  })
+
+  test('Continue setup PUSHES the wizard so browser Back returns to /dashboard, not the prior page', async () => {
+    const user = userEvent.setup()
+    const queryClient = createTestQueryClient()
+    queryClient.setQueryData(authKeys.session(), makeSession())
+    seedProgress(queryClient, {
+      persona: 'solo_teacher',
+      currentStep: 'solo_first_class',
+    })
+    // History: user was on /settings, then opened /dashboard (index 1).
+    const router = createMemoryRouter(
+      [
+        { path: '/settings', element: <div>SETTINGS_PAGE</div> },
+        { path: '/dashboard', element: <TeacherDashboard /> },
+        { path: '/setup/first-class', element: <div>CREATE_FIRST_CLASS</div> },
+      ],
+      { initialEntries: ['/settings', '/dashboard'], initialIndex: 1 },
+    )
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18n}>
+          <RouterProvider router={router} />
+        </I18nextProvider>
+      </QueryClientProvider>,
+    )
+    await user.click(await screen.findByTestId('dashboard-finish-setup-cta'))
+    expect(await screen.findByText('CREATE_FIRST_CLASS')).toBeInTheDocument()
+    // Simulate browser Back.
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    // Back lands on the dashboard we launched from (banner re-renders), NOT
+    // the /settings entry that preceded it — the `replace: true` regression.
+    expect(
+      await screen.findByTestId('dashboard-finish-setup-banner'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('SETTINGS_PAGE')).not.toBeInTheDocument()
   })
 })
 

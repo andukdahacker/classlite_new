@@ -31,9 +31,9 @@ Reuses the credentials above. Just extend scopes + add a second redirect URI.
 
 | Task | Dev | Staging | Prod |
 |---|---|---|---|
-| Add `calendar.events` scope to OAuth consent screen | [ ] | [ ] | [ ] |
-| Add Meet callback redirect URI: `.../api/centers/callback/google-meet` (FIXED path — no `{id}` — Google requires exact-match redirect_uri, per AC9 amendment 2026-07-16) | [ ] | [ ] | [ ] |
-| Generate `INTEGRATIONS_ENCRYPTION_KEY` (`openssl rand -base64 32`) | [ ] | [ ] | [ ] |
+| Add `calendar.events` scope to OAuth consent screen | [x] | [ ] | [ ] |
+| Add Meet callback redirect URI: `.../api/centers/callback/google-meet` (FIXED path — no `{id}` — Google requires exact-match redirect_uri, per AC9 amendment 2026-07-16) | [x] | [ ] | [ ] |
+| Generate `INTEGRATIONS_ENCRYPTION_KEY` (`openssl rand -base64 32`) | [x] | [ ] | [ ] |
 | Set `MEET_OAUTH_REDIRECT_URL` env var | [ ] | [ ] | [ ] |
 
 ---

@@ -193,12 +193,15 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     const result = await refreshAccessToken()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      // RefreshSessionData shape carries `{user, accessToken, role}`
-      // (Story 2.6). The `center` field is stitched in at cache-write
-      // time (Story 2-3a AC9).
-      expect(result.data).toEqual(payload)
+      // RefreshSessionData now carries `{user, accessToken, role, center}` —
+      // the refresh response includes the caller's center summary so
+      // `Session.center` is durable across reloads (api.yaml
+      // LoginResult.center). This payload omits `center`, so it parses to the
+      // explicit-null absent marker.
+      expect(result.data).toEqual({ ...payload, center: null })
     }
-    // Cache write stitches `center: null` (no prior center to preserve).
+    // Cache write uses `data.center ?? previous.center ?? null` → null here
+    // (response center null AND no prior center to preserve).
     expect(queryClient.getQueryData(['auth', 'session'])).toEqual({
       ...payload,
       center: null,
@@ -311,5 +314,53 @@ describe('AC4 in-process coalesce + lock fallback + broadcast debounce', () => {
     expect(cached.accessToken).toBe('jwt.rotated')
     // Prior center preserved — a rotation must NOT nuke onboarding state.
     expect(cached.center).toEqual(center)
+  })
+
+  test('boot refresh HYDRATES Session.center from the response on a COLD cache (durability fix)', async () => {
+    // The regression this guards: on a full page reload the boot probe runs
+    // against an EMPTY cache, so there is no prior center to preserve. Before
+    // the fix the refresh response carried no center and the writer fell back
+    // to null — a center-owning user looked center-less and resume-onboarding
+    // misrouted to /setup/center (409 wedge). The response now carries the
+    // center summary, so the cold-cache write must hydrate it.
+    queryClient.removeQueries({ queryKey: ['auth', 'session'] })
+    expect(queryClient.getQueryData(['auth', 'session'])).toBeUndefined()
+
+    const responseCenter = {
+      id: 'center-reload',
+      name: 'Reloaded Center',
+      shortCode: 'reloaded-center',
+      // eslint-disable-next-line no-restricted-syntax -- brand-color wire format (FU-2-3a-C)
+      brandColor: '#166534',
+      logoUrl: null,
+      timezone: 'Asia/Ho_Chi_Minh',
+    }
+    server.use(
+      http.post('/api/auth/refresh', () =>
+        HttpResponse.json(
+          {
+            data: {
+              user: {
+                id: 'owner-reload',
+                email: 'owner@example.com',
+                fullName: 'Owner Reload',
+                emailVerified: true,
+              },
+              accessToken: 'jwt.boot',
+              role: 'owner',
+              center: responseCenter,
+            },
+          },
+          { status: 200 },
+        ),
+      ),
+    )
+    const result = await refreshAccessToken()
+    expect(result.ok).toBe(true)
+    const cached = queryClient.getQueryData(['auth', 'session']) as {
+      center: typeof responseCenter
+    }
+    // Cold cache had no prior center — it came straight from the response.
+    expect(cached.center).toEqual(responseCenter)
   })
 })

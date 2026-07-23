@@ -40,14 +40,18 @@ export default function WelcomeBackBanner({
   const isAwaitingNextStep = isPostCenterIncomplete && persona === null
 
   const goResume = (): void => {
+    // PUSH (not replace) so `/dashboard` stays on the history stack — pressing
+    // browser Back from the wizard returns to the dashboard the user launched
+    // from. `replace: true` here wiped the dashboard entry, so Back skipped to
+    // whatever preceded it (e.g. /settings), which read as a misnavigation.
     if (branch === 'midWizardNoCenter' || branch === 'progressUnknownNoCenter') {
-      navigate('/setup/center', { replace: true })
+      navigate('/setup/center')
       return
     }
     // postCenterIncomplete with persona known
     const target =
       persona === 'solo_teacher' ? '/setup/first-class' : '/setup/template'
-    navigate(target, { replace: true })
+    navigate(target)
   }
 
   return (

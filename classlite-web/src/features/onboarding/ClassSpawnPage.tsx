@@ -265,6 +265,29 @@ export default function ClassSpawnPage() {
     control: form.control,
     name: 'classes',
   }) as ClassSpawnFormValues['classes'] | undefined
+  // Hold the server-derived draft context (persona + centerDraft +
+  // priorTemplateDraft) in a ref refreshed every render, so the auto-save
+  // effect can read the LATEST values WITHOUT listing them as dependencies.
+  //
+  // Why: a successful PUT echoes `data.payload` back into the progress query
+  // cache (usePutOnboardingProgress.onSuccess → setQueryData), minting a NEW
+  // `payload`/`centerDraft`/`templateDraft` object every cycle. When those
+  // objects sat in this effect's dep array they changed identity on every save,
+  // re-firing the effect → scheduleSave → PUT → echo → … a self-perpetuating
+  // ~1.5s save loop that 429s the endpoint and flickers the AutoSaveIndicator.
+  // Keeping only the user-driven `watchedClasses` in the deps breaks the loop.
+  const saveContextRef = useRef({
+    persona,
+    centerDraft: priorPayload?.centerDraft ?? null,
+    priorTemplateDraft,
+  })
+  useEffect(() => {
+    saveContextRef.current = {
+      persona,
+      centerDraft: priorPayload?.centerDraft ?? null,
+      priorTemplateDraft,
+    }
+  }, [persona, priorPayload?.centerDraft, priorTemplateDraft])
   useEffect(() => {
     if (progress.isLoading || progress.isError) return
     if (!watchedClasses) return
@@ -272,12 +295,17 @@ export default function ClassSpawnPage() {
     // once above), NOT the full context object. If the whole `autoSave`
     // object re-references on savingState transitions, this effect would
     // fire against unchanged inputs and drive a feedback loop.
+    const {
+      persona: currentPersona,
+      centerDraft,
+      priorTemplateDraft: currentTemplateDraft,
+    } = saveContextRef.current
     scheduleSave({
       schemaVersion: 1,
-      personaChoice: persona,
-      centerDraft: priorPayload?.centerDraft ?? null,
+      personaChoice: currentPersona,
+      centerDraft,
       templateDraft: {
-        ...priorTemplateDraft,
+        ...currentTemplateDraft,
         classesDraft: watchedClasses.map((row) => ({
           cohortName: row.cohortName ?? '',
           startDate: row.startDate ?? '',
@@ -288,11 +316,8 @@ export default function ClassSpawnPage() {
   }, [
     watchedClasses,
     scheduleSave,
-    persona,
     progress.isLoading,
     progress.isError,
-    priorPayload?.centerDraft,
-    priorTemplateDraft,
   ])
 
   // 429 countdown (shared useCountdown hook — Amelia-B6 extraction).

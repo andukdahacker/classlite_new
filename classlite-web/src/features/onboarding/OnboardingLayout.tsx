@@ -23,6 +23,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { authKeys } from '@/features/auth/api/authKeys'
+import { useLogout } from '@/features/auth/api/logout'
 import { useAuth } from '@/hooks/useAuth'
 import {
   OnboardingAutoSaveProvider,
@@ -177,19 +178,30 @@ interface OnboardingChromeProps {
 function OnboardingChrome({ email }: OnboardingChromeProps) {
   const { t } = useTranslation()
   const autoSave = useOnboardingAutoSave()
+  const logout = useLogout()
   const location = useLocation()
 
   const handleSignOut = async (
     event: React.MouseEvent<HTMLAnchorElement>,
   ) => {
     event.preventDefault()
-    // Flush pending auto-save before the browser navigates. A raw
-    // `<a href="/logout">` aborts the in-flight fetch on nav; awaiting
-    // flush() lands the PUT first (R1-P11).
+    // Flush pending auto-save before we tear the session down, so the draft
+    // the user was typing is not lost (R1-P11). Awaiting flush() lands the
+    // PUT before the logout POST + hard redirect abort any in-flight work.
     try {
       await autoSave.flush()
     } finally {
-      window.location.href = '/logout'
+      // Real sign-out: POST /api/auth/logout clears the httpOnly refresh
+      // cookie server-side + drops the session cache. Best-effort — even if
+      // the call fails we still send the user to /login. `/logout` was never
+      // a route; navigating there just 404'd and left the cookie intact.
+      try {
+        await logout.mutateAsync()
+      } catch {
+        // swallow — the clearing cookie is emitted before the service can
+        // fail, and we redirect regardless.
+      }
+      window.location.href = '/login'
     }
   }
 
@@ -202,8 +214,11 @@ function OnboardingChrome({ email }: OnboardingChromeProps) {
         <div className="flex items-center gap-3 text-sm text-slate-600">
           <span>{email}</span>
           <span aria-hidden="true">·</span>
+          {/* href points at the real degraded-path destination (/login);
+              the onClick runs the actual logout (flush → POST logout →
+              redirect). Previously href="/logout" — a nonexistent route. */}
           <a
-            href="/logout"
+            href="/login"
             className="hover:underline"
             onClick={(event) => void handleSignOut(event)}
           >

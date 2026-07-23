@@ -19,6 +19,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { axe } from 'vitest-axe'
 import 'vitest-axe/extend-expect'
@@ -158,6 +159,67 @@ function renderClassSpawnPage(opts: RenderOptions = {}) {
 
   return { ...utils, queryClient }
 }
+
+// ================================================================
+// Regression — auto-save must NOT self-perpetuate a loop.
+// ================================================================
+//
+// A successful PUT echoes the payload back into the progress cache
+// (usePutOnboardingProgress.onSuccess → setQueryData). A real backend echo is
+// not byte-identical, so React Query structural sharing hands back a NEW
+// payload/centerDraft/templateDraft identity each save. When those server-
+// echoed objects sat in the auto-save effect's dep array, every echo re-fired
+// the effect → scheduleSave → PUT → echo → … a ~1.5s loop that 429s and
+// flickers with ZERO user input. A byte-identical mock echo would be collapsed
+// by structural sharing and mask the bug, so this uses a differing echo.
+const realDelay = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+
+describe('Regression — auto-save does not loop with no user input', () => {
+  test('PUT count stays bounded over ~4s despite a differing server echo', async () => {
+    let nonce = 0
+    server.use(
+      http.put('/api/onboarding/progress', async ({ request }) => {
+        nonce += 1
+        const body = (await request.json()) as {
+          currentStep: string
+          payload: Record<string, unknown>
+        }
+        return HttpResponse.json({
+          data: {
+            currentStep: body.currentStep,
+            payload: { ...body.payload, centerDraft: { serverNonce: nonce } },
+            updatedAt: '2026-07-10T12:00:00.000Z',
+          },
+          meta: { serverTime: '2026-07-10T12:00:00.000Z' },
+        })
+      }),
+    )
+
+    let putCount = 0
+    server.events.on('request:start', ({ request }) => {
+      if (
+        request.method === 'PUT' &&
+        request.url.endsWith('/api/onboarding/progress')
+      ) {
+        putCount += 1
+      }
+    })
+
+    renderClassSpawnPage()
+    await screen.findByRole('heading', { name: /Create your first classes/i })
+
+    await waitFor(() => expect(putCount).toBeGreaterThanOrEqual(1), {
+      timeout: 3_000,
+    })
+    await realDelay(1_800)
+    const settledCount = putCount
+
+    await realDelay(4_000)
+    expect(putCount).toBe(settledCount)
+    expect(putCount).toBeLessThanOrEqual(3)
+  }, 15_000)
+})
 
 // ================================================================
 // AC4 — multi-row form + delete hidden on single row + Build-from-scratch-blocked

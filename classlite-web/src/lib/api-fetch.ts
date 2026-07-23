@@ -28,10 +28,40 @@
  */
 import * as Sentry from '@sentry/react'
 import { onAuthFailure, refreshAccessToken } from './auth-refresh'
+import { queryClient } from './query-client'
 
 const NETWORK_STATUS = 0
 const UNAUTHORIZED_STATUS = 401
 const NO_CONTENT_STATUS = 204
+
+// Literal `['auth', 'session']` — duplicates `authKeys.session()` from
+// `src/features/auth/api/authKeys.ts`. Importing `authKeys` here would land a
+// fourth edge on the `query-client ↔ api-fetch ↔ auth-refresh` import cycle;
+// the same literal is used in `auth-refresh.ts` for the same reason and is
+// locked by the `authKeys.test.ts` contract assertion. The `queryClient`
+// reference below resolves at CALL time (inside `performFetch`), never at
+// module-eval time, so the cycle stays safe.
+const SESSION_QUERY_KEY = ['auth', 'session'] as const
+
+interface SessionTokenSlice {
+  accessToken: string | null
+}
+
+/**
+ * Reads the current access token from the session cache. The token is minted
+ * by login / silent-refresh / accept-invite and written to
+ * `['auth', 'session']`; every protected request must carry it as
+ * `Authorization: Bearer <token>` because the Go API's ExtractTenant
+ * middleware authenticates on that header (the httpOnly refresh cookie only
+ * authorizes `/api/auth/refresh`). Returns `null` for the pre-login /
+ * registered-but-unverified state (`accessToken: null`), in which case no
+ * header is attached.
+ */
+function currentAccessToken(): string | null {
+  const session =
+    queryClient.getQueryData<SessionTokenSlice>(SESSION_QUERY_KEY)
+  return session?.accessToken ?? null
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -168,8 +198,20 @@ async function performFetch(
   init: RequestInit,
 ): Promise<Response> {
   const method = init.method ?? 'GET'
+  // Read the token at call time so the post-refresh retry (which re-invokes
+  // performFetch after the refresh coordinator rotated the cached token)
+  // automatically sends the freshly-minted access token, not the stale one.
+  const token = currentAccessToken()
+  const headers = new Headers(init.headers)
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
   try {
-    const response = await fetch(path, { credentials: 'include', ...init })
+    const response = await fetch(path, {
+      credentials: 'include',
+      ...init,
+      headers,
+    })
     const requestId = response.headers.get('x-request-id')
     Sentry.addBreadcrumb({
       category: 'fetch',

@@ -32,7 +32,7 @@
  * {{email}}" without leaking authenticated UI elsewhere. See
  * `authKeys.ts` Session JSDoc for the contract.
  */
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import {
@@ -83,18 +83,37 @@ export function useAuth(): UseAuthResult {
     getBootProbeInFlight,
     () => false,
   )
-  const user: User | null = session?.user
-    ? {
-        id: session.user.id,
-        email: session.user.email,
-        // Wire shape uses `fullName`; UI shape uses `displayName` so
-        // downstream consumers (UserPill, RegisterPage success copy, etc.)
-        // can rename without re-validating the openapi schema. Same value;
-        // different label boundary.
-        displayName: session.user.fullName,
-        emailVerified: session.user.emailVerified,
-      }
-    : null
+  // Memoize `user` on its PRIMITIVE fields so its identity is stable across
+  // renders that don't change the session. `useAuth` subscribes to the whole
+  // query cache, so ANY `setQueryData` anywhere (e.g. the onboarding auto-save
+  // PUT writing its progress cache) re-renders every consumer. Rebuilding a
+  // fresh `user` object each render made `user` an unstable dependency —
+  // effects/memos keyed on `user` re-ran on every unrelated cache write. On
+  // the onboarding pages that alone drove a self-perpetuating ~1.5s auto-save
+  // loop (PUT → cache write → re-render → new `user` → effect refires → PUT).
+  // Keying the memo on the raw fields (not the `session` object) also survives
+  // structural-sharing churn that hands back a new session reference with
+  // identical contents.
+  const uid = session?.user?.id ?? null
+  const uemail = session?.user?.email ?? null
+  const uname = session?.user?.fullName ?? null
+  const uverified = session?.user?.emailVerified ?? null
+  const user: User | null = useMemo(
+    () =>
+      uid !== null
+        ? {
+            id: uid,
+            email: uemail as string,
+            // Wire shape uses `fullName`; UI shape uses `displayName` so
+            // downstream consumers (UserPill, RegisterPage success copy, etc.)
+            // can rename without re-validating the openapi schema. Same value;
+            // different label boundary.
+            displayName: uname as string,
+            emailVerified: uverified as boolean,
+          }
+        : null,
+    [uid, uemail, uname, uverified],
+  )
   return {
     user,
     // Authentication = user present AND email verified. accessToken

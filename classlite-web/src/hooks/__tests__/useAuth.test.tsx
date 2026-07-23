@@ -163,6 +163,38 @@ describe('useAuth — cache-subscribing version (Story 1-8 AC5)', () => {
     expect(result.current.isLoading).toBe(false)
   })
 
+  test('user identity is STABLE across re-renders that do not change the session (regression — onboarding auto-save loop)', () => {
+    // `useAuth` subscribes to the whole query cache, so any `setQueryData`
+    // anywhere re-renders every consumer. If `user` is rebuilt fresh each
+    // render, effects/memos keyed on `user` re-fire on every unrelated cache
+    // write — which drove a self-perpetuating ~1.5s auto-save PUT loop on the
+    // onboarding pages (PUT → progress-cache write → re-render → new `user` →
+    // effect refires → PUT). `user` must be memoized on its primitive fields.
+    const client = createTestQueryClient()
+    client.setQueryData(authKeys.session(), verifiedSession)
+    const { result, rerender } = renderHook(() => useAuth(), {
+      wrapper: makeWrapper(client),
+    })
+    const firstUser = result.current.user
+    expect(firstUser).not.toBeNull()
+
+    // Force re-renders WITHOUT touching the session (models the page re-render
+    // an unrelated cache write triggers). Identity must be preserved.
+    rerender()
+    rerender()
+    expect(result.current.user).toBe(firstUser)
+
+    // Sanity: a genuine session change DOES mint a new identity.
+    act(() => {
+      client.setQueryData(authKeys.session(), {
+        ...verifiedSession,
+        user: { ...verifiedSession.user, fullName: 'Alice Renamed' },
+      })
+    })
+    expect(result.current.user).not.toBe(firstUser)
+    expect(result.current.user?.displayName).toBe('Alice Renamed')
+  })
+
   test('useAuth re-renders sibling consumer when setQueryData fires from a separate component tree (Murat #5)', async () => {
     const client = createTestQueryClient()
 

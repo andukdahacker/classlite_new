@@ -610,15 +610,16 @@ func (s *AuthService) issueSessionForUser(ctx context.Context, user generated.Us
 		return nil, fmt.Errorf("commit session tx: %w", err)
 	}
 
-	access, accessExp, _, err := s.buildAccessToken(ctx, user.ID)
+	access, accessExp, _, _, err := s.buildAccessToken(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("sign access token: %w", err)
 	}
-	// role deliberately dropped — Google callback returns a redirect, not
-	// a JSON body, so role never lands on a wire that a frontend Session
+	// role + center deliberately dropped — Google callback returns a redirect,
+	// not a JSON body, so neither lands on a wire that a frontend Session
 	// cache reads. The freshly-minted access token still carries the
-	// role claim (baked in by buildAccessToken); the next /api/auth/refresh
-	// call from the SPA will surface it in the LoginResult envelope.
+	// role/center claims (baked in by buildAccessToken); the next
+	// /api/auth/refresh call from the SPA surfaces them in the LoginResult
+	// envelope (role + center).
 	return &sessionTokens{
 		AccessToken:      access,
 		RefreshToken:     refreshRaw,

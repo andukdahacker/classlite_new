@@ -12,6 +12,7 @@ import { server } from '@/test/msw-server'
 import { stubLocation, type StubbedLocation } from '@/test/location-stub'
 import { ApiError, AuthExpiredError, apiFetch } from '@/lib/api-fetch'
 import { __resetAuthRefreshStateForTests } from '@/lib/auth-refresh'
+import { queryClient } from '@/lib/query-client'
 
 const REQUEST_ID = 'req-1234'
 
@@ -24,6 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   locationStub.restore()
+  queryClient.clear()
   vi.restoreAllMocks()
 })
 
@@ -37,6 +39,91 @@ describe('AC5 apiFetch contract', () => {
     )
     const result = await apiFetch<typeof payload>('/api/students')
     expect(result).toEqual(payload)
+  })
+
+  test('attaches Authorization: Bearer from the cached session access token', async () => {
+    // The access token lives in the ['auth','session'] cache (written by
+    // login / silent-refresh). apiFetch MUST forward it as a Bearer header —
+    // the Go API's ExtractTenant middleware authenticates on that header, NOT
+    // on the httpOnly refresh cookie. Missing this header 401s every
+    // protected request and bounces the user back to /login (fix 2026-07-23).
+    queryClient.setQueryData(['auth', 'session'], {
+      user: { id: 'u1', email: 'a@b.co', fullName: 'A', emailVerified: true },
+      accessToken: 'header.payload.sig',
+      center: null,
+      role: null,
+    })
+    let seenAuth: string | null = null
+    server.use(
+      http.get('/api/students', ({ request }) => {
+        seenAuth = request.headers.get('Authorization')
+        return HttpResponse.json({ data: [] })
+      }),
+    )
+    await apiFetch('/api/students')
+    expect(seenAuth).toBe('Bearer header.payload.sig')
+  })
+
+  test('omits Authorization when no access token is cached (pre-login)', async () => {
+    let hasAuth = true
+    server.use(
+      http.get('/api/students', ({ request }) => {
+        hasAuth = request.headers.has('Authorization')
+        return HttpResponse.json({ data: [] })
+      }),
+    )
+    await apiFetch('/api/students')
+    expect(hasAuth).toBe(false)
+  })
+
+  test('retry after a 401 refresh carries the freshly-rotated access token', async () => {
+    // The refresh coordinator writes the new token to the session cache; the
+    // retried request must read it at call time (not reuse the stale header).
+    queryClient.setQueryData(['auth', 'session'], {
+      user: { id: 'u1', email: 'a@b.co', fullName: 'A', emailVerified: true },
+      accessToken: 'stale-token',
+      center: null,
+      role: null,
+    })
+    const seenAuth: Array<string | null> = []
+    let studentsCalls = 0
+    server.use(
+      http.get('/api/students', ({ request }) => {
+        studentsCalls++
+        seenAuth.push(request.headers.get('Authorization'))
+        if (studentsCalls === 1) return new HttpResponse(null, { status: 401 })
+        return HttpResponse.json({ data: [{ id: 'x' }] })
+      }),
+      http.post('/api/auth/refresh', () => {
+        // Simulate the coordinator rotating the cached token.
+        queryClient.setQueryData(['auth', 'session'], {
+          user: {
+            id: 'u1',
+            email: 'a@b.co',
+            fullName: 'A',
+            emailVerified: true,
+          },
+          accessToken: 'fresh-token',
+          center: null,
+          role: null,
+        })
+        return HttpResponse.json({
+          data: {
+            user: {
+              id: 'u1',
+              email: 'a@b.co',
+              fullName: 'A',
+              emailVerified: true,
+            },
+            accessToken: 'fresh-token',
+            role: null,
+          },
+        })
+      }),
+    )
+    await apiFetch('/api/students')
+    expect(seenAuth[0]).toBe('Bearer stale-token')
+    expect(seenAuth[1]).toBe('Bearer fresh-token')
   })
 
   test('422 error envelope throws ApiError with requestId from header', async () => {

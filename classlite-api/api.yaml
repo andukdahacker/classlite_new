@@ -2953,9 +2953,39 @@ components:
           type: string
           format: email
 
+    SessionCenter:
+      type: object
+      required: [id, name, shortCode, brandColor, logoUrl, timezone]
+      description: |
+        The caller's single-membership center summary, resolved server-side at
+        login/refresh time from `center_members` (same single-membership
+        heuristic that bakes the JWT `centerId` claim). Mirrors the frontend
+        `CenterSummary` cache slice (`Session.center`). Present so a
+        center-owning user's `Session.center` survives a full page reload —
+        previously it was only populated by the in-session CreateCenter
+        response and was lost on the boot-probe refresh (cold cache), which
+        misrouted resume-onboarding back to `/setup/center`.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shortCode:
+          type: string
+        brandColor:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          description: Center's timezone in IANA format.
+
     LoginResult:
       type: object
-      required: [accessToken, user, role]
+      required: [accessToken, user, role, center]
       properties:
         accessToken:
           type: string
@@ -2974,6 +3004,16 @@ components:
             Frontend `Session.role` is populated from this value; `useRole()`
             reads it via the session cache. Parallels the shipped
             `role` field on `AcceptInviteResult` / `CreateCenterResult`.
+        center:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SessionCenter'
+          description: |
+            The caller's owned center summary, or `null` for a user with
+            zero-or-multiple memberships (same condition that leaves `role`
+            null and the JWT center claim empty). Lets the frontend rehydrate
+            `Session.center` on every login AND silent/boot refresh, so a
+            reload no longer strands a center-owning user on `/setup/center`.
 
     LogoutResult:
       type: object

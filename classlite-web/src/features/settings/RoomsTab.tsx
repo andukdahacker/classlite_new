@@ -255,7 +255,13 @@ function RoomFormDialog({
               : t('settings.rooms.form.dialogTitleEdit')}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        {/* noValidate — the capacity input carries `min={1} max={500}` HTML
+            constraints, so without this the browser's (and jsdom's) native
+            HTML5 constraint validation blocks form submission for an
+            out-of-range value BEFORE RHF/zod runs, and the inline Zod range
+            error never surfaces. Delegate all validation to zodResolver
+            (matches the onboarding wizard forms). */}
+        <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           {saveError ? (
             <SaveErrorAlert
               error={saveError}
