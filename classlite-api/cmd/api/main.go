@@ -442,6 +442,22 @@ func main() {
 	mux.Handle("DELETE /api/sessions/{id}", sessionChain(sessionHandler.Delete))
 	mux.Handle("POST /api/sessions/{id}/cancel", sessionChain(sessionHandler.Cancel))
 
+	// Story 3.4.5 — Enrollment linkage (2 routes). Same open chain shape as
+	// classChain/sessionChain (role + teacher-scope enforced in-service): Create
+	// is Admin/Owner only (DB-revalidated); the roster read is teacher-scoped
+	// (404 off own classes). Backend-only enabler — no frontend this story.
+	enrollmentSvc := service.NewEnrollmentService(pool, auditSvc, clock.RealClock{})
+	enrollmentHandler := handler.NewEnrollmentHandler(enrollmentSvc, clock.RealClock{})
+	enrollmentChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("POST /api/enrollments", enrollmentChain(enrollmentHandler.Create))
+	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
+
 	// Story 2-5c — Google Meet OAuth integration endpoints (AC9).
 	//
 	// Authorize + Disconnect ride the shipped settingsChain (Owner-only +

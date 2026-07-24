@@ -13,7 +13,7 @@ scope_decision: "KEYSTONE extracted from Epic 7 Story 7.3 at Story 3.5 party-mod
 
 # Story 3.4.5: Enrollment Linkage Foundation
 
-Status: ready-for-dev
+Status: done
 
 ## ⚠️ Origin banner — read first
 
@@ -73,37 +73,37 @@ Role is **re-validated from `center_members`, not trusted from the JWT claim** (
 
 > **Ordering guard (WF-1/WF-3):** migration → `migrate.sh` → `.sql` queries → `api.yaml` → `codegen.sh` (LAST). Backend-only story — no frontend consumer this story.
 
-- [ ] **T1 — Migration (AC1, AC4)**
-  - [ ] `{ts}_create_enrollments.up.sql` / `.down.sql` (next timestamp after `20260721120000`; `ls migrations/ | tail -5`).
-  - [ ] `enrollments` columns exactly per AC1 (verbatim to `epic-07.md:152` + `created_at`/`updated_at`/`enrolled_at`/CHECK). FKs: `center_id`→centers CASCADE, `class_id`→classes CASCADE, `student_id`→users (no cascade — preserve enrollment history if a user row is ever removed; match `classes.teacher_id` NO-ACTION precedent).
-  - [ ] `ENABLE`+`FORCE ROW LEVEL SECURITY` + the **exact 4-policy grid** copied from `20260703120200_create_classes.up.sql` (`center_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`).
-  - [ ] Indexes: composite `idx_enrollments_center_class ON (center_id, class_id)` (roster read path) + **partial unique** `uq_enrollments_active ON (class_id, student_id) WHERE status='active'` (AC4). Consider `idx_enrollments_center_student ON (center_id, student_id)` for the future center-wide student list (7.2) — additive, optional.
-  - [ ] `updated_at DEFAULT now()` fires on INSERT only; any future UPDATE query must `SET updated_at = now()` explicitly (no trigger — match the classes convention, `20260719120000` header).
-  - [ ] `.down.sql` reverses (DROP POLICY → DROP INDEX → DROP TABLE). Run `scripts/migrate.sh` (WF-2).
-- [ ] **T2 — sqlc queries (AC2, AC3, AC4)**
-  - [ ] `internal/store/queries/enrollments.sql` (mirror `sessions.sql`/`classes.sql` conventions: `-- name: X :one/:many/:exec`, `sqlc.arg`, RLS handles `center_id`, filter on `class_id`/`student_id`). Queries:
+- [x] **T1 — Migration (AC1, AC4)**
+  - [x] `{ts}_create_enrollments.up.sql` / `.down.sql` (next timestamp after `20260721120000`; `ls migrations/ | tail -5`).
+  - [x] `enrollments` columns exactly per AC1 (verbatim to `epic-07.md:152` + `created_at`/`updated_at`/`enrolled_at`/CHECK). FKs: `center_id`→centers CASCADE, `class_id`→classes CASCADE, `student_id`→users (no cascade — preserve enrollment history if a user row is ever removed; match `classes.teacher_id` NO-ACTION precedent).
+  - [x] `ENABLE`+`FORCE ROW LEVEL SECURITY` + the **exact 4-policy grid** copied from `20260703120200_create_classes.up.sql` (`center_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`).
+  - [x] Indexes: composite `idx_enrollments_center_class ON (center_id, class_id)` (roster read path) + **partial unique** `uq_enrollments_active ON (class_id, student_id) WHERE status='active'` (AC4). Consider `idx_enrollments_center_student ON (center_id, student_id)` for the future center-wide student list (7.2) — additive, optional.
+  - [x] `updated_at DEFAULT now()` fires on INSERT only; any future UPDATE query must `SET updated_at = now()` explicitly (no trigger — match the classes convention, `20260719120000` header).
+  - [x] `.down.sql` reverses (DROP POLICY → DROP INDEX → DROP TABLE). Run `scripts/migrate.sh` (WF-2).
+- [x] **T2 — sqlc queries (AC2, AC3, AC4)**
+  - [x] `internal/store/queries/enrollments.sql` (mirror `sessions.sql`/`classes.sql` conventions: `-- name: X :one/:many/:exec`, `sqlc.arg`, RLS handles `center_id`, filter on `class_id`/`student_id`). Queries:
     - `CreateEnrollment :one` — insert `center_id` **directly from `tc.CenterID`** (not a subquery/trigger — GO-1), `status='active'`.
     - `ListEnrolledStudentsByClass :many` — JOIN `users` for name/email; `WHERE class_id = $1 AND status='active'`; ORDER BY user full_name.
     - `GetActiveEnrollment :one` (or `CountActiveEnrollment`) — for the ALREADY_ENROLLED pre-check (belt; the partial-unique index is the suspenders).
     - `IsStudentMemberOfCenter :one` — `SELECT 1 FROM center_members WHERE center_id=$1 AND user_id=$2 AND role='student'` (the NOT_A_STUDENT_MEMBER validation).
-- [ ] **T3 — Service (AC2, AC3, SEC-1)**
-  - [ ] `internal/service/enrollment_service.go` — `EnrollmentService` sharing `AuthDB`+`AuditLogger`(+`clock` if needed). Mirror `SessionService` tenant-tx ceremony (`readInTenantTx`/`mutateInTenantTx`; reads need a tx for RLS — PERF-1).
-  - [ ] `CreateEnrollment(ctx, tc, studentID, classID)` — role gate **Admin/Owner only**, re-fetched from `center_members` (SEC-1/R15; `service.ForbiddenError{"insufficient role"}` → 403 `INSUFFICIENT_ROLE`); validate class-in-center, `IsStudentMemberOfCenter` (else `model.ValidationError`/typed 422 `NOT_A_STUDENT_MEMBER`), not-already-active (else 409 `ALREADY_ENROLLED` — new `model.ConflictError` code); audit via `AuditService.LogWithinTx` (entityType `"enrollment"`).
-  - [ ] `ListEnrolledStudentsByClass(ctx, tc, classID)` — allow owner/admin/teacher; teacher-scope (only own classes → 404), reusing the class-load + `assertClassRole`/teacher-scope pattern from `class_lifecycle.go` / `session.go`.
-  - [ ] Do **NOT** implement transfer/withdraw, `enrollment_history`, or notifications (Story 7.3). Do **NOT** emit `event.EnrollmentChanged` — the event bus is unwired (recon); leave a `// 7.3: emit EnrollmentChanged once the bus is wired` marker only.
-- [ ] **T4 — api.yaml + handler + routes (AC2, AC3)**
-  - [ ] `api.yaml`: `Enrollment` schema (explicit nulls, camelCase: `id, centerId, studentId, classId, studentName, studentEmail, enrolledAt, withdrawnAt, status`), `CreateEnrollmentRequest` (`studentId`, `classId`), `EnvelopeEnrollment` / `EnvelopeListEnrollment`.
-  - [ ] Endpoints (new `enrollmentChain` = sessionChain shape: extractTenant → requireVerified → requireCenter → ErrorMapper; role enforced in service): `POST /api/enrollments`, `GET /api/classes/{classId}/enrollments`.
-  - [ ] `internal/handler/enrollment_handler.go` — methods returning `error`; `{data,meta}` envelope via `WriteEnvelope`; path ID via `parseSettingsPathID`; strict body decode. Register `ALREADY_ENROLLED` (409) + `NOT_A_STUDENT_MEMBER` (422) in the error mapper if new arms are needed. Wire routes in `cmd/api/main.go` alongside the sessions block (~438-443).
-  - [ ] Run `scripts/codegen.sh` (LAST).
-- [ ] **T5 — Tests (AC5, AC6, TEST-BE-1..4)**
-  - [ ] Store/RLS adversarial (`enrollments_rls_test.go`, clone `classes_rls_test.go` + `sessions_rls_test.go:175-216` + `adversarial_test.go` Patterns 1–6): cross-tenant read/write isolation, null/empty-tenant guard, partial-unique double-active rejection.
-  - [ ] Service tests (mock store seam, TEST-BE-4): Admin/Owner can enroll; Teacher/Student → 403 (role re-fetched from `center_members`, not JWT); non-student user → 422 `NOT_A_STUDENT_MEMBER`; already-active → 409 `ALREADY_ENROLLED`.
-  - [ ] Handler integration (`NewEnrollmentTestServerBareMux` mirroring `NewSessionTestServerBareMux` + `SignAccessTokenForRole`): POST as owner → 201 + envelope; POST as teacher → 403; GET roster as teacher of own class → 200; as teacher of another class → 404; full `{data,meta}` + `{error:{code,message,requestId}}`. Seed students via `fixtures.CreateCenterMember(..., "student")` + `SeedClass`.
-  - [ ] `go test ./... && go vet ./... && gofmt -l`.
-- [ ] **T6 — Close-out**
-  - [ ] Update `deferred-work.md`: mark SEQ-2-7-1 (2.7 halt) and FU-3-5-A (3.5b) dependency **resolved by 3.4.5**; add a note that Story 7.3 now *consumes* the `enrollments` table (its "table exists" AC is pre-satisfied) and retains history/transfer/withdraw/console.
-  - [ ] No new env var/service → no `docs/manual-setup.md` change (WF-9).
+- [x] **T3 — Service (AC2, AC3, SEC-1)**
+  - [x] `internal/service/enrollment_service.go` — `EnrollmentService` sharing `AuthDB`+`AuditLogger`(+`clock` if needed). Mirror `SessionService` tenant-tx ceremony (`readInTenantTx`/`mutateInTenantTx`; reads need a tx for RLS — PERF-1).
+  - [x] `CreateEnrollment(ctx, tc, studentID, classID)` — role gate **Admin/Owner only**, re-fetched from `center_members` (SEC-1/R15; `service.ForbiddenError{"insufficient role"}` → 403 `INSUFFICIENT_ROLE`); validate class-in-center, `IsStudentMemberOfCenter` (else `model.ValidationError`/typed 422 `NOT_A_STUDENT_MEMBER`), not-already-active (else 409 `ALREADY_ENROLLED` — new `model.ConflictError` code); audit via `AuditService.LogWithinTx` (entityType `"enrollment"`).
+  - [x] `ListEnrolledStudentsByClass(ctx, tc, classID)` — allow owner/admin/teacher; teacher-scope (only own classes → 404), reusing the class-load + `assertClassRole`/teacher-scope pattern from `class_lifecycle.go` / `session.go`.
+  - [x] Do **NOT** implement transfer/withdraw, `enrollment_history`, or notifications (Story 7.3). Do **NOT** emit `event.EnrollmentChanged` — the event bus is unwired (recon); leave a `// 7.3: emit EnrollmentChanged once the bus is wired` marker only.
+- [x] **T4 — api.yaml + handler + routes (AC2, AC3)**
+  - [x] `api.yaml`: `Enrollment` schema (explicit nulls, camelCase: `id, centerId, studentId, classId, studentName, studentEmail, enrolledAt, withdrawnAt, status`), `CreateEnrollmentRequest` (`studentId`, `classId`), `EnvelopeEnrollment` / `EnvelopeListEnrollment`.
+  - [x] Endpoints (new `enrollmentChain` = sessionChain shape: extractTenant → requireVerified → requireCenter → ErrorMapper; role enforced in service): `POST /api/enrollments`, `GET /api/classes/{classId}/enrollments`.
+  - [x] `internal/handler/enrollment_handler.go` — methods returning `error`; `{data,meta}` envelope via `WriteEnvelope`; path ID via `parseSettingsPathID`; strict body decode. Register `ALREADY_ENROLLED` (409) + `NOT_A_STUDENT_MEMBER` (422) in the error mapper if new arms are needed. Wire routes in `cmd/api/main.go` alongside the sessions block (~438-443).
+  - [x] Run `scripts/codegen.sh` (LAST).
+- [x] **T5 — Tests (AC5, AC6, TEST-BE-1..4)**
+  - [x] Store/RLS adversarial (`enrollments_rls_test.go`, clone `classes_rls_test.go` + `sessions_rls_test.go:175-216` + `adversarial_test.go` Patterns 1–6): cross-tenant read/write isolation, null/empty-tenant guard, partial-unique double-active rejection.
+  - [x] Service tests (mock store seam, TEST-BE-4): Admin/Owner can enroll; Teacher/Student → 403 (role re-fetched from `center_members`, not JWT); non-student user → 422 `NOT_A_STUDENT_MEMBER`; already-active → 409 `ALREADY_ENROLLED`.
+  - [x] Handler integration (`NewEnrollmentTestServerBareMux` mirroring `NewSessionTestServerBareMux` + `SignAccessTokenForRole`): POST as owner → 201 + envelope; POST as teacher → 403; GET roster as teacher of own class → 200; as teacher of another class → 404; full `{data,meta}` + `{error:{code,message,requestId}}`. Seed students via `fixtures.CreateCenterMember(..., "student")` + `SeedClass`.
+  - [x] `go test ./... && go vet ./... && gofmt -l`.
+- [x] **T6 — Close-out**
+  - [x] Update `deferred-work.md`: mark SEQ-2-7-1 (2.7 halt) and FU-3-5-A (3.5b) dependency **resolved by 3.4.5**; add a note that Story 7.3 now *consumes* the `enrollments` table (its "table exists" AC is pre-satisfied) and retains history/transfer/withdraw/console.
+  - [x] No new env var/service → no `docs/manual-setup.md` change (WF-9).
 
 ## Dev Notes
 
@@ -156,13 +156,13 @@ No UI ships. Rationale: there are **no student members to enroll yet** — Story
 
 ## Definition of Done
 
-- [ ] `enrollments` table live, columns verbatim to 7.3 spec, 4-policy RLS + FORCE, partial-unique active guard.
-- [ ] `POST /api/enrollments` (Add) — Admin/Owner only (DB-revalidated), validations (class-in-center, is-student-member, not-already-active) return correct typed errors (403/404/409/422).
-- [ ] `GET /api/classes/{classId}/enrollments` — roster with user join; teacher-scoped (404 off own classes).
-- [ ] RLS adversarial read+write+null-guard green; role-negative (Teacher create → 403) green.
-- [ ] `go test ./... && go vet && gofmt -l` clean; `codegen.sh` run last; generated files not hand-edited; no `api.yaml` schema reshaped.
-- [ ] `deferred-work.md` updated: SEQ-2-7-1 + FU-3-5-A dependency resolved; 7.3 now consumes the table.
-- [ ] Dev Agent Record + File List in sibling `3-4-5-...-completion-notes.md` (per bmad-story-conventions.md), not this file.
+- [x] `enrollments` table live, columns verbatim to 7.3 spec, 4-policy RLS + FORCE, partial-unique active guard.
+- [x] `POST /api/enrollments` (Add) — Admin/Owner only (DB-revalidated), validations (class-in-center, is-student-member, not-already-active) return correct typed errors (403/404/409/422).
+- [x] `GET /api/classes/{classId}/enrollments` — roster with user join; teacher-scoped (404 off own classes).
+- [x] RLS adversarial read+write+null-guard green; role-negative (Teacher create → 403) green.
+- [x] `go test ./... && go vet && gofmt -l` clean; `codegen.sh` run last; generated files not hand-edited; no `api.yaml` schema reshaped.
+- [x] `deferred-work.md` updated: SEQ-2-7-1 + FU-3-5-A dependency resolved; 7.3 now consumes the table.
+- [x] Dev Agent Record + File List in sibling `3-4-5-...-completion-notes.md` (per bmad-story-conventions.md), not this file.
 
 ## Out of Scope
 
@@ -176,4 +176,30 @@ No UI ships. Rationale: there are **no student members to enroll yet** — Story
 
 | Date | Change |
 |---|---|
+| 2026-07-24 | Green-phase shipped `in-progress → review` (Amelia, `/bmad-dev-story 3-4-5`). All 6 ACs satisfied; T1–T6 + DoD complete. Migration `20260722120000_create_enrollments` (table + 4-policy FORCE RLS + partial-unique active guard + 3 indexes); `enrollments.sql` queries; `EnrollmentService` (Admin/Owner DB-revalidated Add + teacher-scoped roster); `POST /api/enrollments` + `GET /api/classes/{classId}/enrollments`; api.yaml additive (186 insertions, 0 deletions). New codes `ALREADY_ENROLLED` (409, via `model.ConflictError`) + `NOT_A_STUDENT_MEMBER` (422, new mapper arm). 23 new tests (11 RLS/store + 12 handler integration) green; full backend regression green. `deferred-work.md` SEQ-2-7-1 + FU-3-4-A dependency marked resolved-by-3.4.5. Dev Agent Record + File List in sibling completion-notes.md. |
 | 2026-07-23 | Story created (ready-for-dev). Keystone extracted from Epic 7 Story 7.3 at the Story 3.5 party-mode review (Ducdo ruling 2026-07-22). Ships the `enrollments` linkage table + Add-case + list only; console/history/transfer/withdraw stay in 7.3. Backend-only enabler; sequence 3.4.5 → 2.7 → 3.5b. |
+
+### Review Findings
+
+_From `/bmad-code-review 3-4-5` (Amelia, 2026-07-24) — 3 adversarial layers (Blind Hunter, Edge Case Hunter, Acceptance Auditor). All 6 ACs confirmed satisfied; AC1–AC5 fully, with strong RLS/handler coverage. No Critical/High correctness defects. 6 findings dismissed as false positives (see summary)._
+
+**Decision-needed** (resolved by Ducdo, 2026-07-24):
+
+- [x] [Review][Decision→Defer] **Enrolling into a non-active class (ended/paused/upcoming) is silently allowed** — `CreateEnrollment` never inspects `classes.status`. **Ducdo ruling: defer to Story 7.3** — the enrollment console owns class-lifecycle rules and no student test data exists to enroll yet; 3.4.5 stays a pure data-layer enabler. Logged as `CR-3-4-5-2` in `deferred-work.md`. [`classlite-api/internal/service/enrollment_service.go` CreateEnrollment]
+- [x] [Review][Decision→Defer] **Roster list is unbounded — no pagination** — no LIMIT/OFFSET, no `page`/`pageSize`. **Ducdo ruling: defer to the consumer story (7.2/3.5b)** — AC3 specs a plain "list query", no UI ships here; the story that renders the roster adds pagination when it needs it, avoiding a speculative contract change. Logged as `CR-3-4-5-3` in `deferred-work.md`. [`classlite-api/internal/store/queries/enrollments.sql`; `api.yaml` GET roster]
+- [x] [Review][Decision→Dismissed] **AC6 literal miss — `FU-3-5-A` not updated (resolved `FU-3-4-A` instead)** — **Ducdo ruling: accept the substitution.** FU-3-5-A cannot be resolved before it exists (Story 3.5, still `ready-for-dev`, authors it at its own pickup); FU-3-4-A + SEQ-2-7-1 are the real dependencies this story unblocks. No action needed.
+
+**Patch** (test-coverage + clarity; fixes unambiguous):
+
+- [x] [Review][Patch] Add negative test proving the SEC-1 DB role re-validation on Create — sign an owner/admin-role JWT for a user who is teacher/admin in `center_members` (stale-JWT / demotion), assert 403 `INSUFFICIENT_ROLE`. Both existing 403 tests sign tokens whose JWT role matches the DB role, so the DB re-fetch is never the deciding factor. [`classlite-api/internal/handler/enrollment_handler_atdd_test.go`]
+- [x] [Review][Patch] Add `NOT_A_STUDENT_MEMBER` (422) tests for a cross-tenant student (student of Center B, caller in Center A) and a random/unknown UUID — only the same-center staff-role case is covered. [`classlite-api/internal/handler/enrollment_handler_atdd_test.go`]
+- [x] [Review][Patch] Add handler tests for the advertised-but-untested response codes: non-UUID `studentId`/`classId` → 422 `VALIDATION_ERROR`, and >16 KiB body → 413 `PAYLOAD_TOO_LARGE`. [`classlite-api/internal/handler/enrollment_handler_atdd_test.go`]
+- [x] [Review][Patch] Add a store/integration test for the unique-violation belt (23505 → 409 `ALREADY_ENROLLED`): pre-insert an active row directly, then drive an insert that bypasses the pre-check, assert the 409 mapping (not a leaked 500). [`classlite-api/internal/test/enrollments_rls_test.go`]
+- [x] [Review][Patch] Assert `withdrawnAt` is `null` (GO-5 explicit-null) and `studentEmail` is present in the create/roster response bodies — neither the null pointer serialization nor the email denormalization is currently pinned. [`classlite-api/internal/handler/enrollment_handler_atdd_test.go`]
+- [x] [Review][Patch] Clarify the misleadingly-named `requireOwnerTenant` at both enrollment call sites — it only extracts/validates tenant context (the real role gate is DB-side in the service; admins/teachers correctly pass). Add a one-line comment (or rename) so a future maintainer doesn't assume an owner gate exists at the handler layer. [`classlite-api/internal/handler/enrollment_handler.go` Create + ListByClass]
+
+_All 6 patches applied 2026-07-24 (Amelia, `/bmad-code-review 3-4-5`). 6 new tests added (5 handler: `StaleOwnerJWTForTeacher_403`, `UnknownUser_422`, `CrossTenantStudent_422`, `NonUUIDStudentId_422`, `OversizedBody_413`, `ResponseExplicitNullsAndEmail_201` + roster `studentEmail` assertion; 1 store: `TestEnrollments_DoubleActive_SQLSTATE23505`) + 2 handler-clarity comments. `go vet ./...` clean; `handler`/`test`/`service` packages green unfiltered (enrollment: 18 handler + 12 store/RLS). No `.sql`/`api.yaml`/generated touched → no codegen. Note: the cross-tenant fixture uses the superuser pool, NOT `CreateUserOnPool` — the latter holds a dedicated pooled connection per user for an advisory lock, and setup already holds several; two more exhausted the pool and deadlocked (caught + fixed during this pass)._
+
+**Deferred** (pre-existing / out of this story's write scope):
+
+- [x] [Review][Defer] **`enrollments.status` / `withdrawn_at` are not coupled by a CHECK** — the CHECK constrains enum values but permits `status='withdrawn'` with `withdrawn_at IS NULL` (and vice-versa). Not reachable in 3.4.5 (only ever writes `status='active'` with default NULL); the table ships verbatim to the 7.3 spec, and 7.3's withdraw/transfer transitions inherit no DB-level guard. Deferred to Story 7.3. [`classlite-api/migrations/20260722120000_create_enrollments.up.sql` status CHECK]

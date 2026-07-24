@@ -439,6 +439,26 @@ func (e *ScheduleRangeTooWideError) Error() string {
 	return "schedule range exceeds the maximum window of " + strconv.Itoa(e.MaxDays) + " days"
 }
 
+// ---------------------------------------------------------------------
+// Story 3.4.5 — Enrollment linkage errors.
+//
+// ALREADY_ENROLLED (409) reuses model.ConflictError with an explicit Code, so
+// only the distinct 422 code below needs its own pointer type (the generic
+// ValidationError arm would collapse it to VALIDATION_ERROR).
+// ---------------------------------------------------------------------
+
+// NotAStudentMemberError → 422 NOT_A_STUDENT_MEMBER. The studentId on a
+// POST /api/enrollments is not a `student` center-member of the caller's center
+// (a non-member, or a member with a staff role). Distinct from the generic
+// ValidationError so the SPA can render a targeted "not a student" message.
+type NotAStudentMemberError struct {
+	StudentID string
+}
+
+func (e *NotAStudentMemberError) Error() string {
+	return "user is not a student member of this center"
+}
+
 // IntegrationConnectCanceledError → handled at the handler layer as a 302
 // redirect to /settings?tab=integrations&status=cancelled, NOT a JSON error
 // envelope. Fires when Google's callback returns `?error=access_denied` (or

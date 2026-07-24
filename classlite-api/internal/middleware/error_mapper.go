@@ -109,8 +109,16 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var sessionAlreadyStarted *service.SessionAlreadyStartedError
 		var recurrenceLimitExceeded *service.RecurrenceLimitExceededError
 		var scheduleRangeTooWide *service.ScheduleRangeTooWideError
+		// Story 3.4.5 enrollment 422 (distinct from the generic ValidationError
+		// arm which would flatten it to VALIDATION_ERROR).
+		var notAStudentMember *service.NotAStudentMemberError
 
 		switch {
+		case errors.As(err, &notAStudentMember):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"NOT_A_STUDENT_MEMBER",
+				"This user is not a student member of this center.", nil)
+			return
 		case errors.As(err, &sessionAlreadyStarted):
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"SESSION_ALREADY_STARTED",

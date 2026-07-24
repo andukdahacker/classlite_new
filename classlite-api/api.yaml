@@ -1726,6 +1726,113 @@ paths:
   # classChain shape (role enforced in-service; teacher-scope → 404, students →
   # 403). Recurrence materializes on create (required endDate + 200 cap). Every
   # mutation carries expectedUpdatedAt (optimistic 409) + applyScope.
+  /api/enrollments:
+    post:
+      operationId: createEnrollment
+      summary: Enroll an existing student member into a class (story 3.4.5 — AC2)
+      description: |
+        Links an existing `student` center-member to a class. Admin/Owner only —
+        the role is re-validated from center_members, not trusted from the JWT
+        (SEC-1). Validations: the class must resolve in the caller's center; the
+        studentId must be a student member of the center (else 422
+        NOT_A_STUDENT_MEMBER); and the student must not already be actively
+        enrolled (else 409 ALREADY_ENROLLED). Transfer/Withdraw are Story 7.3.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnrollmentRequest'
+      responses:
+        "201":
+          description: Created enrollment (status=active)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeEnrollment'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (Teacher/Student callers — Admin/Owner only)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (class not in caller's center)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: ALREADY_ENROLLED (an active enrollment already exists)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error / NOT_A_STUDENT_MEMBER (studentId is not a student member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{classId}/enrollments:
+    get:
+      operationId: listClassEnrollments
+      summary: List active enrolled students for a class (story 3.4.5 — AC3)
+      description: |
+        Active roster for a class, joined to users for studentName + email.
+        Owner/Admin see any class in-center; a Teacher may only list classes they
+        teach (cross-teacher → 404 CLASS_NOT_FOUND). This is the roster query
+        Story 3.5b (attendance) and Story 7.2 (teacher roster) consume.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active enrollments for the class
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeEnrollmentList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (unknown class OR teacher not assigned to it)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/sessions:
     get:
       operationId: listSessions
@@ -4285,6 +4392,85 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/CreateSessionResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 3.4.5 — Enrollment linkage ----------------
+    EnrollmentStatus:
+      type: string
+      # 3.4.5 only ever writes 'active'; withdrawn/transferred arrive in 7.3.
+      enum: [active, withdrawn, transferred]
+
+    Enrollment:
+      type: object
+      # All fields present + explicit (nulls not omitted) per GO-5. studentName +
+      # studentEmail are denormalized from the users JOIN so the roster renders
+      # without a second call.
+      required:
+        - id
+        - centerId
+        - studentId
+        - classId
+        - studentName
+        - studentEmail
+        - enrolledAt
+        - withdrawnAt
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        studentEmail:
+          type: string
+        enrolledAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: '#/components/schemas/EnrollmentStatus'
+
+    CreateEnrollmentRequest:
+      type: object
+      required: [studentId, classId]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+
+    EnvelopeEnrollment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Enrollment'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeEnrollmentList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enrollment'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

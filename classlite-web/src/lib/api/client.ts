@@ -618,6 +618,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll an existing student member into a class (story 3.4.5 — AC2)
+         * @description Links an existing `student` center-member to a class. Admin/Owner only —
+         *     the role is re-validated from center_members, not trusted from the JWT
+         *     (SEC-1). Validations: the class must resolve in the caller's center; the
+         *     studentId must be a student member of the center (else 422
+         *     NOT_A_STUDENT_MEMBER); and the student must not already be actively
+         *     enrolled (else 409 ALREADY_ENROLLED). Transfer/Withdraw are Story 7.3.
+         */
+        post: operations["createEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classId}/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active enrolled students for a class (story 3.4.5 — AC3)
+         * @description Active roster for a class, joined to users for studentName + email.
+         *     Owner/Admin see any class in-center; a Teacher may only list classes they
+         *     teach (cross-teacher → 404 CLASS_NOT_FOUND). This is the roster query
+         *     Story 3.5b (attendance) and Story 7.2 (teacher roster) consume.
+         */
+        get: operations["listClassEnrollments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -1624,6 +1672,39 @@ export interface components {
         };
         EnvelopeCreateSessionResult: {
             data: components["schemas"]["CreateSessionResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @enum {string} */
+        EnrollmentStatus: "active" | "withdrawn" | "transferred";
+        Enrollment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            studentId: string;
+            /** Format: uuid */
+            classId: string;
+            studentName: string;
+            studentEmail: string;
+            /** Format: date-time */
+            enrolledAt: string;
+            /** Format: date-time */
+            withdrawnAt: string | null;
+            status: components["schemas"]["EnrollmentStatus"];
+        };
+        CreateEnrollmentRequest: {
+            /** Format: uuid */
+            studentId: string;
+            /** Format: uuid */
+            classId: string;
+        };
+        EnvelopeEnrollment: {
+            data: components["schemas"]["Enrollment"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeEnrollmentList: {
+            data: components["schemas"]["Enrollment"][];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         FieldError: {
@@ -3840,6 +3921,133 @@ export interface operations {
             };
             /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEnrollmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created enrollment (status=active) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEnrollment"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (Teacher/Student callers — Admin/Owner only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND (class not in caller's center) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description ALREADY_ENROLLED (an active enrollment already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error / NOT_A_STUDENT_MEMBER (studentId is not a student member) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listClassEnrollments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active enrollments for the class */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEnrollmentList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND (unknown class OR teacher not assigned to it) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
