@@ -1789,6 +1789,110 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/students/import/preview:
+    post:
+      operationId: previewStudentImport
+      summary: Preview a bulk student import (Story 2.7 — AC2/AC3)
+      description: |
+        Parses the owner-uploaded CSV/XLSX server-side (read back off R2 by the
+        object `key` a prior `/api/uploads/presign` with feature `imports`
+        returned) and classifies each row WITHOUT writing anything — advisory.
+        Owner/Admin only (RequireRole gate). The tenant-key prefix guard rejects a
+        cross-tenant object key with 403 before any download (SEC-8). Confirm is
+        the authoritative contract; a preview/confirm divergence is expected.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportPreviewRequest'
+      responses:
+        "200":
+          description: Classified rows + summary tally
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeImportPreview'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN (cross-tenant object key) / INSUFFICIENT_ROLE (non owner/admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: IMPORT_FILE_NOT_FOUND (object key not found in storage)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (malformed header / unsupported file) or IMPORT_ROW_LIMIT_EXCEEDED (>200 data rows)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/students/import:
+    post:
+      operationId: confirmStudentImport
+      summary: Commit a bulk student import (Story 2.7 — AC4/AC5)
+      description: |
+        Re-parses + re-classifies the file from scratch (confirm is authoritative)
+        and, for each valid row, creates a users record (new emails), upserts a
+        `student` center-member, links an active enrollment when a class resolved,
+        and enqueues a best-effort invite email for new users — all inside ONE
+        tenant transaction. Owner/Admin only, re-validated from center_members
+        (SEC-1). Partial success is the contract: valid rows persist within a
+        committed tx and the result lists failed rows with reasons. A commit/audit
+        failure is a full rollback (naturally idempotent on retry).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportConfirmRequest'
+      responses:
+        "200":
+          description: Per-row outcome + counts (partial success possible)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeImportResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN (cross-tenant object key) / INSUFFICIENT_ROLE (DB role re-validated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: IMPORT_FILE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (malformed header / unsupported file) or IMPORT_ROW_LIMIT_EXCEEDED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/classes/{classId}/enrollments:
     get:
       operationId: listClassEnrollments
@@ -4471,6 +4575,130 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Enrollment'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 2.7 — Bulk student import ----------------
+    ImportRowStatus:
+      type: string
+      description: |
+        Per-row classification. `unassigned` = importable but classless (the
+        preview warns the student is not yet in any class); `validation_error` =
+        the row is skipped on confirm.
+      enum: [new_user, existing_user, validation_error, unassigned]
+
+    ImportPreviewRequest:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          description: The R2 object key returned by /api/uploads/presign (feature `imports`).
+
+    ImportConfirmRequest:
+      type: object
+      required: [key, importId]
+      properties:
+        key:
+          type: string
+        importId:
+          type: string
+          format: uuid
+          description: Client-generated correlation id (audit + logs only; no dedup table).
+
+    ImportPreviewRow:
+      type: object
+      # All fields explicit (GO-5). `error` is "" when the row is valid.
+      required: [rowNumber, email, fullName, className, status, error]
+      properties:
+        rowNumber:
+          type: integer
+        email:
+          type: string
+        fullName:
+          type: string
+        className:
+          type: string
+        status:
+          $ref: '#/components/schemas/ImportRowStatus'
+        error:
+          type: string
+          description: UPPER_SNAKE_CASE row error code, or "" for a valid row.
+
+    ImportSummary:
+      type: object
+      required: [total, willImport, willSkip, unassigned]
+      properties:
+        total:
+          type: integer
+        willImport:
+          type: integer
+        willSkip:
+          type: integer
+        unassigned:
+          type: integer
+
+    ImportPreview:
+      type: object
+      required: [rows, summary]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportPreviewRow'
+        summary:
+          $ref: '#/components/schemas/ImportSummary'
+
+    ImportResultRow:
+      type: object
+      required: [rowNumber, email, status, persisted, error]
+      properties:
+        rowNumber:
+          type: integer
+        email:
+          type: string
+        status:
+          $ref: '#/components/schemas/ImportRowStatus'
+        persisted:
+          type: boolean
+        error:
+          type: string
+
+    ImportResult:
+      type: object
+      required: [rows, created, invitesSent, failed]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportResultRow'
+        created:
+          type: integer
+        invitesSent:
+          type: boolean
+          description: |
+            True if every new-user invite email was successfully enqueued — and
+            vacuously true when there were no invites to send (all-existing or
+            all-unassigned import). False (surfaced + logged) only when the
+            best-effort queue actually dropped one or more.
+        failed:
+          type: integer
+
+    EnvelopeImportPreview:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ImportPreview'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeImportResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ImportResult'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

@@ -458,6 +458,16 @@ func main() {
 	mux.Handle("POST /api/enrollments", enrollmentChain(enrollmentHandler.Create))
 	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
 
+	// Story 2.7 — bulk student import (owner/admin only, DB role re-validated in
+	// the service on confirm). Shares the settingsInviteChain (RequireRole gate +
+	// rate limit). Server-side parse reads the uploaded CSV/XLSX off R2 via the
+	// same StorageService the presign path used.
+	studentImportSvc := service.NewStudentImportService(pool, uploadStorage, auditSvc, clock.RealClock{})
+	studentImportSvc.SetInviteDelivery(retryQ, cfg.AppInviteURLBase)
+	studentImportHandler := handler.NewStudentImportHandler(studentImportSvc, clock.RealClock{})
+	mux.Handle("POST /api/students/import/preview", settingsInviteChain(studentImportHandler.Preview))
+	mux.Handle("POST /api/students/import", settingsInviteChain(studentImportHandler.Confirm))
+
 	// Story 2-5c — Google Meet OAuth integration endpoints (AC9).
 	//
 	// Authorize + Disconnect ride the shipped settingsChain (Owner-only +

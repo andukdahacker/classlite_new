@@ -40,6 +40,7 @@ const OWNER_GROUPS: ReadonlyArray<SidebarNavGroup> = [
     items: [
       { labelKey: 'sidebar.owner.dashboard', icon: icon(LayoutDashboard), href: '/dashboard' },
       { labelKey: 'sidebar.owner.people', icon: icon(Users), href: '/people/staff' },
+      { labelKey: 'sidebar.owner.importStudents', icon: icon(GraduationCap), href: '/students/import' },
       { labelKey: 'sidebar.owner.classes', icon: icon(BookOpen), href: '/classes' },
       { labelKey: 'sidebar.owner.schedule', icon: icon(CalendarDays), href: '/schedule' },
       { labelKey: 'sidebar.owner.analytics', icon: icon(BarChart3), href: '/analytics' },
@@ -61,6 +62,7 @@ const ADMIN_GROUPS: ReadonlyArray<SidebarNavGroup> = [
     items: [
       { labelKey: 'sidebar.admin.dashboard', icon: icon(LayoutDashboard), href: '/dashboard' },
       { labelKey: 'sidebar.admin.people', icon: icon(Users), href: '/people/staff' },
+      { labelKey: 'sidebar.admin.importStudents', icon: icon(GraduationCap), href: '/students/import' },
       { labelKey: 'sidebar.admin.classes', icon: icon(BookOpen), href: '/classes' },
       { labelKey: 'sidebar.admin.schedule', icon: icon(CalendarDays), href: '/schedule' },
       { labelKey: 'sidebar.admin.analytics', icon: icon(BarChart3), href: '/analytics' },

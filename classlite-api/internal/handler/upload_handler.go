@@ -23,6 +23,9 @@ var allowedExtensions = map[string]string{
 	".mp3":  "audio/mpeg",
 	".wav":  "audio/wav",
 	".webm": "audio/webm",
+	// Story 2.7 — bulk student import spreadsheets under the "imports" feature.
+	".csv":  "text/csv",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
 // Allowed feature path segments for key generation.
@@ -30,6 +33,7 @@ var allowedFeatures = map[string]bool{
 	"knowledge": true,
 	"speaking":  true,
 	"avatars":   true,
+	"imports":   true, // Story 2.7 — bulk student import uploads.
 }
 
 // UploadHandler handles presigned URL upload operations.

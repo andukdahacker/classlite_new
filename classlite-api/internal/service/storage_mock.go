@@ -9,18 +9,48 @@ import (
 
 // MockStorageService records storage operations for testing.
 type MockStorageService struct {
-	mu      sync.Mutex
-	Objects map[string]*ObjectMeta // Simulate stored objects.
+	mu       sync.Mutex
+	Objects  map[string]*ObjectMeta // Simulate stored objects.
+	contents map[string][]byte      // Story 2.7 — seeded object bodies for GetObject.
 
 	PresignError    error // Set to simulate presign failures.
 	HeadObjectError error // Set to simulate head failures.
+	GetObjectError  error // Set to simulate download failures.
 }
 
 // NewMockStorageService creates a mock with an empty object store.
 func NewMockStorageService() *MockStorageService {
 	return &MockStorageService{
-		Objects: make(map[string]*ObjectMeta),
+		Objects:  make(map[string]*ObjectMeta),
+		contents: make(map[string][]byte),
 	}
+}
+
+// SeedObject records raw bytes for a key so GetObject can read them back — the
+// test-side equivalent of a completed presigned upload (Story 2.7). A HeadObject
+// entry is recorded too so the head/confirm path finds the object.
+func (m *MockStorageService) SeedObject(key string, content []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.contents[key] = content
+	m.Objects[key] = &ObjectMeta{Key: key, ContentType: "application/octet-stream", Size: int64(len(content))}
+}
+
+// GetObject returns the seeded bytes for a key, or an error if the key was never
+// seeded (mirrors R2 returning NoSuchKey → the service maps it to
+// IMPORT_FILE_NOT_FOUND).
+func (m *MockStorageService) GetObject(ctx context.Context, key string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.GetObjectError != nil {
+		return nil, m.GetObjectError
+	}
+	content, ok := m.contents[key]
+	if !ok {
+		return nil, fmt.Errorf("object %s not found", key)
+	}
+	return content, nil
 }
 
 // Presign returns a fake presigned URL. Records the key in Objects if not already present.

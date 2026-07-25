@@ -13,6 +13,20 @@ VALUES ($1, $2, $3, $4, 'active')
 RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
           status, created_at, updated_at;
 
+-- name: CreateEnrollmentIfNotActive :one
+-- Story 2.7 bulk import — idempotent enrollment insert. ON CONFLICT DO NOTHING
+-- against the partial-unique uq_enrollments_active (class_id, student_id) WHERE
+-- status='active' makes a re-run a no-op: 0 rows returned (pgx.ErrNoRows) means
+-- an active enrollment already exists → counted done, NO 23505 (a unique
+-- violation would abort the surrounding savepoint and could not be continued in).
+-- Distinct from CreateEnrollment, whose 23505→ALREADY_ENROLLED the 3.4.5 Add
+-- endpoint depends on — do NOT fold them.
+INSERT INTO enrollments (id, center_id, student_id, class_id, status)
+VALUES ($1, $2, $3, $4, 'active')
+ON CONFLICT (class_id, student_id) WHERE status = 'active' DO NOTHING
+RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
+          status, created_at, updated_at;
+
 -- name: ListEnrolledStudentsByClass :many
 -- Active roster for one class (AC3). JOIN users for the display name/email the
 -- downstream consumers (3.5b attendance, 7.2 teacher roster) need. RLS

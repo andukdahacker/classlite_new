@@ -4,9 +4,12 @@ FROM users
 WHERE id = $1;
 
 -- name: GetUserByEmail :one
+-- Case-insensitive lookup (Story 2.7 code review D3). All callers already pass a
+-- lowercased address, but a mixed-case STORED email (legacy / OAuth-created row)
+-- must still resolve — matched by the LOWER(email) unique index on users.
 SELECT id, email, password_hash, full_name, email_verified, avatar_url, language_pref, google_id, created_at, updated_at, persona
 FROM users
-WHERE email = $1;
+WHERE LOWER(email) = LOWER($1);
 
 -- name: GetUserByGoogleID :one
 SELECT id, email, password_hash, full_name, email_verified, avatar_url, language_pref, google_id, created_at, updated_at, persona

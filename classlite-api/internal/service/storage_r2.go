@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -73,4 +74,32 @@ func (s *R2StorageService) HeadObject(ctx context.Context, key string) (*ObjectM
 		meta.ContentType = *result.ContentType
 	}
 	return meta, nil
+}
+
+// GetObject downloads the full object body from R2 (Story 2.7 server-side
+// parse). Bypasses RLS — the caller MUST have already enforced the tenant-key
+// prefix guard (SEC-8).
+func (s *R2StorageService) GetObject(ctx context.Context, key string) ([]byte, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+
+	result, err := s.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("get object %s: %w", key, err)
+	}
+	defer func() { _ = result.Body.Close() }()
+
+	// Bound the server-side read (code review P1). The bulk-import parser is the
+	// only GetObject caller and caps files at maxImportFileBytes; LimitReader
+	// (+1 byte so an over-cap object is still detectable by len) prevents a large
+	// or decompression-bomb object from being read fully into memory. The
+	// oversize check + typed 413 lives in the import service, which never masks
+	// this as a 404 the way a raw download error is.
+	body, err := io.ReadAll(io.LimitReader(result.Body, maxImportFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read object %s body: %w", key, err)
+	}
+	return body, nil
 }

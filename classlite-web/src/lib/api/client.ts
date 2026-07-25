@@ -643,6 +643,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/students/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a bulk student import (Story 2.7 — AC2/AC3)
+         * @description Parses the owner-uploaded CSV/XLSX server-side (read back off R2 by the
+         *     object `key` a prior `/api/uploads/presign` with feature `imports`
+         *     returned) and classifies each row WITHOUT writing anything — advisory.
+         *     Owner/Admin only (RequireRole gate). The tenant-key prefix guard rejects a
+         *     cross-tenant object key with 403 before any download (SEC-8). Confirm is
+         *     the authoritative contract; a preview/confirm divergence is expected.
+         */
+        post: operations["previewStudentImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/students/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Commit a bulk student import (Story 2.7 — AC4/AC5)
+         * @description Re-parses + re-classifies the file from scratch (confirm is authoritative)
+         *     and, for each valid row, creates a users record (new emails), upserts a
+         *     `student` center-member, links an active enrollment when a class resolved,
+         *     and enqueues a best-effort invite email for new users — all inside ONE
+         *     tenant transaction. Owner/Admin only, re-validated from center_members
+         *     (SEC-1). Partial success is the contract: valid rows persist within a
+         *     committed tx and the result lists failed rows with reasons. A commit/audit
+         *     failure is a full rollback (naturally idempotent on retry).
+         */
+        post: operations["confirmStudentImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/{classId}/enrollments": {
         parameters: {
             query?: never;
@@ -1705,6 +1757,71 @@ export interface components {
         };
         EnvelopeEnrollmentList: {
             data: components["schemas"]["Enrollment"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description Per-row classification. `unassigned` = importable but classless (the
+         *     preview warns the student is not yet in any class); `validation_error` =
+         *     the row is skipped on confirm.
+         * @enum {string}
+         */
+        ImportRowStatus: "new_user" | "existing_user" | "validation_error" | "unassigned";
+        ImportPreviewRequest: {
+            /** @description The R2 object key returned by /api/uploads/presign (feature `imports`). */
+            key: string;
+        };
+        ImportConfirmRequest: {
+            key: string;
+            /**
+             * Format: uuid
+             * @description Client-generated correlation id (audit + logs only; no dedup table).
+             */
+            importId: string;
+        };
+        ImportPreviewRow: {
+            rowNumber: number;
+            email: string;
+            fullName: string;
+            className: string;
+            status: components["schemas"]["ImportRowStatus"];
+            /** @description UPPER_SNAKE_CASE row error code, or "" for a valid row. */
+            error: string;
+        };
+        ImportSummary: {
+            total: number;
+            willImport: number;
+            willSkip: number;
+            unassigned: number;
+        };
+        ImportPreview: {
+            rows: components["schemas"]["ImportPreviewRow"][];
+            summary: components["schemas"]["ImportSummary"];
+        };
+        ImportResultRow: {
+            rowNumber: number;
+            email: string;
+            status: components["schemas"]["ImportRowStatus"];
+            persisted: boolean;
+            error: string;
+        };
+        ImportResult: {
+            rows: components["schemas"]["ImportResultRow"][];
+            created: number;
+            /**
+             * @description True if every new-user invite email was successfully enqueued — and
+             *     vacuously true when there were no invites to send (all-existing or
+             *     all-unassigned import). False (surfaced + logged) only when the
+             *     best-effort queue actually dropped one or more.
+             */
+            invitesSent: boolean;
+            failed: number;
+        };
+        EnvelopeImportPreview: {
+            data: components["schemas"]["ImportPreview"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeImportResult: {
+            data: components["schemas"]["ImportResult"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         FieldError: {
@@ -3998,6 +4115,126 @@ export interface operations {
                 };
             };
             /** @description Validation error / NOT_A_STUDENT_MEMBER (studentId is not a student member) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    previewStudentImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Classified rows + summary tally */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeImportPreview"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN (cross-tenant object key) / INSUFFICIENT_ROLE (non owner/admin) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description IMPORT_FILE_NOT_FOUND (object key not found in storage) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (malformed header / unsupported file) or IMPORT_ROW_LIMIT_EXCEEDED (>200 data rows) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    confirmStudentImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-row outcome + counts (partial success possible) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeImportResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN (cross-tenant object key) / INSUFFICIENT_ROLE (DB role re-validated) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description IMPORT_FILE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (malformed header / unsupported file) or IMPORT_ROW_LIMIT_EXCEEDED */
             422: {
                 headers: {
                     [name: string]: unknown;

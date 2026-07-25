@@ -112,8 +112,20 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		// Story 3.4.5 enrollment 422 (distinct from the generic ValidationError
 		// arm which would flatten it to VALIDATION_ERROR).
 		var notAStudentMember *service.NotAStudentMemberError
+		// Story 2.7 bulk import — the row-limit 422 + file-size 413 (distinct
+		// from the generic ValidationError arm which would flatten them).
+		var importRowLimit *service.ImportRowLimitError
+		var importFileTooLarge *service.ImportFileTooLargeError
 
 		switch {
+		case errors.As(err, &importRowLimit):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"IMPORT_ROW_LIMIT_EXCEEDED", importRowLimit.Error(), nil)
+			return
+		case errors.As(err, &importFileTooLarge):
+			handler.WriteError(w, r, http.StatusRequestEntityTooLarge,
+				"IMPORT_FILE_TOO_LARGE", importFileTooLarge.Error(), nil)
+			return
 		case errors.As(err, &notAStudentMember):
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"NOT_A_STUDENT_MEMBER",

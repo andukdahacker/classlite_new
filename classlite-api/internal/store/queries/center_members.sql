@@ -25,6 +25,15 @@ SELECT COUNT(*) FROM center_members WHERE user_id = $1;
 -- predicate keeps Branch B scoped to the caller's own center.
 SELECT COUNT(*) FROM center_members WHERE user_id = $1 AND center_id = $2;
 
+-- name: CountCenterMembershipsForUserAllCenters :one
+-- Story 2.7 bulk import — RLS-BYPASSING total membership count across ALL
+-- centers, via the count_center_members_for_user SECURITY DEFINER function
+-- (migration 20260724120000). Needed because center_members is FORCE-RLS-scoped
+-- to the caller's center, so a plain COUNT under a tenant tx can't see a
+-- membership in ANOTHER center. The import preview subtracts the caller-center
+-- membership to decide USER_IN_ANOTHER_CENTER before any write.
+SELECT count_center_members_for_user($1)::bigint;
+
 -- name: ListCenterMembersByCenter :many
 SELECT user_id, center_id, role, created_at
 FROM center_members

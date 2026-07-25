@@ -281,6 +281,39 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 2.7 — bulk student import. Mounted at `/students/import` (a CHILD
+      // path), NOT the bare `/students` — Story 7.2 owns `/students` (the s42
+      // center-wide list); do not squat the parent. Gated owner/admin (the DB
+      // role re-check on confirm is the real guard; this is the UI gate).
+      {
+        path: '/students/import',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="students"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              // Deep import for its own Rolldown chunk (SettingsPage precedent).
+              const { default: ImportStudentsPage } = await import(
+                '@/features/people/ImportStudentsPage'
+              )
+              return { Component: ImportStudentsPage }
+            },
+          },
+        ],
+      },
       // Story 3.3 — /classes/templates management group (screens s19/s20/s21). A
       // DISTINCT SIBLING of the /classes/:id detail group: the static
       // `templates` segment outranks the `:id` param (RR v7 specificity), so

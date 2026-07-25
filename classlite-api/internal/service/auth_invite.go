@@ -87,11 +87,26 @@ func (s *AuthService) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*
 	var user generated.User
 	if isExisting {
 		// Existing-user branch (AC4 step 4).
-		// AC4: password supplied for an OAuth-only user → 409. Silent
-		// ignore would allow an attacker holding an invite token to
-		// mint a password for an OAuth account.
-		if !existing.PasswordHash.Valid && in.Password != "" {
+		//
+		// Story 2.7 Task 6a — the OAuth guard is keyed on google_id presence, NOT
+		// on password-hash absence. A GENUINE OAuth account (google_id set, no
+		// password) still rejects a submitted password → 409 (accept via Google).
+		// But a pre-provisioned bulk-import student has NULL password_hash AND
+		// NULL google_id — that is a pending-invite account, not an OAuth account,
+		// and it may set a password on accept (else it would be permanently locked
+		// out). Silent-ignore of the password on the OAuth path still holds: an
+		// attacker holding an invite token cannot mint a password for a Google
+		// account.
+		isPendingInvite := !existing.PasswordHash.Valid && !existing.GoogleID.Valid
+		if !existing.PasswordHash.Valid && existing.GoogleID.Valid && in.Password != "" {
 			return nil, &PasswordNotAllowedForOAuthUserError{}
+		}
+
+		// Claim the pre-provisioned account by setting its password.
+		if isPendingInvite && in.Password != "" {
+			if err := s.setPendingInvitePassword(ctx, existing.ID, in.Password); err != nil {
+				return nil, err
+			}
 		}
 
 		if err := s.acceptInviteAddMembership(ctx, existing.ID, centerID, inviteRole, inviteID); err != nil {
@@ -173,6 +188,31 @@ func (s *AuthService) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*
 		Role:             inviteRole,
 		InviteID:         inviteUUID,
 	}, nil
+}
+
+// setPendingInvitePassword hashes + stores a password for a pre-provisioned
+// pending-invite account (NULL password_hash AND NULL google_id — e.g. a
+// bulk-imported student, Story 2.7 Task 6a). Password length is validated with
+// the same rules as the new-user branch so a claim cannot store a weak hash.
+func (s *AuthService) setPendingInvitePassword(ctx context.Context, userID pgtype.UUID, password string) error {
+	if len(password) < MinPasswordLength {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "password", Message: fmt.Sprintf("must be at least %d characters", MinPasswordLength)}}}
+	}
+	if len([]byte(password)) > MaxPasswordBytes {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "password", Message: fmt.Sprintf("must be at most %d bytes", MaxPasswordBytes)}}}
+	}
+	hash, err := s.hasher.Hash([]byte(password))
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	q := generated.New(s.db)
+	if err := q.UpdateUserPassword(ctx, generated.UpdateUserPasswordParams{
+		ID:           userID,
+		PasswordHash: pgtype.Text{String: string(hash), Valid: true},
+	}); err != nil {
+		return fmt.Errorf("set pending-invite password: %w", err)
+	}
+	return nil
 }
 
 // AcceptInviteInternal is invoked by HandleGoogleCallback after profile

@@ -11,6 +11,7 @@
 package service
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -457,6 +458,42 @@ type NotAStudentMemberError struct {
 
 func (e *NotAStudentMemberError) Error() string {
 	return "user is not a student member of this center"
+}
+
+// ---------------------------------------------------------------------
+// Story 2.7 — Bulk student import errors.
+//
+// IMPORT_FILE_NOT_FOUND (404) reuses model.NotFoundError with an explicit Code,
+// and the cross-tenant file-key 403 reuses model.ForbiddenError, so only the
+// distinct 422 row-limit code below needs its own pointer type (the generic
+// ValidationError arm would collapse it to VALIDATION_ERROR).
+// ---------------------------------------------------------------------
+
+// ImportRowLimitError → 422 IMPORT_ROW_LIMIT_EXCEEDED. The upload carried more
+// than Limit data rows (header excluded). It is both a UX cap and a tx-budget
+// cap (AC6). Got is the actual data-row count for the message.
+type ImportRowLimitError struct {
+	Limit int
+	Got   int
+}
+
+func (e *ImportRowLimitError) Error() string {
+	return fmt.Sprintf("import exceeds the maximum of %d rows per import (got %d)", e.Limit, e.Got)
+}
+
+// ImportFileTooLargeError → 413 IMPORT_FILE_TOO_LARGE. The uploaded object
+// exceeds the server-side parse cap (code review P1). The R2 download is bounded
+// by io.LimitReader to the cap, so a large or decompression-bomb upload cannot
+// be read fully into memory before this check fires. Distinct from
+// PayloadTooLargeError (which bounds the JSON request body) so the SPA can
+// render targeted "your file is too large" UX.
+type ImportFileTooLargeError struct {
+	LimitBytes int64
+	GotBytes   int64
+}
+
+func (e *ImportFileTooLargeError) Error() string {
+	return fmt.Sprintf("import file exceeds the maximum of %d bytes (got at least %d)", e.LimitBytes, e.GotBytes)
 }
 
 // IntegrationConnectCanceledError → handled at the handler layer as a 302
