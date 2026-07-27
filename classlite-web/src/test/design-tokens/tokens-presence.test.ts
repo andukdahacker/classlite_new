@@ -58,6 +58,15 @@ const EXPECTED_TOKENS: Record<string, string> = {
   '--cl-tint-green': '#ecf4ec',
   '--cl-tint-red': '#fbeaea',
 
+  // Skill palette (Story 4.1 — s15 exercise-library tiles)
+  '--cl-skill-reading': '#2563eb',
+  '--cl-skill-listening': '#7c3aed',
+  '--cl-skill-writing': '#059669',
+  '--cl-skill-speaking': '#ea580c',
+  '--cl-skill-grammar': '#db2777',
+  '--cl-skill-vocabulary': '#0891b2',
+  '--cl-skill-general': '#64748b',
+
   // Chip
   '--cl-chip-bg': '#ebe5d6',
 

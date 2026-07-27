@@ -49,6 +49,7 @@ export type SectionNameKey =
   | 'classes'
   | 'schedule'
   | 'students'
+  | 'exercises'
 
 export interface PermissionDeniedProps {
   requiredRoles: PermissionDeniedRoles

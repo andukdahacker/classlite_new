@@ -496,6 +496,26 @@ func (e *ImportFileTooLargeError) Error() string {
 	return fmt.Sprintf("import file exceeds the maximum of %d bytes (got at least %d)", e.LimitBytes, e.GotBytes)
 }
 
+// ---------------------------------------------------------------------
+// Story 4.1 — Exercise optimistic-concurrency precondition.
+//
+// A STALE precondition reuses model.ConflictError{Code:"CONFLICT"} (→ 409). A
+// MISSING precondition on the editor PATCH needs its own 428 type below (there
+// is no 428 arm elsewhere and the generic ValidationError arm would flatten it
+// to a 422 VALIDATION_ERROR).
+// ---------------------------------------------------------------------
+
+// PreconditionRequiredError → 428 PRECONDITION_REQUIRED. The exercise PATCH
+// (the 4.2-autosave contract) arrived without an If-Match header or a body
+// `updatedAt` — the editor path MUST send the freshly-read updatedAt so a
+// silent multi-tab last-writer-wins clobber cannot happen (Winston). Distinct
+// from a stale precondition (409 CONFLICT).
+type PreconditionRequiredError struct{}
+
+func (e *PreconditionRequiredError) Error() string {
+	return "an updatedAt precondition is required for this update"
+}
+
 // IntegrationConnectCanceledError → handled at the handler layer as a 302
 // redirect to /settings?tab=integrations&status=cancelled, NOT a JSON error
 // envelope. Fires when Google's callback returns `?error=access_denied` (or

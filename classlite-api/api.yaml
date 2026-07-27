@@ -3472,6 +3472,341 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 4.1 — Exercise library & CRUD ----------------
+  /api/exercises:
+    get:
+      operationId: listExercises
+      summary: List exercises scoped to caller role, with skill/tag/band filters + pagination (story 4.1 — AC1/AC2/AC8)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: 1-based page number. < 1 or non-integer → 422.
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Page size, server-clamped to [1, 100]. < 1 or non-integer → 422.
+        - name: skill
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [reading, listening, writing, speaking, grammar, vocabulary, general]
+          description: Skill equality filter.
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Single-tag membership filter (tag = ANY(tags)).
+        - name: band
+          in: query
+          required: false
+          schema:
+            type: number
+          description: target_band equality filter.
+      responses:
+        "200":
+          description: Role-scoped, filtered, paginated list of exercises
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeExerciseList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: page/pageSize/band out of range or non-integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createExercise
+      summary: Create an exercise — minimal metadata; server sets code + schemaVersion + FR-22-default settings shell (story 4.1 — AC3)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExerciseRequest'
+      responses:
+        "201":
+          description: Created exercise (schemaVersion=1, content shell with default settings)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds cap)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (title, skill, tags, targetBand)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/exercises/{id}:
+    get:
+      operationId: getExercise
+      summary: Get a single exercise incl. full content (story 4.1 — AC6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: EXERCISE_NOT_FOUND (absent, soft-deleted, or invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateExercise
+      summary: Update an exercise (metadata + full content replacement); schemaVersion/code immutable; optimistic-concurrency precondition (story 4.1 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >-
+            The client's last-known updatedAt (ISO-8601). Preferred precondition
+            channel; the request body's updatedAt is the fallback. Missing on the
+            editor path → 428 PRECONDITION_REQUIRED. Stale → 409 CONFLICT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateExerciseRequest'
+      responses:
+        "200":
+          description: Updated exercise (schemaVersion + code unchanged)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: EXERCISE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: CONFLICT (stale updatedAt precondition — another writer won)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds cap)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "428":
+          description: PRECONDITION_REQUIRED (editor PATCH omitted the updatedAt precondition)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteExercise
+      summary: Soft-delete an exercise (deleted_at stamp; recoverable — Epic 10 restore UI) (story 4.1 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Soft-deleted (no body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: EXERCISE_NOT_FOUND (absent or already deleted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/exercises/{id}/duplicate:
+    post:
+      operationId: duplicateExercise
+      summary: Duplicate an exercise — clones title "(copy)" + deep-copies content; fresh code + created_by (story 4.1 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: The duplicated exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: EXERCISE_NOT_FOUND (absent, soft-deleted, or cross-teacher/cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -5739,6 +6074,254 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/InviteResult'
+
+    # ---------------- Story 4.1 — Exercise library ----------------
+    ExerciseSkill:
+      type: string
+      enum: [reading, listening, writing, speaking, grammar, vocabulary, general]
+
+    Exercise:
+      type: object
+      # All fields required + explicit (nulls not omitted) per GO-5. `content` is
+      # an opaque object at 4.1 (Story 4.2 fleshes out sections/groups/questions/
+      # settings); `schemaVersion` is server-authoritative + column-canonical.
+      required:
+        - id
+        - centerId
+        - createdBy
+        - code
+        - title
+        - description
+        - skill
+        - tags
+        - targetBand
+        - schemaVersion
+        - sectionCount
+        - questionCount
+        - content
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: Server-generated, immutable EX-<SkillLetter><NNN> (locale-invariant).
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        tags:
+          type: array
+          items:
+            type: string
+        targetBand:
+          type: number
+          nullable: true
+        schemaVersion:
+          type: integer
+          description: Server-authoritative content schema version. The request body cannot set or override it.
+        sectionCount:
+          type: integer
+        questionCount:
+          type: integer
+        content:
+          type: object
+          description: v1 JSONB content shell ({sections, settings}). Opaque at 4.1; Story 4.2 defines the full shape.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ExerciseListItem:
+      type: object
+      # The list item omits the `content` blob (never transferred on the list
+      # path — Winston #2) but carries the SQL-computed section/question counts.
+      required:
+        - id
+        - centerId
+        - createdBy
+        - code
+        - title
+        - description
+        - skill
+        - tags
+        - targetBand
+        - schemaVersion
+        - sectionCount
+        - questionCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+          format: uuid
+        code:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        tags:
+          type: array
+          items:
+            type: string
+        targetBand:
+          type: number
+          nullable: true
+        schemaVersion:
+          type: integer
+        sectionCount:
+          type: integer
+        questionCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateExerciseRequest:
+      type: object
+      # title + skill required. NO schemaVersion / code fields — both are
+      # server-set (AC3). content is NOT accepted at create (server materializes
+      # the FR-22-default shell).
+      required: [title, skill]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        targetBand:
+          type: number
+          minimum: 0
+          maximum: 9
+          nullable: true
+
+    UpdateExerciseRequest:
+      type: object
+      # Metadata edits (4.1 UI) + a full `content` replacement (4.2/Duplicate).
+      # schemaVersion + code are NEVER accepted — the server ignores/rejects them.
+      # updatedAt is the optimistic-concurrency precondition fallback when the
+      # If-Match header is absent.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        targetBand:
+          type: number
+          minimum: 0
+          maximum: 9
+          nullable: true
+        content:
+          type: object
+          description: Full-replace v1 content object. Opaque at 4.1.
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optimistic-concurrency precondition (fallback to the If-Match header).
+
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    SkillCount:
+      type: object
+      required: [skill, count]
+      properties:
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        count:
+          type: integer
+
+    EnvelopeMetaPaginated:
+      type: object
+      required: [serverTime, pagination, skillCounts]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+        skillCounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillCount'
+          description: Per-skill totals for the count-tab strip (honors the active tag/band filters; ignores the skill filter).
+
+    EnvelopeExercise:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Exercise'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeExerciseList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExerciseListItem'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPaginated'
 
   securitySchemes:
     bearerAuth:

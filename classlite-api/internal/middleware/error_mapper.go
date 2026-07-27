@@ -116,8 +116,15 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		// from the generic ValidationError arm which would flatten them).
 		var importRowLimit *service.ImportRowLimitError
 		var importFileTooLarge *service.ImportFileTooLargeError
+		// Story 4.1 exercise optimistic-concurrency: a MISSING precondition → 428.
+		var preconditionRequired *service.PreconditionRequiredError
 
 		switch {
+		case errors.As(err, &preconditionRequired):
+			handler.WriteError(w, r, http.StatusPreconditionRequired,
+				"PRECONDITION_REQUIRED",
+				"This update requires an up-to-date version token. Reload and try again.", nil)
+			return
 		case errors.As(err, &importRowLimit):
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"IMPORT_ROW_LIMIT_EXCEEDED", importRowLimit.Error(), nil)

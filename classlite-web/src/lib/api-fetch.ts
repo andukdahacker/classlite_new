@@ -11,7 +11,8 @@
  *     cookies set by the Go API flow on every call.
  *   - Unwrap the `{ data, meta }` envelope (project-context TS-4 — the rest
  *     of the codebase never sees `.data.data`). The `meta` block is dropped
- *     at this layer; pagination consumers add explicit handling per-feature.
+ *     at this layer; pagination consumers call `apiFetchWithMeta` (which keeps
+ *     the full envelope) and unwrap `meta` in their own query fn.
  *   - On a 401, hand off to the global refresh coordinator
  *     (auth-refresh.ts) for an exactly-once silent refresh and retry the
  *     original request once. The `skipAuthRefresh` flag short-circuits the
@@ -151,6 +152,17 @@ interface SuccessEnvelope<T> {
   data: T
 }
 
+/**
+ * The full `{ data, meta }` success envelope. `apiFetch` unwraps to `.data`
+ * and DROPS `meta` (the TS-4 unwrap so components never see `.data.data`);
+ * paginated-list consumers use `apiFetchWithMeta` instead so `meta.pagination`
+ * (and any list-specific meta) survives, then unwrap it in their own query fn.
+ */
+export interface EnvelopeWithMeta<T, M> {
+  data: T
+  meta: M
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   opts: ApiFetchOptions = {},
@@ -191,6 +203,64 @@ export async function apiFetch<T = unknown>(
   }
 
   return parseEnvelope<T>(response)
+}
+
+/**
+ * Like `apiFetch`, but returns the FULL `{ data, meta }` envelope so paginated
+ * lists can read `meta.pagination` / `meta.skillCounts`. Shares the exact 401
+ * silent-refresh-and-retry flow (no `surfaceAuthError` path — lists never need
+ * it).
+ */
+export async function apiFetchWithMeta<T = unknown, M = unknown>(
+  path: string,
+  opts: ApiFetchOptions = {},
+): Promise<EnvelopeWithMeta<T, M>> {
+  // Strip the apiFetch-only flags so only valid RequestInit reaches fetch.
+  // The list path never uses surfaceAuthError/skipAuthRefresh — the standard
+  // silent-refresh flow below always applies.
+  const rest: RequestInit = { ...opts }
+  delete (rest as ApiFetchOptions).skipAuthRefresh
+  delete (rest as ApiFetchOptions).surfaceAuthError
+  let response = await performFetch(path, rest)
+
+  if (response.status === UNAUTHORIZED_STATUS) {
+    const refreshResult = await refreshAccessToken()
+    if (!refreshResult.ok) {
+      const authError = new AuthExpiredError()
+      onAuthFailure(authError)
+      throw authError
+    }
+    response = await performFetch(path, rest)
+    if (response.status === UNAUTHORIZED_STATUS) {
+      const authError = new AuthExpiredError()
+      onAuthFailure(authError)
+      throw authError
+    }
+  }
+
+  if (!response.ok) {
+    await throwEnvelopeError(response)
+  }
+  const requestId = response.headers.get('x-request-id')
+  const text = await response.text()
+  try {
+    return JSON.parse(text) as EnvelopeWithMeta<T, M>
+  } catch {
+    // Non-JSON / empty 2xx body (captive portal, proxy hiccup, truncated
+    // gzip). Surface a typed ApiError — same INVALID_RESPONSE contract +
+    // Sentry pipeline as parseEnvelope — so the list retry UI and error
+    // observability hold instead of a raw SyntaxError escaping (CR-4-1-17).
+    const malformedError = new ApiError(
+      response.status,
+      'INVALID_RESPONSE',
+      'Response body was not valid JSON',
+      requestId,
+    )
+    Sentry.captureException(malformedError, {
+      tags: { requestId, errorCode: 'INVALID_RESPONSE' },
+    })
+    throw malformedError
+  }
 }
 
 async function performFetch(
@@ -270,6 +340,14 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
     return body.data
   }
 
+  return throwEnvelopeError(response)
+}
+
+// throwEnvelopeError parses a non-2xx response into a typed ApiError, reports it
+// to Sentry, and throws. Shared by parseEnvelope + apiFetchWithMeta so the error
+// contract stays identical across both success-shape parsers.
+async function throwEnvelopeError(response: Response): Promise<never> {
+  const requestId = response.headers.get('x-request-id')
   const errorBody = (await response
     .json()
     .catch(() => ({}) as ErrorEnvelope)) as ErrorEnvelope

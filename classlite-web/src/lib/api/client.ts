@@ -1068,6 +1068,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exercises": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List exercises scoped to caller role, with skill/tag/band filters + pagination (story 4.1 — AC1/AC2/AC8) */
+        get: operations["listExercises"];
+        put?: never;
+        /** Create an exercise — minimal metadata; server sets code + schemaVersion + FR-22-default settings shell (story 4.1 — AC3) */
+        post: operations["createExercise"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exercises/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single exercise incl. full content (story 4.1 — AC6) */
+        get: operations["getExercise"];
+        put?: never;
+        post?: never;
+        /** Soft-delete an exercise (deleted_at stamp; recoverable — Epic 10 restore UI) (story 4.1 — AC5) */
+        delete: operations["deleteExercise"];
+        options?: never;
+        head?: never;
+        /** Update an exercise (metadata + full content replacement); schemaVersion/code immutable; optimistic-concurrency precondition (story 4.1 — AC4) */
+        patch: operations["updateExercise"];
+        trace?: never;
+    };
+    "/api/exercises/{id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate an exercise — clones title "(copy)" + deep-copies content; fresh code + created_by (story 4.1 — AC5) */
+        post: operations["duplicateExercise"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2170,6 +2224,100 @@ export interface components {
         };
         EnvelopeInviteResult: {
             data: components["schemas"]["InviteResult"];
+        };
+        /** @enum {string} */
+        ExerciseSkill: "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary" | "general";
+        Exercise: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            createdBy: string;
+            /** @description Server-generated, immutable EX-<SkillLetter><NNN> (locale-invariant). */
+            code: string;
+            title: string;
+            description: string | null;
+            skill: components["schemas"]["ExerciseSkill"];
+            tags: string[];
+            targetBand: number | null;
+            /** @description Server-authoritative content schema version. The request body cannot set or override it. */
+            schemaVersion: number;
+            sectionCount: number;
+            questionCount: number;
+            /** @description v1 JSONB content shell ({sections, settings}). Opaque at 4.1; Story 4.2 defines the full shape. */
+            content: Record<string, never>;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ExerciseListItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            createdBy: string;
+            code: string;
+            title: string;
+            description: string | null;
+            skill: components["schemas"]["ExerciseSkill"];
+            tags: string[];
+            targetBand: number | null;
+            schemaVersion: number;
+            sectionCount: number;
+            questionCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateExerciseRequest: {
+            title: string;
+            skill: components["schemas"]["ExerciseSkill"];
+            tags?: string[] | null;
+            description?: string | null;
+            targetBand?: number | null;
+        };
+        UpdateExerciseRequest: {
+            title?: string;
+            skill?: components["schemas"]["ExerciseSkill"];
+            tags?: string[] | null;
+            description?: string | null;
+            targetBand?: number | null;
+            /** @description Full-replace v1 content object. Opaque at 4.1. */
+            content?: Record<string, never> | null;
+            /**
+             * Format: date-time
+             * @description Optimistic-concurrency precondition (fallback to the If-Match header).
+             */
+            updatedAt?: string | null;
+        };
+        PaginationMeta: {
+            page: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+        };
+        SkillCount: {
+            skill: components["schemas"]["ExerciseSkill"];
+            count: number;
+        };
+        EnvelopeMetaPaginated: {
+            /** Format: date-time */
+            serverTime: string;
+            pagination: components["schemas"]["PaginationMeta"];
+            /** @description Per-skill totals for the count-tab strip (honors the active tag/band filters; ignores the skill filter). */
+            skillCounts: components["schemas"]["SkillCount"][];
+        };
+        EnvelopeExercise: {
+            data: components["schemas"]["Exercise"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeExerciseList: {
+            data: components["schemas"]["ExerciseListItem"][];
+            meta: components["schemas"]["EnvelopeMetaPaginated"];
         };
     };
     responses: never;
@@ -6383,6 +6531,415 @@ export interface operations {
                 };
             };
             /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listExercises: {
+        parameters: {
+            query?: {
+                /** @description 1-based page number. < 1 or non-integer → 422. */
+                page?: number;
+                /** @description Page size, server-clamped to [1, 100]. < 1 or non-integer → 422. */
+                pageSize?: number;
+                /** @description Skill equality filter. */
+                skill?: "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary" | "general";
+                /** @description Single-tag membership filter (tag = ANY(tags)). */
+                tag?: string;
+                /** @description target_band equality filter. */
+                band?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role-scoped, filtered, paginated list of exercises */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeExerciseList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description page/pageSize/band out of range or non-integer */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExerciseRequest"];
+            };
+        };
+        responses: {
+            /** @description Created exercise (schemaVersion=1, content shell with default settings) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds cap) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error (title, skill, tags, targetBand) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The exercise */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description EXERCISE_NOT_FOUND (absent, soft-deleted, or invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Soft-deleted (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description EXERCISE_NOT_FOUND (absent or already deleted) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateExercise: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The client's last-known updatedAt (ISO-8601). Preferred precondition channel; the request body's updatedAt is the fallback. Missing on the editor path → 428 PRECONDITION_REQUIRED. Stale → 409 CONFLICT. */
+                "If-Match"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateExerciseRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated exercise (schemaVersion + code unchanged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description EXERCISE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT (stale updatedAt precondition — another writer won) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds cap) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PRECONDITION_REQUIRED (editor PATCH omitted the updatedAt precondition) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    duplicateExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The duplicated exercise */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description EXERCISE_NOT_FOUND (absent, soft-deleted, or cross-teacher/cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
             429: {
                 headers: {
                     [name: string]: unknown;

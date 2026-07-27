@@ -42,6 +42,31 @@ func WriteEnvelope(w http.ResponseWriter, status int, clk clock.Clock, data any)
 	}
 }
 
+// PaginationMeta is the Story 4.1 pagination block that lives INSIDE the
+// existing meta envelope (meta.pagination) — the house pattern for paginated
+// lists (Winston: slot in, don't fork a parallel envelope).
+type PaginationMeta struct {
+	Page       int `json:"page"`
+	PageSize   int `json:"pageSize"`
+	Total      int `json:"total"`
+	TotalPages int `json:"totalPages"`
+}
+
+// WriteEnvelopeWithMeta writes a successful {data, meta} response where meta is
+// a caller-supplied object. serverTime is NOT auto-injected here — the caller
+// composes the full meta (so paginated lists can carry serverTime + pagination
+// + any list-specific fields in one object).
+func WriteEnvelopeWithMeta(w http.ResponseWriter, status int, data any, meta any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(struct {
+		Data any `json:"data"`
+		Meta any `json:"meta"`
+	}{Data: data, Meta: meta}); err != nil {
+		slog.Warn("write envelope-with-meta response failed", "error", err)
+	}
+}
+
 // ErrorResponse is the standard error envelope.
 type ErrorResponse struct {
 	Error ErrorBody `json:"error"`

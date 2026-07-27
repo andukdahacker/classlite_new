@@ -281,6 +281,41 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 4.1 — /exercises library. Its own lazy chunk under the AppLayout
+      // group, gated to staff (owner/admin/teacher). Create/edit is a Dialog
+      // (not a /exercises/new child route), so this single boundary covers the
+      // feature — the 4.2 structured editor adds the /exercises/{id}/edit route.
+      // Deny copy uses the owner/admin tuple.
+      {
+        path: '/exercises',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="exercises"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              // Deep import (NOT the barrel) so Rolldown emits a dedicated
+              // `ExerciseLibraryPage-*.js` chunk (students never download it).
+              const { ExerciseLibraryPage } = await import(
+                '@/features/exercises/ExerciseLibraryPage'
+              )
+              return { Component: ExerciseLibraryPage }
+            },
+          },
+        ],
+      },
       // Story 2.7 — bulk student import. Mounted at `/students/import` (a CHILD
       // path), NOT the bare `/students` — Story 7.2 owns `/students` (the s42
       // center-wide list); do not squat the parent. Gated owner/admin (the DB

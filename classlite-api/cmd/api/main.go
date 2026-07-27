@@ -477,6 +477,28 @@ func main() {
 	mux.Handle("POST /api/enrollments", enrollmentChain(enrollmentHandler.Create))
 	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
 
+	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
+	// classChain/sessionChain (role + teacher-scope enforced in-service): List is
+	// role-scoped (owner/admin = all center exercises; teacher = own only); the
+	// {id} endpoints return 404 EXERCISE_NOT_FOUND for cross-teacher access;
+	// student → 403. Delete is SOFT (deleted_at). PATCH carries the optimistic-
+	// concurrency precondition (409 CONFLICT / 428 PRECONDITION_REQUIRED).
+	exerciseSvc := service.NewExerciseService(pool, auditSvc, clock.RealClock{})
+	exerciseHandler := handler.NewExerciseHandler(exerciseSvc, clock.RealClock{})
+	exerciseChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("GET /api/exercises", exerciseChain(exerciseHandler.List))
+	mux.Handle("POST /api/exercises", exerciseChain(exerciseHandler.Create))
+	mux.Handle("GET /api/exercises/{id}", exerciseChain(exerciseHandler.Get))
+	mux.Handle("PATCH /api/exercises/{id}", exerciseChain(exerciseHandler.Update))
+	mux.Handle("DELETE /api/exercises/{id}", exerciseChain(exerciseHandler.Delete))
+	mux.Handle("POST /api/exercises/{id}/duplicate", exerciseChain(exerciseHandler.Duplicate))
+
 	// Story 2.7 — bulk student import (owner/admin only, DB role re-validated in
 	// the service on confirm). Shares the settingsInviteChain (RequireRole gate +
 	// rate limit). Server-side parse reads the uploaded CSV/XLSX off R2 via the
