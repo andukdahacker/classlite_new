@@ -777,6 +777,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a session's notes (story 3.5 — AC3) */
+        get: operations["listSessionNotes"];
+        put?: never;
+        /** Add a note to a session (story 3.5 — AC3) */
+        post: operations["createSessionNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/notes/{noteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a session note (story 3.5 — AC3) */
+        delete: operations["deleteSessionNote"];
+        options?: never;
+        head?: never;
+        /** Edit a session note (story 3.5 — AC3) */
+        patch: operations["updateSessionNote"];
+        trace?: never;
+    };
+    "/api/sessions/{id}/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a session's materials (story 3.5 — AC4) */
+        get: operations["listSessionMaterials"];
+        put?: never;
+        /** Add a link material to a session (story 3.5 — AC4) */
+        post: operations["createSessionMaterial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/materials/{materialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a session material (story 3.5 — AC4) */
+        delete: operations["deleteSessionMaterial"];
+        options?: never;
+        head?: never;
+        /** Edit a session material (story 3.5 — AC4) */
+        patch: operations["updateSessionMaterial"];
+        trace?: never;
+    };
+    "/api/sessions/{id}/exercises": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a session's exercises (story 3.5 — AC5) */
+        get: operations["listSessionExercises"];
+        put?: never;
+        /** Add an exercise to a session (story 3.5 — AC5) */
+        post: operations["createSessionExercise"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/exercises/{exerciseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a session exercise (story 3.5 — AC5) */
+        delete: operations["deleteSessionExercise"];
+        options?: never;
+        head?: never;
+        /** Edit a session exercise (story 3.5 — AC5) */
+        patch: operations["updateSessionExercise"];
+        trace?: never;
+    };
     "/api/centers/{id}/integrations/google-meet/authorize": {
         parameters: {
             query?: never;
@@ -1724,6 +1832,121 @@ export interface components {
         };
         EnvelopeCreateSessionResult: {
             data: components["schemas"]["CreateSessionResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        SessionNote: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            sessionId: string;
+            body: string;
+            /** Format: uuid */
+            authorId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @enum {string} */
+        SessionMaterialKind: "link";
+        SessionMaterial: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            sessionId: string;
+            title: string;
+            url: string;
+            kind: components["schemas"]["SessionMaterialKind"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SessionExercise: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            sessionId: string;
+            title: string;
+            instructions: string | null;
+            /**
+             * Format: uri
+             * @description When present, must be an absolute http or https URL (server rejects other schemes with 422).
+             */
+            link: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateSessionNoteRequest: {
+            body: string;
+        };
+        UpdateSessionNoteRequest: {
+            body: string;
+        };
+        CreateSessionMaterialRequest: {
+            title: string;
+            /**
+             * Format: uri
+             * @description Must be an absolute http or https URL (server rejects other schemes with 422).
+             */
+            url: string;
+        };
+        UpdateSessionMaterialRequest: {
+            title: string;
+            /**
+             * Format: uri
+             * @description Must be an absolute http or https URL (server rejects other schemes with 422).
+             */
+            url: string;
+        };
+        CreateSessionExerciseRequest: {
+            title: string;
+            instructions?: string | null;
+            /**
+             * Format: uri
+             * @description When present, must be an absolute http or https URL (server rejects other schemes with 422).
+             */
+            link?: string | null;
+        };
+        UpdateSessionExerciseRequest: {
+            title: string;
+            instructions?: string | null;
+            /**
+             * Format: uri
+             * @description When present, must be an absolute http or https URL (server rejects other schemes with 422).
+             */
+            link?: string | null;
+        };
+        EnvelopeSessionNote: {
+            data: components["schemas"]["SessionNote"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionNoteList: {
+            data: components["schemas"]["SessionNote"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionMaterial: {
+            data: components["schemas"]["SessionMaterial"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionMaterialList: {
+            data: components["schemas"]["SessionMaterial"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionExercise: {
+            data: components["schemas"]["SessionExercise"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeSessionExerciseList: {
+            data: components["schemas"]["SessionExercise"][];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         /** @enum {string} */
@@ -4727,6 +4950,726 @@ export interface operations {
             };
             /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listSessionNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session's notes (chronological) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionNoteList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createSessionNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description The created note */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionNote"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (empty body) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteSessionNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_NOTE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateSessionNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated note */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionNote"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_NOTE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (empty body) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listSessionMaterials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session's materials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionMaterialList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createSessionMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionMaterialRequest"];
+            };
+        };
+        responses: {
+            /** @description The created material */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionMaterial"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing title/url) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteSessionMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                materialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_MATERIAL_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateSessionMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                materialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionMaterialRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionMaterial"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_MATERIAL_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing title/url or non-http(s) url) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listSessionExercises: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session's exercises */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionExerciseList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createSessionExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionExerciseRequest"];
+            };
+        };
+        responses: {
+            /** @description The created exercise */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing title) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteSessionExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                exerciseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_EXERCISE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateSessionExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                exerciseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionExerciseRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated exercise */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSessionExercise"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND / SESSION_EXERCISE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds 16 KiB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing title or non-http(s) link) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

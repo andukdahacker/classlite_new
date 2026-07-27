@@ -170,6 +170,8 @@ export const STORY_1D_3_KEYS = [
   'sidebar.owner.knowledgeHub',
   'sidebar.owner.archive',
   'sidebar.owner.settings',
+  // Story 2.7 — import-students nav entry (sidebar namespace is 1D-owned).
+  'sidebar.owner.importStudents',
 
   // Sidebar — Admin nav (Owner MINUS Settings)
   'sidebar.admin.dashboard',
@@ -180,6 +182,8 @@ export const STORY_1D_3_KEYS = [
   'sidebar.admin.inbox',
   'sidebar.admin.knowledgeHub',
   'sidebar.admin.archive',
+  // Story 2.7 — import-students nav entry.
+  'sidebar.admin.importStudents',
 
   // Sidebar — Teacher nav
   'sidebar.teacher.dashboard',
@@ -1920,5 +1924,68 @@ describe('Story 3.4 i18n parity', () => {
       ALLOWED_PREFIXES_3_4.some((p) => key.startsWith(p)) ||
       CROSS_PREFIX_KEYS_3_4.has(key)
     expect(ok).toBe(true)
+  })
+})
+
+const STORY_3_5_KEYS = [
+  'session.detail.loading',
+  'session.detail.error',
+  'session.detail.retry',
+  'session.detail.notFound.headline',
+  'session.detail.notFound.body',
+  'session.detail.notFound.backCta',
+  'session.detail.head.cancelled',
+  'session.detail.head.recurrence',
+  'session.detail.actions.title',
+  'session.detail.actions.edit',
+  'session.detail.content.loadError',
+  'session.detail.content.retry',
+  'session.detail.content.save',
+  'session.detail.content.cancel',
+  'session.detail.content.edit',
+  'session.detail.content.delete',
+  'session.detail.content.saveError',
+  'session.detail.content.saveErrorValidation',
+  'session.detail.content.deleteError',
+  'session.detail.content.deleted',
+  'session.detail.content.undo',
+  'session.notes.title',
+  'session.notes.empty',
+  'session.notes.add',
+  'session.notes.field.body',
+  'session.notes.field.bodyPlaceholder',
+  'session.materials.title',
+  'session.materials.empty',
+  'session.materials.add',
+  'session.materials.field.title',
+  'session.materials.field.titlePlaceholder',
+  'session.materials.field.url',
+  'session.materials.field.urlPlaceholder',
+  'session.exercises.title',
+  'session.exercises.empty',
+  'session.exercises.add',
+  'session.exercises.field.title',
+  'session.exercises.field.titlePlaceholder',
+  'session.exercises.field.instructions',
+  'session.exercises.field.instructionsPlaceholder',
+  'session.exercises.field.link',
+  'session.exercises.field.linkPlaceholder',
+  'session.attendance.title',
+  'session.attendance.comingSoon',
+] as const
+
+describe('Story 3.5 i18n parity', () => {
+  test('every Story 3.5 session key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_5_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.5 keys', () => {
+    assertI18nInterpolationParity(STORY_3_5_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_3_5 = ['session.'] as const
+
+  test.each(STORY_3_5_KEYS)('%s belongs to a 3.5 allowed prefix', (key) => {
+    expect(ALLOWED_PREFIXES_3_5.some((p) => key.startsWith(p))).toBe(true)
   })
 })

@@ -2290,6 +2290,593 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 3.5 — Session content (notes/materials/exercises) ====================
+  # 9 endpoints on the sessionChain. Role + tenant + teacher-scope enforced
+  # in-service (student → 403; cross-teacher / cross-tenant session → 404).
+  # Content is addable on past AND cancelled sessions (no time/status gate).
+  /api/sessions/{id}/notes:
+    get:
+      operationId: listSessionNotes
+      summary: List a session's notes (story 3.5 — AC3)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session's notes (chronological)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionNoteList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createSessionNote
+      summary: Add a note to a session (story 3.5 — AC3)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionNoteRequest'
+      responses:
+        "201":
+          description: The created note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionNote'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/sessions/{id}/notes/{noteId}:
+    patch:
+      operationId: updateSessionNote
+      summary: Edit a session note (story 3.5 — AC3)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionNoteRequest'
+      responses:
+        "200":
+          description: The updated note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionNote'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_NOTE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteSessionNote
+      summary: Delete a session note (story 3.5 — AC3)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_NOTE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/sessions/{id}/materials:
+    get:
+      operationId: listSessionMaterials
+      summary: List a session's materials (story 3.5 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session's materials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionMaterialList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createSessionMaterial
+      summary: Add a link material to a session (story 3.5 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionMaterialRequest'
+      responses:
+        "201":
+          description: The created material
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionMaterial'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing title/url)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/sessions/{id}/materials/{materialId}:
+    patch:
+      operationId: updateSessionMaterial
+      summary: Edit a session material (story 3.5 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: materialId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionMaterialRequest'
+      responses:
+        "200":
+          description: The updated material
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionMaterial'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_MATERIAL_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing title/url or non-http(s) url)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteSessionMaterial
+      summary: Delete a session material (story 3.5 — AC4)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: materialId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_MATERIAL_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/sessions/{id}/exercises:
+    get:
+      operationId: listSessionExercises
+      summary: List a session's exercises (story 3.5 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session's exercises
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionExerciseList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createSessionExercise
+      summary: Add an exercise to a session (story 3.5 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionExerciseRequest'
+      responses:
+        "201":
+          description: The created exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing title)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/sessions/{id}/exercises/{exerciseId}:
+    patch:
+      operationId: updateSessionExercise
+      summary: Edit a session exercise (story 3.5 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionExerciseRequest'
+      responses:
+        "200":
+          description: The updated exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionExercise'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_EXERCISE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds 16 KiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing title or non-http(s) link)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteSessionExercise
+      summary: Delete a session exercise (story 3.5 — AC5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND / SESSION_EXERCISE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5c — Google Meet OAuth integration ====================
   # 3 endpoints per AC9. Authorize + Disconnect ride the shared settingsChain
   # (Owner-only). Callback rides oauthCallbackChain — same middleware minus
@@ -4496,6 +5083,231 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/CreateSessionResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 3.5 — Session content ----------------
+    # Notes, materials, and exercises hang off a session. Each carries its own
+    # denormalized centerId (RLS anchor). All fields explicit + nulls not
+    # omitted (GO-5). Content is addable on past AND cancelled sessions.
+    SessionNote:
+      type: object
+      required: [id, centerId, sessionId, body, authorId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        body:
+          type: string
+        authorId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SessionMaterialKind:
+      type: string
+      # 'link' only in v1 — R2 file upload is finalized in a later story.
+      enum: [link]
+
+    SessionMaterial:
+      type: object
+      required: [id, centerId, sessionId, title, url, kind, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        url:
+          type: string
+        kind:
+          $ref: '#/components/schemas/SessionMaterialKind'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SessionExercise:
+      type: object
+      required: [id, centerId, sessionId, title, instructions, link, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        instructions:
+          type: string
+          nullable: true
+        link:
+          type: string
+          nullable: true
+          format: uri
+          description: When present, must be an absolute http or https URL (server rejects other schemes with 422).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateSessionNoteRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+
+    UpdateSessionNoteRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+
+    CreateSessionMaterialRequest:
+      type: object
+      required: [title, url]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          minLength: 1
+          format: uri
+          description: Must be an absolute http or https URL (server rejects other schemes with 422).
+
+    UpdateSessionMaterialRequest:
+      type: object
+      required: [title, url]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          minLength: 1
+          format: uri
+          description: Must be an absolute http or https URL (server rejects other schemes with 422).
+
+    CreateSessionExerciseRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        instructions:
+          type: string
+          nullable: true
+        link:
+          type: string
+          nullable: true
+          format: uri
+          description: When present, must be an absolute http or https URL (server rejects other schemes with 422).
+
+    UpdateSessionExerciseRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        instructions:
+          type: string
+          nullable: true
+        link:
+          type: string
+          nullable: true
+          format: uri
+          description: When present, must be an absolute http or https URL (server rejects other schemes with 422).
+
+    EnvelopeSessionNote:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionNote'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionNoteList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionNote'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionMaterial:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionMaterial'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionMaterialList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionMaterial'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionExercise:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionExercise'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeSessionExerciseList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionExercise'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

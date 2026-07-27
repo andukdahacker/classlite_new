@@ -7,7 +7,7 @@
  * touched here.
  */
 import { type ReactElement } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -65,18 +65,25 @@ export default function SessionsTab(): ReactElement {
     <section data-testid="class-tab-sessions-list" aria-label={t('classes.detail.sessions.title')}>
       <ul className="flex flex-col divide-y divide-slate-100">
         {sessions.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-3 py-3">
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-slate-800">
-                {formatSessionDateTime(s.startsAt, i18n.language)}
-              </span>
-              {s.topic && <span className="text-xs text-slate-500">{s.topic}</span>}
-            </div>
-            {s.status === 'cancelled' && (
-              <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
-                {t('schedule.block.cancelledPill')}
-              </span>
-            )}
+          <li key={s.id}>
+            {/* Story 3.5 — row navigates to the session detail page (s12). */}
+            <Link
+              to={`/sessions/${s.id}`}
+              data-testid="class-tab-session-row"
+              className="flex items-center justify-between gap-3 rounded-md py-3 hover:bg-slate-50"
+            >
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-slate-800">
+                  {formatSessionDateTime(s.startsAt, i18n.language)}
+                </span>
+                {s.topic && <span className="text-xs text-slate-500">{s.topic}</span>}
+              </div>
+              {s.status === 'cancelled' && (
+                <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                  {t('schedule.block.cancelledPill')}
+                </span>
+              )}
+            </Link>
           </li>
         ))}
       </ul>

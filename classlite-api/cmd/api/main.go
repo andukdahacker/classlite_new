@@ -442,6 +442,25 @@ func main() {
 	mux.Handle("DELETE /api/sessions/{id}", sessionChain(sessionHandler.Delete))
 	mux.Handle("POST /api/sessions/{id}/cancel", sessionChain(sessionHandler.Cancel))
 
+	// Story 3.5 — Session content (notes/materials/exercises, 12 routes —
+	// list/create/update/delete each — on the same sessionChain). Role +
+	// tenant + teacher-scope enforced in-service.
+	// Content has no now-floor: addable on past AND cancelled sessions.
+	sessionContentSvc := service.NewSessionContentService(pool, auditSvc)
+	sessionContentHandler := handler.NewSessionContentHandler(sessionContentSvc, clock.RealClock{})
+	mux.Handle("GET /api/sessions/{id}/notes", sessionChain(sessionContentHandler.ListNotes))
+	mux.Handle("POST /api/sessions/{id}/notes", sessionChain(sessionContentHandler.CreateNote))
+	mux.Handle("PATCH /api/sessions/{id}/notes/{noteId}", sessionChain(sessionContentHandler.UpdateNote))
+	mux.Handle("DELETE /api/sessions/{id}/notes/{noteId}", sessionChain(sessionContentHandler.DeleteNote))
+	mux.Handle("GET /api/sessions/{id}/materials", sessionChain(sessionContentHandler.ListMaterials))
+	mux.Handle("POST /api/sessions/{id}/materials", sessionChain(sessionContentHandler.CreateMaterial))
+	mux.Handle("PATCH /api/sessions/{id}/materials/{materialId}", sessionChain(sessionContentHandler.UpdateMaterial))
+	mux.Handle("DELETE /api/sessions/{id}/materials/{materialId}", sessionChain(sessionContentHandler.DeleteMaterial))
+	mux.Handle("GET /api/sessions/{id}/exercises", sessionChain(sessionContentHandler.ListExercises))
+	mux.Handle("POST /api/sessions/{id}/exercises", sessionChain(sessionContentHandler.CreateExercise))
+	mux.Handle("PATCH /api/sessions/{id}/exercises/{exerciseId}", sessionChain(sessionContentHandler.UpdateExercise))
+	mux.Handle("DELETE /api/sessions/{id}/exercises/{exerciseId}", sessionChain(sessionContentHandler.DeleteExercise))
+
 	// Story 3.4.5 — Enrollment linkage (2 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): Create
 	// is Admin/Owner only (DB-revalidated); the roster read is teacher-scoped

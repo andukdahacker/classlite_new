@@ -12,7 +12,7 @@ scope_decision: "SPLIT — attendance recording deferred to 3.5b (which depends 
 
 # Story 3.5: Session Detail & Content Management
 
-Status: ready-for-dev
+Status: done
 
 ## ⚠️ Scope banner — read first
 
@@ -82,62 +82,106 @@ Adapted from `epic-03.md` Story 3.5 for the split. Original AC IDs preserved for
 
 ### Backend (classlite-api)
 
-- [ ] **T1 — Migrations for the 3 content tables (AC3–AC6)**
-  - [ ] Create migration pair `{ts}_create_session_content.up.sql` / `.down.sql` (single migration for all three, or three pairs — engineer's call; check `ls migrations/ | tail -5` for next timestamp after `20260721120000`).
-  - [ ] `session_notes`: `id`, `center_id` NOT NULL REFERENCES centers(id) ON DELETE CASCADE, `session_id` NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, `body text NOT NULL`, `author_id uuid REFERENCES users(id)`, `created_at`, `updated_at`.
-  - [ ] `session_materials`: same tenant/session FKs + `title text NOT NULL`, `url text NOT NULL`, `kind text NOT NULL DEFAULT 'link' CHECK (kind IN ('link'))` (room for `'file'` later), `created_at`, `updated_at`.
-  - [ ] `session_exercises`: same tenant/session FKs + `title text NOT NULL`, `instructions text`, `link text`, `created_at`, `updated_at`.
-  - [ ] Each table: `ENABLE`+`FORCE ROW LEVEL SECURITY` + the **exact 4-policy grid** from `20260721120000_create_sessions.up.sql` (SELECT/INSERT/UPDATE/DELETE, `center_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`). **Single composite index `idx_{table}_center_session ON (center_id, session_id)`** (serves the RLS predicate + the `session_id` filter in one index — Winston, party-mode; not two single-column indexes). Each table carries its **own** `center_id` column (denormalized from the parent session) — the RLS grid and the null-guard tests assume a local `center_id`, not a join to `sessions`.
-  - [ ] `.down.sql` exactly reverses (DROP POLICY → DROP TABLE), reverse order.
-  - [ ] Run `scripts/migrate.sh` (never raw psql — WF-2).
-- [ ] **T2 — sqlc queries (AC3–AC6)**
-  - [ ] Add `internal/store/queries/session_content.sql` (mirror `sessions.sql` conventions: `-- name: X :one/:many/:exec`, `sqlc.arg`/`sqlc.narg`, RLS handles `center_id` — filter on `session_id`). Queries: List{Notes,Materials,Exercises}BySession, Create*, Update{Note,Material,Exercise}, Delete* (each `:exec` or `:one`).
-  - [ ] Insert sets `center_id` directly from `tc.CenterID` (not a trigger).
-- [ ] **T3 — Service layer (AC3–AC7)**
-  - [ ] `internal/service/session_content.go` — methods on `*SessionService` (or a new `SessionContentService` sharing `AuthDB`+`AuditLogger`+`clock`). Reuse the tenant-tx ceremony (`readInTenantTx`/`mutateInTenantTx`), `assertClassRole(tc)` (owner/admin/teacher else 403 `INSUFFICIENT_ROLE`), and `assertSessionTeacherScope` (cross-teacher → 404). Load parent session via `LockSession`/`GetSessionByID` to derive `class_id`/`center_id` for the scope gate.
-  - [ ] **No `starts_at >= now` floor** on content mutations (unlike 3.4 scheduling) — content is addable post-session.
-  - [ ] Audit each mutation via `AuditService.LogWithinTx` (entityType `"session_note"`/`"session_material"`/`"session_exercise"`).
-- [ ] **T4 — api.yaml + handler + routes (AC3–AC7)**
-  - [ ] Add to `api.yaml`: `SessionNote`, `SessionMaterial`, `SessionExercise` schemas (explicit nulls, camelCase), their create/update request bodies, and `Envelope*`/`EnvelopeList*` wrappers. **Do NOT modify** the existing `SessionDetail` schema (`api.yaml:4116`, session+series — consumed by 3.4's `useSession`); the content collections load from **their own endpoints** (independent caching, per epic-3.2 convention).
-  - [ ] Endpoints on the existing `sessionChain` (`cmd/api/main.go:438-443`): `GET/POST /api/sessions/{id}/notes`, `PATCH/DELETE /api/sessions/{id}/notes/{noteId}`; same grid for `/materials` and `/exercises`.
-  - [ ] `internal/handler/session_content_handler.go` — methods returning `error`, `{data,meta}` envelope via `WriteEnvelope`, path IDs via `parseSettingsPathID`, strict body decode (`maxSessionBodyBytes`). Reuse typed errors (`model.ValidationError`→422, `NotFoundError`→404 code `SESSION_NOT_FOUND`/`SESSION_NOTE_NOT_FOUND` etc., `service.ForbiddenError`→403). Register new error codes in the mapper if new HTTP semantics are needed.
-  - [ ] Run `scripts/codegen.sh` (LAST — regenerates sqlc + `client.ts`).
-- [ ] **T5 — Backend tests (AC6, TEST-BE-1..4)** — *Murat's minimum bar, party-mode 2026-07-22. Prereq: add ~3 raw content-row inserters (`insertSessionNoteRaw`/`…MaterialRaw`/`…ExerciseRaw`, ~10 lines each mirroring `insertSessionRaw`) — the 3 new tables have no fixture inserter yet.*
-  - [ ] **RLS grid ×3 tables (mandatory green regression clones)** — clone the Pattern-1..6 grid from `sessions_rls_test.go:175-216` + INSERT-rejection from `audit_logs_rls_test.go:125`, using the existing `resetTenantContext` / `resetTenantContextToDefault` helpers (`adversarial_test.go:20`/`:29` — they already exist; the null-guard path is NOT new). Per table: cross-tenant **read** = 0 rows; cross-tenant **write** (UPDATE *and* DELETE) affects 0 rows *verified by re-fetch as owning tenant* (the "UPDATE-0-rows-is-not-an-error" Postgres trap); **null/empty-tenant** guard = SELECT yields 0 + INSERT rejected by WITH CHECK.
-  - [ ] **Explicit cross-tenant FK case (Winston):** tenant A inserts a note whose `session_id` points at tenant B's session → expect **404** (via `assertSessionTeacherScope`), not a leaked/orphan row. The FK alone does not close this — the service-layer parent-load under tenant context does.
-  - [ ] **Same-tenant cross-session isolation:** seed two sessions under one tenant (`insertSessionRaw`), write content on session X, list session Y → assert empty. This is WHERE-clause correctness, **not** RLS — RLS won't catch it.
-  - [ ] **FK cascade:** delete parent session → assert its notes/materials/exercises rows are gone (guards `ON DELETE CASCADE`; nothing else has a consumer to catch a broken cascade).
-  - [ ] **Status/temporal non-gate:** add content to a session whose `starts_at` is 48h in the **past** → 200; add content to a **`cancelled`** session → 200. Regression guard for the "no now_floor / status-agnostic on content" decision (T3 reuses 3.4's scheduling ceremony — do not inherit its floor).
-  - [ ] Handler integration via `NewSessionTestServerBareMux` + `SignAccessTokenForRole` (budget a `seedSecondTeacherClass` for the 404 case — needs a 2nd class + teacher identity, same center): teacher CRUD own session; cross-teacher → 404; student → 403; full `{data,meta}` + `{error:{code,message,requestId}}` envelope. Mind the fixture-ordering trap — `CreateCenterMember` after `TenantContext`; reference `sessions_rls_test.go:179-185`.
-  - [ ] **Contract gate (Murat — Pact is deliberately unused; spec-diff is the only net):** scoped `git diff` proving the `SessionDetail` schema block in `api.yaml` is **byte-identical** post-change, AND 3.4's existing `useSession` FE tests stay green after `codegen.sh` (guards a shared-`$ref` collision reshaping what 3.4 depends on).
-  - [ ] `go test ./... && go vet ./... && gofmt -l`.
+- [x] **T1 — Migrations for the 3 content tables (AC3–AC6)**
+  - [x] Create migration pair `{ts}_create_session_content.up.sql` / `.down.sql` (single migration for all three, or three pairs — engineer's call; check `ls migrations/ | tail -5` for next timestamp after `20260721120000`).
+  - [x] `session_notes`: `id`, `center_id` NOT NULL REFERENCES centers(id) ON DELETE CASCADE, `session_id` NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, `body text NOT NULL`, `author_id uuid REFERENCES users(id)`, `created_at`, `updated_at`.
+  - [x] `session_materials`: same tenant/session FKs + `title text NOT NULL`, `url text NOT NULL`, `kind text NOT NULL DEFAULT 'link' CHECK (kind IN ('link'))` (room for `'file'` later), `created_at`, `updated_at`.
+  - [x] `session_exercises`: same tenant/session FKs + `title text NOT NULL`, `instructions text`, `link text`, `created_at`, `updated_at`.
+  - [x] Each table: `ENABLE`+`FORCE ROW LEVEL SECURITY` + the **exact 4-policy grid** from `20260721120000_create_sessions.up.sql` (SELECT/INSERT/UPDATE/DELETE, `center_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`). **Single composite index `idx_{table}_center_session ON (center_id, session_id)`** (serves the RLS predicate + the `session_id` filter in one index — Winston, party-mode; not two single-column indexes). Each table carries its **own** `center_id` column (denormalized from the parent session) — the RLS grid and the null-guard tests assume a local `center_id`, not a join to `sessions`.
+  - [x] `.down.sql` exactly reverses (DROP POLICY → DROP TABLE), reverse order.
+  - [x] Run `scripts/migrate.sh` (never raw psql — WF-2).
+- [x] **T2 — sqlc queries (AC3–AC6)**
+  - [x] Add `internal/store/queries/session_content.sql` (mirror `sessions.sql` conventions: `-- name: X :one/:many/:exec`, `sqlc.arg`/`sqlc.narg`, RLS handles `center_id` — filter on `session_id`). Queries: List{Notes,Materials,Exercises}BySession, Create*, Update{Note,Material,Exercise}, Delete* (each `:exec` or `:one`).
+  - [x] Insert sets `center_id` directly from `tc.CenterID` (not a trigger).
+- [x] **T3 — Service layer (AC3–AC7)**
+  - [x] `internal/service/session_content.go` — methods on `*SessionService` (or a new `SessionContentService` sharing `AuthDB`+`AuditLogger`+`clock`). Reuse the tenant-tx ceremony (`readInTenantTx`/`mutateInTenantTx`), `assertClassRole(tc)` (owner/admin/teacher else 403 `INSUFFICIENT_ROLE`), and `assertSessionTeacherScope` (cross-teacher → 404). Load parent session via `LockSession`/`GetSessionByID` to derive `class_id`/`center_id` for the scope gate.
+  - [x] **No `starts_at >= now` floor** on content mutations (unlike 3.4 scheduling) — content is addable post-session.
+  - [x] Audit each mutation via `AuditService.LogWithinTx` (entityType `"session_note"`/`"session_material"`/`"session_exercise"`).
+- [x] **T4 — api.yaml + handler + routes (AC3–AC7)**
+  - [x] Add to `api.yaml`: `SessionNote`, `SessionMaterial`, `SessionExercise` schemas (explicit nulls, camelCase), their create/update request bodies, and `Envelope*`/`EnvelopeList*` wrappers. **Do NOT modify** the existing `SessionDetail` schema (`api.yaml:4116`, session+series — consumed by 3.4's `useSession`); the content collections load from **their own endpoints** (independent caching, per epic-3.2 convention).
+  - [x] Endpoints on the existing `sessionChain` (`cmd/api/main.go:438-443`): `GET/POST /api/sessions/{id}/notes`, `PATCH/DELETE /api/sessions/{id}/notes/{noteId}`; same grid for `/materials` and `/exercises`.
+  - [x] `internal/handler/session_content_handler.go` — methods returning `error`, `{data,meta}` envelope via `WriteEnvelope`, path IDs via `parseSettingsPathID`, strict body decode (`maxSessionBodyBytes`). Reuse typed errors (`model.ValidationError`→422, `NotFoundError`→404 code `SESSION_NOT_FOUND`/`SESSION_NOTE_NOT_FOUND` etc., `service.ForbiddenError`→403). Register new error codes in the mapper if new HTTP semantics are needed.
+  - [x] Run `scripts/codegen.sh` (LAST — regenerates sqlc + `client.ts`).
+- [x] **T5 — Backend tests (AC6, TEST-BE-1..4)** — *Murat's minimum bar, party-mode 2026-07-22. Prereq: add ~3 raw content-row inserters (`insertSessionNoteRaw`/`…MaterialRaw`/`…ExerciseRaw`, ~10 lines each mirroring `insertSessionRaw`) — the 3 new tables have no fixture inserter yet.*
+  - [x] **RLS grid ×3 tables (mandatory green regression clones)** — clone the Pattern-1..6 grid from `sessions_rls_test.go:175-216` + INSERT-rejection from `audit_logs_rls_test.go:125`, using the existing `resetTenantContext` / `resetTenantContextToDefault` helpers (`adversarial_test.go:20`/`:29` — they already exist; the null-guard path is NOT new). Per table: cross-tenant **read** = 0 rows; cross-tenant **write** (UPDATE *and* DELETE) affects 0 rows *verified by re-fetch as owning tenant* (the "UPDATE-0-rows-is-not-an-error" Postgres trap); **null/empty-tenant** guard = SELECT yields 0 + INSERT rejected by WITH CHECK.
+  - [x] **Explicit cross-tenant FK case (Winston):** tenant A inserts a note whose `session_id` points at tenant B's session → expect **404** (via `assertSessionTeacherScope`), not a leaked/orphan row. The FK alone does not close this — the service-layer parent-load under tenant context does.
+  - [x] **Same-tenant cross-session isolation:** seed two sessions under one tenant (`insertSessionRaw`), write content on session X, list session Y → assert empty. This is WHERE-clause correctness, **not** RLS — RLS won't catch it.
+  - [x] **FK cascade:** delete parent session → assert its notes/materials/exercises rows are gone (guards `ON DELETE CASCADE`; nothing else has a consumer to catch a broken cascade).
+  - [x] **Status/temporal non-gate:** add content to a session whose `starts_at` is 48h in the **past** → 200; add content to a **`cancelled`** session → 200. Regression guard for the "no now_floor / status-agnostic on content" decision (T3 reuses 3.4's scheduling ceremony — do not inherit its floor).
+  - [x] Handler integration via `NewSessionTestServerBareMux` + `SignAccessTokenForRole` (budget a `seedSecondTeacherClass` for the 404 case — needs a 2nd class + teacher identity, same center): teacher CRUD own session; cross-teacher → 404; student → 403; full `{data,meta}` + `{error:{code,message,requestId}}` envelope. Mind the fixture-ordering trap — `CreateCenterMember` after `TenantContext`; reference `sessions_rls_test.go:179-185`.
+  - [x] **Contract gate (Murat — Pact is deliberately unused; spec-diff is the only net):** scoped `git diff` proving the `SessionDetail` schema block in `api.yaml` is **byte-identical** post-change, AND 3.4's existing `useSession` FE tests stay green after `codegen.sh` (guards a shared-`$ref` collision reshaping what 3.4 depends on).
+  - [x] `go test ./... && go vet ./... && gofmt -l`.
 
 ### Frontend (classlite-web)
 
-- [ ] **T6 — Route + page shell (AC1, AC7, AC8)**
-  - [ ] Add `/sessions/:id` to `src/routes.tsx` under `AppLayout`, deep-imported for its own Rolldown chunk, wrapped in `RouteRoleGate allowedRoles={['owner','admin','teacher']} sectionNameKey="schedule"` (mirror the `/schedule` route ~453-480). Do NOT re-export the page from the `schedule` barrel (chunk isolation).
-  - [ ] `SessionDetailPage` with the full trilogy (model on `ClassDetailLayout.tsx`: `DetailSkeleton` / `NotFoundCard` 404 / `role="alert"` error). Session info reads from the existing `useSession(id)` (`src/features/schedule/api/useSessions.ts`) — no new session endpoint.
-  - [ ] Layout: `DetailHead` + main column + 300–320px right rail with a dashed **Actions card**; recurrence banner when `recurrenceGroupId != null`.
-- [ ] **T7 — Content hooks + optimistic mutations (AC3–AC5, AC8)**
-  - [ ] New `src/features/schedule/api/` (or a new `session-detail` feature) hooks: `useSessionNotes(id)`, `useSessionMaterials(id)`, `useSessionExercises(id)` + create/update/delete mutations. Extend `sessionsKeys` with `notes(id)`/`materials(id)`/`exercises(id)` sub-keys.
-  - [ ] Mutations use the **optimistic triple** (`onMutate` cancel+snapshot+patch / `onError` restore / `onSettled` invalidate) modeled on `src/features/classes/api/useTransitionClassStatus.ts` (FW-2). All calls via `apiFetch` (envelope-unwrapping); types from generated `client.ts`.
-  - [ ] Hand-written Zod schemas per form (no `openapi-zod-client` — it's disabled); `src/features/.../lib/*Schema.ts`.
-- [ ] **T8 — Section components + attendance placeholder (AC1–AC5, AC8)**
-  - [ ] `NoteBox`-based notes section (add/edit/delete), materials list (title+URL add/remove), exercises list (add/remove). Empty/loading/error per section.
-  - [ ] **Attendance section = `ComingSoonPanel`** (reuse `src/features/classes/components/ComingSoonPanel.tsx`) with copy "Attendance recording arrives with student enrollment" — no roster/toggle/bulk-actions.
-  - [ ] Action buttons (edit / cancel) open the existing `SessionModal` (`src/features/schedule/components/SessionModal.tsx`) → 3.4's recurrence-scope flow. Do NOT rebuild the modal.
-- [ ] **T9 — Navigation wiring (AC7)**
-  - [ ] `SessionsTab.tsx` rows link/navigate to `/sessions/{id}`; calendar `onSelectSession` (in `SchedulePage`) navigates to the detail page (decide: detail page vs. keep quick-edit modal — default to detail page per s12 "detail via full-screen push, not modal").
-- [ ] **T10 — i18n + FE tests (AC8)**
-  - [ ] Add `STORY_3_5_KEYS as const` (namespace `session.detail.*` / `session.notes.*` / `session.materials.*` / `session.exercises.*`); register in `src/lib/test/__tests__/i18n-parity-coverage.test.ts`; add keys to `en.json` + `vi.json`; run `npm run i18n-parity`.
-  - [ ] Component tests (Vitest + MSW, never mock Query — TEST-FE-1): three-state coverage per section; role-negative (student cannot reach `/sessions/:id`, TEST-FE-6); `assertI18nParity`; axe clean.
-  - [ ] `tsc -b && eslint && vitest && npm run build` (verify the session-detail chunk is isolated, no leak into schedule/dashboard chunks).
+- [x] **T6 — Route + page shell (AC1, AC7, AC8)**
+  - [x] Add `/sessions/:id` to `src/routes.tsx` under `AppLayout`, deep-imported for its own Rolldown chunk, wrapped in `RouteRoleGate allowedRoles={['owner','admin','teacher']} sectionNameKey="schedule"` (mirror the `/schedule` route ~453-480). Do NOT re-export the page from the `schedule` barrel (chunk isolation).
+  - [x] `SessionDetailPage` with the full trilogy (model on `ClassDetailLayout.tsx`: `DetailSkeleton` / `NotFoundCard` 404 / `role="alert"` error). Session info reads from the existing `useSession(id)` (`src/features/schedule/api/useSessions.ts`) — no new session endpoint.
+  - [x] Layout: `DetailHead` + main column + 300–320px right rail with a dashed **Actions card**; recurrence banner when `recurrenceGroupId != null`.
+- [x] **T7 — Content hooks + optimistic mutations (AC3–AC5, AC8)**
+  - [x] New `src/features/schedule/api/` (or a new `session-detail` feature) hooks: `useSessionNotes(id)`, `useSessionMaterials(id)`, `useSessionExercises(id)` + create/update/delete mutations. Extend `sessionsKeys` with `notes(id)`/`materials(id)`/`exercises(id)` sub-keys.
+  - [x] Mutations use the **optimistic triple** (`onMutate` cancel+snapshot+patch / `onError` restore / `onSettled` invalidate) modeled on `src/features/classes/api/useTransitionClassStatus.ts` (FW-2). All calls via `apiFetch` (envelope-unwrapping); types from generated `client.ts`.
+  - [x] Hand-written Zod schemas per form (no `openapi-zod-client` — it's disabled); `src/features/.../lib/*Schema.ts`.
+- [x] **T8 — Section components + attendance placeholder (AC1–AC5, AC8)**
+  - [x] `NoteBox`-based notes section (add/edit/delete), materials list (title+URL add/remove), exercises list (add/remove). Empty/loading/error per section.
+  - [x] **Attendance section = `ComingSoonPanel`** (reuse `src/features/classes/components/ComingSoonPanel.tsx`) with copy "Attendance recording arrives with student enrollment" — no roster/toggle/bulk-actions.
+  - [x] Action buttons (edit / cancel) open the existing `SessionModal` (`src/features/schedule/components/SessionModal.tsx`) → 3.4's recurrence-scope flow. Do NOT rebuild the modal.
+- [x] **T9 — Navigation wiring (AC7)**
+  - [x] `SessionsTab.tsx` rows link/navigate to `/sessions/{id}`; calendar `onSelectSession` (in `SchedulePage`) navigates to the detail page (decide: detail page vs. keep quick-edit modal — default to detail page per s12 "detail via full-screen push, not modal").
+- [x] **T10 — i18n + FE tests (AC8)**
+  - [x] Add `STORY_3_5_KEYS as const` (namespace `session.detail.*` / `session.notes.*` / `session.materials.*` / `session.exercises.*`); register in `src/lib/test/__tests__/i18n-parity-coverage.test.ts`; add keys to `en.json` + `vi.json`; run `npm run i18n-parity`.
+  - [x] Component tests (Vitest + MSW, never mock Query — TEST-FE-1): three-state coverage per section; role-negative (student cannot reach `/sessions/:id`, TEST-FE-6); `assertI18nParity`; axe clean.
+  - [x] `tsc -b && eslint && vitest && npm run build` (verify the session-detail chunk is isolated, no leak into schedule/dashboard chunks).
 
 ### Close-out
 
-- [ ] **T11 — Deferred-work + docs**
-  - [ ] Add **FU-3-5-A** to `deferred-work.md`: attendance table + roster + Present/Late/Absent recording + bulk actions → **3.5b**, which **depends on the new Story 3.4.5 "Enrollment Linkage Foundation"** (sequence 3.4.5 → 2.7 un-halted → 3.5b); ended-session Inbox reminder → **Epic 10** (FR-56/59). Reference the original epic-03.md ACs verbatim so 3.5b can restore them. (Story 3.4.5 itself to be created via `/bmad-create-story` — see the party-mode sequencing decision; it is the keystone that also un-halts 2.7 per SEQ-2-7-1.)
-  - [ ] If any external/manual setup is introduced (none expected — no new env var/service), skip `docs/manual-setup.md` (WF-9).
+- [x] **T11 — Deferred-work + docs**
+  - [x] Add **FU-3-5-A** to `deferred-work.md`: attendance table + roster + Present/Late/Absent recording + bulk actions → **3.5b**, which **depends on the new Story 3.4.5 "Enrollment Linkage Foundation"** (sequence 3.4.5 → 2.7 un-halted → 3.5b); ended-session Inbox reminder → **Epic 10** (FR-56/59). Reference the original epic-03.md ACs verbatim so 3.5b can restore them. (Story 3.4.5 itself to be created via `/bmad-create-story` — see the party-mode sequencing decision; it is the keystone that also un-halts 2.7 per SEQ-2-7-1.)
+  - [x] If any external/manual setup is introduced (none expected — no new env var/service), skip `docs/manual-setup.md` (WF-9).
+
+### Review Findings
+
+_Round 1 — `/bmad-code-review 3-5`, Chunk 1 (backend & contract) only. 3 adversarial layers (Blind Hunter, Edge Case Hunter, Acceptance Auditor) at Opus. Frontend chunk pending a follow-up run. Triage: 1 decision-needed, 3 patch, 3 defer, 3 dismissed (verified false-positives)._
+
+**Decision-needed → RESOLVED (Ducdo, keep full-replace, document):**
+
+- [x] [Review][Decision→Defer] Exercise PATCH nulls omitted optionals (`instructions`/`link`) `session_content.sql:69-76` — `UpdateSessionExercise` unconditionally writes both optionals; `PATCH /exercises/{exerciseId}` requires only `title`. **Resolved as full-replace-by-design, not a bug.** Verified Chunk 2 edit form (`ExercisesSection.tsx:100-111`) pre-seeds `defaultValues` from the existing exercise and always resubmits all three fields, so UI-driven edits never drop data. Residual: a non-UI API client sending a partial body would clear omitted optionals — documented as full-replace semantics (CR-3-5-4). No code change. `blind+edge` (Medium → defer-with-note).
+
+**Patch (all APPLIED — Round 1, 2026-07-26):**
+
+- [x] [Review][Patch] No URL scheme validation on material `url` / exercise `link` — APPLIED: added `httpURLField`/`optionalHTTPURL`/`isHTTPURL` helpers (`net/url`) in `session_content_handler.go`; `decodeMaterial` now uses `httpURLField(url)`, `decodeExercise` uses `optionalHTTPURL(link)` — rejects `javascript:`/`data:`/`ftp:`/relative with 422. api.yaml url/link fields gained `format: uri` + description; POST/PATCH 422 descriptions broadened. Tests: `TestSessionContent_Material_RejectsNonHTTPURL_422` (4 bad schemes), `TestSessionContent_Exercise_RejectsNonHTTPLink_422`. Frontend href-sanitization still owed in Chunk 2. `blind+edge+auditor`.
+- [x] [Review][Patch] `413 PAYLOAD_TOO_LARGE` contract drift + no test — APPLIED: added `413` to all three PATCH ops in `api.yaml` (+ codegen regen `client.ts`); test `TestSessionContent_OversizedBody_413` (17 KiB body → 413 `PAYLOAD_TOO_LARGE`). `blind+auditor`.
+- [x] [Review][Patch] Stale "9 endpoints/9 routes" comments vs 12 actual — APPLIED: handler package doc, `main.go:445`, `story_3_5_helpers.go` all corrected to 12 (list/create/update/delete × 3). `auditor`.
+
+_Verification: `go build ./...` + `go vet` clean; handler suite + RLS suite green (3 new tests ran & passed). codegen ran (api.yaml touched → WF-3)._
+
+**Deferred** (logged to `deferred-work.md`):
+
+- [x] [Review][Defer] List endpoints unbounded — no `LIMIT`/pagination on `ListSession{Notes,Materials,Exercises}BySession` — v1-acceptable, matches CR-3-4-5-3 roster-pagination deferral precedent. `blind+edge` (Low).
+- [x] [Review][Defer] SEC-1 — mutating ops gate role on JWT claim (`assertClassRole(tc.Role)`) not DB re-validation — pre-existing codebase-wide pattern (3.4/class-lifecycle identical); teacher-scope IS DB-loaded; residual 15-min stale-role window is the accepted EDGE-2 tradeoff. Not introduced here. `auditor` (Low, pragmatic).
+- [x] [Review][Defer] TEST-BE-4 — no service-layer unit test using the mocked-store seam — business rules currently covered via real-DB handler integration tests; optional coverage add. `auditor` (Low).
+
+**Dismissed** (verified false-positives): `requireOwnerTenant` misleading name (confirmed a pure tenant-context extractor — no owner-gating; shared pre-existing helper from `term_handler.go`, teacher access works); `CreateSessionNote` swallows `tc.UserID` parse error → null author (unreachable — `UserID` is a validated UUID from auth middleware; `author_id` nullable by design); body-decode-before-authz (422/413 before 403/404) (401 enforced pre-handler; residual leak is authenticated-same-tenant only, negligible).
+
+---
+
+_Round 1 — Chunk 2 (frontend), `/bmad-code-review 3-5`, 2026-07-26. Same 3 adversarial layers at Opus. Triage: 1 decision-needed, 5 patch, 3 dismissed. Two findings (href XSS, silent mutation errors) hit all three layers._
+
+**Decision-needed → RESOLVED + APPLIED (Ducdo, 2026-07-26 → undo toast):**
+
+- [x] [Review][Decision→Patch] Delete fires with no confirmation — APPLIED: delete stays optimistic; on success a sonner `toast.success` shows an **Undo** action that re-creates the row (new id/position — content preserved); on failure a `deleteError` toast. `NotesSection`/`MaterialsSection`/`ExercisesSection` `onDelete`. `blind`.
+
+**Patch (all APPLIED — Round 1 Chunk 2, 2026-07-26):**
+
+- [x] [Review][Patch] href XSS scheme guard — APPLIED: `contentSchemas.ts` adds `isHttpUrl` + an `httpUrl` Zod refine; material `url` required-http(s), exercise `link` http(s)-or-empty. Belt-and-suspenders render guard: `MaterialRow`/`ExerciseRow` render a plain `<span>` (not `<a>`) when the stored value isn't http(s), so no `javascript:`/`data:` href is ever emitted. `blind+edge+auditor`.
+- [x] [Review][Patch] Surface mutation errors — APPLIED: `sessionContentApi.ts` `notifyMutationError` maps `err.status===422`→`saveErrorValidation` else `saveError`, `toast.error` via `i18n` in create/update `onError`; delete errors toasted at the row. 5 new `session.detail.content.*` keys in en+vi (+ parity test). `blind+edge+auditor`.
+- [x] [Review][Patch] Optimistic temp-id — APPLIED: `optimistic-${crypto.randomUUID()}`; rows detect `isOptimisticId(id)` and disable edit/delete until persisted (no `/…/optimistic-…` 404). `edge`.
+- [x] [Review][Patch] Focus management — APPLIED: `autoFocus` on the edit field (focus-on-enter); shared `useEditFocusReturn` returns focus to the Edit trigger on save/cancel; add/edit/delete outcomes announced via the sonner toast aria-live region. `edge`.
+- [x] [Review][Patch] Test coverage — APPLIED: NotesSection gains edit-flow + create-error-toast+rollback tests (+ deduped the twin render helpers); new `MaterialsSection.test.tsx` asserts http link renders as `<a>` and a `javascript:` url renders as text (no anchor); `SessionDetailPage.test.tsx` gains a page-level `axe` assertion. `blind+auditor`.
+
+_Verification: `tsc --noEmit` 0 errors; ESLint clean on all 9 touched files; session-detail suite 16/16 (was 11); i18n-parity 722/722; adjacent schedule/SessionsTab suites 17/17 green._
+
+**Dismissed** (verified): dual-QueryClient center/scope derivation (intentional per code comments, test-seeded — not a defect); Actions-card shows only Edit, no visible Cancel (T8 explicitly permits edit/cancel via the reused `SessionModal` — defensible AC1 reading); `AttendancePlaceholder` uses raw `amber-*` utilities not tokens (AC2 mandates amber; no `--cl-amber` token exists — the sole justified off-token spot).
 
 ## Dev Notes
 
@@ -193,16 +237,16 @@ Adapted from `epic-03.md` Story 3.5 for the split. Original AC IDs preserved for
 
 ## Definition of Done
 
-- [ ] All in-scope ACs (AC1, AC3–AC8) met; AC2 shipped as the documented placeholder.
-- [ ] 3 tables live with full 4-policy RLS + cross-tenant read/write isolation tests green.
-- [ ] `GET/POST/PATCH/DELETE` endpoints for notes/materials/exercises on `sessionChain`; teacher-scope (404) + role (403) enforced service-side.
-- [ ] `/sessions/:id` page renders all sections + trilogy; navigation wired from Sessions tab + calendar; students blocked.
-- [ ] Notes/materials/exercises CRUD works end-to-end with optimistic mutations + rollback.
-- [ ] `en.json` + `vi.json` parity green (`STORY_3_5_KEYS` registered); axe clean.
-- [ ] `go test ./... && go vet && gofmt -l` clean; `tsc -b && eslint && vitest && npm run build` clean; session-detail chunk isolated.
-- [ ] `codegen.sh` run last; generated files not hand-edited.
-- [ ] FU-3-5-A added to `deferred-work.md`.
-- [ ] Dev Agent Record + File List captured in the sibling `3-5-...-completion-notes.md` (per bmad-story-conventions.md), not this file.
+- [x] All in-scope ACs (AC1, AC3–AC8) met; AC2 shipped as the documented placeholder.
+- [x] 3 tables live with full 4-policy RLS + cross-tenant read/write isolation tests green.
+- [x] `GET/POST/PATCH/DELETE` endpoints for notes/materials/exercises on `sessionChain`; teacher-scope (404) + role (403) enforced service-side.
+- [x] `/sessions/:id` page renders all sections + trilogy; navigation wired from Sessions tab + calendar; students blocked.
+- [x] Notes/materials/exercises CRUD works end-to-end with optimistic mutations + rollback.
+- [x] `en.json` + `vi.json` parity green (`STORY_3_5_KEYS` registered); axe clean.
+- [x] `go test ./... && go vet && gofmt -l` clean; `tsc -b && eslint && vitest && npm run build` clean; session-detail chunk isolated.
+- [x] `codegen.sh` run last; generated files not hand-edited.
+- [x] FU-3-5-A added to `deferred-work.md`.
+- [x] Dev Agent Record + File List captured in the sibling `3-5-...-completion-notes.md` (per bmad-story-conventions.md), not this file.
 
 ## Out of Scope
 
@@ -219,3 +263,4 @@ Adapted from `epic-03.md` Story 3.5 for the split. Original AC IDs preserved for
 |---|---|
 | 2026-07-22 | Story created (ready-for-dev). Split ruling applied: attendance → 3.5b, Inbox reminder → Epic 10; 3.5 scoped to session detail page + notes/materials/exercises. Renamed "Session Detail & Attendance Recording" → "Session Detail & Content Management" to reflect scope. |
 | 2026-07-22 | Party-mode review amendments (John/Winston/Sally/Murat/Mary/Amelia). AC1 reorder (attendance demoted out of #2 slot); AC2 humanized future-affordance copy; content addable on cancelled sessions (AC3); T1 composite `(center_id, session_id)` index; T5 expanded to Murat's bar (null-guard ×3, cross-tenant FK 404, same-tenant cross-session, FK cascade, past/cancelled non-gate, contract spec-diff gate); WF-8 note corrected (RLS grid mandatory but green-clone, not red-first — helpers pre-exist per Amelia). `session_exercises` rename flagged (not applied). 3.5b now depends on new keystone **Story 3.4.5 Enrollment Linkage Foundation** (3.4.5 → 2.7 → 3.5b). |
+| 2026-07-25 | Green-phase shipped (status → review). All in-scope ACs met: 3 content tables + 4-policy FORCE RLS + composite index (T1); sqlc queries with `(id, session_id)` mutation guard (T2); `SessionContentService` reusing the tenant-tx + teacher-scope ceremony, no now-floor (T3); 9 endpoints on `sessionChain` + additive api.yaml (SessionDetail byte-identical — contract gate green) (T4); backend tests — RLS grid ×3 (36 subtests) + 12 handler integration tests, full backend suite green (T5); `/sessions/:id` page + trilogy + section-frame (T6); generic optimistic content-hook factory (T7); notes/materials/exercises sections with add/edit/delete + amber attendance placeholder (T8); SessionsTab rows + calendar `onSelectSession` navigate to detail (T9); STORY_3_5_KEYS en/vi parity + 3 FE test files (page trilogy + role-negative, NotesSection CRUD, SessionsTab nav), isolated chunk (T10); FU-3-5-A/B/C added (T11). Engineer decisions: kept `session_exercises` name (traceability); AC2 built a dedicated amber `AttendancePlaceholder` (AC2's amber future-affordance requirement governs over the reuse-map's neutral ComingSoonPanel hint). Pre-existing-debt fixes to unblock gates: added required `center` to two login mocks (`handlers.ts`, 5acdb35 debt) + registered orphan `sidebar.*.importStudents` keys (Story 2.7 debt). See sibling completion-notes. |

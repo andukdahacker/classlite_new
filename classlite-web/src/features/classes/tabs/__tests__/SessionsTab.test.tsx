@@ -69,4 +69,12 @@ describe('SessionsTab (lit) — three-state', () => {
     renderTab()
     expect(await screen.findByRole('alert')).toBeInTheDocument()
   })
+
+  // Story 3.5 — each row links to the session detail page (s12).
+  test('each session row links to /sessions/:id', async () => {
+    server.use(http.get('*/api/sessions', () => HttpResponse.json({ data: [sessionRow()], meta: { serverTime: new Date().toISOString() } })))
+    renderTab()
+    const row = await screen.findByTestId('class-tab-session-row')
+    expect(row).toHaveAttribute('href', '/sessions/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  })
 })

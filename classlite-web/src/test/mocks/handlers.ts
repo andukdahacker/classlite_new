@@ -104,6 +104,9 @@ export const handlers = [
       // Story 2.6 (AC2). MSW default: an already-onboarded Owner. Tests
       // that need to seed a different role override this handler.
       role: 'owner',
+      // LoginResult.center is required (Session.center durability, 5acdb35);
+      // null preserves the prior absent-field behavior. Override where needed.
+      center: null,
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },
@@ -125,6 +128,8 @@ export const handlers = [
       // alongside the fresh JWT — matches the api.yaml LoginResult
       // amendment.
       role: 'owner',
+      // LoginResult.center is required (5acdb35); null preserves prior behavior.
+      center: null,
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },

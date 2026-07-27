@@ -7,6 +7,7 @@
  * genuinely free week).
  */
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from 'react'
+import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useRole } from '@/hooks/useRole'
@@ -43,6 +44,7 @@ const NOW_TICK_MS = 60 * 1000
 
 export function SchedulePage(): ReactElement {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
   const role = useRole()
   const session = useSessionSnapshot()
   const locale = i18n.language
@@ -75,7 +77,9 @@ export function SchedulePage(): ReactElement {
     const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     setModal({ open: true, initial: null, prefill: { date, startTime: DEFAULT_CREATE_TIME } })
   }
-  const openEdit = (s: SessionWire) => setModal({ open: true, initial: s, prefill: null })
+  // Story 3.5 — selecting a session navigates to its detail page (s12: "detail
+  // via full-screen push, not modal"), rather than opening the quick-edit modal.
+  const openDetail = (s: SessionWire) => navigate(`/sessions/${s.id}`)
   const closeModal = () => setModal({ open: false, initial: null, prefill: null })
 
   if (sessionsQuery.isError) {
@@ -104,7 +108,7 @@ export function SchedulePage(): ReactElement {
         onViewChange={setView}
         onAnchorChange={setAnchor}
         onClassFilterChange={setClassFilter}
-        onSelectSession={openEdit}
+        onSelectSession={openDetail}
         onNewSession={openCreate}
       />
       {modal.open && (

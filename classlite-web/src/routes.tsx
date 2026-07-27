@@ -511,6 +511,38 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 3.5 — /sessions/:id (s12) session detail. Own lazy chunk under
+      // AppLayout, gated owner/admin/teacher (students never reach it; the
+      // record-level authz is the GET-404-in-page model). Deep-imported so the
+      // detail + content forms do NOT leak into the schedule or entry chunks.
+      {
+        path: '/sessions/:id',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="schedule"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { SessionDetailPage } = await import(
+                '@/features/session-detail/SessionDetailPage'
+              )
+              return { Component: SessionDetailPage }
+            },
+          },
+        ],
+      },
       // Story 3.4 — /my-schedule (s32) student stub. Own tiny chunk (no
       // calendar), gated to students. The real enrolled-class view is Epic 7.
       {
