@@ -314,6 +314,19 @@ const baseRoutes: RouteObject[] = [
               return { Component: ExerciseLibraryPage }
             },
           },
+          {
+            // Story 4.2 — the s16 two-panel structured editor. Its OWN lazy
+            // Rolldown chunk under the same /exercises gate (students never
+            // download it). Deep import (not the barrel) keeps the editor out
+            // of the library chunk.
+            path: ':id/edit',
+            lazy: async () => {
+              const { ExerciseEditorPage } = await import(
+                '@/features/exercises/ExerciseEditorPage'
+              )
+              return { Component: ExerciseEditorPage }
+            },
+          },
         ],
       },
       // Story 2.7 — bulk student import. Mounted at `/students/import` (a CHILD

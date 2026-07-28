@@ -6,6 +6,7 @@
  * boundary). Never import the session-detail hooks alongside these.
  */
 export { ExerciseLibraryPage } from './ExerciseLibraryPage'
+export { ExerciseEditorPage } from './ExerciseEditorPage'
 export { ExerciseFormDialog } from './components/ExerciseFormDialog'
 export { ExerciseDeleteDialog } from './components/ExerciseDeleteDialog'
 export {

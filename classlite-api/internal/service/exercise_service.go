@@ -612,6 +612,19 @@ func (s *ExerciseService) Update(
 	if fields := validateExerciseMetadata(in.Title, in.Skill, in.Tags, in.TargetBand.Value); len(fields) > 0 {
 		return ExerciseWithCounts{}, model.ValidationError{Fields: fields}
 	}
+	// Structural content validation (Story 4.2, AC7 / Decision B) — pure + DB-free,
+	// so it runs BEFORE the tx: a MALFORMED full-replace blob is a fast 422, never
+	// a wasted round-trip and never a persisted garbage row. This is the AUTOSAVE
+	// gate: it rejects invalid types/foreign-fields/over-cap/garbage-settings but
+	// PERMITS an in-progress draft (empty section, blank answer key) so autosave
+	// never 422s the normal seed state. Completeness is enforced later at the
+	// Epic-5 finalize/assign gate (ValidateExerciseContentComplete, FU-4-2-B). The
+	// byte-size cap (413) is enforced on the marshalled bytes inside the tx below.
+	if in.Content != nil {
+		if err := store.ValidateExerciseContentStructural(*in.Content); err != nil {
+			return ExerciseWithCounts{}, err
+		}
+	}
 
 	var out ExerciseWithCounts
 	err := s.mutateInTenantTx(ctx, tc, func(tx pgx.Tx, txQ *generated.Queries) error {

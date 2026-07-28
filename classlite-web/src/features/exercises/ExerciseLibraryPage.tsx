@@ -22,6 +22,7 @@ import {
   type ReactElement,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router'
 import { MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRole } from '@/hooks/useRole'
@@ -82,6 +83,7 @@ function useSessionSnapshot(): Session | null {
 
 export function ExerciseLibraryPage(): ReactElement {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const role = useRole()
   const session = useSessionSnapshot()
 
@@ -282,7 +284,7 @@ export function ExerciseLibraryPage(): ReactElement {
                   <ExerciseRow
                     key={row.id}
                     row={row}
-                    onEdit={() => setDialog({ open: true, row })}
+                    onEdit={() => navigate(`/exercises/${row.id}/edit`)}
                     onDuplicate={() => handleDuplicate(row)}
                     onDelete={() => setDeleteTarget(row)}
                   />
@@ -335,6 +337,7 @@ export function ExerciseLibraryPage(): ReactElement {
           centerId={centerId ?? ''}
           initial={dialog.row}
           onClose={() => setDialog({ open: false, row: null })}
+          onCreated={(created) => navigate(`/exercises/${created.id}/edit`)}
         />
       ) : null}
 

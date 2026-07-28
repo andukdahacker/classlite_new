@@ -1,0 +1,107 @@
+{
+  "sections": [
+    {
+      "type": "reading",
+      "title": "Passage 1",
+      "content": "The quick brown fox jumps over the lazy dog.",
+      "questionGroups": [
+        {
+          "type": "multiple_choice",
+          "instructions": "Choose the best answer.",
+          "questions": [
+            {
+              "text": "What jumps?",
+              "type": "multiple_choice",
+              "options": ["The fox", "The dog"],
+              "correctAnswer": "The fox",
+              "acceptedVariants": []
+            }
+          ]
+        },
+        {
+          "type": "true_false_not_given",
+          "instructions": "True, False or Not Given.",
+          "questions": [
+            {
+              "text": "The dog is lazy.",
+              "type": "true_false_not_given",
+              "options": [],
+              "correctAnswer": "true",
+              "acceptedVariants": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "grammar",
+      "title": "Tenses",
+      "content": "Complete each sentence.",
+      "questionGroups": [
+        {
+          "type": "fill_in_blank",
+          "instructions": "Fill the blank.",
+          "questions": [
+            {
+              "text": "She ______ to school every day.",
+              "type": "fill_in_blank",
+              "options": [],
+              "correctAnswer": "goes",
+              "acceptedVariants": ["walks"]
+            }
+          ]
+        },
+        {
+          "type": "short_answer",
+          "instructions": "Answer in one word.",
+          "questions": [
+            {
+              "text": "Antonym of hot?",
+              "type": "short_answer",
+              "options": [],
+              "correctAnswer": "cold",
+              "acceptedVariants": ["cool"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "listening",
+      "title": "Section 2",
+      "content": "https://example.com/audio.mp3",
+      "questionGroups": [
+        {
+          "type": "matching",
+          "instructions": "Match the heading.",
+          "questions": [
+            {
+              "text": "Paragraph A",
+              "type": "matching",
+              "options": ["i", "ii", "iii"],
+              "correctAnswer": "ii",
+              "acceptedVariants": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "writing",
+      "title": "Task 1",
+      "content": "Describe the chart in 150 words.",
+      "questionGroups": []
+    },
+    {
+      "type": "speaking",
+      "title": "Part 2",
+      "content": "Describe a place you like to visit.",
+      "questionGroups": []
+    }
+  ],
+  "settings": {
+    "timeLimitEnabled": true,
+    "timeLimitMinutes": 45,
+    "caseSensitive": true
+  }
+}

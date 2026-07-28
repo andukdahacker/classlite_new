@@ -6080,6 +6080,103 @@ components:
       type: string
       enum: [reading, listening, writing, speaking, grammar, vocabulary, general]
 
+    # --- Story 4.2 — v1 exercise-content sub-schema -------------------------
+    # The typed shape of the JSONB `content` blob (was opaque at 4.1). ONE
+    # physical shape stamped schema_version=1. All fields required + explicit
+    # (GO-5) — content is a nested document, not a partial patch. The server
+    # enforces the per-type semantic invariants (ValidateExerciseContent, AC7);
+    # these schemas pin the wire STRUCTURE + the enumerated type vocabularies.
+
+    ExerciseSectionType:
+      type: string
+      # AC7 5-set — the editor's five section cards. `vocabulary`/`general` are
+      # exercise-level skill facets, NOT section types (a section type is
+      # independent of the exercise skill — 4.1 Dev Note #8).
+      enum: [reading, listening, writing, speaking, grammar]
+
+    QuestionGroupType:
+      type: string
+      enum: [multiple_choice, true_false_not_given, fill_in_blank, short_answer, matching]
+
+    ExerciseQuestion:
+      type: object
+      required: [text, type, options, correctAnswer, acceptedVariants]
+      properties:
+        text:
+          type: string
+        type:
+          type: string
+          description: Per-question type discriminant, mirroring the parent group type (e.g. "multiple_choice"/"true_false_not_given", matching the golden fixture). Redundant with the group type and NOT read by the validator — grading semantics key off the parent group type.
+        options:
+          type: array
+          items:
+            type: string
+          description: Choice list (MCQ) or the replicated heading bank (Matching). Empty for gap-fill / short-answer / T-F-NG.
+        correctAnswer:
+          type: string
+          description: The answer key. For T/F/NG ∈ {true,false,notGiven}; for MCQ/Matching ∈ options; for gap-fill/short-answer the primary accepted string.
+        acceptedVariants:
+          type: array
+          items:
+            type: string
+          description: Alternate accepted answers (gap-fill / short-answer). Empty otherwise.
+
+    QuestionGroup:
+      type: object
+      required: [type, instructions, questions]
+      properties:
+        type:
+          $ref: '#/components/schemas/QuestionGroupType'
+        instructions:
+          type: string
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExerciseQuestion'
+
+    ExerciseSection:
+      type: object
+      required: [type, title, content, questionGroups]
+      properties:
+        type:
+          $ref: '#/components/schemas/ExerciseSectionType'
+        title:
+          type: string
+        content:
+          type: string
+          description: Passage / prompt / stimulus / audio-URL text for the section.
+        questionGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionGroup'
+          description: Empty for prompt-only (writing/speaking) sections — server-enforced (AC7).
+
+    ExerciseSettings:
+      type: object
+      required: [timeLimitEnabled, timeLimitMinutes, caseSensitive]
+      # Every FR-22 default coincides with the type's zero value (time-limit
+      # OFF, 0 minutes, case-INsensitive). Hyphen/whitespace normalization is
+      # fixed always-on grading behavior (Epic 5), NOT a settings toggle.
+      properties:
+        timeLimitEnabled:
+          type: boolean
+        timeLimitMinutes:
+          type: integer
+          minimum: 0
+        caseSensitive:
+          type: boolean
+
+    ExerciseContent:
+      type: object
+      required: [sections, settings]
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExerciseSection'
+        settings:
+          $ref: '#/components/schemas/ExerciseSettings'
+
     Exercise:
       type: object
       # All fields required + explicit (nulls not omitted) per GO-5. `content` is
@@ -6136,8 +6233,7 @@ components:
         questionCount:
           type: integer
         content:
-          type: object
-          description: v1 JSONB content shell ({sections, settings}). Opaque at 4.1; Story 4.2 defines the full shape.
+          $ref: '#/components/schemas/ExerciseContent'
         createdAt:
           type: string
           format: date-time
@@ -6257,9 +6353,10 @@ components:
           maximum: 9
           nullable: true
         content:
-          type: object
-          description: Full-replace v1 content object. Opaque at 4.1.
+          allOf:
+            - $ref: '#/components/schemas/ExerciseContent'
           nullable: true
+          description: Full-replace v1 content object. Absent = keep the stored blob.
         updatedAt:
           type: string
           format: date-time

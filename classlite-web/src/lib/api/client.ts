@@ -2227,6 +2227,43 @@ export interface components {
         };
         /** @enum {string} */
         ExerciseSkill: "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary" | "general";
+        /** @enum {string} */
+        ExerciseSectionType: "reading" | "listening" | "writing" | "speaking" | "grammar";
+        /** @enum {string} */
+        QuestionGroupType: "multiple_choice" | "true_false_not_given" | "fill_in_blank" | "short_answer" | "matching";
+        ExerciseQuestion: {
+            text: string;
+            /** @description Per-question type discriminant, mirroring the parent group type (e.g. "multiple_choice"/"true_false_not_given", matching the golden fixture). Redundant with the group type and NOT read by the validator — grading semantics key off the parent group type. */
+            type: string;
+            /** @description Choice list (MCQ) or the replicated heading bank (Matching). Empty for gap-fill / short-answer / T-F-NG. */
+            options: string[];
+            /** @description The answer key. For T/F/NG ∈ {true,false,notGiven}; for MCQ/Matching ∈ options; for gap-fill/short-answer the primary accepted string. */
+            correctAnswer: string;
+            /** @description Alternate accepted answers (gap-fill / short-answer). Empty otherwise. */
+            acceptedVariants: string[];
+        };
+        QuestionGroup: {
+            type: components["schemas"]["QuestionGroupType"];
+            instructions: string;
+            questions: components["schemas"]["ExerciseQuestion"][];
+        };
+        ExerciseSection: {
+            type: components["schemas"]["ExerciseSectionType"];
+            title: string;
+            /** @description Passage / prompt / stimulus / audio-URL text for the section. */
+            content: string;
+            /** @description Empty for prompt-only (writing/speaking) sections — server-enforced (AC7). */
+            questionGroups: components["schemas"]["QuestionGroup"][];
+        };
+        ExerciseSettings: {
+            timeLimitEnabled: boolean;
+            timeLimitMinutes: number;
+            caseSensitive: boolean;
+        };
+        ExerciseContent: {
+            sections: components["schemas"]["ExerciseSection"][];
+            settings: components["schemas"]["ExerciseSettings"];
+        };
         Exercise: {
             /** Format: uuid */
             id: string;
@@ -2245,8 +2282,7 @@ export interface components {
             schemaVersion: number;
             sectionCount: number;
             questionCount: number;
-            /** @description v1 JSONB content shell ({sections, settings}). Opaque at 4.1; Story 4.2 defines the full shape. */
-            content: Record<string, never>;
+            content: components["schemas"]["ExerciseContent"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2286,8 +2322,8 @@ export interface components {
             tags?: string[] | null;
             description?: string | null;
             targetBand?: number | null;
-            /** @description Full-replace v1 content object. Opaque at 4.1. */
-            content?: Record<string, never> | null;
+            /** @description Full-replace v1 content object. Absent = keep the stored blob. */
+            content?: components["schemas"]["ExerciseContent"] | null;
             /**
              * Format: date-time
              * @description Optimistic-concurrency precondition (fallback to the If-Match header).

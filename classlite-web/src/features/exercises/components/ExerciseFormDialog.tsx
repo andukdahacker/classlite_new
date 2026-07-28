@@ -33,7 +33,7 @@ import {
 } from '../lib/exerciseSchema'
 import { useCreateExercise } from '../api/useCreateExercise'
 import { useUpdateExercise } from '../api/useUpdateExercise'
-import { useExercise } from '../api/useExercise'
+import { useExercise, type Exercise } from '../api/useExercise'
 import type { ExerciseListItem } from '../api/useExercises'
 
 const HTTP_CONFLICT = 409
@@ -43,12 +43,16 @@ interface ExerciseFormDialogProps {
   /** null = create mode; a row = edit mode (metadata only). */
   initial: ExerciseListItem | null
   onClose: () => void
+  /** Story 4.2 — called with the newly-created exercise so the caller can
+   * redirect into the structured editor (the "no dead-end" post-create flow). */
+  onCreated?: (created: Exercise) => void
 }
 
 export function ExerciseFormDialog({
   centerId,
   initial,
   onClose,
+  onCreated,
 }: ExerciseFormDialogProps): ReactElement {
   const { t } = useTranslation()
   const isEdit = initial !== null
@@ -94,7 +98,7 @@ export function ExerciseFormDialog({
         })
         toast.success(t('exercises.toast.updated'))
       } else {
-        await createExercise.mutateAsync({
+        const created = await createExercise.mutateAsync({
           title: values.title,
           skill: values.skill,
           tags,
@@ -102,6 +106,12 @@ export function ExerciseFormDialog({
           targetBand: values.targetBand ?? null,
         })
         toast.success(t('exercises.toast.created'))
+        // Redirect straight into the structured editor (no dead-end) — the
+        // caller navigates; skip the redundant onClose (the page unmounts).
+        if (onCreated) {
+          onCreated(created)
+          return
+        }
       }
       onClose()
     } catch (err) {
