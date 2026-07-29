@@ -13,7 +13,7 @@
  */
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Trash2, Plus } from 'lucide-react'
+import { Trash2, Plus, Sparkles } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +50,11 @@ export interface ExerciseSectionCardProps {
   index: number
   onChange: (next: ExerciseSection) => void
   onDelete: () => void
+  /** Story 4.3b — open the AI dialog in `questions` mode for this section. */
+  onGenerateQuestions?: () => void
+  /** Story 4.3b — open the AI dialog in `distractors` mode for one MCQ question
+   * (by group + question index within this section). */
+  onGenerateDistractors?: (groupIndex: number, questionIndex: number) => void
 }
 
 function isValidHttpUrl(value: string): boolean {
@@ -67,6 +72,8 @@ export function ExerciseSectionCard({
   index,
   onChange,
   onDelete,
+  onGenerateQuestions,
+  onGenerateDistractors,
 }: ExerciseSectionCardProps) {
   const { t } = useTranslation()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -100,7 +107,11 @@ export function ExerciseSectionCard({
 
   return (
     <div
-      className="rounded-md border border-border bg-card p-4"
+      // tabIndex -1 makes the card programmatically focusable so the editor can
+      // focus a section after an AI "Insert & edit" (Story 4.3b) without adding
+      // it to the tab order.
+      tabIndex={-1}
+      className="rounded-md border border-border bg-card p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       data-testid="section-card"
       data-section-index={index}
     >
@@ -216,6 +227,11 @@ export function ExerciseSectionCard({
                     idPrefix={`${idPrefix}-g${gi}`}
                     onChange={(next) => setGroup(gi, next)}
                     onDelete={() => deleteGroup(gi)}
+                    onGenerateDistractors={
+                      onGenerateDistractors
+                        ? (qi) => onGenerateDistractors(gi, qi)
+                        : undefined
+                    }
                   />
                 </SortableItem>
               ))}
@@ -245,6 +261,17 @@ export function ExerciseSectionCard({
                 {t(questionTypeLabelKey(type))}
               </button>
             ))}
+            {onGenerateQuestions ? (
+              <button
+                type="button"
+                onClick={onGenerateQuestions}
+                className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/5 px-2 py-1 text-xs text-primary hover:bg-primary/10"
+                data-testid="generate-questions"
+              >
+                <Sparkles className="size-3" aria-hidden="true" />
+                {t('exercises.ai.generateQuestions')}
+              </button>
+            ) : null}
           </div>
         </div>
       )}

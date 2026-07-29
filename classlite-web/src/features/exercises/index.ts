@@ -10,6 +10,12 @@ export { ExerciseEditorPage } from './ExerciseEditorPage'
 export { ExerciseFormDialog } from './components/ExerciseFormDialog'
 export { ExerciseDeleteDialog } from './components/ExerciseDeleteDialog'
 export {
+  AIGenerateDialog,
+  type AIGenerateDialogProps,
+  type AiGenerateOpenRequest,
+} from './AIGenerateDialog'
+export { type AiGenerationMode } from './lib/aiGeneration'
+export {
   useExercises,
   type ExerciseListItem,
   type ExerciseSkill,

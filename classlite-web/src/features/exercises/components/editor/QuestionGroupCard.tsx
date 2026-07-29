@@ -8,7 +8,7 @@
  */
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Sparkles } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { SortableItem, SortableList } from './SortableList'
@@ -27,6 +27,9 @@ export interface QuestionGroupCardProps {
   idPrefix: string
   onChange: (next: QuestionGroup) => void
   onDelete: () => void
+  /** Story 4.3b — open the AI dialog in `distractors` mode for the MCQ question
+   * at `questionIndex`. Only wired (and only rendered) for multiple_choice groups. */
+  onGenerateDistractors?: (questionIndex: number) => void
 }
 
 const PER_QUESTION_EDITORS: Record<
@@ -39,9 +42,16 @@ const PER_QUESTION_EDITORS: Record<
   short_answer: ShortAnswerQuestionEditor,
 }
 
-export function QuestionGroupCard({ group, idPrefix, onChange, onDelete }: QuestionGroupCardProps) {
+export function QuestionGroupCard({
+  group,
+  idPrefix,
+  onChange,
+  onDelete,
+  onGenerateDistractors,
+}: QuestionGroupCardProps) {
   const { t } = useTranslation()
   const questions = group.questions
+  const canGenerateDistractors = group.type === 'multiple_choice' && Boolean(onGenerateDistractors)
   // AC9 focus return: a deleted question's trash button is unmounted, so focus
   // would drop to <body>. Return it to the always-present "add question" button.
   const addQuestionRef = useRef<HTMLButtonElement>(null)
@@ -125,6 +135,17 @@ export function QuestionGroupCard({ group, idPrefix, onChange, onDelete }: Quest
                         onChange={(next: ExerciseQuestion) => setQuestion(qi, next)}
                       />
                     </div>
+                    {canGenerateDistractors ? (
+                      <button
+                        type="button"
+                        onClick={() => onGenerateDistractors?.(qi)}
+                        aria-label={t('exercises.ai.generateDistractorsFor', { number: qi + 1 })}
+                        className="rounded p-1 text-primary hover:bg-primary/10"
+                        data-testid={`generate-distractors-${qi}`}
+                      >
+                        <Sparkles className="size-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => deleteQuestion(qi)}

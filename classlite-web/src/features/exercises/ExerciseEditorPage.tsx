@@ -29,7 +29,10 @@ import {
   replaceSection,
   updateSettings,
 } from './lib/editorDocument'
-import type { EditorDocument, ExerciseSectionType } from './lib/editorTypes'
+import { mergeGeneratedFragment, type InsertTarget } from './lib/fragmentMerge'
+import type { EditorDocument, ExerciseContent, ExerciseSectionType } from './lib/editorTypes'
+import { AIGenerateDialog, type AiGenerateOpenRequest } from './AIGenerateDialog'
+import type { AiGenerationMode } from './lib/aiGeneration'
 import { EditorMetadataSidebar, type EditorMetadataValues } from './components/editor/EditorMetadataSidebar'
 import { EditorAutoSaveIndicator } from './components/editor/EditorAutoSaveIndicator'
 import { ExerciseSectionCard } from './components/editor/ExerciseSectionCard'
@@ -186,6 +189,66 @@ function ExerciseEditor({ exerciseId, exercise }: ExerciseEditorProps) {
     pickerRef.current?.focus()
   }, [focusPickerTick])
 
+  // Story 4.3b — the AI generate dialog. `request` is what the dialog renders;
+  // `target` is where an accepted fragment merges (kept together so the dialog
+  // never has to decode the index-based id handle).
+  const [aiGenerate, setAiGenerate] = useState<{
+    request: AiGenerateOpenRequest
+    target: InsertTarget
+  } | null>(null)
+
+  function openGenerateSection() {
+    setAiGenerate({ request: { mode: 'section' }, target: { kind: 'section' } })
+  }
+  function openGenerateQuestions(sectionIndex: number) {
+    setAiGenerate({
+      request: { mode: 'questions', targetId: String(sectionIndex) },
+      target: { kind: 'questions', sectionIndex },
+    })
+  }
+  function openGenerateDistractors(sectionIndex: number, groupIndex: number, questionIndex: number) {
+    setAiGenerate({
+      request: {
+        mode: 'distractors',
+        targetId: `${sectionIndex}:${groupIndex}:${questionIndex}`,
+      },
+      target: { kind: 'distractors', sectionIndex, groupIndex, questionIndex },
+    })
+  }
+  // Story 4.3b — after an "Insert & edit" (focus:true) the teacher should land on
+  // the section the fragment merged into; Accept (focus:false) merges silently.
+  // `nonce` re-fires the effect even when the same index is targeted twice.
+  const [focusRequest, setFocusRequest] = useState<{ index: number; nonce: number } | null>(null)
+  useEffect(() => {
+    if (!focusRequest) return
+    const el = document.querySelector<HTMLElement>(
+      `[data-section-index="${focusRequest.index}"]`,
+    )
+    el?.scrollIntoView({ block: 'start' })
+    el?.focus()
+  }, [focusRequest])
+
+  function onInsertGenerated(
+    _mode: AiGenerationMode,
+    content: ExerciseContent,
+    opts: { focus: boolean },
+  ) {
+    if (!aiGenerate) return
+    const target = aiGenerate.target
+    // Merge rides 4.2's autosave — `applyEdit` schedules the debounced PATCH.
+    const merged = mergeGeneratedFragment(docRef.current, target, content)
+    applyEdit(merged)
+    if (opts.focus) {
+      // section → the newly-appended last section; questions/distractors → the
+      // section the fragment merged into.
+      const index =
+        target.kind === 'section'
+          ? merged.content.sections.length - 1
+          : target.sectionIndex
+      setFocusRequest((prev) => ({ index, nonce: (prev?.nonce ?? 0) + 1 }))
+    }
+  }
+
   const sections = doc.content.sections
 
   function onMetadataChange(patch: Partial<EditorMetadataValues>) {
@@ -284,19 +347,34 @@ function ExerciseEditor({ exerciseId, exercise }: ExerciseEditorProps) {
                   index={si}
                   onChange={(next) => applyEdit(replaceSection(docRef.current, si, next))}
                   onDelete={() => onDeleteSection(si)}
+                  onGenerateQuestions={() => openGenerateQuestions(si)}
+                  onGenerateDistractors={(gi, qi) => openGenerateDistractors(si, gi, qi)}
                 />
               </SortableItem>
             ))}
           </SortableList>
         )}
 
-        <SectionTypePicker ref={pickerRef} onAdd={onAddSection} />
+        <SectionTypePicker
+          ref={pickerRef}
+          onAdd={onAddSection}
+          onGenerateAI={openGenerateSection}
+        />
 
         <ExerciseSettingsPanel
           settings={doc.content.settings}
           onChange={(patch) => applyEdit(updateSettings(docRef.current, patch))}
         />
       </div>
+
+      {aiGenerate ? (
+        <AIGenerateDialog
+          exerciseId={exerciseId}
+          request={aiGenerate.request}
+          onInsert={onInsertGenerated}
+          onClose={() => setAiGenerate(null)}
+        />
+      ) : null}
     </div>
   )
 }

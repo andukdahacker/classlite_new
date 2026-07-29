@@ -2,7 +2,7 @@
 epic: 4
 story: 4.3b
 story_key: 4-3b-ai-content-generation-dialog-and-preview
-baseline_commit: 636556e308f4e1e1afcef40db581b9d02484da72
+baseline_commit: e28849489d2e189feb011d7789505c45b7789ac1
 created: 2026-07-28
 audience: frontend
 size: M
@@ -13,7 +13,7 @@ scope_decision: "SPLIT (Ducdo 2026-07-28). Frontend half of Story 4.3 — the s1
 
 # Story 4.3b: AI Content Generation — Dialog, Polling & Preview (s17)
 
-Status: ready-for-dev
+Status: done
 
 ## ⚠️ Scope banner — read first
 
@@ -62,22 +62,44 @@ Adapted from `epic-04.md` Story 4.3 (the UI subset) + Failure-Path ACs + PRD FR-
 
 ### Frontend (classlite-web)
 
-- [ ] **T1 — Job-polling hook (AC2, AC4, AC5)**
-  - [ ] `features/exercises/hooks/useAiGenerationJob.ts` — `enqueue(mode, params)` → `POST …/ai-generate` (via generated client) → jobId; then poll `GET /jobs/{jobId}` with a **TS-3 key factory** `jobKeys = { detail: (id) => ['jobs', id] }`, `staleTime:0` (FW-3 comment: live status), **progressive backoff 2→4→8s** (compute `refetchInterval` from elapsed/attempt, ramp then hold; slower when `document.hidden`), stop on terminal/close/unmount. Expose `{ phase: idle|generating|preview|stuck|failed, result, errorKind, elapsedMs, regenerate, cancel }`. `errorKind` distinguishes `invalid_ai_response` from generic-failed (AC5). **5-min → `stuck`** (AC4). Never `useEffect`-fetch (FW-4).
-- [ ] **T2 — s17 AIGenerateDialog + 3 modes (AC1, AC3, AC6, AC7)**
-  - [ ] `features/exercises/AIGenerateDialog.tsx` — shadcn dialog (focus-trap, return-focus), header per mode, **RHF + `zodResolver`** param form (chips = controlled toggles), **est-cost + credit-counter** row, generating state, **preview panel** + **Accept/Insert · Edit · Dismiss · Regenerate** (`02c:6352-6357`). Mode-specific field sets (section/questions/distractors). Section-type chips = editor's 5 types (Writing/Speaking prompt-only helper; no Vocabulary). Barrel-export via `@/features/exercises`.
-  - [ ] `AiGenerationPreview.tsx` — renders the `AIGenerationResult` fragment summary (counts/band) + the accept/edit/dismiss actions.
-- [ ] **T3 — Wire the three affordances + insertion via autosave (AC1, AC3)**
-  - [ ] Add the **6th "Generate section" AI card** to `SectionTypePicker` (4.2 shipped 5, no AI card) → opens dialog in `section` mode. Add **"Generate questions"** trigger on a section and **"Generate distractors/option"** on an MCQ question editor. On Accept: **merge the fragment into `content`** (append section / append groups to `sectionId` / set options on the questionId) and let **`useExerciseAutosave` persist it** (reuse — no new mutation; the merge respects the array-index ordering + structural validity 4.2 established). Guard: an incomplete/edited fragment still flows through the editor's normal state.
-- [ ] **T4 — i18n + FE tests (AC1–AC7)**
-  - [ ] `exercises.ai.*` in `en.json` + `vi.json`: dialog titles/subtitles per mode, field labels + chip labels, **est-cost + credit-counter (ICU `{used}/{total}`)**, generating message, preview summary (pluralized counts), **three distinct failure messages** (whole sentences) + stuck message + "create manually" link. `i18n-parity-coverage.test.ts` green; `npm run i18n-parity`.
-  - [ ] Component tests (Vitest + **MSW at the HTTP boundary, never mock Query** — TEST-FE-1): **three-state** (TEST-FE-2); **enqueue→poll→complete→preview** (MSW returns 202 then pending→processing→complete across polls); **progressive backoff timing** (assert intervals ramp 2→4→8, not fixed — deferred MSW resolution + fake timers); **accept inserts + triggers autosave PATCH** (assert the fragment merged + one PATCH); **dismiss inserts nothing**; **stuck at 5min** shows the cancel/retry surface (fake timers); **failed** vs **invalid_ai_response** show **distinct** messages; **polling stops on unmount/close** (no leaked interval); role-negative — student never reaches the chunk (TEST-FE-6, inherited gate); `axe` (focus-trap, aria-live); `assertI18nParity`.
-  - [ ] `tsc -b && eslint && vitest && npm run build` clean; editor chunk still isolated (`e2e/route-bundle-boundaries.spec.ts` green — the dialog ships inside the existing `/exercises/:id/edit` chunk, no new route).
+- [x] **T1 — Job-polling hook (AC2, AC4, AC5)**
+  - [x] `features/exercises/hooks/useAiGenerationJob.ts` — `enqueue(mode, params)` → `POST …/ai-generate` (via generated client) → jobId; then poll `GET /jobs/{jobId}` with a **TS-3 key factory** `jobKeys = { detail: (id) => ['jobs', id] }`, `staleTime:0` (FW-3 comment: live status), **progressive backoff 2→4→8s** (compute `refetchInterval` from elapsed/attempt, ramp then hold; slower when `document.hidden`), stop on terminal/close/unmount. Expose `{ phase: idle|generating|preview|stuck|failed, result, errorKind, elapsedMs, regenerate, cancel }`. `errorKind` distinguishes `invalid_ai_response` from generic-failed (AC5). **5-min → `stuck`** (AC4). Never `useEffect`-fetch (FW-4).
+- [x] **T2 — s17 AIGenerateDialog + 3 modes (AC1, AC3, AC6, AC7)**
+  - [x] `features/exercises/AIGenerateDialog.tsx` — shadcn dialog (focus-trap, return-focus), header per mode, **RHF + `zodResolver`** param form (chips = controlled toggles), **est-cost + credit-counter** row, generating state, **preview panel** + **Accept/Insert · Edit · Dismiss · Regenerate** (`02c:6352-6357`). Mode-specific field sets (section/questions/distractors). Section-type chips = editor's 5 types (Writing/Speaking prompt-only helper; no Vocabulary). Barrel-export via `@/features/exercises`.
+  - [x] `AiGenerationPreview.tsx` — renders the `AIGenerationResult` fragment summary (counts/band) + the accept/edit/dismiss actions.
+- [x] **T3 — Wire the three affordances + insertion via autosave (AC1, AC3)**
+  - [x] Add the **6th "Generate section" AI card** to `SectionTypePicker` (4.2 shipped 5, no AI card) → opens dialog in `section` mode. Add **"Generate questions"** trigger on a section and **"Generate distractors/option"** on an MCQ question editor. On Accept: **merge the fragment into `content`** (append section / append groups to `sectionId` / set options on the questionId) and let **`useExerciseAutosave` persist it** (reuse — no new mutation; the merge respects the array-index ordering + structural validity 4.2 established). Guard: an incomplete/edited fragment still flows through the editor's normal state.
+- [x] **T4 — i18n + FE tests (AC1–AC7)**
+  - [x] `exercises.ai.*` in `en.json` + `vi.json`: dialog titles/subtitles per mode, field labels + chip labels, **est-cost + credit-counter (ICU `{used}/{total}`)**, generating message, preview summary (pluralized counts), **three distinct failure messages** (whole sentences) + stuck message + "create manually" link. `i18n-parity-coverage.test.ts` green; `npm run i18n-parity`.
+  - [x] Component tests (Vitest + **MSW at the HTTP boundary, never mock Query** — TEST-FE-1): **three-state** (TEST-FE-2); **enqueue→poll→complete→preview** (MSW returns 202 then pending→processing→complete across polls); **progressive backoff timing** (assert intervals ramp 2→4→8, not fixed — deferred MSW resolution + fake timers); **accept inserts + triggers autosave PATCH** (assert the fragment merged + one PATCH); **dismiss inserts nothing**; **stuck at 5min** shows the cancel/retry surface (fake timers); **failed** vs **invalid_ai_response** show **distinct** messages; **polling stops on unmount/close** (no leaked interval); role-negative — student never reaches the chunk (TEST-FE-6, inherited gate); `axe` (focus-trap, aria-live); `assertI18nParity`.
+  - [x] `tsc -b && eslint && vitest && npm run build` clean; editor chunk still isolated (`e2e/route-bundle-boundaries.spec.ts` green — the dialog ships inside the existing `/exercises/:id/edit` chunk, no new route).
 
 ### Close-out
 
-- [ ] **T5 — Deferred-work + docs**
-  - [ ] `deferred-work.md` **FU-4-3-B**: **From-Hub source-material drag-attach** in the topic field → Story 4.4 (4.3b is free-text only); **live credit-counter accuracy + the 402 hard-limit block + Settings→Credits UI** → Story 6.5 (4.3b displays the counter from the read endpoint but does not enforce a limit); **user-cancel refund semantics** (cancel-before-processing vs mid-processing, A6 matrix) → confirm with 6.5. No new env/service (WF-9 skip). Dev Agent Record + File List → sibling `4-3b-…-completion-notes.md`.
+- [x] **T5 — Deferred-work + docs**
+  - [x] `deferred-work.md` **FU-4-3-B**: **From-Hub source-material drag-attach** in the topic field → Story 4.4 (4.3b is free-text only); **live credit-counter accuracy + the 402 hard-limit block + Settings→Credits UI** → Story 6.5 (4.3b displays the counter from the read endpoint but does not enforce a limit); **user-cancel refund semantics** (cancel-before-processing vs mid-processing, A6 matrix) → confirm with 6.5. No new env/service (WF-9 skip). Dev Agent Record + File List → sibling `4-3b-…-completion-notes.md`.
+
+### Review Findings
+
+_`/bmad-code-review` 3-layer pass (Blind Hunter · Edge Case Hunter · Acceptance Auditor), 2026-07-29. No Critical/High; the story's AC1–AC7 pass. All findings verified against source. tsc clean; the transient `Cannot find module '../useAiGenerationJob'` diagnostic was an LSP indexing artifact (dismissed)._
+
+- [x] [Review][Patch] Implement scroll/focus-to-inserted for "Insert & edit" (resolved from Decision, Ducdo 2026-07-29): wire the `{ focus: true }` intent through `onInsertGenerated` so Edit scrolls to + focuses the newly-inserted section/question, making it genuinely distinct from Accept. Needs a scroll anchor in the editor. [`ExerciseEditorPage.tsx:218`, `AIGenerateDialog.tsx:181-184`]
+- [x] [Review][Dismiss] Generic-failure "Create manually" navigates to the exercises library — **accepted as-is** (Ducdo 2026-07-29): the library link is intended behavior. [`AIGenerateDialog.tsx:523`]
+
+- [x] [Review][Patch] Poll-endpoint failure (`GET /api/jobs/{id}` 404/500/network) is never surfaced — the dialog shows "Generating…" until the 5-min stuck timer, misclassifying an infra failure as "still working" [`hooks/useAiGenerationJob.ts:157-176`]
+- [x] [Review][Patch] A `complete` job with a null `result` renders a dead-end dialog — `phase==='preview' && result!==null` is the only preview guard, so no actionable panel appears [`AIGenerateDialog.tsx:173`]
+- [x] [Review][Patch] Poll query sets no `retry: false`; the backoff step is read from the mutable `pollCountRef` incremented inside `queryFn`, so a production single-retry on a transient poll inflates the count and jumps the 2→4→8s cadence ahead (tests pass only because the test client disables retries) [`hooks/useAiGenerationJob.ts:141-163`]
+- [x] [Review][Patch] Enqueue error is swallowed on Regenerate/Retry from the preview/stuck/failed surfaces — `enqueueError` is rendered only in the idle-form footer, so a failed re-enqueue there is a silent no-op [`AIGenerateDialog.tsx:186,191,198`]
+- [x] [Review][Patch] Retry/Regenerate buttons are not disabled during enqueue (unlike the config-form submit) — rapid clicks fire multiple `enqueueMutate` calls, each a paid server job [`AIGenerateDialog.tsx:186,485,531`]
+- [x] [Review][Patch] Preview summaries use non-pluralized interpolation → "1 questions" / "1 groups" / "1 options" / "1 words" (English); `estCost`/`questionCount` beside them ARE pluralized. Note: the multi-count template needs restructuring (one `_one/_other` var can't pluralize `words` AND `questions`), and `AIGenerateDialog.test.tsx` asserts `'1 questions'` [`en.json`/`vi.json` `exercises.ai.preview.*Summary`]
+- [x] [Review][Patch] Distractors regenerate can orphan `correctAnswer`: options are replaced wholesale but the fallback keeps the old key without checking it exists in the new options (incl. an empty generated option set) [`lib/fragmentMerge.ts:67-74`]
+- [x] [Review][Patch] Empty section-mode result still schedules an autosave PATCH — `appendGeneratedSections` lacks the empty-guard that `appendGeneratedGroups` has [`lib/fragmentMerge.ts:25-36`]
+- [x] [Review][Patch] Editor-integration test seeds the module-level `queryClient` singleton but mounts the tree with a fresh per-test client — session state and the component read from different clients (TEST-FE-1) [`__tests__/AIGenerateDialog.editor.test.tsx`]
+
+- [x] [Review][Defer] Truly-hung job polls indefinitely at 8s with no max-attempt cap [`hooks/useAiGenerationJob.ts:157`] — deferred, low-risk (user can cancel; stuck surface already offered)
+- [x] [Review][Defer] Regenerate/stuck-retry re-enqueues without cancelling the in-flight job first (brief concurrent poll on the old key) [`hooks/useAiGenerationJob.ts:183`] — deferred, cosmetic
+- [x] [Review][Defer] Double-accept could duplicate insertion — Accept/Edit not disabled after click, `docRef` updates synchronously [`AIGenerateDialog.tsx:177`] — deferred, low likelihood (dialog unmounts on close)
+- [x] [Review][Defer] Malformed/partial result could crash `summarizeFragment`/merge — `apiFetch` casts without runtime schema validation [`lib/aiGeneration.ts:115`, `lib/fragmentMerge.ts:33`] — deferred, app-wide cast pattern; 4.3a structurally validates the result before storing
 
 ## Dev Notes
 
@@ -113,13 +135,13 @@ Adapted from `epic-04.md` Story 4.3 (the UI subset) + Failure-Path ACs + PRD FR-
 
 ## Definition of Done
 
-- [ ] 4.3a `done`; `client.ts`/Zod carry the two endpoints + `Job`/`AIGenerateRequest`/`AIGenerationResult`; no hand-written API types (TS-2/XL-1); **zero backend changes** in this story.
-- [ ] s17 `AIGenerateDialog` opens in all 3 modes with correct fields + **est-cost + credit counter** shown before confirm; param form = RHF + zodResolver; section chips = editor's 5 types (Writing/Speaking prompt-only; no Vocabulary).
-- [ ] Confirm → enqueue(202) → poll with **2→4→8s** backoff (slower when hidden); generating state; polling stops on terminal/close/unmount.
-- [ ] Preview → **Accept inserts via 4.2 autosave** (section/questions/distractors merged correctly, one PATCH) / **Edit** leaves teacher in editor / **Dismiss inserts nothing** / **Regenerate** re-enqueues.
-- [ ] **5-min stuck** surface (cancel/retry); **generic-failed** (manual link) vs **`invalid_ai_response`** (adjust-prompt) are **distinct** messages; no raw codes/traces.
-- [ ] `exercises.ai.*` en/vi parity green (ICU credit counter, three failure sentences, pluralized counts); axe clean (focus-trap, return-focus, aria-live).
-- [ ] `tsc -b && eslint && vitest && npm run build` clean; dialog ships inside the existing `/exercises/:id/edit` chunk (no new route; bundle-boundary e2e green). FU-4-3-B logged; dev record in sibling completion-notes.
+- [x] 4.3a `done`; `client.ts`/Zod carry the two endpoints + `Job`/`AIGenerateRequest`/`AIGenerationResult`; no hand-written API types (TS-2/XL-1); **zero backend changes** in this story.
+- [x] s17 `AIGenerateDialog` opens in all 3 modes with correct fields + **est-cost + credit counter** shown before confirm; param form = RHF + zodResolver; section chips = editor's 5 types (Writing/Speaking prompt-only; no Vocabulary).
+- [x] Confirm → enqueue(202) → poll with **2→4→8s** backoff (slower when hidden); generating state; polling stops on terminal/close/unmount.
+- [x] Preview → **Accept inserts via 4.2 autosave** (section/questions/distractors merged correctly, one PATCH) / **Edit** leaves teacher in editor / **Dismiss inserts nothing** / **Regenerate** re-enqueues.
+- [x] **5-min stuck** surface (cancel/retry); **generic-failed** (manual link) vs **`invalid_ai_response`** (adjust-prompt) are **distinct** messages; no raw codes/traces.
+- [x] `exercises.ai.*` en/vi parity green (ICU credit counter, three failure sentences, pluralized counts); axe clean (focus-trap, return-focus, aria-live).
+- [x] `tsc -b && eslint && vitest && npm run build` clean; dialog ships inside the existing `/exercises/:id/edit` chunk (no new route; bundle-boundary e2e green). FU-4-3-B logged; dev record in sibling completion-notes.
 
 ## Out of Scope
 
@@ -133,4 +155,6 @@ Adapted from `epic-04.md` Story 4.3 (the UI subset) + Failure-Path ACs + PRD FR-
 
 | Date | Change |
 |---|---|
+| 2026-07-29 | **`/bmad-code-review 4-3b` (review → done).** 3-layer adversarial pass (Blind Hunter · Edge Case Hunter · Acceptance Auditor); AC1–AC7 pass, zero backend/out-of-scope leakage. 2 decisions resolved (Edit→**implement scroll/focus**; manual-link→**keep library link**, dismissed) + **10 patches applied & verified**: poll-failure surfaced as `failed` (was stuck on "Generating…"); `complete`+null-result no longer a dead-end; poll query `retry:false` + failure-count as **state** (fixes backoff skew + the `react-hooks/refs` render-read); enqueue error surfaced on stuck/failed/preview (was silent no-op); retry/regenerate disabled while enqueuing (no duplicate paid jobs); "Insert & edit" now scrolls+focuses the merged section; distractors `correctAnswer` clamped to a valid option; empty section-fragment no-op guard; **preview counts pluralized** via i18next `$t()` nesting (en/vi parity kept); editor-test seeds the per-test QueryClient. Gate: **tsc + eslint (0 err) + full FE suite 2038/2038 + i18n-parity 1328 + build clean**. 4 low items deferred to `deferred-work.md`; 4 dismissed. |
+| 2026-07-29 | **Implemented (ready-for-dev → review)** via `/bmad-dev-story` (Amelia). T1 polling hook (2/4/8s backoff, hidden-tab slowdown, timer-driven 5-min stuck), T2 s17 `AIGenerateDialog` (3-mode RHF+zod, chips, est-cost + display-only credit counter, distinct failure surfaces, axe), T3 the 3 affordances + pure `fragmentMerge` inserting via 4.2 autosave, T4 `exercises.ai.*` en/vi parity + tests. **Pragmatic decision (Ducdo, ratified 2026-07-28): section chips fold into the `topic` seed** (4.3a strictly decodes params); questions/distractors are count-only. Credit counter display-only (6.5 owns balance). `baseline_commit` re-set `636556e`→`e28849` (creation-baseline predated 4-3a) — flagged. Gate: tsc + eslint (0 err) + **full FE suite 2034/2034** + build all clean. FU-4-3-B logged (5 items). Dev record + File List in sibling `…-completion-notes.md`. |
 | 2026-07-28 | Story created (ready-for-dev). **Split from 4.3** (Ducdo): 4.3b = frontend — s17 `AIGenerateDialog` (3 modes), job-polling hook (2/4/8s backoff, 5-min stuck), preview→accept/edit/dismiss inserting via 4.2 autosave, credit-counter UI, en/vi i18n, distinct failure surfaces. **HARD-BLOCKED on Story 4.3a** (endpoints + `client.ts`). No backend code. |
