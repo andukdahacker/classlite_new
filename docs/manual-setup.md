@@ -64,6 +64,22 @@ Reuses the credentials above. Just extend scopes + add a second redirect URI.
 
 ---
 
+## Google Gemini — AI Content Generation (Story 4.3a)
+
+The async job worker calls the Gemini `generateContent` REST API to generate
+exercise sections / questions / distractors. Required in non-dev (`Validate()`
+rejects an empty `GEMINI_API_KEY` outside development). The key lives in env
+only and is NEVER logged (EDGE-4/R49). A real call is banned from CI — PR tests
+inject a mock.
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| Create a Google AI Studio API key (or GCP `generativelanguage` API key) | [ ] | [ ] | [ ] |
+| Set `GEMINI_API_KEY` env var | [ ] | [ ] | [ ] |
+| Set `GEMINI_MODEL` (optional — defaults to `gemini-2.0-flash`) | [-] | [-] | [-] |
+
+---
+
 ## Railway — API Deploy
 
 **Open decision:** parallel deploy (new Railway project, cut traffic over, delete v1) vs in-place swap (reuse v1 project, swap repo). Parallel is safer if v1 has user data.
@@ -123,7 +139,6 @@ Do **not** wipe existing records — edit in place to minimize propagation delay
 
 ## Not yet needed (future stories)
 
-- `GEMINI_API_KEY` (later stories)
 - `POLAR_API_KEY`, `POLAR_WEBHOOK_SECRET` (Epic 9)
 - Google Drive integration (FU-2-5-D)
 - Zoom integration (FU-2-5-E)

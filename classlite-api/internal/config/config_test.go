@@ -35,6 +35,7 @@ func productionBase() config.Config {
 		AppLoginErrorURLBase:      "https://my.classlite.app/login",
 		IntegrationsEncryptionKey: okIntegrationsKey,
 		MeetOAuthRedirectURL:      "https://my.classlite.app/api/centers/callback/google-meet",
+		GeminiAPIKey:              "gemini-key",
 	}
 }
 
@@ -99,7 +100,7 @@ func TestValidate_ProductionRejectsShortJWTSecret(t *testing.T) {
 	cfg := config.Config{
 		AppEnv: "production", DatabaseURL: "postgres://...", JWTSecret: "too-short",
 		AppVerifyURLBase: "https://x", AppResetURLBase: "https://y", AppInviteURLBase: "https://z",
-		CookieDomain: ".classlite.app",
+		CookieDomain: ".classlite.app", GeminiAPIKey: "gemini-key",
 	}
 	err := cfg.Validate()
 	if err == nil {

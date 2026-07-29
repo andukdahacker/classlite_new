@@ -3807,6 +3807,108 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/exercises/{id}/ai-generate:
+    post:
+      operationId: enqueueAIGeneration
+      summary: Enqueue an AI content-generation job (section/questions/distractors) — 202 + jobId; deducts 1 credit in the SAME tx; never calls Gemini synchronously (story 4.3a — AC1). The 402 insufficient-credits gate is Story 6.5.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIGenerateRequest'
+      responses:
+        "202":
+          description: Job enqueued (poll GET /api/jobs/{jobId} for the result)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeJobEnqueued'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: EXERCISE_NOT_FOUND (absent, soft-deleted, or cross-teacher/cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (request body exceeds the 16 KiB enqueue limit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (unknown mode / missing or invalid params — e.g. empty topic/sectionId/questionId, out-of-range count)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/jobs/{jobId}:
+    get:
+      operationId: getJob
+      summary: Poll an async job's state (story 4.3a — AC2). result is null until status=complete.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The job state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeJob'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: JOB_NOT_FOUND (unknown id, cross-tenant, or not created by the caller — no oracle)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -6419,6 +6521,132 @@ components:
             $ref: '#/components/schemas/ExerciseListItem'
         meta:
           $ref: '#/components/schemas/EnvelopeMetaPaginated'
+
+    # ---------------- Story 4.3a — AI content generation ----------------
+    AIGenerateSectionParams:
+      type: object
+      required: [topic]
+      properties:
+        topic:
+          type: string
+          minLength: 1
+          description: Free-text prompt seed for the section to generate.
+
+    AIGenerateQuestionsParams:
+      type: object
+      required: [sectionId, count]
+      properties:
+        sectionId:
+          type: string
+          description: Target section (within the path exercise) to append question groups to.
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+
+    AIGenerateDistractorsParams:
+      type: object
+      required: [questionId, count]
+      properties:
+        questionId:
+          type: string
+          description: Target MCQ question (within the path exercise) to generate distractor options for.
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+
+    AIGenerateRequest:
+      type: object
+      required: [mode, params]
+      properties:
+        mode:
+          type: string
+          enum: [section, questions, distractors]
+        params:
+          description: >-
+            Mode-specific parameters (typed by mode): section →
+            AIGenerateSectionParams; questions → AIGenerateQuestionsParams;
+            distractors → AIGenerateDistractorsParams. exerciseId is taken from the
+            path; any client-supplied centerId is stripped and ignored (SEC-7 / R3
+            — the job-row center_id is the sole trust anchor).
+          oneOf:
+            - $ref: '#/components/schemas/AIGenerateSectionParams'
+            - $ref: '#/components/schemas/AIGenerateQuestionsParams'
+            - $ref: '#/components/schemas/AIGenerateDistractorsParams'
+
+    JobEnqueued:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+
+    EnvelopeJobEnqueued:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/JobEnqueued'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    JobStatus:
+      type: string
+      enum: [pending, processing, complete, failed]
+
+    AIGenerationResult:
+      description: >-
+        The AI generation result fragment produced once a job completes —
+        content-shaped (the same structure as an exercise's content) so Story 4.3b
+        can preview and insert it. Null on jobs.result until status=complete.
+      allOf:
+        - $ref: '#/components/schemas/ExerciseContent'
+
+    Job:
+      type: object
+      required: [id, type, status, result, errorDetails, createdAt, startedAt, completedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        result:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AIGenerationResult'
+          description: The typed generation result fragment (content-shaped) once complete; null until then.
+        errorDetails:
+          type: string
+          nullable: true
+          description: >-
+            On failure, a terminal detail code: invalid_ai_response,
+            stuck_timeout, max_retries_exhausted, generation_failed, or
+            unknown_job_type.
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    EnvelopeJob:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Job'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
   securitySchemes:
     bearerAuth:

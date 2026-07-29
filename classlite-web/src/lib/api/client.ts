@@ -1122,6 +1122,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exercises/{id}/ai-generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue an AI content-generation job (section/questions/distractors) — 202 + jobId; deducts 1 credit in the SAME tx; never calls Gemini synchronously (story 4.3a — AC1). The 402 insufficient-credits gate is Story 6.5. */
+        post: operations["enqueueAIGeneration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll an async job's state (story 4.3a — AC2). result is null until status=complete. */
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2354,6 +2388,58 @@ export interface components {
         EnvelopeExerciseList: {
             data: components["schemas"]["ExerciseListItem"][];
             meta: components["schemas"]["EnvelopeMetaPaginated"];
+        };
+        AIGenerateSectionParams: {
+            /** @description Free-text prompt seed for the section to generate. */
+            topic: string;
+        };
+        AIGenerateQuestionsParams: {
+            /** @description Target section (within the path exercise) to append question groups to. */
+            sectionId: string;
+            count: number;
+        };
+        AIGenerateDistractorsParams: {
+            /** @description Target MCQ question (within the path exercise) to generate distractor options for. */
+            questionId: string;
+            count: number;
+        };
+        AIGenerateRequest: {
+            /** @enum {string} */
+            mode: "section" | "questions" | "distractors";
+            /** @description Mode-specific parameters (typed by mode): section → AIGenerateSectionParams; questions → AIGenerateQuestionsParams; distractors → AIGenerateDistractorsParams. exerciseId is taken from the path; any client-supplied centerId is stripped and ignored (SEC-7 / R3 — the job-row center_id is the sole trust anchor). */
+            params: components["schemas"]["AIGenerateSectionParams"] | components["schemas"]["AIGenerateQuestionsParams"] | components["schemas"]["AIGenerateDistractorsParams"];
+        };
+        JobEnqueued: {
+            /** Format: uuid */
+            jobId: string;
+        };
+        EnvelopeJobEnqueued: {
+            data: components["schemas"]["JobEnqueued"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @enum {string} */
+        JobStatus: "pending" | "processing" | "complete" | "failed";
+        /** @description The AI generation result fragment produced once a job completes — content-shaped (the same structure as an exercise's content) so Story 4.3b can preview and insert it. Null on jobs.result until status=complete. */
+        AIGenerationResult: components["schemas"]["ExerciseContent"];
+        Job: {
+            /** Format: uuid */
+            id: string;
+            type: string;
+            status: components["schemas"]["JobStatus"];
+            /** @description The typed generation result fragment (content-shaped) once complete; null until then. */
+            result: components["schemas"]["AIGenerationResult"] | null;
+            /** @description On failure, a terminal detail code: invalid_ai_response, stuck_timeout, max_retries_exhausted, generation_failed, or unknown_job_type. */
+            errorDetails: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            completedAt: string | null;
+        };
+        EnvelopeJob: {
+            data: components["schemas"]["Job"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
     };
     responses: never;
@@ -6967,6 +7053,135 @@ export interface operations {
                 };
             };
             /** @description EXERCISE_NOT_FOUND (absent, soft-deleted, or cross-teacher/cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    enqueueAIGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Job enqueued (poll GET /api/jobs/{jobId} for the result) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeJobEnqueued"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description EXERCISE_NOT_FOUND (absent, soft-deleted, or cross-teacher/cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (request body exceeds the 16 KiB enqueue limit) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (unknown mode / missing or invalid params — e.g. empty topic/sectionId/questionId, out-of-range count) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The job state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeJob"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description JOB_NOT_FOUND (unknown id, cross-tenant, or not created by the caller — no oracle) */
             404: {
                 headers: {
                     [name: string]: unknown;

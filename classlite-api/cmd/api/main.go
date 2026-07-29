@@ -18,11 +18,13 @@ import (
 
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/config"
+	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store"
+	"github.com/ducdo/classlite-api/internal/worker"
 	"golang.org/x/time/rate"
 )
 
@@ -106,6 +108,19 @@ func main() {
 	// must keep running until graceful shutdown signals.
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	go retryQ.Start(workerCtx)
+
+	// Story 4.3a — the durable AI content-generation dispatcher. Runs beside the
+	// email-retry worker under the same workerCtx, so cancelWorker() drains it on
+	// shutdown. Gemini is real here (mock-injected only in PR tests); the key is
+	// never logged (EDGE-4/R49). The dispatcher claims across tenants and
+	// re-establishes tenant context from each job row (SEC-6).
+	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel)
+	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
+		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
+		worker.NewGenerateQuestionsHandler(pool, geminiClient, clock.RealClock{}),
+		worker.NewGenerateDistractorsHandler(pool, geminiClient, clock.RealClock{}),
+	)
+	go aiDispatcher.Start(workerCtx)
 
 	mux := http.NewServeMux()
 
@@ -498,6 +513,35 @@ func main() {
 	mux.Handle("PATCH /api/exercises/{id}", exerciseChain(exerciseHandler.Update))
 	mux.Handle("DELETE /api/exercises/{id}", exerciseChain(exerciseHandler.Delete))
 	mux.Handle("POST /api/exercises/{id}/duplicate", exerciseChain(exerciseHandler.Duplicate))
+
+	// Story 4.3a — AI content generation (2 routes). Enqueue returns 202 + jobId
+	// and deducts 1 credit in the same tx (never calls Gemini); poll returns the
+	// typed job envelope. The worker (aiDispatcher, above) does the async
+	// generation. Role/scope enforced in the service; the poll is creator-scoped.
+	//
+	// SEC-10: AI endpoints get a cost-based rate limit (each enqueue triggers a
+	// paid Gemini call), keyed by userID:ip at ~20/min with a 20 burst; the limiter
+	// sits after requireCenter so the user id is in context, and emits Retry-After
+	// (the 429 documented in api.yaml).
+	aiGenerationSvc := service.NewAIGenerationService(pool)
+	aiGenerationHandler := handler.NewAIGenerationHandler(aiGenerationSvc, clock.RealClock{})
+	aiLimit := middleware.RateLimitByKey(
+		"ai-generate",
+		rate.Every(3*time.Second),
+		20,
+		middleware.UserAndIPKeyFn,
+	)
+	aiChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					aiLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
+	mux.Handle("POST /api/exercises/{id}/ai-generate", aiChain(aiGenerationHandler.Enqueue))
+	mux.Handle("GET /api/jobs/{jobId}", aiChain(aiGenerationHandler.PollJob))
 
 	// Story 2.7 — bulk student import (owner/admin only, DB role re-validated in
 	// the service on confirm). Shares the settingsInviteChain (RequireRole gate +

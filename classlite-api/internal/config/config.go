@@ -53,6 +53,12 @@ type Config struct {
 	IntegrationsEncryptionKey      string
 	IntegrationsEncryptionKeyBytes []byte
 	MeetOAuthRedirectURL           string
+	// Story 4.3a — Google Gemini (AI content generation). GeminiAPIKey lives in
+	// env only and is NEVER logged/serialized (EDGE-4/R49). GeminiModel selects
+	// the generateContent model; it has a safe default so only the key is
+	// required in non-dev.
+	GeminiAPIKey string
+	GeminiModel  string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -87,6 +93,8 @@ func Load() Config {
 		AppLoginErrorURLBase: getEnv("APP_LOGIN_ERROR_URL_BASE", "http://localhost:5173/login"),
 		IntegrationsEncryptionKey: getEnv("INTEGRATIONS_ENCRYPTION_KEY", ""),
 		MeetOAuthRedirectURL:      getEnv("MEET_OAUTH_REDIRECT_URL", "http://localhost:8080/api/centers/callback/google-meet"),
+		GeminiAPIKey:              getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:               getEnv("GEMINI_MODEL", "gemini-2.0-flash"),
 	}
 }
 
@@ -150,6 +158,10 @@ func (c *Config) Validate() error {
 		}
 		if c.AppInviteURLBase == "" {
 			missing = append(missing, "APP_INVITE_URL_BASE")
+		}
+		// Story 4.3a — the AI worker cannot generate content without the key.
+		if c.GeminiAPIKey == "" {
+			missing = append(missing, "GEMINI_API_KEY")
 		}
 		// D4: COOKIE_DOMAIN must be set explicitly in non-dev. The default
 		// is "localhost" (good for local dev only); a deploy that forgets
@@ -281,6 +293,8 @@ func (c Config) LogSummary() {
 		"app_post_login_url_set", c.AppPostLoginURL != "",
 		"integrations_encryption_key_set", c.IntegrationsEncryptionKey != "",
 		"meet_oauth_redirect_url_set", c.MeetOAuthRedirectURL != "",
+		"gemini_api_key_set", c.GeminiAPIKey != "",
+		"gemini_model", c.GeminiModel,
 	)
 }
 
