@@ -1277,6 +1277,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/knowledge-hub/files/{slug}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Short-lived presigned GET URL for a file's stored object (story 4.4b — AC5 preview/download). The file is resolved by slug within the caller's tenant (RLS); the object key's {center_id} prefix is re-asserted (SEC-8) before the GET is signed. Expiry 5 min. URL never logged (A10). With `disposition=attachment` the signed URL forces a download with the file's original name (Content-Disposition: attachment); omitted, the URL serves inline so the same URL can back the `<img>`/`<audio>`/`<embed>` preview. */
+        get: operations["getFileDownloadUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/knowledge-hub/files/{id}": {
         parameters: {
             query?: never;
@@ -2742,6 +2759,13 @@ export interface components {
         };
         EnvelopeStorageUsage: {
             data: components["schemas"]["StorageUsage"];
+        };
+        DownloadUrl: {
+            /** @description Short-lived (5-min) presigned GET URL for the file's stored object. Never logged (A10 slog redaction). */
+            url: string;
+        };
+        EnvelopeDownloadUrl: {
+            data: components["schemas"]["DownloadUrl"];
         };
     };
     responses: never;
@@ -8002,6 +8026,58 @@ export interface operations {
                 };
             };
             /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_NOT_FOUND (absent, soft-deleted, or cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getFileDownloadUrl: {
+        parameters: {
+            query?: {
+                /** @description `attachment` forces a download (Content-Disposition: attachment; filename=<original name>). Omitted → inline, for preview. */
+                disposition?: "attachment";
+            };
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presigned GET URL for the object */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeDownloadUrl"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / R2_KEY_PREFIX_MISMATCH / EMAIL_VERIFICATION_REQUIRED */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -541,6 +541,7 @@ func main() {
 	mux.Handle("DELETE /api/knowledge-hub/folders/{id}", knowledgeChain(knowledgeHubHandler.DeleteFolder))
 	mux.Handle("GET /api/knowledge-hub/files", knowledgeChain(knowledgeHubHandler.ListFiles))
 	mux.Handle("GET /api/knowledge-hub/files/{slug}", knowledgeChain(knowledgeHubHandler.GetFileDetail))
+	mux.Handle("GET /api/knowledge-hub/files/{slug}/download", knowledgeChain(knowledgeHubHandler.DownloadFile))
 	mux.Handle("PATCH /api/knowledge-hub/files/{id}", knowledgeChain(knowledgeHubHandler.UpdateFile))
 	mux.Handle("DELETE /api/knowledge-hub/files/{id}", knowledgeChain(knowledgeHubHandler.DeleteFile))
 

@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/ducdo/classlite-api/internal/service"
@@ -301,4 +303,123 @@ func assertNoViewRate(t *testing.T, env confirmEnv, slug string) {
 			t.Errorf("file detail must NOT include a view-rate field (%q is deferred)", banned)
 		}
 	}
+}
+
+// Story 4.4b — GET /api/knowledge-hub/files/{slug}/download returns a short-lived
+// presigned GET URL (full {data} envelope); an unknown slug → 404 FILE_NOT_FOUND.
+func TestFileDownload_ReturnsPresignedGetURL(t *testing.T) {
+	env := setupConfirmTest(t)
+	_, slug := confirmFileKH(t, env, "readme.pdf", oneMB)
+
+	rec := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/"+slug+"/download", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("download → %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode download: %v", err)
+	}
+	if resp.Data.URL == "" {
+		t.Fatalf("download url is empty")
+	}
+	// The mock signs GET URLs with a distinct marker so we prove a GET (not PUT)
+	// presign ran on the file's stored object key.
+	if !bytes.Contains([]byte(resp.Data.URL), []byte("presigned=get")) {
+		t.Errorf("download url = %q, want a presigned GET url", resp.Data.URL)
+	}
+}
+
+func TestFileDownload_UnknownSlug_Returns404(t *testing.T) {
+	env := setupConfirmTest(t)
+	rec := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/does-not-exist/download", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("download unknown slug → %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+	assertErrCode(t, rec, "FILE_NOT_FOUND")
+}
+
+// Story 4.4b (review D1) — disposition=attachment forces Content-Disposition with
+// the original filename (download), while the default URL stays inline so the SAME
+// URL can back the preview `<img>`/`<audio>`/`<embed>` (forcing attachment there
+// would make browsers refuse to inline-render a PDF `<embed>`, an AC5c regression).
+func TestFileDownload_AttachmentDisposition_ForcesFilename(t *testing.T) {
+	env := setupConfirmTest(t)
+	_, slug := confirmFileKH(t, env, "readme.pdf", oneMB) // env.confirm names it doc.pdf
+
+	att := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/"+slug+"/download?disposition=attachment", "")
+	if att.Code != http.StatusOK {
+		t.Fatalf("attachment download → %d, want 200: %s", att.Code, att.Body.String())
+	}
+	attURL := decodeDownloadURL(t, att)
+	// The mock echoes the disposition + escaped filename so we prove the
+	// attachment variant threaded the original name through to PresignGet.
+	if !bytes.Contains([]byte(attURL), []byte("disposition=attachment")) {
+		t.Errorf("attachment url = %q, want disposition=attachment", attURL)
+	}
+	if !bytes.Contains([]byte(attURL), []byte("filename="+url.QueryEscape("doc.pdf"))) {
+		t.Errorf("attachment url = %q, want the original filename", attURL)
+	}
+
+	// Negative: the inline default must NOT carry a disposition (preview URL).
+	inline := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/"+slug+"/download", "")
+	inlineURL := decodeDownloadURL(t, inline)
+	if bytes.Contains([]byte(inlineURL), []byte("disposition=attachment")) {
+		t.Errorf("inline url = %q, must not force attachment (preview must render inline)", inlineURL)
+	}
+}
+
+// Story 4.4b (review P1) — a signing (R2) failure surfaces as 500, not a bare
+// panic or a 200 with an empty URL. The mock's PresignError drives it.
+func TestFileDownload_PresignFailure_Returns500(t *testing.T) {
+	env := setupConfirmTest(t)
+	_, slug := confirmFileKH(t, env, "readme.pdf", oneMB)
+	env.mock.PresignError = errors.New("r2 unavailable")
+
+	rec := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/"+slug+"/download", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("presign failure → %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Story 4.4b (review P1) — SEC-8 defense-in-depth: a stored key OUTSIDE the
+// caller's tenant prefix (corrupt/legacy) is refused 403 R2_KEY_PREFIX_MISMATCH
+// even though RLS scoped the row to this center. Seeded raw (ConfirmUpload would
+// reject the bad prefix on the way in), so this exercises the guard directly.
+func TestFileDownload_KeyPrefixMismatch_Returns403(t *testing.T) {
+	env := setupConfirmTest(t)
+	sp := testpkg.SuperuserPool(t)
+	var slug string
+	if err := sp.QueryRow(context.Background(),
+		`INSERT INTO files (center_id, name, slug, object_key, content_type, size_bytes, uploaded_by)
+		 VALUES ($1, 'evil.pdf', 'evil-pdf', 'some-other-center/knowledge/evil.pdf', 'application/pdf', 1024, $2)
+		 RETURNING slug`, env.centerID, env.ownerID).Scan(&slug); err != nil {
+		t.Fatalf("seed bad-prefix file: %v", err)
+	}
+
+	rec := khReq(t, env, http.MethodGet, "/api/knowledge-hub/files/"+slug+"/download", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("prefix mismatch → %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	assertErrCode(t, rec, "R2_KEY_PREFIX_MISMATCH")
+}
+
+// decodeDownloadURL extracts data.url from a download response.
+func decodeDownloadURL(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp struct {
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode download: %v", err)
+	}
+	if resp.Data.URL == "" {
+		t.Fatalf("download url is empty")
+	}
+	return resp.Data.URL
 }

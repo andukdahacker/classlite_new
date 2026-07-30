@@ -7,13 +7,14 @@
  */
 import { useSearchParams } from 'react-router'
 
-export type SettingsTab = 'profile' | 'terms' | 'integrations' | 'rooms'
+export type SettingsTab = 'profile' | 'terms' | 'integrations' | 'rooms' | 'storage'
 
 const VALID_TABS: readonly SettingsTab[] = [
   'profile',
   'terms',
   'integrations',
   'rooms',
+  'storage',
 ] as const
 
 function isValidTab(value: string | null): value is SettingsTab {

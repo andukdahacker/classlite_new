@@ -4302,6 +4302,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /api/knowledge-hub/files/{slug}/download:
+    get:
+      operationId: getFileDownloadUrl
+      summary: >-
+        Short-lived presigned GET URL for a file's stored object (story 4.4b —
+        AC5 preview/download). The file is resolved by slug within the caller's
+        tenant (RLS); the object key's {center_id} prefix is re-asserted (SEC-8)
+        before the GET is signed. Expiry 5 min. URL never logged (A10). With
+        `disposition=attachment` the signed URL forces a download with the
+        file's original name (Content-Disposition: attachment); omitted, the URL
+        serves inline so the same URL can back the `<img>`/`<audio>`/`<embed>`
+        preview.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: disposition
+          in: query
+          required: false
+          description: >-
+            `attachment` forces a download (Content-Disposition: attachment;
+            filename=<original name>). Omitted → inline, for preview.
+          schema:
+            type: string
+            enum: [attachment]
+      responses:
+        "200":
+          description: Presigned GET URL for the object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeDownloadUrl'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / R2_KEY_PREFIX_MISMATCH / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FILE_NOT_FOUND (absent, soft-deleted, or cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/knowledge-hub/files/{id}:
     patch:
       operationId: updateFile
@@ -7439,6 +7493,21 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/StorageUsage'
+
+    DownloadUrl:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Short-lived (5-min) presigned GET URL for the file's stored object. Never logged (A10 slog redaction).
+
+    EnvelopeDownloadUrl:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/DownloadUrl'
 
   securitySchemes:
     bearerAuth:

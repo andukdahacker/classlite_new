@@ -329,6 +329,49 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 4.4b — /knowledge-hub browser + file detail. Its own lazy chunks
+      // under the AppLayout group, gated to staff (owner/admin/teacher) exactly
+      // like /exercises. Deep imports (NOT the barrel) so Rolldown emits
+      // dedicated chunks — students never download them. Removes the prior
+      // `/knowledge-hub` dead-link stub (sidebar + dashboard checklist now
+      // navigate here for real).
+      {
+        path: '/knowledge-hub',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="knowledgeHub"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { KnowledgeHubPage } = await import(
+                '@/features/knowledge-hub/KnowledgeHubPage'
+              )
+              return { Component: KnowledgeHubPage }
+            },
+          },
+          {
+            path: 'files/:slug',
+            lazy: async () => {
+              const { KnowledgeFileDetailPage } = await import(
+                '@/features/knowledge-hub/KnowledgeFileDetailPage'
+              )
+              return { Component: KnowledgeFileDetailPage }
+            },
+          },
+        ],
+      },
       // Story 2.7 — bulk student import. Mounted at `/students/import` (a CHILD
       // path), NOT the bare `/students` — Story 7.2 owns `/students` (the s42
       // center-wide list); do not squat the parent. Gated owner/admin (the DB

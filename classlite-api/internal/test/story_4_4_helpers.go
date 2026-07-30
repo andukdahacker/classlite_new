@@ -50,6 +50,7 @@ func NewKnowledgeHubTestServerBareMux(t *testing.T, db storyDB, storage service.
 	mux.Handle("DELETE /api/knowledge-hub/folders/{id}", chain(khHandler.DeleteFolder))
 	mux.Handle("GET /api/knowledge-hub/files", chain(khHandler.ListFiles))
 	mux.Handle("GET /api/knowledge-hub/files/{slug}", chain(khHandler.GetFileDetail))
+	mux.Handle("GET /api/knowledge-hub/files/{slug}/download", chain(khHandler.DownloadFile))
 	mux.Handle("PATCH /api/knowledge-hub/files/{id}", chain(khHandler.UpdateFile))
 	mux.Handle("DELETE /api/knowledge-hub/files/{id}", chain(khHandler.DeleteFile))
 	return mux

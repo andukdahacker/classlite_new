@@ -147,11 +147,14 @@ const addResources: ChecklistItem = {
   id: 'addResources',
   i18nKey: 'dashboard.checklist.item.addResources.name',
   badge: 'optional',
-  // v1: no signal. Story 4.4 wires knowledge hub. NO_TRIAL_MECHANIC_V1
+  // Story 4.4b shipped /knowledge-hub — graduate the dead-link to a real nav.
+  // Still no "done" signal (no per-center resource threshold in v1), so the item
+  // stays actionable-but-optional. NO_TRIAL_MECHANIC_V1
   isDone: () => false,
   targetPath: '/knowledge-hub',
   targetSurface: 'resources',
   epicNum: 4,
+  targetShipped: true,
 }
 
 const soloFirstClassSpawned: ChecklistItem = {

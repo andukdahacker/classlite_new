@@ -76,6 +76,10 @@ type storageUsageResponse struct {
 	LimitBytes int64 `json:"limitBytes"`
 }
 
+type downloadUrlResponse struct {
+	URL string `json:"url"`
+}
+
 func fileToResponse(f generated.File) fileResponse {
 	return fileResponse{
 		ID:          uuidPgToString(f.ID),
@@ -276,6 +280,29 @@ func (h *KnowledgeHubHandler) GetFileDetail(w http.ResponseWriter, r *http.Reque
 		fileResponse:    fileToResponse(detail.Row),
 		LinkedLocations: links,
 	})
+	return nil
+}
+
+// DownloadFile returns a short-lived presigned GET URL for a file's stored
+// object (Story 4.4b — AC5 preview/download). Resolved by slug within the
+// caller's tenant; the URL itself is redacted from logs (A10).
+func (h *KnowledgeHubHandler) DownloadFile(w http.ResponseWriter, r *http.Request) error {
+	tc, err := requireOwnerTenant(r)
+	if err != nil {
+		return err
+	}
+	slug := strings.TrimSpace(r.PathValue("slug"))
+	if slug == "" {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "slug", Message: "path parameter required"}}}
+	}
+	// disposition=attachment forces a download (Content-Disposition) with the
+	// original filename; omitted → inline, so the same URL backs the preview.
+	attachment := r.URL.Query().Get("disposition") == "attachment"
+	url, err := h.svc.GetFileDownloadURL(r.Context(), tc, slug, attachment)
+	if err != nil {
+		return err
+	}
+	WriteJSON(w, http.StatusOK, downloadUrlResponse{URL: url})
 	return nil
 }
 

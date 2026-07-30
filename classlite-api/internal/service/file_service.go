@@ -32,6 +32,7 @@ import (
 	"mime"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ducdo/classlite-api/internal/clock"
@@ -63,6 +64,10 @@ const (
 
 	fileNotFoundCode   = "FILE_NOT_FOUND"
 	folderNotFoundCode = "FOLDER_NOT_FOUND"
+
+	// downloadURLExpiry bounds the presigned GET URL for file preview/download
+	// (Story 4.4b — AC5). Matches the 5-min presign PUT expiry (A10 #4).
+	downloadURLExpiry = 5 * time.Minute
 )
 
 // FileService owns Knowledge Hub files + folders and the storage ceiling.
@@ -451,6 +456,55 @@ func (s *FileService) GetFileDetail(ctx context.Context, tc model.TenantContext,
 		return nil, err
 	}
 	return &detail, nil
+}
+
+// GetFileDownloadURL resolves a file by slug and returns a short-lived presigned
+// GET URL for its stored object (Story 4.4b — AC5 preview/download). The row is
+// read under the tenant RLS tx (a cross-tenant or soft-deleted slug → 404
+// FILE_NOT_FOUND); the object key's {center_id} prefix is re-asserted (SEC-8)
+// before the GET is signed even though RLS already guarantees ownership.
+func (s *FileService) GetFileDownloadURL(ctx context.Context, tc model.TenantContext, slug string, attachment bool) (string, error) {
+	if err := assertClassRole(tc); err != nil {
+		return "", err
+	}
+	centerUUID, err := uuid.Parse(tc.CenterID)
+	if err != nil {
+		return "", fmt.Errorf("file download: parse center id: %w", err)
+	}
+	var objectKey, fileName string
+	err = s.readInTenantTx(ctx, tc, func(q *generated.Queries) error {
+		row, gerr := q.GetFileBySlug(ctx, generated.GetFileBySlugParams{CenterID: pgUUID(centerUUID), Slug: slug})
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return model.NotFoundError{Resource: "file", ID: slug, Code: fileNotFoundCode}
+			}
+			return fmt.Errorf("file download: get: %w", gerr)
+		}
+		objectKey = row.ObjectKey
+		fileName = row.Name
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	// SEC-8 defense-in-depth: the stored key must live under the caller's tenant
+	// prefix. RLS already scopes the row to this center, so this only fails on a
+	// corrupt/legacy key — never on a normal request.
+	if !strings.HasPrefix(objectKey, tc.CenterID+"/") {
+		return "", KeyPrefixMismatchError{}
+	}
+	// attachment forces a download under the original name; the inline default
+	// keeps one URL usable for the preview `<img>`/`<audio>`/`<embed>` (AC5).
+	opts := PresignGetOpts{}
+	if attachment {
+		opts.Attachment = true
+		opts.Filename = fileName
+	}
+	url, err := s.storage.PresignGet(ctx, objectKey, downloadURLExpiry, opts)
+	if err != nil {
+		return "", fmt.Errorf("file download: presign get: %w", err)
+	}
+	return url, nil
 }
 
 // RenameMoveFile renames and/or reparents a file. A move to a non-existent /

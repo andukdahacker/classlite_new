@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -52,6 +53,37 @@ func (s *R2StorageService) Presign(ctx context.Context, key, contentType string,
 		return "", fmt.Errorf("presign put object: %w", err)
 	}
 	return result.URL, nil
+}
+
+// PresignGet generates a short-lived presigned GET URL for direct browser
+// download/preview (Story 4.4b). Bypasses RLS — the caller MUST have already
+// enforced the tenant-key prefix guard (SEC-8).
+func (s *R2StorageService) PresignGet(ctx context.Context, key string, expiry time.Duration, opts PresignGetOpts) (string, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+	if opts.Attachment {
+		input.ResponseContentDisposition = aws.String(contentDisposition(opts.Filename))
+	}
+
+	result, err := s.presignClient.PresignGetObject(ctx, input, s3.WithPresignExpires(expiry))
+	if err != nil {
+		return "", fmt.Errorf("presign get object: %w", err)
+	}
+	return result.URL, nil
+}
+
+// contentDisposition builds an attachment Content-Disposition header value. The
+// filename is carried via RFC 5987 `filename*=UTF-8”…` so Vietnamese (co-primary
+// locale) and other non-ASCII names survive — a bare quoted `filename` may not
+// legally hold UTF-8 bytes. Empty name → plain `attachment` (browser uses the
+// key basename).
+func contentDisposition(filename string) string {
+	if filename == "" {
+		return "attachment"
+	}
+	return "attachment; filename*=UTF-8''" + url.PathEscape(filename)
 }
 
 // HeadObject checks if an object exists in R2 and returns its metadata.

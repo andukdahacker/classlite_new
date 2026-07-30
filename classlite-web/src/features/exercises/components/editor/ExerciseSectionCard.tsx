@@ -27,6 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { KnowledgeHubPicker } from '@/features/knowledge-hub'
 import { SortableItem, SortableList } from './SortableList'
 import { QuestionGroupCard } from './QuestionGroupCard'
 import {
@@ -66,6 +67,25 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+/**
+ * isKnowledgeAudioRef detects a Knowledge Hub object key stored in the audio
+ * field (Story 4.4b seam, AC6a). The picker writes the file's object key
+ * (`{center}/knowledge/{uuid}.{ext}`) into `section.content`; that isn't a
+ * playable URL, so we treat it as a valid non-URL reference rather than flagging
+ * it invalid. The exercise renderer (future epic) resolves the key to a
+ * presigned URL at play time.
+ *
+ * Matched by SHAPE, not a bare `/knowledge/` substring, so free-typed text like
+ * `notes/knowledge/x` isn't mistaken for a real key: a single non-slash/non-colon
+ * center segment, the literal `/knowledge/`, then a filename with an extension.
+ * The colon exclusion also keeps an `https://…/knowledge/…` URL out (it's a URL).
+ */
+const KNOWLEDGE_KEY_RE = /^[^/\s:]+\/knowledge\/[^/\s]+\.[a-z0-9]+$/i
+
+function isKnowledgeAudioRef(value: string): boolean {
+  return KNOWLEDGE_KEY_RE.test(value)
+}
+
 export function ExerciseSectionCard({
   section,
   idPrefix,
@@ -77,6 +97,7 @@ export function ExerciseSectionCard({
 }: ExerciseSectionCardProps) {
   const { t } = useTranslation()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false)
   const promptOnly = isPromptOnlySection(section.type)
   const groups = section.questionGroups
   // AC9 focus return: a deleted group's trash button unmounts, so return focus to
@@ -92,8 +113,12 @@ export function ExerciseSectionCard({
     addGroupRef.current?.focus()
   }
 
+  const audioIsKnowledgeRef = isAudioSection(section.type) && isKnowledgeAudioRef(section.content)
   const audioInvalid =
-    isAudioSection(section.type) && section.content !== '' && !isValidHttpUrl(section.content)
+    isAudioSection(section.type) &&
+    section.content !== '' &&
+    !isValidHttpUrl(section.content) &&
+    !audioIsKnowledgeRef
 
   // AC2: a section that has content prompts a confirm; a pristine empty section
   // deletes straight away (no needless modal).
@@ -167,7 +192,7 @@ export function ExerciseSectionCard({
                 {t('exercises.editor.section.audioUrlInvalid')}
               </p>
             ) : null}
-            {section.content !== '' && !audioInvalid ? (
+            {section.content !== '' && !audioInvalid && !audioIsKnowledgeRef ? (
               <audio
                 controls
                 src={section.content}
@@ -177,9 +202,36 @@ export function ExerciseSectionCard({
                 <track kind="captions" />
               </audio>
             ) : null}
-            <p id={`${idPrefix}-audio-helper`} className="text-xs text-muted-foreground">
-              {t('exercises.editor.section.audioUploadComingSoon')}
-            </p>
+            {audioIsKnowledgeRef ? (
+              <p id={`${idPrefix}-audio-helper`} className="text-xs text-muted-foreground" data-testid="section-audio-knowledge-ref">
+                {t('exercises.editor.section.audioFromKnowledge')}
+              </p>
+            ) : null}
+            {/* Story 4.4b seam (AC6a): pick an audio file from the Knowledge Hub;
+                its object key is written into the audio field via the existing
+                4.2 autosave PATCH (pure client string-write, no backend). */}
+            <button
+              type="button"
+              onClick={() => setAudioPickerOpen(true)}
+              className="self-start text-xs text-primary hover:underline"
+              data-testid="section-audio-from-hub"
+            >
+              {t('knowledgeHub.picker.fromHub')}
+            </button>
+            <KnowledgeHubPicker
+              open={audioPickerOpen}
+              onOpenChange={setAudioPickerOpen}
+              mode={{
+                allowedTypes: ['audio'],
+                selection: 'single',
+                confirmVerbKey: 'knowledgeHub.picker.verb.insertAudio',
+                emptyKey: 'knowledgeHub.picker.empty.audio',
+                onConfirm: (files) => {
+                  const picked = files[0]
+                  if (picked) onChange({ ...section, content: picked.objectKey })
+                },
+              }}
+            />
           </>
         ) : (
           <Textarea

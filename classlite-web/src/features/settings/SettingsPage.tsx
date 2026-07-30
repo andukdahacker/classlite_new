@@ -22,6 +22,7 @@ import { ProfileTab } from './ProfileTab'
 import { TermCalendarTab } from './TermCalendarTab'
 import { RoomsTab } from './RoomsTab'
 import { IntegrationsTab } from './IntegrationsTab'
+import { StorageTab } from './StorageTab'
 import { settingsKeys } from './api/settingsKeys'
 import { CONNECT_IN_FLIGHT_MARKER_KEY } from './api/connectMarker'
 import type { CenterProfile } from './api/useCenterProfile'
@@ -36,6 +37,7 @@ const TAB_ORDER: readonly SettingsTab[] = [
   'terms',
   'integrations',
   'rooms',
+  'storage',
 ] as const
 
 export default function SettingsPage(): ReactElement {
@@ -180,6 +182,8 @@ export default function SettingsPage(): ReactElement {
             return <RoomsTab centerId={centerId} />
           case 'integrations':
             return <IntegrationsTab centerId={centerId} />
+          case 'storage':
+            return <StorageTab centerId={centerId} />
         }
       })()}
     </div>

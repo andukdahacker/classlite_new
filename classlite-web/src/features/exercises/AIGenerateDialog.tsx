@@ -51,6 +51,7 @@ import {
   type AiGenerationMode,
   type SectionFormValues,
 } from './lib/aiGeneration'
+import { KnowledgeHubPicker } from '@/features/knowledge-hub'
 import { AiChipGroup } from './components/ai/AiChipGroup'
 import { AiGenerationPreview } from './components/ai/AiGenerationPreview'
 import { useAiCredits, type AiCredits } from './hooks/useAiCredits'
@@ -295,6 +296,7 @@ function SectionForm({
   const questionCount = watch('questionCount')
   const questionMix = watch('questionMix')
   const promptOnly = isPromptOnlySection(sectionType)
+  const [topicPickerOpen, setTopicPickerOpen] = useState(false)
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" data-testid="ai-section-form">
@@ -321,6 +323,35 @@ function SectionForm({
           placeholder={t('exercises.ai.field.topicPlaceholder')}
           {...register('topic')}
           data-testid="ai-topic-input"
+        />
+        {/* Story 4.4b seam (AC6c): the picked file SEEDS the free-text topic; it
+            is NOT attached to the exercise — the "Use as topic" verb telegraphs
+            that. Client-only (FU-4-3-B-1); no file reference is persisted. */}
+        <button
+          type="button"
+          onClick={() => setTopicPickerOpen(true)}
+          className="mt-1 self-start text-xs text-[color:var(--cl-accent)] hover:underline"
+          data-testid="ai-topic-from-hub"
+        >
+          {t('knowledgeHub.picker.fromHub')}
+        </button>
+        <KnowledgeHubPicker
+          open={topicPickerOpen}
+          onOpenChange={setTopicPickerOpen}
+          mode={{
+            allowedTypes: 'all',
+            selection: 'single',
+            confirmVerbKey: 'knowledgeHub.picker.verb.useAsTopic',
+            emptyKey: 'knowledgeHub.picker.empty.topic',
+            onConfirm: (files) => {
+              const picked = files[0]
+              // Seed the free-text topic with the filename minus its extension —
+              // "reading.pdf" as a generation topic reads as a filename, not a subject.
+              if (picked) {
+                setValue('topic', picked.name.replace(/\.[^/.]+$/, ''), { shouldValidate: true })
+              }
+            },
+          }}
         />
       </FieldBlock>
 

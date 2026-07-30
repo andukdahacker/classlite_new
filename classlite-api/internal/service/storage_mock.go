@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -73,6 +74,24 @@ func (m *MockStorageService) Presign(ctx context.Context, key, contentType strin
 	}
 
 	return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=true", key), nil
+}
+
+// PresignGet returns a fake presigned GET URL (Story 4.4b). Reuses PresignError
+// so a test can simulate a signing failure; unlike Presign it does not create an
+// object entry (a GET presign never brings an object into existence).
+func (m *MockStorageService) PresignGet(ctx context.Context, key string, expiry time.Duration, opts PresignGetOpts) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.PresignError != nil {
+		return "", m.PresignError
+	}
+	// Echo the disposition into the URL so a test can prove the attachment
+	// variant threaded the original filename through (Content-Disposition).
+	if opts.Attachment {
+		return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=get&disposition=attachment&filename=%s", key, url.QueryEscape(opts.Filename)), nil
+	}
+	return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=get", key), nil
 }
 
 // HeadObject returns metadata for a previously stored object.
