@@ -13,9 +13,9 @@ import (
 
 // R2StorageService implements StorageService using Cloudflare R2 (S3-compatible).
 type R2StorageService struct {
-	client       *s3.Client
+	client        *s3.Client
 	presignClient *s3.PresignClient
-	bucket       string
+	bucket        string
 }
 
 // NewR2StorageService creates a new R2-backed storage service.
@@ -23,8 +23,8 @@ func NewR2StorageService(accountID, accessKeyID, secretAccessKey, bucketName str
 	endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 
 	cfg := aws.Config{
-		Region:      "auto",
-		Credentials: credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		Region:       "auto",
+		Credentials:  credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
 		BaseEndpoint: aws.String(endpoint),
 	}
 
@@ -102,4 +102,18 @@ func (s *R2StorageService) GetObject(ctx context.Context, key string) ([]byte, e
 		return nil, fmt.Errorf("read object %s body: %w", key, err)
 	}
 	return body, nil
+}
+
+// Delete removes an object from R2 (Story 4.4a — confirm delete-on-mismatch /
+// storage-full cleanup). S3 DeleteObject is idempotent (deleting an absent key
+// is not an error), which is the right semantics for best-effort cleanup.
+func (s *R2StorageService) Delete(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("delete object %s: %w", key, err)
+	}
+	return nil
 }

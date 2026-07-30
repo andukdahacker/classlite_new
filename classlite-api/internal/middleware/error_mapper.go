@@ -312,6 +312,47 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			return
 		}
 
+		// Story 4.4a — Knowledge Hub / upload-hardening VALUE-typed errors
+		// (errors.As with a value target). Distinct codes the generic
+		// ValidationError arm would otherwise flatten.
+		var fileTooLarge service.FileTooLargeError
+		var storageFull service.StorageFullError
+		var contentTypeMismatch service.ContentTypeMismatchError
+		var uploadVerifyFailed service.UploadVerificationFailedError
+		var keyPrefixMismatch service.KeyPrefixMismatchError
+		var folderCycle service.FolderCycleError
+		var folderMaxDepth service.FolderMaxDepthError
+		switch {
+		case errors.As(err, &fileTooLarge):
+			handler.WriteError(w, r, http.StatusRequestEntityTooLarge,
+				"FILE_TOO_LARGE", fileTooLarge.Error(), nil)
+			return
+		case errors.As(err, &storageFull):
+			handler.WriteError(w, r, http.StatusConflict,
+				"STORAGE_FULL", "Storage full — free up space or upgrade your plan.", nil)
+			return
+		case errors.As(err, &contentTypeMismatch):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"CONTENT_TYPE_MISMATCH", contentTypeMismatch.Error(), nil)
+			return
+		case errors.As(err, &uploadVerifyFailed):
+			handler.WriteError(w, r, http.StatusBadGateway,
+				"UPLOAD_VERIFICATION_FAILED", "Could not verify the uploaded file. Please try again.", nil)
+			return
+		case errors.As(err, &keyPrefixMismatch):
+			handler.WriteError(w, r, http.StatusForbidden,
+				"R2_KEY_PREFIX_MISMATCH", "This upload key does not belong to your center.", nil)
+			return
+		case errors.As(err, &folderCycle):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"FOLDER_CYCLE", "A folder cannot be moved into its own subfolder.", nil)
+			return
+		case errors.As(err, &folderMaxDepth):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"FOLDER_MAX_DEPTH", folderMaxDepth.Error(), nil)
+			return
+		}
+
 		// Legacy model.* value-typed errors (Story 1.2–1.4).
 		var notFound model.NotFoundError
 		var forbidden model.ForbiddenError

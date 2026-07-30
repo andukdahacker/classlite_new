@@ -25,4 +25,11 @@ type StorageService interface {
 	// RLS entirely — the object key IS the access boundary (SEC-8), so callers
 	// MUST enforce the tenant-key prefix guard before invoking it.
 	GetObject(ctx context.Context, key string) ([]byte, error)
+
+	// Delete removes an object from storage (Story 4.4a). Best-effort cleanup on
+	// the confirm delete-on-mismatch (AC9) and storage-full (AC12) paths: an
+	// upload that fails post-PUT validation must not linger in R2. A Delete
+	// failure is surfaced (not swallowed) so the caller can emit the
+	// `orphaned_object` telemetry counter for a later reaper sweep.
+	Delete(ctx context.Context, key string) error
 }

@@ -3909,6 +3909,483 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 4.4a — Presigned uploads + Knowledge Hub ----------------
+  /api/uploads/presign:
+    post:
+      operationId: presignUpload
+      summary: >-
+        Presign a direct-to-R2 PUT (story 1.2e, hardened in 4.4a). Validates the
+        MIME allowlist + extension↔Content-Type match server-side, locks the
+        Content-Type into the signed payload, and enforces the per-feature A9
+        size cap on `sizeBytes` (413 FILE_TOO_LARGE) BEFORE generating the URL.
+        The 409 STORAGE_FULL here is an ADVISORY UX fast-fail only — the
+        authoritative ceiling is enforced at /api/uploads/confirm (AC12).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignRequest'
+      responses:
+        "200":
+          description: Presigned PUT URL + object key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopePresignResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: STORAGE_FULL (advisory UX pre-check — NON-authoritative; confirm re-checks under a lock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: FILE_TOO_LARGE (sizeBytes exceeds the per-feature A9 cap; message includes the cap in MB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (filename, contentType, feature, sizeBytes; disallowed MIME or extension↔type mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/uploads/confirm:
+    post:
+      operationId: confirmUpload
+      summary: >-
+        Confirm a completed R2 upload (story 1.2e, hardened in 4.4a). Re-checks
+        the {center_id} key prefix vs JWT tenant (403 R2_KEY_PREFIX_MISMATCH +
+        audit), then HeadObject-re-validates the stored object's size + content
+        type. For a `knowledge` key it creates the `files` row INSIDE a per-center
+        serialized transaction that enforces the storage ceiling (409
+        STORAGE_FULL) and is idempotent by (centerId, objectKey) — a retry
+        returns the same file and never double-counts. On a size/type mismatch
+        the object is best-effort deleted (413/422); a HeadObject transport
+        failure fails closed (502, no row, no phantom delete).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmUploadRequest'
+      responses:
+        "200":
+          description: Idempotent retry — the already-created file for this (centerId, objectKey)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFile'
+        "201":
+          description: File record created for the confirmed knowledge upload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFile'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: R2_KEY_PREFIX_MISMATCH (key prefix ≠ JWT tenant) / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: UPLOAD_NOT_FOUND (no stored object for the key)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: STORAGE_FULL (used + new exceeds the center storage ceiling — enforced under a per-center lock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: FILE_TOO_LARGE (stored object exceeds the per-feature A9 cap; object best-effort deleted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: CONTENT_TYPE_MISMATCH (stored Content-Type ≠ locked type; object best-effort deleted) / validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "502":
+          description: UPLOAD_VERIFICATION_FAILED (HeadObject transport error — fail closed, no row, no delete)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/storage/usage:
+    get:
+      operationId: getStorageUsage
+      summary: Current storage usage + ceiling for the caller's center (story 4.4a — AC12).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Used bytes (sum of live files) + the center storage ceiling
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStorageUsage'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/knowledge-hub/folders:
+    get:
+      operationId: listFolders
+      summary: List all (non-deleted) folders for the caller's center — the 4.4b tree source (story 4.4a — AC2).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Flat list of folders (client composes the tree via parentFolderId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFolderList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createFolder
+      summary: Create a folder (optionally nested via parentFolderId) (story 4.4a — AC2).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        "201":
+          description: Created folder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFolder'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FOLDER_NOT_FOUND (parentFolderId absent or in another tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: FOLDER_MAX_DEPTH (nesting beyond the depth limit) / validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/knowledge-hub/folders/{id}:
+    patch:
+      operationId: updateFolder
+      summary: Rename and/or move (reparent) a folder. A move into the folder's own descendant → 422 FOLDER_CYCLE (story 4.4a — AC2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFolderRequest'
+      responses:
+        "200":
+          description: Updated folder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFolder'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FOLDER_NOT_FOUND (absent, soft-deleted, or cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: FOLDER_CYCLE (move into own descendant) / FOLDER_MAX_DEPTH / validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteFolder
+      summary: Soft-delete a folder (deleted_at stamp) (story 4.4a — AC2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Soft-deleted (no body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FOLDER_NOT_FOUND (absent or already deleted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/knowledge-hub/files:
+    get:
+      operationId: listFiles
+      summary: List (non-deleted) files in a folder (or root when folderId is omitted) (story 4.4a — AC3).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Folder to list. Omitted → root-level files (folder_id IS NULL).
+      responses:
+        "200":
+          description: Files in the folder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFileList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/knowledge-hub/files/{slug}:
+    get:
+      operationId: getFileDetail
+      summary: File detail — type-tagged metadata + linked locations (sessions/exercises referencing it). No view-rate (deferred) (story 4.4a — AC13).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File detail with linked locations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFileDetail'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FILE_NOT_FOUND (absent, soft-deleted, or cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/knowledge-hub/files/{id}:
+    patch:
+      operationId: updateFile
+      summary: Rename and/or move (reparent) a file (story 4.4a — AC3).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFileRequest'
+      responses:
+        "200":
+          description: Updated file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeFile'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FILE_NOT_FOUND / FOLDER_NOT_FOUND (target parent absent or cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation error (name)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteFile
+      summary: Soft-delete a file (deleted_at stamp; R2 object + row retained; frees storage accounting) (story 4.4a — AC3).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Soft-deleted (no body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: FORBIDDEN / EMAIL_VERIFICATION_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: FILE_NOT_FOUND (absent or already deleted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -6647,6 +7124,321 @@ components:
           $ref: '#/components/schemas/Job'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 4.4a — Presigned uploads + Knowledge Hub ----------------
+    UploadFeature:
+      type: string
+      enum: [knowledge, speaking, avatars, imports]
+      description: The feature namespace segment of the R2 object key ({center_id}/{feature}/{uuid}.{ext}).
+
+    PresignRequest:
+      type: object
+      required: [filename, contentType, feature, sizeBytes]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          description: Original filename; its extension must be on the allowlist and match contentType.
+        contentType:
+          type: string
+          description: MIME type — must be on the server allowlist and match the filename extension.
+        feature:
+          $ref: '#/components/schemas/UploadFeature'
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Declared file size. Enforced against the per-feature A9 cap BEFORE the URL is generated (413 FILE_TOO_LARGE).
+
+    PresignResult:
+      type: object
+      required: [url, key]
+      properties:
+        url:
+          type: string
+          description: The presigned PUT URL (short-lived, 5-min expiry). Never logged (A10 slog redaction).
+        key:
+          type: string
+          description: The R2 object key the client must PUT to, then pass to /api/uploads/confirm.
+
+    EnvelopePresignResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PresignResult'
+
+    ConfirmUploadRequest:
+      type: object
+      required: [key, sizeBytes]
+      properties:
+        key:
+          type: string
+          description: The R2 object key returned by /api/uploads/presign.
+        name:
+          type: string
+          nullable: true
+          description: Display name for the created file (knowledge feature). Defaults to the filename component of the key when absent.
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Destination folder for the created file. null = root.
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Client-declared size (advisory — confirm re-validates against HeadObject).
+
+    File:
+      type: object
+      # All fields required + explicit (nulls not omitted) per GO-5.
+      required:
+        - id
+        - centerId
+        - folderId
+        - name
+        - slug
+        - objectKey
+        - contentType
+        - sizeBytes
+        - uploadedBy
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        slug:
+          type: string
+          description: Unique-per-center URL-safe identifier for the file detail route.
+        objectKey:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        uploadedBy:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    LinkedLocation:
+      type: object
+      required: [type, id, label]
+      properties:
+        type:
+          type: string
+          enum: [session, exercise]
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          description: Human-readable label (session title / exercise title) for the linking host.
+
+    FileDetail:
+      type: object
+      # File + linkedLocations. NO view-rate field (deferred to the analytics epic).
+      required:
+        - id
+        - centerId
+        - folderId
+        - name
+        - slug
+        - objectKey
+        - contentType
+        - sizeBytes
+        - uploadedBy
+        - createdAt
+        - updatedAt
+        - linkedLocations
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        slug:
+          type: string
+        objectKey:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        uploadedBy:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        linkedLocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkedLocation'
+          description: Sessions/exercises referencing this file. Excludes any whose host or the file itself is soft-deleted.
+
+    Folder:
+      type: object
+      required:
+        - id
+        - centerId
+        - parentFolderId
+        - name
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        parentFolderId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateFolderRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        parentFolderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Parent folder. null/absent = root-level.
+
+    UpdateFolderRequest:
+      type: object
+      description: |
+        Rename and/or move a folder. Tri-state on parentFolderId:
+        key absent = unchanged; explicit null = move to root; a uuid = reparent.
+        A move into the folder's own descendant is rejected 422 FOLDER_CYCLE.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        parentFolderId:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateFileRequest:
+      type: object
+      description: |
+        Rename and/or move a file. Tri-state on folderId: key absent = unchanged;
+        explicit null = move to root; a uuid = reparent into that folder.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+
+    StorageUsage:
+      type: object
+      required: [usedBytes, limitBytes]
+      properties:
+        usedBytes:
+          type: integer
+          format: int64
+          description: Sum of size_bytes over the center's live (deleted_at IS NULL) files.
+        limitBytes:
+          type: integer
+          format: int64
+          description: The center's storage ceiling (centers.storage_limit_bytes; 500 MiB free default).
+
+    EnvelopeFile:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/File'
+
+    EnvelopeFileList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+
+    EnvelopeFileDetail:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/FileDetail'
+
+    EnvelopeFolder:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Folder'
+
+    EnvelopeFolderList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+
+    EnvelopeStorageUsage:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StorageUsage'
 
   securitySchemes:
     bearerAuth:

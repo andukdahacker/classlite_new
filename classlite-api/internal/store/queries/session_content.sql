@@ -32,7 +32,7 @@ WHERE id = sqlc.arg('id') AND session_id = sqlc.arg('session_id')
 RETURNING id;
 
 -- name: ListSessionMaterialsBySession :many
-SELECT id, center_id, session_id, title, url, kind, created_at, updated_at
+SELECT id, center_id, session_id, title, url, kind, created_at, updated_at, file_id
 FROM session_materials
 WHERE session_id = $1
 ORDER BY created_at ASC;
@@ -40,7 +40,7 @@ ORDER BY created_at ASC;
 -- name: CreateSessionMaterial :one
 INSERT INTO session_materials (id, center_id, session_id, title, url, kind)
 VALUES ($1, $2, $3, $4, $5, 'link')
-RETURNING id, center_id, session_id, title, url, kind, created_at, updated_at;
+RETURNING id, center_id, session_id, title, url, kind, created_at, updated_at, file_id;
 
 -- name: UpdateSessionMaterial :one
 UPDATE session_materials
@@ -48,7 +48,7 @@ SET title = sqlc.arg('title'),
     url = sqlc.arg('url'),
     updated_at = now()
 WHERE id = sqlc.arg('id') AND session_id = sqlc.arg('session_id')
-RETURNING id, center_id, session_id, title, url, kind, created_at, updated_at;
+RETURNING id, center_id, session_id, title, url, kind, created_at, updated_at, file_id;
 
 -- name: DeleteSessionMaterial :one
 DELETE FROM session_materials

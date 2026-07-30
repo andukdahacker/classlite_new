@@ -1156,6 +1156,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/uploads/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Presign a direct-to-R2 PUT (story 1.2e, hardened in 4.4a). Validates the MIME allowlist + extension↔Content-Type match server-side, locks the Content-Type into the signed payload, and enforces the per-feature A9 size cap on `sizeBytes` (413 FILE_TOO_LARGE) BEFORE generating the URL. The 409 STORAGE_FULL here is an ADVISORY UX fast-fail only — the authoritative ceiling is enforced at /api/uploads/confirm (AC12). */
+        post: operations["presignUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/uploads/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a completed R2 upload (story 1.2e, hardened in 4.4a). Re-checks the {center_id} key prefix vs JWT tenant (403 R2_KEY_PREFIX_MISMATCH + audit), then HeadObject-re-validates the stored object's size + content type. For a `knowledge` key it creates the `files` row INSIDE a per-center serialized transaction that enforces the storage ceiling (409 STORAGE_FULL) and is idempotent by (centerId, objectKey) — a retry returns the same file and never double-counts. On a size/type mismatch the object is best-effort deleted (413/422); a HeadObject transport failure fails closed (502, no row, no phantom delete). */
+        post: operations["confirmUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current storage usage + ceiling for the caller's center (story 4.4a — AC12). */
+        get: operations["getStorageUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-hub/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all (non-deleted) folders for the caller's center — the 4.4b tree source (story 4.4a — AC2). */
+        get: operations["listFolders"];
+        put?: never;
+        /** Create a folder (optionally nested via parentFolderId) (story 4.4a — AC2). */
+        post: operations["createFolder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-hub/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Soft-delete a folder (deleted_at stamp) (story 4.4a — AC2). */
+        delete: operations["deleteFolder"];
+        options?: never;
+        head?: never;
+        /** Rename and/or move (reparent) a folder. A move into the folder's own descendant → 422 FOLDER_CYCLE (story 4.4a — AC2). */
+        patch: operations["updateFolder"];
+        trace?: never;
+    };
+    "/api/knowledge-hub/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List (non-deleted) files in a folder (or root when folderId is omitted) (story 4.4a — AC3). */
+        get: operations["listFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-hub/files/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** File detail — type-tagged metadata + linked locations (sessions/exercises referencing it). No view-rate (deferred) (story 4.4a — AC13). */
+        get: operations["getFileDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-hub/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Soft-delete a file (deleted_at stamp; R2 object + row retained; frees storage accounting) (story 4.4a — AC3). */
+        delete: operations["deleteFile"];
+        options?: never;
+        head?: never;
+        /** Rename and/or move (reparent) a file (story 4.4a — AC3). */
+        patch: operations["updateFile"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2440,6 +2579,169 @@ export interface components {
         EnvelopeJob: {
             data: components["schemas"]["Job"];
             meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description The feature namespace segment of the R2 object key ({center_id}/{feature}/{uuid}.{ext}).
+         * @enum {string}
+         */
+        UploadFeature: "knowledge" | "speaking" | "avatars" | "imports";
+        PresignRequest: {
+            /** @description Original filename; its extension must be on the allowlist and match contentType. */
+            filename: string;
+            /** @description MIME type — must be on the server allowlist and match the filename extension. */
+            contentType: string;
+            feature: components["schemas"]["UploadFeature"];
+            /**
+             * Format: int64
+             * @description Declared file size. Enforced against the per-feature A9 cap BEFORE the URL is generated (413 FILE_TOO_LARGE).
+             */
+            sizeBytes: number;
+        };
+        PresignResult: {
+            /** @description The presigned PUT URL (short-lived, 5-min expiry). Never logged (A10 slog redaction). */
+            url: string;
+            /** @description The R2 object key the client must PUT to, then pass to /api/uploads/confirm. */
+            key: string;
+        };
+        EnvelopePresignResult: {
+            data: components["schemas"]["PresignResult"];
+        };
+        ConfirmUploadRequest: {
+            /** @description The R2 object key returned by /api/uploads/presign. */
+            key: string;
+            /** @description Display name for the created file (knowledge feature). Defaults to the filename component of the key when absent. */
+            name?: string | null;
+            /**
+             * Format: uuid
+             * @description Destination folder for the created file. null = root.
+             */
+            folderId?: string | null;
+            /**
+             * Format: int64
+             * @description Client-declared size (advisory — confirm re-validates against HeadObject).
+             */
+            sizeBytes: number;
+        };
+        File: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            folderId: string | null;
+            name: string;
+            /** @description Unique-per-center URL-safe identifier for the file detail route. */
+            slug: string;
+            objectKey: string;
+            contentType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            /** Format: uuid */
+            uploadedBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        LinkedLocation: {
+            /** @enum {string} */
+            type: "session" | "exercise";
+            /** Format: uuid */
+            id: string;
+            /** @description Human-readable label (session title / exercise title) for the linking host. */
+            label: string;
+        };
+        FileDetail: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            folderId: string | null;
+            name: string;
+            slug: string;
+            objectKey: string;
+            contentType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            /** Format: uuid */
+            uploadedBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description Sessions/exercises referencing this file. Excludes any whose host or the file itself is soft-deleted. */
+            linkedLocations: components["schemas"]["LinkedLocation"][];
+        };
+        Folder: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            parentFolderId: string | null;
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateFolderRequest: {
+            name: string;
+            /**
+             * Format: uuid
+             * @description Parent folder. null/absent = root-level.
+             */
+            parentFolderId?: string | null;
+        };
+        /**
+         * @description Rename and/or move a folder. Tri-state on parentFolderId:
+         *     key absent = unchanged; explicit null = move to root; a uuid = reparent.
+         *     A move into the folder's own descendant is rejected 422 FOLDER_CYCLE.
+         */
+        UpdateFolderRequest: {
+            name?: string;
+            /** Format: uuid */
+            parentFolderId?: string | null;
+        };
+        /**
+         * @description Rename and/or move a file. Tri-state on folderId: key absent = unchanged;
+         *     explicit null = move to root; a uuid = reparent into that folder.
+         */
+        UpdateFileRequest: {
+            name?: string;
+            /** Format: uuid */
+            folderId?: string | null;
+        };
+        StorageUsage: {
+            /**
+             * Format: int64
+             * @description Sum of size_bytes over the center's live (deleted_at IS NULL) files.
+             */
+            usedBytes: number;
+            /**
+             * Format: int64
+             * @description The center's storage ceiling (centers.storage_limit_bytes; 500 MiB free default).
+             */
+            limitBytes: number;
+        };
+        EnvelopeFile: {
+            data: components["schemas"]["File"];
+        };
+        EnvelopeFileList: {
+            data: components["schemas"]["File"][];
+        };
+        EnvelopeFileDetail: {
+            data: components["schemas"]["FileDetail"];
+        };
+        EnvelopeFolder: {
+            data: components["schemas"]["Folder"];
+        };
+        EnvelopeFolderList: {
+            data: components["schemas"]["Folder"][];
+        };
+        EnvelopeStorageUsage: {
+            data: components["schemas"]["StorageUsage"];
         };
     };
     responses: never;
@@ -7192,6 +7494,633 @@ export interface operations {
             };
             /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    presignUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignRequest"];
+            };
+        };
+        responses: {
+            /** @description Presigned PUT URL + object key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopePresignResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STORAGE_FULL (advisory UX pre-check — NON-authoritative; confirm re-checks under a lock) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_TOO_LARGE (sizeBytes exceeds the per-feature A9 cap; message includes the cap in MB) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error (filename, contentType, feature, sizeBytes; disallowed MIME or extension↔type mismatch) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    confirmUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Idempotent retry — the already-created file for this (centerId, objectKey) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFile"];
+                };
+            };
+            /** @description File record created for the confirmed knowledge upload */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFile"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description R2_KEY_PREFIX_MISMATCH (key prefix ≠ JWT tenant) / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UPLOAD_NOT_FOUND (no stored object for the key) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STORAGE_FULL (used + new exceeds the center storage ceiling — enforced under a per-center lock) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_TOO_LARGE (stored object exceeds the per-feature A9 cap; object best-effort deleted) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONTENT_TYPE_MISMATCH (stored Content-Type ≠ locked type; object best-effort deleted) / validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UPLOAD_VERIFICATION_FAILED (HeadObject transport error — fail closed, no row, no delete) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getStorageUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Used bytes (sum of live files) + the center storage ceiling */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStorageUsage"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listFolders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flat list of folders (client composes the tree via parentFolderId) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFolderList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createFolder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Created folder */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFolder"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FOLDER_NOT_FOUND (parentFolderId absent or in another tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FOLDER_MAX_DEPTH (nesting beyond the depth limit) / validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteFolder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Soft-deleted (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FOLDER_NOT_FOUND (absent or already deleted) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateFolder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated folder */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFolder"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FOLDER_NOT_FOUND (absent, soft-deleted, or cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FOLDER_CYCLE (move into own descendant) / FOLDER_MAX_DEPTH / validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listFiles: {
+        parameters: {
+            query?: {
+                /** @description Folder to list. Omitted → root-level files (folder_id IS NULL). */
+                folderId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files in the folder */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFileList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getFileDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File detail with linked locations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFileDetail"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_NOT_FOUND (absent, soft-deleted, or cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Soft-deleted (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_NOT_FOUND (absent or already deleted) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFileRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeFile"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN / EMAIL_VERIFICATION_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FILE_NOT_FOUND / FOLDER_NOT_FOUND (target parent absent or cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation error (name) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

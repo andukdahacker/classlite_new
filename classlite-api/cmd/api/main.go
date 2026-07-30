@@ -20,6 +20,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/config"
 	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/handler"
+	"github.com/ducdo/classlite-api/internal/logging"
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
@@ -34,7 +35,9 @@ import (
 const maxResendBodyBytes = 16 * 1024
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// Story 4.4a AC10 — the process-wide handler redacts presigned-storage URLs
+	// and X-Amz-Signature params so a signed R2 URL can never leak into logs.
+	logger := slog.New(logging.NewRedactingJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	cfg := config.Load()
@@ -127,14 +130,13 @@ func main() {
 	healthHandler := &handler.HealthHandler{Pool: pool}
 	mux.HandleFunc("GET /health", healthHandler.Check)
 
-	// Upload endpoints — auth wrapping added in story 1.4+.
+	// R2-backed storage (mock in dev without R2 creds). Consumed by the
+	// hardened upload endpoints (Story 4.4a, wired on the knowledgeChain below)
+	// and the Story 2.7 bulk-import parser.
 	var uploadStorage service.StorageService = service.NewMockStorageService()
 	if cfg.R2AccountID != "" {
 		uploadStorage = service.NewR2StorageService(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName)
 	}
-	uploadHandler := &handler.UploadHandler{Storage: uploadStorage}
-	mux.HandleFunc("POST /api/uploads/presign", middleware.ErrorMapper(uploadHandler.Presign))
-	mux.HandleFunc("POST /api/uploads/confirm", middleware.ErrorMapper(uploadHandler.Confirm))
 
 	// Cookie config — non-dev demands all four attributes (R7 / AC10).
 	cookieCfg := handler.CookieConfig{
@@ -513,6 +515,34 @@ func main() {
 	mux.Handle("PATCH /api/exercises/{id}", exerciseChain(exerciseHandler.Update))
 	mux.Handle("DELETE /api/exercises/{id}", exerciseChain(exerciseHandler.Delete))
 	mux.Handle("POST /api/exercises/{id}/duplicate", exerciseChain(exerciseHandler.Duplicate))
+
+	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
+	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced
+	// in the service). The upload endpoints now run behind auth (they were
+	// unauthenticated in 1.2e); presign enforces the A9 size cap + advisory
+	// storage pre-check, confirm HeadObject-re-validates + enforces the ceiling
+	// under a per-center lock + creates the idempotent files row.
+	fileSvc := service.NewFileService(pool, uploadStorage, auditSvc, clock.RealClock{})
+	uploadHandler := handler.NewUploadHandler(fileSvc, uploadStorage, auditSvc, clock.RealClock{})
+	knowledgeHubHandler := handler.NewKnowledgeHubHandler(fileSvc, clock.RealClock{})
+	knowledgeChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("POST /api/uploads/presign", knowledgeChain(uploadHandler.Presign))
+	mux.Handle("POST /api/uploads/confirm", knowledgeChain(uploadHandler.Confirm))
+	mux.Handle("GET /api/storage/usage", knowledgeChain(knowledgeHubHandler.StorageUsage))
+	mux.Handle("GET /api/knowledge-hub/folders", knowledgeChain(knowledgeHubHandler.ListFolders))
+	mux.Handle("POST /api/knowledge-hub/folders", knowledgeChain(knowledgeHubHandler.CreateFolder))
+	mux.Handle("PATCH /api/knowledge-hub/folders/{id}", knowledgeChain(knowledgeHubHandler.UpdateFolder))
+	mux.Handle("DELETE /api/knowledge-hub/folders/{id}", knowledgeChain(knowledgeHubHandler.DeleteFolder))
+	mux.Handle("GET /api/knowledge-hub/files", knowledgeChain(knowledgeHubHandler.ListFiles))
+	mux.Handle("GET /api/knowledge-hub/files/{slug}", knowledgeChain(knowledgeHubHandler.GetFileDetail))
+	mux.Handle("PATCH /api/knowledge-hub/files/{id}", knowledgeChain(knowledgeHubHandler.UpdateFile))
+	mux.Handle("DELETE /api/knowledge-hub/files/{id}", knowledgeChain(knowledgeHubHandler.DeleteFile))
 
 	// Story 4.3a — AI content generation (2 routes). Enqueue returns 202 + jobId
 	// and deducts 1 credit in the same tx (never calls Gemini); poll returns the

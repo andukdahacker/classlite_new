@@ -62,6 +62,14 @@ Reuses the credentials above. Just extend scopes + add a second redirect URI.
 | Set `R2_SECRET_ACCESS_KEY` | [ ] | [ ] | [ ] |
 | Set `R2_BUCKET_NAME` | [ ] | [ ] | [ ] |
 
+**Story 4.4a note:** the presigned-upload endpoints (`/api/uploads/presign` + `/confirm`)
+are now **authenticated** (behind ExtractTenant/verified/center) and the Knowledge Hub
+upload→confirm→create flow relies on R2 being configured — without the R2 vars above the
+API falls back to the in-memory mock (dev only). No new env var is introduced by 4.4a.
+The per-center storage ceiling is `centers.storage_limit_bytes` (DB column, **500 MiB /
+524288000-byte default applied automatically by the migration** — no manual backfill); it
+is read-only until Epic 9 introduces the plan model + write path that raises it.
+
 ---
 
 ## Google Gemini — AI Content Generation (Story 4.3a)

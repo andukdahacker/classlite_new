@@ -16,6 +16,11 @@ type MockStorageService struct {
 	PresignError    error // Set to simulate presign failures.
 	HeadObjectError error // Set to simulate head failures.
 	GetObjectError  error // Set to simulate download failures.
+	DeleteError     error // Set to simulate delete failures (→ orphan telemetry, Story 4.4a).
+
+	// Deleted records every key passed to Delete, in call order — the
+	// delete-on-mismatch matrix asserts which objects were (or were NOT) removed.
+	Deleted []string
 }
 
 // NewMockStorageService creates a mock with an empty object store.
@@ -84,6 +89,22 @@ func (m *MockStorageService) HeadObject(ctx context.Context, key string) (*Objec
 		return nil, fmt.Errorf("object %s not found", key)
 	}
 	return obj, nil
+}
+
+// Delete records the key and removes it from the object store. When DeleteError
+// is set it returns that error WITHOUT recording the key (mirrors R2 refusing
+// the delete → the caller emits orphaned_object telemetry, Story 4.4a AC9).
+func (m *MockStorageService) Delete(ctx context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.DeleteError != nil {
+		return m.DeleteError
+	}
+	m.Deleted = append(m.Deleted, key)
+	delete(m.Objects, key)
+	delete(m.contents, key)
+	return nil
 }
 
 // Verify MockStorageService implements StorageService at compile time.

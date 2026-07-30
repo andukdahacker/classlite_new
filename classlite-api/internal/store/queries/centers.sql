@@ -1,12 +1,12 @@
 -- name: GetCenterByID :one
-SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email
+SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes
 FROM centers
 WHERE id = $1;
 
 -- name: CreateCenter :one
 INSERT INTO centers (name, short_code)
 VALUES ($1, $2)
-RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email;
+RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes;
 
 -- name: CreateCenterFull :one
 -- Story 2.1 — INSERT with a pre-generated id (Task 7.2 flow: NewID() runs
@@ -14,7 +14,7 @@ RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_con
 -- pattern works even if `centers` later gains RLS).
 INSERT INTO centers (id, name, short_code, brand_color, logo_url)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email;
+RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes;
 
 -- name: GetCenterByShortCode :one
 -- Story 1.6 — used by HandleGoogleCallback to resolve a subdomain slug
@@ -26,7 +26,7 @@ RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_con
 -- may have any case. LOWER() on both sides keeps the comparison stable
 -- regardless of how the operator seeded the row. A functional index
 -- on (LOWER(short_code)) would speed this up if it ever becomes hot.
-SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email
+SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes
 FROM centers
 WHERE LOWER(short_code) = LOWER($1);
 
@@ -36,7 +36,7 @@ WHERE LOWER(short_code) = LOWER($1);
 -- from the settings service. `centers` is global-no-RLS, so tenant scope
 -- is enforced at the handler layer (belt) and by passing tc.CenterID as
 -- the parameter here (suspenders), per Winston-S3 fold.
-SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email
+SELECT id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes
 FROM centers
 WHERE id = $1;
 
@@ -82,4 +82,4 @@ SET name          = COALESCE(sqlc.narg('name'),          name),
     END,
     timezone      = COALESCE(sqlc.narg('timezone'), timezone)
 WHERE id = $1
-RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email;
+RETURNING id, name, short_code, brand_color, logo_url, timezone, google_meet_connected, created_at, contact_email, storage_limit_bytes;
