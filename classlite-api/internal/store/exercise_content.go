@@ -21,10 +21,56 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/ducdo/classlite-api/internal/model"
 )
 
-// CurrentExerciseSchemaVersion is the only version 4.1 knows how to (de)serialize.
+// CurrentExerciseSchemaVersion is the production current version (v1). Exported
+// for the callers that stamp it on write (worker AI-mapping, handler decode).
 const CurrentExerciseSchemaVersion = 1
+
+// currentExerciseSchemaVersion + exerciseUpgraders are the ACTIVE schema config
+// the lazy-upgrade ladder dispatches through (Story 4.5). They default to the
+// production truth — v1, EMPTY chain, so model.MigrateJSONB is a passthrough for
+// every real row — and are overridable ONLY via OverrideExerciseSchemaForTest so
+// the service-layer write-back test can register a synthetic v2 ladder WITHOUT
+// shipping a speculative production v2 (Story 4.5 DISASTER 1). A future vN→vN+1
+// story registers its real rung in the default map + a per-rung contract test
+// (AC4). The `schema_version` COLUMN is the single source of truth that drives
+// the dispatch. Never mutated by production code.
+var (
+	currentExerciseSchemaVersion = CurrentExerciseSchemaVersion
+	exerciseUpgraders            = map[int]model.UpgradeFunc{}
+)
+
+// ActiveExerciseSchemaVersion returns the version the ladder currently upgrades
+// TO — always CurrentExerciseSchemaVersion in production; a test may override it
+// via OverrideExerciseSchemaForTest. The service stamps this on every write so a
+// synthetic-v2 test and production (v1) share one write-back path.
+func ActiveExerciseSchemaVersion() int { return currentExerciseSchemaVersion }
+
+// ValidateExerciseUpgradeChain reports whether the active exercise upgrader chain
+// covers every rung in [from, to) (and that the bounds are sane), running no
+// transform and touching no row. The batch tool calls it once before sweeping so
+// a missing rung fails as a clean pre-flight config error rather than surfacing
+// per-row as a mislabeled "poison row" abort.
+func ValidateExerciseUpgradeChain(from, to int) error {
+	return model.ValidateChain(from, to, exerciseUpgraders)
+}
+
+// OverrideExerciseSchemaForTest installs a synthetic current version + upgrader
+// chain and returns a restore func. TEST-ONLY (Story 4.5 AC1 service-layer
+// write-back proof) — production code must never call it. Not concurrency-safe:
+// call it on a single goroutine and defer the returned restore.
+func OverrideExerciseSchemaForTest(current int, upgraders map[int]model.UpgradeFunc) func() {
+	prevVersion, prevUpgraders := currentExerciseSchemaVersion, exerciseUpgraders
+	currentExerciseSchemaVersion = current
+	exerciseUpgraders = upgraders
+	return func() {
+		currentExerciseSchemaVersion = prevVersion
+		exerciseUpgraders = prevUpgraders
+	}
+}
 
 // MaxContentBytes caps the serialized `content` blob a create/update may persist
 // (a DoS / accidental-giant-paste guard, co-developed for 4.2 autosave). The
@@ -158,15 +204,18 @@ func (c ExerciseContent) QuestionCount() int {
 }
 
 // UnmarshalExerciseContent decodes a raw JSONB blob under the version taken from
-// the `schema_version` COLUMN (the single source of truth). v1 unmarshals
-// directly; a NULL/empty blob, version 0, or an unknown version is a typed
-// error (never a panic). The full lazy-upgrade dispatch for future versions is
-// Story 4.5 — 4.1 knows only v1.
+// the `schema_version` COLUMN (the single source of truth). It routes the blob
+// through the shared model.MigrateJSONB ladder (Story 4.5) so a row stored at an
+// older version is upgraded in-memory to CurrentExerciseSchemaVersion BEFORE the
+// typed struct is returned — callers never see a legacy version (GO-7). The
+// production chain is empty (v1 is a passthrough), so behavior is byte-identical
+// to 4.1: a NULL/empty blob, version 0/<1, or a version ahead of current is a
+// typed InvalidExerciseContentError (never a panic).
 func UnmarshalExerciseContent(raw []byte, version int) (ExerciseContent, error) {
-	if version != CurrentExerciseSchemaVersion {
+	if version < 1 || version > currentExerciseSchemaVersion {
 		return ExerciseContent{}, InvalidExerciseContentError{
 			Version: version,
-			Reason:  "unknown schema version (4.1 supports v1 only)",
+			Reason:  fmt.Sprintf("schema version out of range (accepted: 1..%d)", currentExerciseSchemaVersion),
 		}
 	}
 	if len(raw) == 0 {
@@ -175,14 +224,23 @@ func UnmarshalExerciseContent(raw []byte, version int) (ExerciseContent, error) 
 			Reason:  "content blob is empty/NULL",
 		}
 	}
+	upgraded, err := model.MigrateJSONB(raw, version, currentExerciseSchemaVersion, exerciseUpgraders)
+	if err != nil {
+		// A gap/out-of-range from the ladder surfaces on the same typed error
+		// the corruption/untrusted-input mappers already expect.
+		return ExerciseContent{}, InvalidExerciseContentError{
+			Version: version,
+			Reason:  err.Error(),
+		}
+	}
 	var content ExerciseContent
-	if err := json.Unmarshal(raw, &content); err != nil {
+	if err := json.Unmarshal(upgraded, &content); err != nil {
 		return ExerciseContent{}, InvalidExerciseContentError{
 			Version: version,
 			Reason:  "malformed JSON: " + err.Error(),
 		}
 	}
-	content.SchemaVersion = version
+	content.SchemaVersion = currentExerciseSchemaVersion
 	if content.Sections == nil {
 		content.Sections = []ExerciseSection{}
 	}

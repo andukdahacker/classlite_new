@@ -4,9 +4,12 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ducdo/classlite-api/internal/model"
 )
 
 func TestNewExerciseContentShell_EmptyCountsAndDefaultSettings(t *testing.T) {
@@ -117,5 +120,59 @@ func assertInvalidContent(t *testing.T, err error, wantVersion int) {
 	}
 	if invalid.Version != wantVersion {
 		t.Errorf("error version = %d, want %d", invalid.Version, wantVersion)
+	}
+}
+
+// TestUnmarshalExerciseContent_ColumnDrivesDispatchNotBlobField (Story 4.5, AC3)
+// proves the COLUMN version — not a stray in-blob `schemaVersion` field — drives
+// dispatch. A v1 row whose blob carries a bogus `"schemaVersion":2` must still be
+// treated as v1 (the struct field is json:"-", so the stray field is ignored and
+// the column wins). A false read of 2 would upgrade past current and error.
+func TestUnmarshalExerciseContent_ColumnDrivesDispatchNotBlobField(t *testing.T) {
+	raw := []byte(`{"schemaVersion":2,"sections":[],"settings":{}}`)
+	content, err := UnmarshalExerciseContent(raw, CurrentExerciseSchemaVersion)
+	if err != nil {
+		t.Fatalf("column-sourced v1 decode with a stray blob field: %v", err)
+	}
+	if content.SchemaVersion != CurrentExerciseSchemaVersion {
+		t.Fatalf("SchemaVersion = %d, want %d (column drives dispatch, not the blob)",
+			content.SchemaVersion, CurrentExerciseSchemaVersion)
+	}
+}
+
+// TestMigrateJSONB_GenericOverAnySecondEntity (Story 4.5, AC3) proves the ladder
+// is generic over ANY JSONB column, not just exercises — a synthetic SECOND
+// entity type run straight through model.MigrateJSONB, with no exercises/onboarding
+// production path rewired. This is the genericity proof the story asks for at the
+// store boundary (exercises is the only live consumer, but the engine is general).
+func TestMigrateJSONB_GenericOverAnySecondEntity(t *testing.T) {
+	type widgetV1 struct {
+		Label string `json:"label"`
+	}
+	type widgetV2 struct {
+		Label  string `json:"label"`
+		Slug   string `json:"slug"`
+		Schema int    `json:"schemaVersion"`
+	}
+	const widgetCurrent = 2
+	upgraders := map[int]model.UpgradeFunc{
+		1: func(in json.RawMessage) (json.RawMessage, error) {
+			var w widgetV1
+			if err := json.Unmarshal(in, &w); err != nil {
+				return nil, err
+			}
+			return json.Marshal(widgetV2{Label: w.Label, Slug: strings.ToLower(w.Label), Schema: widgetCurrent})
+		},
+	}
+	out, err := model.MigrateJSONB(json.RawMessage(`{"label":"HELLO"}`), 1, widgetCurrent, upgraders)
+	if err != nil {
+		t.Fatalf("generic second-entity migrate: %v", err)
+	}
+	var got widgetV2
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal widget v2: %v", err)
+	}
+	if (got != widgetV2{Label: "HELLO", Slug: "hello", Schema: widgetCurrent}) {
+		t.Fatalf("second-entity upgrade = %+v, want label preserved + slug derived", got)
 	}
 }

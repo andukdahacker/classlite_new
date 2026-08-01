@@ -8,6 +8,20 @@
 -- NEVER selects the raw `content` blob — the hottest endpoint stays off the
 -- per-row unmarshal path. The single-row reads (Get/Create/Update) DO return
 -- `content` + `schema_version`; the service runs the full typed dispatch there.
+--
+-- GO-7 EXCEPTION (Story 4.5, Task 7 — closes FU-4-1-A): the section/question
+-- COUNT expressions below (`jsonb_array_length(content->'sections')` and the
+-- lateral `->'questionGroups'->'questions'` aggregate) are a SECOND, UN-LADDERED
+-- reader of the blob shape — they bypass model.MigrateJSONB and assume the v1
+-- layout. That is valid ONLY while every row is v1. This is the one sanctioned
+-- exception to GO-7 (shape-dependent SQL over versioned JSONB). See
+-- docs/jsonb-schema-migration.md: any such reader must be inventoried when a
+-- version bumps.
+-- TRIPWIRE: when a v2 RESHAPES sections/questionGroups/questions, these counts
+-- silently go wrong. At that point they MUST branch on schema_version or fall
+-- back to app-side counting via the laddered ExerciseContent.{Section,Question}Count.
+-- The regression guard is exercise_jsonb_count_tripwire_test.go (SQL count ==
+-- Go laddered count for v1) — it fails the day the shapes diverge.
 
 -- name: NextExerciseCode :one
 -- Monotonic per-(center,skill) sequence for the EX-<L><NNN> code. A counter row
@@ -125,11 +139,16 @@ WHERE deleted_at IS NULL AND created_by = sqlc.arg('created_by')
 GROUP BY skill;
 
 -- name: UpdateExercise :one
--- Full-replace of the mutable fields (CR-3-5-4 documented semantics). NEVER
--- touches schema_version or code — both are server-authoritative/immutable
--- (AC4). Optimistic-concurrency precondition (co-developed for 4.2 autosave):
--- the WHERE binds `updated_at = precondition` so a stale precondition matches 0
--- rows → pgx.ErrNoRows, which the service maps to 409 CONFLICT (never a silent
+-- Full-replace of the mutable fields (CR-3-5-4 documented semantics). `code`
+-- stays immutable (server-authoritative). `schema_version` is now stamped to the
+-- server-authoritative CURRENT version on every save (Story 4.5 AC1 write-back):
+-- the body still cannot smuggle it (the service passes the constant, not a
+-- request field), but a row read at an OLDER version is re-marshaled at current
+-- and its column advanced in this SAME single UPDATE — no separate eager-rewrite
+-- pass. For a v1-at-current row the value is unchanged (byte-identical behavior).
+-- Optimistic-concurrency precondition (co-developed for 4.2 autosave): the WHERE
+-- binds `updated_at = precondition` so a stale precondition matches 0 rows →
+-- pgx.ErrNoRows, which the service maps to 409 CONFLICT (never a silent
 -- last-writer-wins clobber). `deleted_at IS NULL` excludes soft-deleted rows.
 UPDATE exercises
 SET title = sqlc.arg('title'),
@@ -138,6 +157,7 @@ SET title = sqlc.arg('title'),
     tags = sqlc.arg('tags'),
     target_band = sqlc.arg('target_band'),
     content = sqlc.arg('content'),
+    schema_version = sqlc.arg('schema_version'),
     updated_at = now()
 WHERE id = sqlc.arg('id')
   AND deleted_at IS NULL
