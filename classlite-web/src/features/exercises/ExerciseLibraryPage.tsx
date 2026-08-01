@@ -412,7 +412,14 @@ function ExerciseRow({
             {skillLetter(row.skill)}
           </span>
           <div className="min-w-0">
-            <p className="font-medium text-slate-900">{row.title}</p>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded-sm text-left font-medium text-slate-900 hover:text-[color:var(--cl-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cl-accent)]"
+              data-testid={`exercise-open-${row.id}`}
+            >
+              {row.title}
+            </button>
             <p className="font-mono text-xs text-slate-400" data-testid={`exercise-meta-${row.id}`}>
               {metaLine}
             </p>

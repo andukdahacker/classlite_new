@@ -43,6 +43,7 @@ const OWNER_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       { labelKey: 'sidebar.owner.importStudents', icon: icon(GraduationCap), href: '/students/import' },
       { labelKey: 'sidebar.owner.classes', icon: icon(BookOpen), href: '/classes' },
       { labelKey: 'sidebar.owner.schedule', icon: icon(CalendarDays), href: '/schedule' },
+      { labelKey: 'sidebar.owner.exercises', icon: icon(ClipboardList), href: '/exercises' },
       { labelKey: 'sidebar.owner.analytics', icon: icon(BarChart3), href: '/analytics' },
       { labelKey: 'sidebar.owner.inbox', icon: icon(Inbox), href: '/inbox' },
       { labelKey: 'sidebar.owner.knowledgeHub', icon: icon(BookOpen), href: '/knowledge-hub' },
