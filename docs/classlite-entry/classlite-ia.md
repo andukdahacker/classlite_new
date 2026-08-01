@@ -13,10 +13,12 @@
 
 | Role | Sidebar destinations *(extracted from drawn sidebars)* | Bottom-pill label |
 |---|---|---|
-| **Owner** | Dashboard · People · Classes · Schedule · Analytics · Inbox · Knowledge hub · Archive · Settings | "Owner" |
+| **Owner** | Dashboard · People · Classes · Schedule · Exercises · Analytics · Inbox · Knowledge hub · Archive · Settings | "Owner" |
 | **Admin** | Same sidebar as Owner per mockup convention (only renders Owner perspective; Admin variations called out inline) | "Admin" *(visible on s41 invite-flow)* |
 | **Teacher** | Dashboard · Classes · Schedule · Exercises · Questions · Students · Analytics · Inbox · Knowledge hub · Archive | "Teacher" |
 | **Student** | Dashboard · My classes · Assignments · My schedule · Questions · My performance · Inbox | "Student" |
+
+> **Owner Exercises nav (post-mockup, 2026-08-01):** The original mockups drew Exercises (s15/s16) as teacher-only, but the `/exercises` route was always permitted for owner/admin/teacher. Owner directive (Ducdo) surfaces the Exercises library in the Owner sidebar so owners have a nav entry point, not just URL access. Admin still inherits the Owner sidebar per the convention on row 17. Not yet extended to Admin's own row.
 
 **Role ladder:** Teacher < Admin < Owner (fixed). Student is a separate consumer role outside the ladder.
 

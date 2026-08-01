@@ -445,6 +445,38 @@ describe('ExerciseLibraryPage — i18n + a11y (TEST-FE-4/5)', () => {
   })
 })
 
+describe('ExerciseLibraryPage — open into editor', () => {
+  // The row title is the primary way into the editor for every role — an owner
+  // clicking the exercise name must land on /exercises/:id/edit, not be stranded
+  // hunting for the "..." kebab menu (the discoverability gap fixed 2026-08-01).
+  function renderWithEditorRoute(role: Role): void {
+    seedSession(role)
+    const client = createTestQueryClient()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={['/exercises']}>
+            <Routes>
+              <Route path="/exercises" element={<ExerciseLibraryPage />} />
+              <Route
+                path="/exercises/:id/edit"
+                element={<div data-testid="editor-stub">editor</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  test('clicking the exercise title navigates an owner to the editor', async () => {
+    server.use(listHandler([exItem({ id: 'ex-open', title: 'Reading P1', code: 'EX-R001' })]))
+    renderWithEditorRoute('owner')
+    await userEvent.click(await screen.findByTestId('exercise-open-ex-open'))
+    expect(await screen.findByTestId('editor-stub')).toBeInTheDocument()
+  })
+})
+
 describe('ExerciseLibraryPage — role gate (TEST-FE-6)', () => {
   test('teacher (allowed) sees the library behind the gate', async () => {
     server.use(listHandler([exItem({ title: 'Reading P1', code: 'EX-R001' })]))
