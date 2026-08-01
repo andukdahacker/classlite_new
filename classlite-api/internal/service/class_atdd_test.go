@@ -304,7 +304,7 @@ func TestClassService_Spawn_AC06_FounderAutoAssignsFirstClass(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "First", StartDate: "2026-08-01", TeacherEmail: nil}, // ← should auto-assign
+				{CohortName: "First", StartDate: "2026-08-01", TeacherEmail: nil},  // ← should auto-assign
 				{CohortName: "Second", StartDate: "2026-08-08", TeacherEmail: nil}, // ← should stay Branch D
 			},
 		})

@@ -282,4 +282,3 @@ func optionalText(p *string) pgtype.Text {
 	}
 	return pgtype.Text{String: *p, Valid: true}
 }
-

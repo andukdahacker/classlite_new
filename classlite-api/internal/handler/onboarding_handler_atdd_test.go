@@ -56,7 +56,7 @@ func TestSetPersona_AC01_ValidValue_Persists(t *testing.T) {
 		t.Fatalf("want 200 OK, got %d — body: %s", rec.Code, rec.Body.String())
 	}
 	var envelope struct {
-		Data struct{ Persona string } `json:"data"`
+		Data struct{ Persona string }    `json:"data"`
 		Meta struct{ ServerTime string } `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
@@ -203,7 +203,9 @@ func TestPutProgress_AC03_ReturnsUpdatedAt(t *testing.T) {
 			CurrentStep string `json:"currentStep"`
 			UpdatedAt   string `json:"updatedAt"`
 		} `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -236,10 +238,10 @@ func TestGetProgress_AC04_ExistingRow_ReturnsPayload(t *testing.T) {
 	}
 	var envelope struct {
 		Data struct {
-			CurrentStep string `json:"currentStep"`
+			CurrentStep string          `json:"currentStep"`
 			Payload     json.RawMessage `json:"payload"`
-			UpdatedAt   *string `json:"updatedAt"`
-			Persona     *string `json:"persona"`
+			UpdatedAt   *string         `json:"updatedAt"`
+			Persona     *string         `json:"persona"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
@@ -302,7 +304,9 @@ func TestGetProgress_AC04_JoinsPersonaFromUsers(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 
 	var envelope struct {
-		Data struct{ Persona *string `json:"persona"` } `json:"data"`
+		Data struct {
+			Persona *string `json:"persona"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -440,7 +444,9 @@ func TestGetProgress_AC10_DomWidePrivacyRatchet(t *testing.T) {
 func assertErrorCode(t *testing.T, body *bytes.Buffer, wantCode string) {
 	t.Helper()
 	var env struct {
-		Error struct{ Code string `json:"code"` } `json:"error"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(body).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v", err)

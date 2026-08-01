@@ -118,8 +118,51 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var importFileTooLarge *service.ImportFileTooLargeError
 		// Story 4.1 exercise optimistic-concurrency: a MISSING precondition → 428.
 		var preconditionRequired *service.PreconditionRequiredError
+		// Story 5.1 assignment + submission lifecycle (distinct codes the generic
+		// ValidationError/ConflictError arms would otherwise flatten).
+		var invalidReference *service.InvalidReferenceError
+		var invalidDeadline *service.InvalidDeadlineError
+		var notEnrolled *service.NotEnrolledError
+		var submissionExists *service.SubmissionExistsError
+		var submissionNotEditable *service.SubmissionNotEditableError
+		var submissionLocked *service.SubmissionLockedError
+		var timeExpired *service.TimeExpiredError
+		var exerciseLocked *service.ExerciseLockedError
 
 		switch {
+		case errors.As(err, &invalidReference):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"INVALID_REFERENCE", "A referenced record does not exist.",
+				[]model.FieldError{{Field: invalidReference.Field, Code: "INVALID_REFERENCE", Message: "referenced record does not exist"}})
+			return
+		case errors.As(err, &invalidDeadline):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"INVALID_DEADLINE", "The hard deadline must be at or after the deadline.", nil)
+			return
+		case errors.As(err, &notEnrolled):
+			handler.WriteError(w, r, http.StatusForbidden,
+				"NOT_ENROLLED", "You are not actively enrolled in this class.", nil)
+			return
+		case errors.As(err, &submissionExists):
+			handler.WriteError(w, r, http.StatusConflict,
+				"SUBMISSION_EXISTS", "A submission already exists for this assignment.", nil)
+			return
+		case errors.As(err, &submissionNotEditable):
+			handler.WriteError(w, r, http.StatusConflict,
+				"SUBMISSION_NOT_EDITABLE", "This submission can no longer be edited.", nil)
+			return
+		case errors.As(err, &submissionLocked):
+			handler.WriteError(w, r, http.StatusConflict,
+				"SUBMISSION_LOCKED", "This assignment is closed or past its hard deadline.", nil)
+			return
+		case errors.As(err, &timeExpired):
+			handler.WriteError(w, r, http.StatusConflict,
+				"TIME_EXPIRED", "The time limit for this attempt has expired.", nil)
+			return
+		case errors.As(err, &exerciseLocked):
+			handler.WriteError(w, r, http.StatusConflict,
+				"EXERCISE_LOCKED", "This exercise is locked because it has submissions.", nil)
+			return
 		case errors.As(err, &preconditionRequired):
 			handler.WriteError(w, r, http.StatusPreconditionRequired,
 				"PRECONDITION_REQUIRED",

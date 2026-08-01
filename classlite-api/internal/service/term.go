@@ -165,12 +165,14 @@ func (s *TermService) Create(ctx context.Context, tc model.TenantContext, in Cre
 // writes an audit row, and returns the fresh row.
 //
 // Validation runs in two passes:
-//   (1) shape checks on the provided fields alone (name length, non-empty
-//       when present) — cheap, fails fast, no DB roundtrip;
-//   (2) cross-field checks against the merged result — needs the pre-fetched
-//       `before` so partial-updates that shift only startDate against a
-//       persisted endDate (or vice-versa) still surface as 422 rather than
-//       falling through to the DB CHECK as a generic 500.
+//
+//	(1) shape checks on the provided fields alone (name length, non-empty
+//	    when present) — cheap, fails fast, no DB roundtrip;
+//	(2) cross-field checks against the merged result — needs the pre-fetched
+//	    `before` so partial-updates that shift only startDate against a
+//	    persisted endDate (or vice-versa) still surface as 422 rather than
+//	    falling through to the DB CHECK as a generic 500.
+//
 // Amended /bmad-code-review 2-5b Round 1 P4 + P5 (2026-07-15).
 func (s *TermService) Update(ctx context.Context, tc model.TenantContext, id uuid.UUID, in UpdateTermInput) (*Term, error) {
 	// Pass 1 — shape checks on the fields the client actually sent.
@@ -286,10 +288,10 @@ func termRowToWire(row generated.Term) Term {
 }
 
 type termAuditSnapshot struct {
-	Name         string  `json:"name"`
-	StartDate    string  `json:"start_date"`
-	EndDate      string  `json:"end_date"`
-	SessionCount *int32  `json:"session_count"`
+	Name         string `json:"name"`
+	StartDate    string `json:"start_date"`
+	EndDate      string `json:"end_date"`
+	SessionCount *int32 `json:"session_count"`
 }
 
 func termRowToAuditSnapshot(row generated.Term) termAuditSnapshot {

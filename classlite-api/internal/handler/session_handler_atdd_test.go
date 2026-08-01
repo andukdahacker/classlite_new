@@ -4,23 +4,26 @@
 // FROZEN CLOCK so the past/future boundary is deterministic (Murat BLOCKER-4).
 //
 // RED signal (compile-red, per Ducdo 2026-07-21 "full typed suite now"):
-//   undefined: test.NewSessionTestServerBareMux  (+ the SessionService/routes
-//   it wires) — the feature does not exist yet. `go test ./internal/handler/...`
-//   fails to BUILD until Story 3.4 Tasks 1–5 land. This is intentional and
-//   accepted: the test pins the exact R19 oracle the implementation must satisfy.
+//
+//	undefined: test.NewSessionTestServerBareMux  (+ the SessionService/routes
+//	it wires) — the feature does not exist yet. `go test ./internal/handler/...`
+//	fails to BUILD until Story 3.4 Tasks 1–5 land. This is intentional and
+//	accepted: the test pins the exact R19 oracle the implementation must satisfy.
 //
 // GREEN mapping:
-//   NewSessionTestServerBareMux + routes/service → Tasks 1–5
-//   scope WHERE + `starts_at >= clk.Now()` past-immutable floor → Task 2/5 (AC4)
-//   optimistic `expectedUpdatedAt` → 409 → Task 2/5 (AC2)
-//   recurrence bound (endDate + 200 cap) → Task 5 (AC3)
-//   teacher-scope 404 + student 403 → Task 5 (AC2)
+//
+//	NewSessionTestServerBareMux + routes/service → Tasks 1–5
+//	scope WHERE + `starts_at >= clk.Now()` past-immutable floor → Task 2/5 (AC4)
+//	optimistic `expectedUpdatedAt` → 409 → Task 2/5 (AC2)
+//	recurrence bound (endDate + 200 cap) → Task 5 (AC3)
+//	teacher-scope 404 + student 403 → Task 5 (AC2)
 //
 // SEMANTICS UNDER TEST (post party-mode reversal — mutations are PAST-IMMUTABLE):
-//   this   → the single target row (422 SESSION_ALREADY_STARTED if target is past)
-//   future → recurrence_group_id = grp AND starts_at >= target.starts_at AND starts_at >= now()
-//   all    → recurrence_group_id = grp AND starts_at >= now()   (past EXCLUDED)
-//   reads  → always include past (the calendar renders history)
+//
+//	this   → the single target row (422 SESSION_ALREADY_STARTED if target is past)
+//	future → recurrence_group_id = grp AND starts_at >= target.starts_at AND starts_at >= now()
+//	all    → recurrence_group_id = grp AND starts_at >= now()   (past EXCLUDED)
+//	reads  → always include past (the calendar renders history)
 package handler_test
 
 import (
@@ -40,10 +43,10 @@ import (
 var frozenNow = time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 
 type sessionSeries struct {
-	groupID    uuid.UUID
-	past       []uuid.UUID // 08-02, 08-09 (before frozenNow)
-	future     []uuid.UUID // 08-16, 08-23, 08-30 (after frozenNow)
-	updatedAt  map[uuid.UUID]time.Time
+	groupID   uuid.UUID
+	past      []uuid.UUID // 08-02, 08-09 (before frozenNow)
+	future    []uuid.UUID // 08-16, 08-23, 08-30 (after frozenNow)
+	updatedAt map[uuid.UUID]time.Time
 }
 
 type sessionTestEnv struct {
@@ -202,8 +205,8 @@ func TestSession_Scope_This_OnlyTargetChanges(t *testing.T) {
 	target := s.future[1] // 08-23
 
 	rec := classReq(t, env.srv, http.MethodPatch, "/api/sessions/"+target.String(), env.teacherATok, map[string]any{
-		"topic":           "Edited-this",
-		"applyScope":      "this",
+		"topic":             "Edited-this",
+		"applyScope":        "this",
 		"expectedUpdatedAt": s.updatedAt[target].Format(time.RFC3339Nano),
 	})
 	if rec.Code != http.StatusOK {
@@ -229,8 +232,8 @@ func TestSession_Scope_Future_TargetAndLaterOnly_BoundaryInclusive(t *testing.T)
 	target := s.future[1] // N = 08-23; earlier future = future[0] 08-16; later = future[2] 08-30
 
 	rec := classReq(t, env.srv, http.MethodPatch, "/api/sessions/"+target.String(), env.teacherATok, map[string]any{
-		"topic":           "Edited-future",
-		"applyScope":      "future",
+		"topic":             "Edited-future",
+		"applyScope":        "future",
 		"expectedUpdatedAt": s.updatedAt[target].Format(time.RFC3339Nano),
 	})
 	if rec.Code != http.StatusOK {
@@ -265,8 +268,8 @@ func TestSession_Scope_All_FutureOnly_PastImmutable(t *testing.T) {
 	target := s.future[0]
 
 	rec := classReq(t, env.srv, http.MethodPatch, "/api/sessions/"+target.String(), env.teacherATok, map[string]any{
-		"topic":           "Edited-all",
-		"applyScope":      "all",
+		"topic":             "Edited-all",
+		"applyScope":        "all",
 		"expectedUpdatedAt": s.updatedAt[target].Format(time.RFC3339Nano),
 	})
 	if rec.Code != http.StatusOK {
@@ -293,8 +296,8 @@ func TestSession_Edit_PastTarget_Rejected(t *testing.T) {
 	pastTarget := s.past[1] // 08-09, before frozenNow
 
 	rec := classReq(t, env.srv, http.MethodPatch, "/api/sessions/"+pastTarget.String(), env.teacherATok, map[string]any{
-		"topic":           "cannot",
-		"applyScope":      "this",
+		"topic":             "cannot",
+		"applyScope":        "this",
 		"expectedUpdatedAt": s.updatedAt[pastTarget].Format(time.RFC3339Nano),
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -318,7 +321,7 @@ func TestSession_Cancel_Future_NegativeSpace(t *testing.T) {
 	target := s.future[1]
 
 	rec := classReq(t, env.srv, http.MethodPost, "/api/sessions/"+target.String()+"/cancel", env.teacherATok, map[string]any{
-		"applyScope":      "future",
+		"applyScope":        "future",
 		"expectedUpdatedAt": s.updatedAt[target].Format(time.RFC3339Nano),
 	})
 	if rec.Code != http.StatusOK {

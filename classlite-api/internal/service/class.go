@@ -151,27 +151,27 @@ func (s *ClassService) SetAcceptURLBase(base string) {
 // classPlan is the intermediate per-class state built during pre-tx resolution.
 // Branch B upgrades from candidate to confirmed inside the tx.
 type classPlan struct {
-	Input         SpawnClassInput
-	Index         int
-	CohortName    string
-	StartDate     time.Time
-	NormalizedTE  string  // lowercased teacherEmail — empty for nil/whitespace
-	Branch        rune    // 'A', 'B', 'C', 'D' — final assignment
-	TeacherID     *uuid.UUID
-	TeacherEmail  *string
-	PendingEmail  *string
-	Reason        string
+	Input        SpawnClassInput
+	Index        int
+	CohortName   string
+	StartDate    time.Time
+	NormalizedTE string // lowercased teacherEmail — empty for nil/whitespace
+	Branch       rune   // 'A', 'B', 'C', 'D' — final assignment
+	TeacherID    *uuid.UUID
+	TeacherEmail *string
+	PendingEmail *string
+	Reason       string
 	// For Branch B candidates that need to be verified inside the tx.
 	BranchBCandidate *uuid.UUID // resolved user_id from pre-tx lookup; nil = definitely not a system user
 }
 
 // inviteBucket tracks per-lowercased-email invite state through the tx.
 type inviteBucket struct {
-	Email        string
-	ClassIndices []int
-	RawToken     string
-	InviteID     uuid.UUID
-	ExpiresAt    time.Time
+	Email          string
+	ClassIndices   []int
+	RawToken       string
+	InviteID       uuid.UUID
+	ExpiresAt      time.Time
 	ReusedExisting bool
 	// enqueued is populated post-commit.
 }
@@ -301,14 +301,14 @@ func (s *ClassService) Spawn(
 			return nil, fmt.Errorf("spawn: savepoint invite_insert: %w", err)
 		}
 		row, err := txQ.CreateInviteFull(ctx, generated.CreateInviteFullParams{
-			ID:         pgUUID(newInviteID),
-			CenterID:   pgUUID(centerUUID),
-			InviterID:  pgUUID(userID),
-			Email:      bucket.Email,
-			Name:       pgtype.Text{Valid: false},
-			Role:       "teacher",
-			TokenHash:  tokenHash,
-			ExpiresAt:  pgtype.Timestamptz{Time: bucket.ExpiresAt, Valid: true},
+			ID:        pgUUID(newInviteID),
+			CenterID:  pgUUID(centerUUID),
+			InviterID: pgUUID(userID),
+			Email:     bucket.Email,
+			Name:      pgtype.Text{Valid: false},
+			Role:      "teacher",
+			TokenHash: tokenHash,
+			ExpiresAt: pgtype.Timestamptz{Time: bucket.ExpiresAt, Valid: true},
 		})
 		if err != nil {
 			// Roll back to the savepoint regardless of failure kind so the
@@ -390,11 +390,11 @@ func (s *ClassService) Spawn(
 			StartDate:           startPg,
 			// Story 3.1 columns — Spawn seeds a from-template class with the
 			// template's color and no scalar overrides; due dates ship OFF (AC3).
-			Description:      pgtype.Text{},
-			Capacity:         pgtype.Int4{},
-			DueDatesEnabled:  false,
-			EndDate:          pgtype.Date{},
-			Color:            tmpl.Color,
+			Description:     pgtype.Text{},
+			Capacity:        pgtype.Int4{},
+			DueDatesEnabled: false,
+			EndDate:         pgtype.Date{},
+			Color:           tmpl.Color,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn: insert class[%d]: %w", p.Index, err)

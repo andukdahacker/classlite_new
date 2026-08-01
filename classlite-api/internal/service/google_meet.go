@@ -6,13 +6,13 @@
 //   - downstream: center_integrations row + centers.google_meet_connected=true
 //
 // Security invariants (see docs/project-context.md §SEC-3 + Story 2.5c AC5):
-//   1. OAuth state signed w/ HMAC (same signer as login) + 10-min TTL.
-//   2. state.CenterID == path{id} == tc.CenterID triple binding (AC7).
-//   3. state.UserID == tc.UserID (freshness — force-logout defense per AC5 step 3).
-//   4. Fresh owner membership re-check via center_members lookup — reject if
-//      revoked between authorize and callback (OAuthMembershipRevokedError).
-//   5. Tokens sealed via AES-256-GCM (integration_crypto.go) before persistence.
-//   6. Upsert + centers UPDATE + audit row all commit atomically inside one tx.
+//  1. OAuth state signed w/ HMAC (same signer as login) + 10-min TTL.
+//  2. state.CenterID == path{id} == tc.CenterID triple binding (AC7).
+//  3. state.UserID == tc.UserID (freshness — force-logout defense per AC5 step 3).
+//  4. Fresh owner membership re-check via center_members lookup — reject if
+//     revoked between authorize and callback (OAuthMembershipRevokedError).
+//  5. Tokens sealed via AES-256-GCM (integration_crypto.go) before persistence.
+//  6. Upsert + centers UPDATE + audit row all commit atomically inside one tx.
 //
 // Nothing here logs plaintext tokens or the encryption key — Task 10 grep-audit
 // pins the invariant.
@@ -181,10 +181,10 @@ func (s *GoogleMeetService) BuildAuthorizeURL(ctx context.Context, tc model.Tena
 // HandleCallbackInput drives the callback handler. tc is the CALLBACK-request
 // tenant context (fresh JWT), which the service verifies against state.
 type HandleCallbackInput struct {
-	Code       string
-	State      string
-	PathID     string
-	TC         model.TenantContext
+	Code   string
+	State  string
+	PathID string
+	TC     model.TenantContext
 }
 
 // HandleCallback executes the 7-step tx flow per AC5. On success, returns

@@ -1,21 +1,21 @@
 // Story 2.6 (AC9) service-layer hierarchy matrix for AdminInviteStaff.
 //
 // Rows:
-//   1. Owner  → Teacher  (success + invite row + audit)
-//   2. Owner  → Owner    (success + invite row + audit — FR-11 permits)
-//   3. Admin  → Teacher  (success + invite row + audit)
-//   4. Admin  → Admin    (success + invite row + audit)
-//   5. Admin  → Owner    (RoleAssignmentForbiddenError + no invite row +
-//                         center.invite.role_assignment_blocked audit)
-//   6. SEC-1 defense: JWT role="owner" but DB role="teacher" — covered by
-//                     the shipped role_revalidation_atdd_test.go pair
-//                     (Demoted + Revoked). Story 2.6 owns R15 discharge
-//                     via that shipped coverage; this file extends the
-//                     matrix with the FR-11 rows the shipped file
-//                     doesn't reach.
-//   7. Duplicate active invite (unexpired + unaccepted) → *InviteEmailTakenError
-//      (belt for the AC8 dup gate — the handler test in
-//      invites_handler_atdd_test.go asserts the wire envelope shape).
+//  1. Owner  → Teacher  (success + invite row + audit)
+//  2. Owner  → Owner    (success + invite row + audit — FR-11 permits)
+//  3. Admin  → Teacher  (success + invite row + audit)
+//  4. Admin  → Admin    (success + invite row + audit)
+//  5. Admin  → Owner    (RoleAssignmentForbiddenError + no invite row +
+//     center.invite.role_assignment_blocked audit)
+//  6. SEC-1 defense: JWT role="owner" but DB role="teacher" — covered by
+//     the shipped role_revalidation_atdd_test.go pair
+//     (Demoted + Revoked). Story 2.6 owns R15 discharge
+//     via that shipped coverage; this file extends the
+//     matrix with the FR-11 rows the shipped file
+//     doesn't reach.
+//  7. Duplicate active invite (unexpired + unaccepted) → *InviteEmailTakenError
+//     (belt for the AC8 dup gate — the handler test in
+//     invites_handler_atdd_test.go asserts the wire envelope shape).
 //
 // Pragmatic deviation from AC9's "mocked store per TEST-BE-4" wording:
 // AuthService is not constructed against a store interface today — it
@@ -46,9 +46,9 @@ type hierarchyCase struct {
 	name        string
 	callerRole  string
 	targetRole  string
-	wantInvite  bool                             // did the row land?
-	wantErrType func(err error, t *testing.T)    // typed error assertion (nil for success)
-	auditEvent  string                           // expected audit event name (empty for none)
+	wantInvite  bool                          // did the row land?
+	wantErrType func(err error, t *testing.T) // typed error assertion (nil for success)
+	auditEvent  string                        // expected audit event name (empty for none)
 }
 
 func TestAdminInviteStaff_AC9_HierarchyMatrix(t *testing.T) {

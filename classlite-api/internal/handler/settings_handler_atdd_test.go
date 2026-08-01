@@ -67,7 +67,9 @@ func TestSettingsHandler_Get_HappyPath_ReturnsEnvelopeAndProfile(t *testing.T) {
 			GoogleMeetConnected bool    `json:"googleMeetConnected"`
 			CreatedAt           string  `json:"createdAt"`
 		} `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
 		t.Fatalf("decode: %v", err)

@@ -9,10 +9,11 @@
 // / newReqWithRequestID) — no re-declaration.
 //
 // CASES
-//   (a) NULL pw + NULL google_id + password  → success (account claim). Currently
-//       409 PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER — THIS is the bug Task 6a fixes.
-//   (b) NULL pw + google_id SET + password    → still 409 (no OAuth regression).
-//   (c) existing password user                → unaffected (success).
+//
+//	(a) NULL pw + NULL google_id + password  → success (account claim). Currently
+//	    409 PASSWORD_NOT_ALLOWED_FOR_OAUTH_USER — THIS is the bug Task 6a fixes.
+//	(b) NULL pw + google_id SET + password    → still 409 (no OAuth regression).
+//	(c) existing password user                → unaffected (success).
 package handler_test
 
 import (

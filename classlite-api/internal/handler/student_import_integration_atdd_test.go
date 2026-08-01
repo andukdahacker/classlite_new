@@ -5,19 +5,20 @@
 // 3.4.5 precedent). Compiled only under `-tags atdd_red_phase`.
 //
 // COVERAGE (story Testing Requirements + Task 0):
-//   INT-BULK-001      valid+invalid rows → per-row status classification
-//   INT-BULK-002      malformed header → file-level 422, 0 persisted
-//   INT-BULK-003      pre-existing global account (no membership) → existing_user, linked
-//   INT-BULK-OTHER    user already in ANOTHER center → validation_error USER_IN_ANOTHER_CENTER
-//   INT-BULK-DUPE     Foo@X.com / foo@x.com deduped intra-file AND at lookup
-//   INT-BULK-BOM      UTF-8 BOM header stripped before column match
-//   INT-BULK-CONFIRM  confirm creates user + center_members(student) + enrollment + invite
-//   INT-BULK-UNASSIGN row with no class → student member, NO enrollment
-//   INT-BULK-PARTIAL  mixed rows → commit persists valid, result lists failed w/ reasons
-//   INT-BULK-004      sequential re-run → no double-insert (ON CONFLICT DO NOTHING)
-//   INT-BULK-CONCUR   two concurrent confirms of same file → no doubles, constraint holds
-//   INT-BULK-DIVERGE  class renamed between preview & confirm → confirm re-classifies, no 500
-//   INT-BULK-ROLLBACK commit/audit failure → full rollback (documented placeholder — needs fault seam)
+//
+//	INT-BULK-001      valid+invalid rows → per-row status classification
+//	INT-BULK-002      malformed header → file-level 422, 0 persisted
+//	INT-BULK-003      pre-existing global account (no membership) → existing_user, linked
+//	INT-BULK-OTHER    user already in ANOTHER center → validation_error USER_IN_ANOTHER_CENTER
+//	INT-BULK-DUPE     Foo@X.com / foo@x.com deduped intra-file AND at lookup
+//	INT-BULK-BOM      UTF-8 BOM header stripped before column match
+//	INT-BULK-CONFIRM  confirm creates user + center_members(student) + enrollment + invite
+//	INT-BULK-UNASSIGN row with no class → student member, NO enrollment
+//	INT-BULK-PARTIAL  mixed rows → commit persists valid, result lists failed w/ reasons
+//	INT-BULK-004      sequential re-run → no double-insert (ON CONFLICT DO NOTHING)
+//	INT-BULK-CONCUR   two concurrent confirms of same file → no doubles, constraint holds
+//	INT-BULK-DIVERGE  class renamed between preview & confirm → confirm re-classifies, no 500
+//	INT-BULK-ROLLBACK commit/audit failure → full rollback (documented placeholder — needs fault seam)
 package handler_test
 
 import (
@@ -73,8 +74,8 @@ func TestImport_INT001_PerRowClassification(t *testing.T) {
 	good := "good-" + sfx + "@example.com"
 	key := importKey(e.centerID)
 	e.srv.Storage.SeedObject(key, importCSV(
-		good+",Good Student,",       // new_user, unassigned
-		"not-an-email,Bad Format,",  // validation_error (bad email)
+		good+",Good Student,",          // new_user, unassigned
+		"not-an-email,Bad Format,",     // validation_error (bad email)
 		"missing-name-"+sfx+"@x.com,,", // validation_error (empty full_name)
 	))
 	cleanupImportedUsers(t, test.SuperuserPool(t), good)

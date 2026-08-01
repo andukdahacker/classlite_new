@@ -166,13 +166,76 @@ func ExercisesMigrator() EntityMigrator {
 	}
 }
 
+// updateSubmissionsJSONBVersionSQL is the submissions lost-update-guarded write
+// (Story 5.1 AC19). Raw pgx for the same xmin reason as exercises. The extra
+// `status = 'in_progress'` guard is load-bearing (D6): if a row transitioned to a
+// terminal state between the keyset read and this write, it matches 0 rows and is
+// treated as a concurrent-skip — the tool never writes a submitted/graded row
+// (which Epic 6 makes immutable). `updated_at` is intentionally NOT bumped.
+const updateSubmissionsJSONBVersionSQL = `
+UPDATE submissions
+SET content = $2, schema_version = $3
+WHERE id = $1 AND schema_version = $4 AND xmin::text = $5 AND status = 'in_progress'`
+
+// SubmissionsMigrator builds the production submissions migrator (Story 5.1 AC19).
+// Mirrors ExercisesMigrator: Upgrade is the read-path decode+remarshal, so the
+// tool and the lazy read path share one transform. Only in_progress rows are
+// swept (the ListPage query filters them) and only in_progress rows are written
+// (the UpdateRow WHERE double-guards) — the grading audit trail is never mutated.
+func SubmissionsMigrator() EntityMigrator {
+	return EntityMigrator{
+		Name:           "submissions",
+		CurrentVersion: store.ActiveSubmissionSchemaVersion(),
+		Upgrade: func(raw []byte, fromVersion int) ([]byte, error) {
+			content, err := store.UnmarshalSubmissionContent(raw, fromVersion)
+			if err != nil {
+				return nil, err
+			}
+			upgraded, err := content.Marshal()
+			if err != nil {
+				return nil, err
+			}
+			if len(upgraded) > store.MaxSubmissionContentBytes {
+				return nil, fmt.Errorf("upgraded content is %d bytes, over the %d-byte ceiling", len(upgraded), store.MaxSubmissionContentBytes)
+			}
+			return upgraded, nil
+		},
+		ListPage: func(ctx context.Context, q *generated.Queries, fromVersion int, afterID pgtype.UUID, limit int) ([]MigrationRow, error) {
+			rows, err := q.ListSubmissionsForJSONBMigration(ctx, generated.ListSubmissionsForJSONBMigrationParams{
+				FromVersion: int32(fromVersion),
+				AfterID:     afterID,
+				PageLimit:   int32(limit),
+			})
+			if err != nil {
+				return nil, err
+			}
+			out := make([]MigrationRow, len(rows))
+			for i, r := range rows {
+				out[i] = MigrationRow{ID: r.ID, Xmin: r.RowXmin, Content: r.Content, Version: int(r.SchemaVersion)}
+			}
+			return out, nil
+		},
+		UpdateRow: func(ctx context.Context, tx pgx.Tx, row MigrationRow, newContent []byte, toVersion int) (int64, error) {
+			tag, err := tx.Exec(ctx, updateSubmissionsJSONBVersionSQL,
+				row.ID, newContent, int32(toVersion), int32(row.Version), row.Xmin)
+			if err != nil {
+				return 0, err
+			}
+			return tag.RowsAffected(), nil
+		},
+		ValidateChain: store.ValidateSubmissionUpgradeChain,
+	}
+}
+
 // Resolve maps a --entity flag to its migrator (the unknown-entity guard, AC2e).
 func Resolve(entity string) (EntityMigrator, error) {
 	switch entity {
 	case "exercises":
 		return ExercisesMigrator(), nil
+	case "submissions":
+		return SubmissionsMigrator(), nil
 	default:
-		return EntityMigrator{}, fmt.Errorf("unknown --entity %q (known: exercises)", entity)
+		return EntityMigrator{}, fmt.Errorf("unknown --entity %q (known: exercises, submissions)", entity)
 	}
 }
 

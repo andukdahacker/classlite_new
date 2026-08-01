@@ -144,7 +144,18 @@ type ExerciseWithCounts struct {
 	Row           generated.Exercise
 	SectionCount  int
 	QuestionCount int
+	// FR-23 lock payload (Story 5.1, AC16). Locked is true once >= 1 submission
+	// exists against any assignment on this exercise. LockReason is
+	// exerciseLockReasonHasSubmissions when locked, else nil. LockedBy is the
+	// detail-only per-assignment blocking list (empty on the List path).
+	Locked     bool
+	LockReason *string
+	LockedBy   []generated.GetExerciseLockedByRow
 }
+
+// exerciseLockReasonHasSubmissions is the single FR-23 lock reason in v1 (D5 —
+// "unfinalize" struck; clone-only). Matches the api.yaml ExerciseLockReason enum.
+const exerciseLockReasonHasSubmissions = "has_submissions"
 
 // ExerciseSkillCount is one entry in the count-tab strip (AC1).
 type ExerciseSkillCount struct {
@@ -235,6 +246,7 @@ func teacherRowsToListRows(rows []generated.ListExercisesByTeacherRow) []generat
 			UpdatedAt:     r.UpdatedAt,
 			SectionCount:  r.SectionCount,
 			QuestionCount: r.QuestionCount,
+			Locked:        r.Locked,
 		}
 	}
 	return out
@@ -589,7 +601,17 @@ func (s *ExerciseService) Get(
 		if cerr != nil {
 			return cerr
 		}
-		out = ExerciseWithCounts{Row: row, SectionCount: sections, QuestionCount: questions}
+		// FR-23 detail lock payload (AC16/D9): which assignments block edits.
+		lockedBy, lerr := q.GetExerciseLockedBy(ctx, pgUUID(id))
+		if lerr != nil {
+			return fmt.Errorf("get exercise: lock info: %w", lerr)
+		}
+		out = ExerciseWithCounts{Row: row, SectionCount: sections, QuestionCount: questions, LockedBy: lockedBy}
+		if len(lockedBy) > 0 {
+			out.Locked = true
+			reason := exerciseLockReasonHasSubmissions
+			out.LockReason = &reason
+		}
 		return nil
 	})
 	return out, err
@@ -640,6 +662,22 @@ func (s *ExerciseService) Update(
 		}
 		if err := assertExerciseTeacherScope(tc, current.CreatedBy, id); err != nil {
 			return err
+		}
+		// FR-23 (AC15): once an exercise has >= 1 submission it is locked from
+		// content/metadata edits — clone-and-edit is the only path (D5). The
+		// advisory lock (same key start-submission takes) serializes this
+		// check+write against a concurrent attempt-create, closing the
+		// create-during-PATCH TOCTOU (D10). EXERCISE_LOCKED is a distinct 409 from
+		// the stale-precondition CONFLICT so the editor branches to the read-only strip.
+		if lerr := takeExerciseEditLock(ctx, tx, id); lerr != nil {
+			return lerr
+		}
+		locked, lerr := txQ.ExerciseIsLocked(ctx, pgUUID(id))
+		if lerr != nil {
+			return fmt.Errorf("update exercise: lock check: %w", lerr)
+		}
+		if locked {
+			return &ExerciseLockedError{}
 		}
 		// Stale-precondition check against the freshly-read row (loud 409, not a
 		// silent clobber). The SQL `updated_at = precondition` below is the belt
@@ -786,6 +824,19 @@ func (s *ExerciseService) SoftDelete(
 		}
 		if err := assertExerciseTeacherScope(tc, current.CreatedBy, id); err != nil {
 			return err
+		}
+		// FR-23 (AC15): a locked exercise cannot be deleted either (a graded/in-
+		// flight attempt must not lose its exercise). Same advisory lock + guard as
+		// Update.
+		if lerr := takeExerciseEditLock(ctx, tx, id); lerr != nil {
+			return lerr
+		}
+		locked, lerr := txQ.ExerciseIsLocked(ctx, pgUUID(id))
+		if lerr != nil {
+			return fmt.Errorf("soft-delete exercise: lock check: %w", lerr)
+		}
+		if locked {
+			return &ExerciseLockedError{}
 		}
 		if _, err := txQ.SoftDeleteExercise(ctx, pgUUID(id)); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

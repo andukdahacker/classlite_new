@@ -10,6 +10,7 @@
 //   - (*service.ClassService).TransitionStatus
 //   - (*service.ClassService).List
 //   - (*service.ClassService).ListForTeacher
+//
 // so this file is COMPILE-RED until Story 3.1 Task 4 lands them. That build
 // failure (undefined method) IS the red signal — verified in the ATDD checklist.
 //

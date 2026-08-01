@@ -68,8 +68,18 @@ SELECT e.id, e.center_id, e.created_by, e.code, e.title, e.description, e.skill,
            SELECT COALESCE(SUM(jsonb_array_length(COALESCE(qg.value->'questions', '[]'::jsonb))), 0)::int
            FROM jsonb_array_elements(COALESCE(e.content->'sections', '[]'::jsonb)) AS s(value)
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.value->'questionGroups', '[]'::jsonb)) AS qg(value)
-       ) AS question_count
+       ) AS question_count,
+       (lk.present IS NOT NULL)::boolean AS locked
 FROM exercises e
+LEFT JOIN LATERAL (
+    -- FR-23 (AC16): cheap lock probe — does ANY assignment on this exercise carry
+    -- a submission? Single LATERAL LIMIT 1, never a per-row EXISTS (Winston #2).
+    SELECT 1 AS present
+    FROM assignments a
+    JOIN submissions su ON su.assignment_id = a.id
+    WHERE a.exercise_id = e.id
+    LIMIT 1
+) lk ON true
 WHERE e.deleted_at IS NULL
   AND (sqlc.narg('skill')::text IS NULL OR e.skill = sqlc.narg('skill')::text)
   AND (sqlc.narg('tag')::text IS NULL OR e.tags @> ARRAY[sqlc.narg('tag')::text])
@@ -88,8 +98,18 @@ SELECT e.id, e.center_id, e.created_by, e.code, e.title, e.description, e.skill,
            SELECT COALESCE(SUM(jsonb_array_length(COALESCE(qg.value->'questions', '[]'::jsonb))), 0)::int
            FROM jsonb_array_elements(COALESCE(e.content->'sections', '[]'::jsonb)) AS s(value)
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.value->'questionGroups', '[]'::jsonb)) AS qg(value)
-       ) AS question_count
+       ) AS question_count,
+       (lk.present IS NOT NULL)::boolean AS locked
 FROM exercises e
+LEFT JOIN LATERAL (
+    -- FR-23 (AC16): cheap lock probe — does ANY assignment on this exercise carry
+    -- a submission? Single LATERAL LIMIT 1, never a per-row EXISTS (Winston #2).
+    SELECT 1 AS present
+    FROM assignments a
+    JOIN submissions su ON su.assignment_id = a.id
+    WHERE a.exercise_id = e.id
+    LIMIT 1
+) lk ON true
 WHERE e.deleted_at IS NULL
   AND e.created_by = sqlc.arg('created_by')
   AND (sqlc.narg('skill')::text IS NULL OR e.skill = sqlc.narg('skill')::text)
@@ -173,3 +193,41 @@ UPDATE exercises
 SET deleted_at = now()
 WHERE id = sqlc.arg('id') AND deleted_at IS NULL
 RETURNING id;
+
+-- Story 5.1 FR-23 exercise lock (AC15–17). The guard + the detail payload. Both
+-- run inside a tenant tx; the request-path start-submission and exercise-edit
+-- paths take pg_advisory_xact_lock(hashtext(exercise_id)) around these to close
+-- the create-during-PATCH TOCTOU (D10). NOT the batch-tool xmin path.
+
+-- name: ExerciseIsLocked :one
+-- Cheap guard used by the Update/SoftDelete write paths: true iff >= 1 submission
+-- exists against any assignment on this exercise (any status, incl. in_progress).
+SELECT EXISTS (
+    SELECT 1
+    FROM assignments a
+    JOIN submissions su ON su.assignment_id = a.id
+    WHERE a.exercise_id = sqlc.arg('exercise_id')
+) AS locked;
+
+-- name: GetExerciseLockedBy :many
+-- Detail-only lockedBy payload (AC16/D9): one row per blocking assignment with its
+-- class name + a representative attempt state (in_progress if any attempt is
+-- in-flight, else submitted). a.created_at is functionally dependent on the grouped
+-- PK a.id, so ordering by it is legal.
+SELECT a.id AS assignment_id,
+       c.name AS class_name,
+       CASE WHEN bool_or(su.status = 'in_progress') THEN 'in_progress' ELSE 'submitted' END::text AS attempt_state
+FROM assignments a
+JOIN classes c ON c.id = a.class_id
+JOIN submissions su ON su.assignment_id = a.id
+WHERE a.exercise_id = sqlc.arg('exercise_id')
+GROUP BY a.id, c.name
+ORDER BY a.created_at;
+
+-- name: GetExerciseContentByID :one
+-- Internal content/settings read for the submission flow (time-budget math, AC10).
+-- NO deleted_at filter: an assignment may reference a since-soft-deleted exercise
+-- and the in-flight attempt still needs its time-limit settings.
+SELECT content, schema_version, deleted_at
+FROM exercises
+WHERE id = sqlc.arg('id');

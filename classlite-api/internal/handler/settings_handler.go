@@ -179,9 +179,9 @@ func buildUpdateCenterInputFromBody(body updateCenterProfileRequestBody) (servic
 
 	// Nullable columns — JSON null → ClearFields membership.
 	nullable := []struct {
-		key      string
-		sqlName  string
-		target   **string
+		key     string
+		sqlName string
+		target  **string
 	}{
 		{"contactEmail", "contact_email", &in.ContactEmail},
 		{"brandColor", "brand_color", &in.BrandColor},

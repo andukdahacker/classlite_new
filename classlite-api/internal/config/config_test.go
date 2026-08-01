@@ -19,13 +19,13 @@ const okIntegrationsKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 // fill them or hit the "required oauth config missing" branch.
 func productionBase() config.Config {
 	return config.Config{
-		AppEnv:               "production",
-		DatabaseURL:          "postgres://...",
-		JWTSecret:            okSecret,
-		AppVerifyURLBase:     "https://my.classlite.app/verify-email",
-		AppResetURLBase:      "https://my.classlite.app/reset-password",
-		AppInviteURLBase:     "https://my.classlite.app/invite",
-		CookieDomain:         ".classlite.app",
+		AppEnv:                    "production",
+		DatabaseURL:               "postgres://...",
+		JWTSecret:                 okSecret,
+		AppVerifyURLBase:          "https://my.classlite.app/verify-email",
+		AppResetURLBase:           "https://my.classlite.app/reset-password",
+		AppInviteURLBase:          "https://my.classlite.app/invite",
+		CookieDomain:              ".classlite.app",
 		GoogleClientID:            "client-id",
 		GoogleClientSecret:        "client-secret",
 		GoogleRedirectURL:         "https://my.classlite.app/api/auth/google/callback",

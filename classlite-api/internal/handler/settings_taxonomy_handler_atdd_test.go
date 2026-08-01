@@ -60,7 +60,9 @@ func TestTerms_List_HappyPath_ReturnsEnvelopeAndEmptyArray(t *testing.T) {
 	}
 	var env struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
 		t.Fatalf("decode: %v", err)

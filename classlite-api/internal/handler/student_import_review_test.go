@@ -5,18 +5,18 @@
 // shared handler_test helpers (importCSV / classReq / decodeClassEnvelope /
 // countRows / cleanupImportedUsers / errCodeOf).
 //
-//   D1  an existing NON-student member is skipped (USER_ALREADY_STAFF), never
-//       demoted to student by the confirm upsert.
-//   D2  class_name resolves ONLY enrollable (upcoming/active) classes — an ended
-//       class is not found, and an ended+active same-name pair is not ambiguous.
-//   D4  an existing account that never accepted its invite is re-invited on
-//       re-import.
-//   P2  preview re-validates the caller role from center_members (stale owner-JWT
-//       for a DB teacher → 403).
-//   P3  fully-blank data rows are skipped (no budget, no spurious skips).
-//   P4  an earlier invalid row does not claim the dedup slot for a later valid row.
-//   P6  a missing/invalid importId is rejected 422.
-//   P7  invitesSent is vacuously true when there are no new invites to send.
+//	D1  an existing NON-student member is skipped (USER_ALREADY_STAFF), never
+//	    demoted to student by the confirm upsert.
+//	D2  class_name resolves ONLY enrollable (upcoming/active) classes — an ended
+//	    class is not found, and an ended+active same-name pair is not ambiguous.
+//	D4  an existing account that never accepted its invite is re-invited on
+//	    re-import.
+//	P2  preview re-validates the caller role from center_members (stale owner-JWT
+//	    for a DB teacher → 403).
+//	P3  fully-blank data rows are skipped (no budget, no spurious skips).
+//	P4  an earlier invalid row does not claim the dedup slot for a later valid row.
+//	P6  a missing/invalid importId is rejected 422.
+//	P7  invitesSent is vacuously true when there are no new invites to send.
 package handler_test
 
 import (

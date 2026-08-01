@@ -46,6 +46,14 @@ type dbConn interface {
 }
 
 // superuserTxPool wraps a rolled-back superuser outer tx as a batch-tool pool.
+//
+// Isolation (FU-5-1-B): RunMigration sweeps v1 rows GLOBALLY (no center filter, by
+// design). Any pre-existing committed v1 exercise in a shared/dev DB would occupy
+// an upgrade slot and skew the sweep tests' center-scoped count assertions (seen as
+// a deterministic "committed v2 rows = 199, want 200"). Neutralize those to the
+// current version up-front (a no-op on CI's freshly-migrated empty table); each test
+// seeds its own v1 rows AFTER this, so its rows are the sole v1 population the sweep
+// sees. The bump lives in the rolled-back outer tx, so nothing persists to the DB.
 func superuserTxPool(t *testing.T) *test.TxDB {
 	t.Helper()
 	sp := test.SuperuserPool(t)
@@ -54,6 +62,10 @@ func superuserTxPool(t *testing.T) *test.TxDB {
 		t.Fatalf("begin superuser outer tx: %v", err)
 	}
 	t.Cleanup(func() { _ = outer.Rollback(context.Background()) })
+	if _, err := outer.Exec(context.Background(),
+		`UPDATE exercises SET schema_version = 2 WHERE schema_version = 1`); err != nil {
+		t.Fatalf("neutralize pre-existing v1 rows: %v", err)
+	}
 	return &test.TxDB{Tx: outer}
 }
 
@@ -280,6 +292,9 @@ func TestRunMigration_ResumableAfterMidRunFailure(t *testing.T) {
 	ctx := context.Background()
 
 	center, user := seedCenterAndUser(t, db, "r"+uuid.NewString()[:6])
+	// superuserTxPool has already neutralized any pre-existing v1 rows and pinned the
+	// tx to REPEATABLE READ, so this center's 250 rows are the sole v1 population the
+	// global sweep sees — deterministic 200/50 regardless of sibling test packages.
 	seedExercises(t, ctx, db, center, user, 250, 1, v1Content)
 
 	// A migrator that fails on the 201st upgrade (first row of batch 3 at size 100).

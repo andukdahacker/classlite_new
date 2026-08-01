@@ -3,9 +3,9 @@
 // Slugify turns a center name into a URL-safe short_code. Vietnamese input
 // is ~90% of real traffic (project-context UX-2), so the pipeline is:
 //
-//   NFKC → NFD → strip combining marks → hard-map non-decomposing chars
-//        → lowercase → replace whitespace with '-' → strip non-[a-z0-9-]
-//        → collapse repeated '-' → trim '-' → truncate to 30 → trim '-' again
+//	NFKC → NFD → strip combining marks → hard-map non-decomposing chars
+//	     → lowercase → replace whitespace with '-' → strip non-[a-z0-9-]
+//	     → collapse repeated '-' → trim '-' → truncate to 30 → trim '-' again
 //
 // Naïve strings.Map(unicode.IsLower)-style pipelines produce garbage like
 // `trung-t-m-anh-ng-...` for `Trung tâm Anh ngữ Sài Gòn`. The AC5b canonical

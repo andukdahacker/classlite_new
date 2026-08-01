@@ -148,4 +148,3 @@ func parseOriginsList(raw string) []string {
 	}
 	return out
 }
-

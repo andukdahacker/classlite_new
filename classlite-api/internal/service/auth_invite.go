@@ -409,4 +409,3 @@ func (s *AuthService) acceptInviteCreateUserAndMember(
 	}
 	return refreshed, nil
 }
-

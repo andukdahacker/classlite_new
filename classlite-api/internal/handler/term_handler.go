@@ -207,10 +207,10 @@ func (h *TermHandler) Delete(w http.ResponseWriter, r *http.Request) error {
 
 // createTermRequestBody mirrors api.yaml CreateTermRequest.
 type createTermRequestBody struct {
-	Name         string  `json:"name"`
-	StartDate    string  `json:"startDate"`
-	EndDate      string  `json:"endDate"`
-	SessionCount *int32  `json:"sessionCount"`
+	Name         string `json:"name"`
+	StartDate    string `json:"startDate"`
+	EndDate      string `json:"endDate"`
+	SessionCount *int32 `json:"sessionCount"`
 }
 
 // updateTermRequestBody uses raw JSON so the handler can distinguish absent

@@ -237,4 +237,3 @@ func stripRequestID(body string) string {
 	// request id ("adv-test-req"), so this is a literal replacement.
 	return strings.ReplaceAll(body, `"requestId":"adv-test-req"`, `"requestId":"<stripped>"`)
 }
-

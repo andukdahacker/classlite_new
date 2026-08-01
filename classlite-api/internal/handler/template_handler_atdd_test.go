@@ -203,7 +203,9 @@ func TestCreateTemplate_AC02_HappyPath_ReturnsScopeCenterAndSessions(t *testing.
 				SessionOrder int     `json:"sessionOrder"`
 			} `json:"sessions"`
 		} `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -348,7 +350,9 @@ func TestSpawn_AC03_HappyMixedBranches_ReturnsFullResponseShape(t *testing.T) {
 			} `json:"invites"`
 			InvitesSent int `json:"invitesSent"`
 		} `json:"data"`
-		Meta struct{ ServerTime string `json:"serverTime"` } `json:"meta"`
+		Meta struct {
+			ServerTime string `json:"serverTime"`
+		} `json:"meta"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -575,11 +579,11 @@ func TestSpawn_AC11_AttackVectors(t *testing.T) {
 	// (partial `-run` filter, parallel, future Go runtime change) without
 	// contaminating each other. Cleanup registers per-subtest via t.Cleanup.
 	type ac11Fixture struct {
-		attackerCenter    pgtype.UUID
-		victimCenter      pgtype.UUID
-		attackerTemplate  pgtype.UUID
-		victimTemplate    pgtype.UUID
-		srv               http.Handler
+		attackerCenter   pgtype.UUID
+		victimCenter     pgtype.UUID
+		attackerTemplate pgtype.UUID
+		victimTemplate   pgtype.UUID
+		srv              http.Handler
 	}
 	setup := func(t *testing.T, suffix string) ac11Fixture {
 		attacker := test.CreateUserOnPool(t, pool, "attacker-"+suffix+"@example.com", "A")
@@ -831,7 +835,9 @@ func bufSnapshot(body *bytes.Buffer) *bytes.Reader {
 func assertErrorCodeTmpl(t *testing.T, body *bytes.Buffer, wantCode string) {
 	t.Helper()
 	var env struct {
-		Error struct{ Code string `json:"code"` } `json:"error"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(bufSnapshot(body)).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v", err)

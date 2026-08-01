@@ -10,19 +10,19 @@ import (
 
 // Config holds all configuration values for the API server.
 type Config struct {
-	AppEnv       string // development, staging, production
-	Port         string
-	DatabaseURL  string
-	JWTSecret    string
-	CookieDomain string
-	CORSOrigins    string
-	SentryDSN      string
-	ResendAPIKey     string
-	ResendFromEmail  string
-	R2AccountID      string
-	R2AccessKeyID    string
+	AppEnv            string // development, staging, production
+	Port              string
+	DatabaseURL       string
+	JWTSecret         string
+	CookieDomain      string
+	CORSOrigins       string
+	SentryDSN         string
+	ResendAPIKey      string
+	ResendFromEmail   string
+	R2AccountID       string
+	R2AccessKeyID     string
 	R2SecretAccessKey string
-	R2BucketName     string
+	R2BucketName      string
 	// AppVerifyURLBase is the canonical base URL embedded in verification emails
 	// (story 1.4). The token is appended as ?token=<value>.
 	AppVerifyURLBase string
@@ -64,33 +64,33 @@ type Config struct {
 // Load reads configuration from environment variables with sensible defaults.
 func Load() Config {
 	return Config{
-		AppEnv:       getEnv("APP_ENV", "development"),
-		Port:         getEnv("PORT", "8080"),
-		DatabaseURL:  getEnv("DATABASE_URL", ""),
-		JWTSecret:    getEnv("JWT_SECRET", ""),
+		AppEnv:      getEnv("APP_ENV", "development"),
+		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		JWTSecret:   getEnv("JWT_SECRET", ""),
 		// D4: no fallback to ".classlite.app" for cookies. The default is
 		// localhost (dev parity); non-dev MUST explicitly set COOKIE_DOMAIN
 		// — enforced by Validate(). This stops a staging deploy from
 		// silently writing cookies onto the production domain.
-		CookieDomain: getEnv("COOKIE_DOMAIN", "localhost"),
-		CORSOrigins:    getEnv("CORS_ORIGINS", "http://localhost:5173"),
-		SentryDSN:      getEnv("SENTRY_DSN", ""),
-		ResendAPIKey:     getEnv("RESEND_API_KEY", ""),
-		ResendFromEmail:  getEnv("RESEND_FROM_EMAIL", "noreply@classlite.app"),
-		R2AccountID:      getEnv("R2_ACCOUNT_ID", ""),
-		R2AccessKeyID:    getEnv("R2_ACCESS_KEY_ID", ""),
-		R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
-		R2BucketName:     getEnv("R2_BUCKET_NAME", "classlite-uploads"),
-		AppVerifyURLBase: getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
-		AppResetURLBase:  getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
-		AppInviteURLBase: getEnv("APP_INVITE_URL_BASE", "http://localhost:5173/invite"),
-		GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
-		GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
-		GoogleRedirectURL:    getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback"),
-		OAuthStateSecret:     getEnv("OAUTH_STATE_SECRET", ""),
-		AppApexHost:          getEnv("APP_APEX_HOST", "localhost:5173"),
-		AppPostLoginURL:      getEnv("APP_POST_LOGIN_URL", "http://localhost:5173/"),
-		AppLoginErrorURLBase: getEnv("APP_LOGIN_ERROR_URL_BASE", "http://localhost:5173/login"),
+		CookieDomain:              getEnv("COOKIE_DOMAIN", "localhost"),
+		CORSOrigins:               getEnv("CORS_ORIGINS", "http://localhost:5173"),
+		SentryDSN:                 getEnv("SENTRY_DSN", ""),
+		ResendAPIKey:              getEnv("RESEND_API_KEY", ""),
+		ResendFromEmail:           getEnv("RESEND_FROM_EMAIL", "noreply@classlite.app"),
+		R2AccountID:               getEnv("R2_ACCOUNT_ID", ""),
+		R2AccessKeyID:             getEnv("R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey:         getEnv("R2_SECRET_ACCESS_KEY", ""),
+		R2BucketName:              getEnv("R2_BUCKET_NAME", "classlite-uploads"),
+		AppVerifyURLBase:          getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
+		AppResetURLBase:           getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
+		AppInviteURLBase:          getEnv("APP_INVITE_URL_BASE", "http://localhost:5173/invite"),
+		GoogleClientID:            getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:        getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:         getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback"),
+		OAuthStateSecret:          getEnv("OAUTH_STATE_SECRET", ""),
+		AppApexHost:               getEnv("APP_APEX_HOST", "localhost:5173"),
+		AppPostLoginURL:           getEnv("APP_POST_LOGIN_URL", "http://localhost:5173/"),
+		AppLoginErrorURLBase:      getEnv("APP_LOGIN_ERROR_URL_BASE", "http://localhost:5173/login"),
 		IntegrationsEncryptionKey: getEnv("INTEGRATIONS_ENCRYPTION_KEY", ""),
 		MeetOAuthRedirectURL:      getEnv("MEET_OAUTH_REDIRECT_URL", "http://localhost:8080/api/centers/callback/google-meet"),
 		GeminiAPIKey:              getEnv("GEMINI_API_KEY", ""),

@@ -59,25 +59,35 @@ func NewExerciseHandler(svc *service.ExerciseService, clk clock.Clock) *Exercise
 // exerciseResponse is the api.yaml Exercise wire shape (detail/create/update/
 // duplicate). content is emitted as the raw JSONB object (json.RawMessage).
 type exerciseResponse struct {
-	ID            string          `json:"id"`
-	CenterID      string          `json:"centerId"`
-	CreatedBy     string          `json:"createdBy"`
-	Code          string          `json:"code"`
-	Title         string          `json:"title"`
-	Description   *string         `json:"description"`
-	Skill         string          `json:"skill"`
-	Tags          []string        `json:"tags"`
-	TargetBand    *float64        `json:"targetBand"`
-	SchemaVersion int32           `json:"schemaVersion"`
-	SectionCount  int             `json:"sectionCount"`
-	QuestionCount int             `json:"questionCount"`
-	Content       json.RawMessage `json:"content"`
-	CreatedAt     string          `json:"createdAt"`
-	UpdatedAt     string          `json:"updatedAt"`
+	ID            string                 `json:"id"`
+	CenterID      string                 `json:"centerId"`
+	CreatedBy     string                 `json:"createdBy"`
+	Code          string                 `json:"code"`
+	Title         string                 `json:"title"`
+	Description   *string                `json:"description"`
+	Skill         string                 `json:"skill"`
+	Tags          []string               `json:"tags"`
+	TargetBand    *float64               `json:"targetBand"`
+	SchemaVersion int32                  `json:"schemaVersion"`
+	SectionCount  int                    `json:"sectionCount"`
+	QuestionCount int                    `json:"questionCount"`
+	Content       json.RawMessage        `json:"content"`
+	Locked        bool                   `json:"locked"`
+	LockReason    *string                `json:"lockReason"`
+	LockedBy      []exerciseLockResponse `json:"lockedBy"`
+	CreatedAt     string                 `json:"createdAt"`
+	UpdatedAt     string                 `json:"updatedAt"`
+}
+
+// exerciseLockResponse is one api.yaml ExerciseLock entry (AC16/D9).
+type exerciseLockResponse struct {
+	AssignmentID string `json:"assignmentId"`
+	ClassName    string `json:"className"`
+	AttemptState string `json:"attemptState"`
 }
 
 // exerciseListItemResponse is the api.yaml ExerciseListItem shape — no content
-// blob (never transferred on the list path), SQL-computed counts.
+// blob (never transferred on the list path), SQL-computed counts, cheap lock flag.
 type exerciseListItemResponse struct {
 	ID            string   `json:"id"`
 	CenterID      string   `json:"centerId"`
@@ -91,9 +101,14 @@ type exerciseListItemResponse struct {
 	SchemaVersion int32    `json:"schemaVersion"`
 	SectionCount  int32    `json:"sectionCount"`
 	QuestionCount int32    `json:"questionCount"`
+	Locked        bool     `json:"locked"`
+	LockReason    *string  `json:"lockReason"`
 	CreatedAt     string   `json:"createdAt"`
 	UpdatedAt     string   `json:"updatedAt"`
 }
+
+// exerciseLockReasonHasSubmissions matches the api.yaml ExerciseLockReason enum.
+const exerciseLockReasonHasSubmissions = "has_submissions"
 
 type skillCountResponse struct {
 	Skill string `json:"skill"`
@@ -128,12 +143,34 @@ func libraryExerciseToResponse(x service.ExerciseWithCounts) exerciseResponse {
 		SectionCount:  x.SectionCount,
 		QuestionCount: x.QuestionCount,
 		Content:       content,
+		Locked:        x.Locked,
+		LockReason:    x.LockReason,
+		LockedBy:      lockedByToResponse(x.LockedBy),
 		CreatedAt:     row.CreatedAt.Time.UTC().Format(exerciseTimeFormat),
 		UpdatedAt:     row.UpdatedAt.Time.UTC().Format(exerciseTimeFormat),
 	}
 }
 
+// lockedByToResponse maps the store lock rows into the wire shape, guaranteeing a
+// non-nil slice so `lockedBy` serializes as [] not null (GO-5).
+func lockedByToResponse(rows []generated.GetExerciseLockedByRow) []exerciseLockResponse {
+	out := make([]exerciseLockResponse, len(rows))
+	for i, r := range rows {
+		out[i] = exerciseLockResponse{
+			AssignmentID: uuidPgToString(r.AssignmentID),
+			ClassName:    r.ClassName,
+			AttemptState: r.AttemptState,
+		}
+	}
+	return out
+}
+
 func exerciseListItemToResponse(row generated.ListExercisesRow) exerciseListItemResponse {
+	var lockReason *string
+	if row.Locked {
+		reason := exerciseLockReasonHasSubmissions
+		lockReason = &reason
+	}
 	return exerciseListItemResponse{
 		ID:            uuidPgToString(row.ID),
 		CenterID:      uuidPgToString(row.CenterID),
@@ -147,6 +184,8 @@ func exerciseListItemToResponse(row generated.ListExercisesRow) exerciseListItem
 		SchemaVersion: row.SchemaVersion,
 		SectionCount:  row.SectionCount,
 		QuestionCount: row.QuestionCount,
+		Locked:        row.Locked,
+		LockReason:    lockReason,
 		CreatedAt:     row.CreatedAt.Time.UTC().Format(exerciseTimeFormat),
 		UpdatedAt:     row.UpdatedAt.Time.UTC().Format(exerciseTimeFormat),
 	}

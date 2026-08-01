@@ -4440,6 +4440,444 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 5.1 — Assignments & submission lifecycle ----------------
+  /api/assignments:
+    post:
+      operationId: createAssignment
+      summary: Create an assignment — bind an exercise to a class with a deadline (story 5.1 — AC1)
+      description: |
+        Teacher/Admin/Owner only. The exerciseId + classId must resolve to
+        non-deleted rows in the caller's center (else 422 INVALID_REFERENCE). A
+        teacher may only assign a class they own (else 404 CLASS_NOT_FOUND —
+        teacher-sees-nothing). hardDeadlineAt, when present, must be >= deadlineAt
+        (else 422 INVALID_DEADLINE). Created open.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssignmentRequest'
+      responses:
+        "201":
+          description: Created assignment (status=open)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAssignment'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student callers — teacher/admin/owner only)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (class not in caller's center or outside teacher scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (body exceeds cap)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR / INVALID_REFERENCE (exerciseId/classId unresolved) / INVALID_DEADLINE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/assignments/{id}:
+    get:
+      operationId: getAssignment
+      summary: Get a single assignment (story 5.1 — AC6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The assignment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAssignment'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: ASSIGNMENT_NOT_FOUND (absent, wrong center, or outside teacher scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateAssignmentStatus
+      summary: Close or reopen an assignment (story 5.1 — AC5)
+      description: |
+        Teacher/Admin/Owner only. Compare-and-swap on the expected status.
+        closed stops new attempts; closed → open reopen re-accepts submissions but
+        never mutates deadlines and never un-sets an existing submission's is_late
+        (reopen != extend — D11). A no-op / lost race → 409 CONFLICT.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssignmentRequest'
+      responses:
+        "200":
+          description: The updated assignment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAssignment'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: ASSIGNMENT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: CONFLICT (status compare-and-swap lost / no-op transition)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (unknown status value)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{classId}/assignments:
+    get:
+      operationId: listAssignmentsByClass
+      summary: List a class's assignments, paginated (story 5.1 — AC6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Center- + teacher-scoped assignments for the class
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAssignmentList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (class not in caller's center or outside teacher scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions:
+    post:
+      operationId: startSubmission
+      summary: Start or resume a submission attempt — idempotent (story 5.1 — AC7,8,13)
+      description: |
+        Actively-enrolled student only. No existing submission → create in_progress
+        (201). An existing in_progress row → return it (200 resume; started_at never
+        resets). A terminal (submitted+) row → 409 SUBMISSION_EXISTS. A closed
+        assignment or a passed inclusive hard deadline → 409 SUBMISSION_LOCKED.
+        Not-enrolled → 403 NOT_ENROLLED; non-student → 403 INSUFFICIENT_ROLE.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionRequest'
+      responses:
+        "200":
+          description: Resumed existing in_progress submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmission'
+        "201":
+          description: Created new in_progress submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmission'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: NOT_ENROLLED (caller not actively enrolled) / INSUFFICIENT_ROLE (non-student)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: ASSIGNMENT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_EXISTS (a terminal submission already exists) / SUBMISSION_LOCKED (closed or past hard deadline)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (assignmentId not a UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{id}:
+    get:
+      operationId: getSubmission
+      summary: Get a submission incl. server-anchored time budget (story 5.1 — AC10)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmission'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: NOT_ENROLLED / INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{id}/progress:
+    put:
+      operationId: saveSubmissionProgress
+      summary: Save in-progress attempt content (story 5.1 — AC9,10)
+      description: |
+        Owner student only, in_progress only (DB-guarded — 0 rows → 409
+        SUBMISSION_NOT_EDITABLE). Re-checks active enrollment (403 NOT_ENROLLED). A
+        timed exercise past started_at + timeLimit + grace → 409 TIME_EXPIRED. A
+        closed assignment or passed hard deadline → 409 SUBMISSION_LOCKED. Body
+        over the serialized-JSONB cap → 413 PAYLOAD_TOO_LARGE.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveSubmissionProgressRequest'
+      responses:
+        "200":
+          description: The updated submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmission'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: NOT_ENROLLED / INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_NOT_EDITABLE (not in_progress) / TIME_EXPIRED / SUBMISSION_LOCKED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE (serialized content over the cap)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{id}/submit:
+    post:
+      operationId: submitSubmission
+      summary: Submit an attempt — atomic status + late flag + penalty snapshot (story 5.1 — AC11,12)
+      description: |
+        Owner student only, in_progress only (0 rows → 409 SUBMISSION_NOT_EDITABLE).
+        Re-checks active enrollment (403 NOT_ENROLLED). A single atomic UPDATE sets
+        submitted, submitted_at (server clock), is_late (submitted_at > deadline_at,
+        strict), and snapshots the point-in-time late penalty. Allowed after time
+        expiry (client auto-submits). A closed assignment or passed hard deadline →
+        409 SUBMISSION_LOCKED.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The submitted submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmission'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: NOT_ENROLLED / INSUFFICIENT_ROLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_NOT_EDITABLE (not in_progress) / SUBMISSION_LOCKED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -6829,6 +7267,9 @@ components:
         - sectionCount
         - questionCount
         - content
+        - locked
+        - lockReason
+        - lockedBy
         - createdAt
         - updatedAt
       properties:
@@ -6867,6 +7308,25 @@ components:
           type: integer
         content:
           $ref: '#/components/schemas/ExerciseContent'
+        locked:
+          type: boolean
+          description: >-
+            FR-23 (AC15/16). True once >= 1 submission exists against any
+            assignment on this exercise; content edits + delete then 409
+            EXERCISE_LOCKED. Clone (POST /duplicate) is the sanctioned edit path.
+        lockReason:
+          allOf:
+            - $ref: '#/components/schemas/ExerciseLockReason'
+          nullable: true
+          description: Null when unlocked.
+        lockedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExerciseLock'
+          description: >-
+            Detail-only (AC16/D9). Which assignments block edits + a representative
+            attempt state, so the read-only editor strip can explain why. Empty
+            when unlocked.
         createdAt:
           type: string
           format: date-time
@@ -6891,6 +7351,8 @@ components:
         - schemaVersion
         - sectionCount
         - questionCount
+        - locked
+        - lockReason
         - createdAt
         - updatedAt
       properties:
@@ -6925,6 +7387,13 @@ components:
           type: integer
         questionCount:
           type: integer
+        locked:
+          type: boolean
+          description: FR-23 (AC16). Cheap list-path lock flag; lockedBy detail is GET-single only.
+        lockReason:
+          allOf:
+            - $ref: '#/components/schemas/ExerciseLockReason'
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -7052,6 +7521,256 @@ components:
             $ref: '#/components/schemas/ExerciseListItem'
         meta:
           $ref: '#/components/schemas/EnvelopeMetaPaginated'
+
+    # ---------------- Story 5.1 — FR-23 exercise lock payload ----------------
+    ExerciseLockReason:
+      type: string
+      # Single reason in v1: the exercise has >= 1 submission (any status) against
+      # some assignment. "unfinalize" was struck from FR-23 (D5) — clone-only.
+      enum: [has_submissions]
+
+    ExerciseLock:
+      type: object
+      # One entry per assignment that blocks edits (AC16/D9). attemptState is a
+      # representative status ('in_progress' if any attempt is in-flight, else
+      # 'submitted') so the read-only strip can say which classes block + why.
+      required: [assignmentId, className, attemptState]
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        attemptState:
+          $ref: '#/components/schemas/SubmissionStatus'
+
+    # ---------------- Story 5.1 — Assignments ----------------
+    AssignmentStatus:
+      type: string
+      # 5.1 writes open/closed only; archived deferred (D4).
+      enum: [open, closed]
+
+    Assignment:
+      type: object
+      # All fields present + explicit (nulls not omitted) per GO-5.
+      required:
+        - id
+        - centerId
+        - exerciseId
+        - classId
+        - createdBy
+        - status
+        - deadlineAt
+        - hardDeadlineAt
+        - instructions
+        - latePenalty
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        exerciseId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/AssignmentStatus'
+        deadlineAt:
+          type: string
+          format: date-time
+        hardDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+        instructions:
+          type: string
+          nullable: true
+        latePenalty:
+          type: number
+          description: Flat late penalty snapshotted onto a late submission (D1). >= 0.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAssignmentRequest:
+      type: object
+      required: [exerciseId, classId, deadlineAt]
+      properties:
+        exerciseId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        deadlineAt:
+          type: string
+          format: date-time
+        hardDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+        instructions:
+          type: string
+          nullable: true
+        latePenalty:
+          type: number
+          minimum: 0
+          maximum: 99.9
+          nullable: true
+          description: Defaults to 0 when absent/null. Max 99.9 (numeric(3,1) ceiling).
+
+    UpdateAssignmentRequest:
+      type: object
+      # 5.1 exposes only the status flip (close/reopen). Deadline edits are out of
+      # scope (D11). status is the compare-and-swap target.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/AssignmentStatus'
+
+    EnvelopeAssignment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Assignment'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeMetaListPaginated:
+      type: object
+      required: [serverTime, pagination]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    EnvelopeAssignmentList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaListPaginated'
+
+    # ---------------- Story 5.1 — Submissions ----------------
+    SubmissionStatus:
+      type: string
+      # 5.1 drives in_progress → submitted only; ai_processing/graded are
+      # provisioned for Epic 6 (no 5.1 lifecycle path reaches them — AC14).
+      enum: [in_progress, submitted, ai_processing, graded]
+
+    SubmissionContent:
+      type: object
+      # Opaque v1 attempt payload — shape owned by the attempt UIs (5.2–5.4). 5.1
+      # treats it as a pass-through JSONB blob (empty passthrough ladder, AC19).
+      additionalProperties: true
+
+    Submission:
+      type: object
+      # All fields present + explicit (nulls not omitted) per GO-5.
+      required:
+        - id
+        - centerId
+        - assignmentId
+        - studentId
+        - status
+        - isLate
+        - appliedPenalty
+        - startedAt
+        - submittedAt
+        - timeBudgetSeconds
+        - schemaVersion
+        - content
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        centerId:
+          type: string
+          format: uuid
+        assignmentId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        isLate:
+          type: boolean
+        appliedPenalty:
+          type: number
+          description: Point-in-time late-penalty snapshot (0 when on-time). Immutable after submit (AC12).
+        startedAt:
+          type: string
+          format: date-time
+          description: Server-authoritative attempt start; set once, never reset on resume.
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        timeBudgetSeconds:
+          type: integer
+          nullable: true
+          description: >-
+            Total allotted time budget (seconds) from the exercise time limit (AC10);
+            NOT decremented on resume. Null for untimed exercises. Clients render the
+            remaining timer from this + startedAt vs. serverTime.
+        schemaVersion:
+          type: integer
+        content:
+          $ref: '#/components/schemas/SubmissionContent'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateSubmissionRequest:
+      type: object
+      required: [assignmentId]
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+
+    SaveSubmissionProgressRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          $ref: '#/components/schemas/SubmissionContent'
+
+    EnvelopeSubmission:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Submission'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
     # ---------------- Story 4.3a — AI content generation ----------------
     AIGenerateSectionParams:

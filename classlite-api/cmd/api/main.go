@@ -18,6 +18,7 @@ import (
 
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/config"
+	"github.com/ducdo/classlite-api/internal/event"
 	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/logging"
@@ -515,6 +516,32 @@ func main() {
 	mux.Handle("PATCH /api/exercises/{id}", exerciseChain(exerciseHandler.Update))
 	mux.Handle("DELETE /api/exercises/{id}", exerciseChain(exerciseHandler.Delete))
 	mux.Handle("POST /api/exercises/{id}/duplicate", exerciseChain(exerciseHandler.Duplicate))
+
+	// Story 5.1 — Assignments + submission lifecycle (11 routes). Same open chain
+	// shape (role + teacher-scope + enrollment enforced in-service). Assignment
+	// management is teacher/admin/owner; the submission lifecycle is student-only
+	// (actively-enrolled, re-checked every write). eventBus fans out
+	// AssignmentCreated (no subscribers yet — Epic 6/7 attach).
+	eventBus := event.NewBus()
+	assignmentSvc := service.NewAssignmentService(pool, auditSvc, eventBus, clock.RealClock{})
+	assignmentHandler := handler.NewAssignmentHandler(assignmentSvc, clock.RealClock{})
+	submissionSvc := service.NewSubmissionService(pool, auditSvc, clock.RealClock{})
+	submissionHandler := handler.NewSubmissionHandler(submissionSvc, clock.RealClock{})
+	assignmentChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("POST /api/assignments", assignmentChain(assignmentHandler.Create))
+	mux.Handle("GET /api/assignments/{id}", assignmentChain(assignmentHandler.Get))
+	mux.Handle("PATCH /api/assignments/{id}", assignmentChain(assignmentHandler.UpdateStatus))
+	mux.Handle("GET /api/classes/{classId}/assignments", assignmentChain(assignmentHandler.ListByClass))
+	mux.Handle("POST /api/submissions", assignmentChain(submissionHandler.Start))
+	mux.Handle("GET /api/submissions/{id}", assignmentChain(submissionHandler.Get))
+	mux.Handle("PUT /api/submissions/{id}/progress", assignmentChain(submissionHandler.SaveProgress))
+	mux.Handle("POST /api/submissions/{id}/submit", assignmentChain(submissionHandler.Submit))
 
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced

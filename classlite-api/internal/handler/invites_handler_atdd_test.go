@@ -7,17 +7,17 @@
 // paths, or the details.field for the inline-field errors).
 //
 // Row inventory (per AC9 handler-layer split):
-//   1. Owner  → Teacher (201, invite row visible, envelope role matches)
-//   2. Owner  → Owner   (201, FR-11 permits Owner-to-Owner promotion)
-//   3. Admin  → Teacher (201, exercises the widened RequireRole allowlist)
-//   4. Admin  → Admin   (201, exercises Admin-invites-Admin arm)
-//   5. Admin  → Owner   (403 ROLE_ASSIGNMENT_FORBIDDEN — FR-11 envelope proof)
-//   6. Teacher middleware-block — Teacher JWT hits the route, RequireRole
-//      rejects at the HTTP edge with INSUFFICIENT_ROLE; the service is NEVER
-//      invoked (no role_assignment_blocked audit row, no invite row).
-//   7. Row-persistence positive assertion on the Owner→Teacher happy path —
-//      after the 201, read the invites table and verify (center_id, email,
-//      role, expires_at) shape.
+//  1. Owner  → Teacher (201, invite row visible, envelope role matches)
+//  2. Owner  → Owner   (201, FR-11 permits Owner-to-Owner promotion)
+//  3. Admin  → Teacher (201, exercises the widened RequireRole allowlist)
+//  4. Admin  → Admin   (201, exercises Admin-invites-Admin arm)
+//  5. Admin  → Owner   (403 ROLE_ASSIGNMENT_FORBIDDEN — FR-11 envelope proof)
+//  6. Teacher middleware-block — Teacher JWT hits the route, RequireRole
+//     rejects at the HTTP edge with INSUFFICIENT_ROLE; the service is NEVER
+//     invoked (no role_assignment_blocked audit row, no invite row).
+//  7. Row-persistence positive assertion on the Owner→Teacher happy path —
+//     after the 201, read the invites table and verify (center_id, email,
+//     role, expires_at) shape.
 //
 // The Owner→Teacher happy path acts as the "handler-layer row 7"
 // combined with row 1 — one 201 exercises envelope shape + DB row

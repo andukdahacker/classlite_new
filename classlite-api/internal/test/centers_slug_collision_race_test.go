@@ -160,4 +160,3 @@ func TestCenters_SlugCollisionRegeneration(t *testing.T) {
 		t.Errorf("suffixed slug %q too short — expected base + '-' + random", suffixed)
 	}
 }
-

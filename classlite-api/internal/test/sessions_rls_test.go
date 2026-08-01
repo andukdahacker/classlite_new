@@ -4,13 +4,16 @@
 // `sessions` is center-scoped, no dual-scope, no trigger — standard 4-policy
 // grid mirroring `classes` (classes_rls_test.go is the reference). Four-policy
 // shape MUST be enforced by the Task 1 migration:
-//   sessions_select FOR SELECT USING (center_id = tenant)
-//   sessions_insert FOR INSERT WITH CHECK (center_id = tenant)
-//   sessions_update FOR UPDATE USING (...) WITH CHECK (...)
-//   sessions_delete FOR DELETE USING (center_id = tenant)
+//
+//	sessions_select FOR SELECT USING (center_id = tenant)
+//	sessions_insert FOR INSERT WITH CHECK (center_id = tenant)
+//	sessions_update FOR UPDATE USING (...) WITH CHECK (...)
+//	sessions_delete FOR DELETE USING (center_id = tenant)
 //
 // RED signal (verifiable NOW, compiles fine — raw SQL only):
-//   ERROR: relation "sessions" does not exist (SQLSTATE 42P01)
+//
+//	ERROR: relation "sessions" does not exist (SQLSTATE 42P01)
+//
 // GREEN: Task 1 migration `20260721120000_create_sessions`.
 //
 // This file is the security core of the R19 mandate. The scope-leak matrix

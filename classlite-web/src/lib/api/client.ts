@@ -1312,6 +1312,161 @@ export interface paths {
         patch: operations["updateFile"];
         trace?: never;
     };
+    "/api/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an assignment — bind an exercise to a class with a deadline (story 5.1 — AC1)
+         * @description Teacher/Admin/Owner only. The exerciseId + classId must resolve to
+         *     non-deleted rows in the caller's center (else 422 INVALID_REFERENCE). A
+         *     teacher may only assign a class they own (else 404 CLASS_NOT_FOUND —
+         *     teacher-sees-nothing). hardDeadlineAt, when present, must be >= deadlineAt
+         *     (else 422 INVALID_DEADLINE). Created open.
+         */
+        post: operations["createAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assignments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single assignment (story 5.1 — AC6) */
+        get: operations["getAssignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Close or reopen an assignment (story 5.1 — AC5)
+         * @description Teacher/Admin/Owner only. Compare-and-swap on the expected status.
+         *     closed stops new attempts; closed → open reopen re-accepts submissions but
+         *     never mutates deadlines and never un-sets an existing submission's is_late
+         *     (reopen != extend — D11). A no-op / lost race → 409 CONFLICT.
+         */
+        patch: operations["updateAssignmentStatus"];
+        trace?: never;
+    };
+    "/api/classes/{classId}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a class's assignments, paginated (story 5.1 — AC6) */
+        get: operations["listAssignmentsByClass"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start or resume a submission attempt — idempotent (story 5.1 — AC7,8,13)
+         * @description Actively-enrolled student only. No existing submission → create in_progress
+         *     (201). An existing in_progress row → return it (200 resume; started_at never
+         *     resets). A terminal (submitted+) row → 409 SUBMISSION_EXISTS. A closed
+         *     assignment or a passed inclusive hard deadline → 409 SUBMISSION_LOCKED.
+         *     Not-enrolled → 403 NOT_ENROLLED; non-student → 403 INSUFFICIENT_ROLE.
+         */
+        post: operations["startSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a submission incl. server-anchored time budget (story 5.1 — AC10) */
+        get: operations["getSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save in-progress attempt content (story 5.1 — AC9,10)
+         * @description Owner student only, in_progress only (DB-guarded — 0 rows → 409
+         *     SUBMISSION_NOT_EDITABLE). Re-checks active enrollment (403 NOT_ENROLLED). A
+         *     timed exercise past started_at + timeLimit + grace → 409 TIME_EXPIRED. A
+         *     closed assignment or passed hard deadline → 409 SUBMISSION_LOCKED. Body
+         *     over the serialized-JSONB cap → 413 PAYLOAD_TOO_LARGE.
+         */
+        put: operations["saveSubmissionProgress"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit an attempt — atomic status + late flag + penalty snapshot (story 5.1 — AC11,12)
+         * @description Owner student only, in_progress only (0 rows → 409 SUBMISSION_NOT_EDITABLE).
+         *     Re-checks active enrollment (403 NOT_ENROLLED). A single atomic UPDATE sets
+         *     submitted, submitted_at (server clock), is_late (submitted_at > deadline_at,
+         *     strict), and snapshots the point-in-time late penalty. Allowed after time
+         *     expiry (client auto-submits). A closed assignment or passed hard deadline →
+         *     409 SUBMISSION_LOCKED.
+         */
+        post: operations["submitSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2473,6 +2628,12 @@ export interface components {
             sectionCount: number;
             questionCount: number;
             content: components["schemas"]["ExerciseContent"];
+            /** @description FR-23 (AC15/16). True once >= 1 submission exists against any assignment on this exercise; content edits + delete then 409 EXERCISE_LOCKED. Clone (POST /duplicate) is the sanctioned edit path. */
+            locked: boolean;
+            /** @description Null when unlocked. */
+            lockReason: components["schemas"]["ExerciseLockReason"] | null;
+            /** @description Detail-only (AC16/D9). Which assignments block edits + a representative attempt state, so the read-only editor strip can explain why. Empty when unlocked. */
+            lockedBy: components["schemas"]["ExerciseLock"][];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2494,6 +2655,9 @@ export interface components {
             schemaVersion: number;
             sectionCount: number;
             questionCount: number;
+            /** @description FR-23 (AC16). Cheap list-path lock flag; lockedBy detail is GET-single only. */
+            locked: boolean;
+            lockReason: components["schemas"]["ExerciseLockReason"] | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2544,6 +2708,114 @@ export interface components {
         EnvelopeExerciseList: {
             data: components["schemas"]["ExerciseListItem"][];
             meta: components["schemas"]["EnvelopeMetaPaginated"];
+        };
+        /** @enum {string} */
+        ExerciseLockReason: "has_submissions";
+        ExerciseLock: {
+            /** Format: uuid */
+            assignmentId: string;
+            className: string;
+            attemptState: components["schemas"]["SubmissionStatus"];
+        };
+        /** @enum {string} */
+        AssignmentStatus: "open" | "closed";
+        Assignment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            exerciseId: string;
+            /** Format: uuid */
+            classId: string;
+            /** Format: uuid */
+            createdBy: string | null;
+            status: components["schemas"]["AssignmentStatus"];
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            hardDeadlineAt: string | null;
+            instructions: string | null;
+            /** @description Flat late penalty snapshotted onto a late submission (D1). >= 0. */
+            latePenalty: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateAssignmentRequest: {
+            /** Format: uuid */
+            exerciseId: string;
+            /** Format: uuid */
+            classId: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            hardDeadlineAt?: string | null;
+            instructions?: string | null;
+            /** @description Defaults to 0 when absent/null. Max 99.9 (numeric(3,1) ceiling). */
+            latePenalty?: number | null;
+        };
+        UpdateAssignmentRequest: {
+            status: components["schemas"]["AssignmentStatus"];
+        };
+        EnvelopeAssignment: {
+            data: components["schemas"]["Assignment"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeMetaListPaginated: {
+            /** Format: date-time */
+            serverTime: string;
+            pagination: components["schemas"]["PaginationMeta"];
+        };
+        EnvelopeAssignmentList: {
+            data: components["schemas"]["Assignment"][];
+            meta: components["schemas"]["EnvelopeMetaListPaginated"];
+        };
+        /** @enum {string} */
+        SubmissionStatus: "in_progress" | "submitted" | "ai_processing" | "graded";
+        SubmissionContent: {
+            [key: string]: unknown;
+        };
+        Submission: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            assignmentId: string;
+            /** Format: uuid */
+            studentId: string;
+            status: components["schemas"]["SubmissionStatus"];
+            isLate: boolean;
+            /** @description Point-in-time late-penalty snapshot (0 when on-time). Immutable after submit (AC12). */
+            appliedPenalty: number;
+            /**
+             * Format: date-time
+             * @description Server-authoritative attempt start; set once, never reset on resume.
+             */
+            startedAt: string;
+            /** Format: date-time */
+            submittedAt: string | null;
+            /** @description Total allotted time budget (seconds) from the exercise time limit (AC10); NOT decremented on resume. Null for untimed exercises. Clients render the remaining timer from this + startedAt vs. serverTime. */
+            timeBudgetSeconds: number | null;
+            schemaVersion: number;
+            content: components["schemas"]["SubmissionContent"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateSubmissionRequest: {
+            /** Format: uuid */
+            assignmentId: string;
+        };
+        SaveSubmissionProgressRequest: {
+            content: components["schemas"]["SubmissionContent"];
+        };
+        EnvelopeSubmission: {
+            data: components["schemas"]["Submission"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         AIGenerateSectionParams: {
             /** @description Free-text prompt seed for the section to generate. */
@@ -8197,6 +8469,521 @@ export interface operations {
             };
             /** @description Validation error (name) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createAssignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created assignment (status=open) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAssignment"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student callers — teacher/admin/owner only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND (class not in caller's center or outside teacher scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (body exceeds cap) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_REFERENCE (exerciseId/classId unresolved) / INVALID_DEADLINE */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getAssignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAssignment"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description ASSIGNMENT_NOT_FOUND (absent, wrong center, or outside teacher scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateAssignmentStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAssignment"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description ASSIGNMENT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT (status compare-and-swap lost / no-op transition) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (unknown status value) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listAssignmentsByClass: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                classId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Center- + teacher-scoped assignments for the class */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAssignmentList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND (class not in caller's center or outside teacher scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    startSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Resumed existing in_progress submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSubmission"];
+                };
+            };
+            /** @description Created new in_progress submission */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSubmission"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (caller not actively enrolled) / INSUFFICIENT_ROLE (non-student) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description ASSIGNMENT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_EXISTS (a terminal submission already exists) / SUBMISSION_LOCKED (closed or past hard deadline) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (assignmentId not a UUID) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSubmission"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED / INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveSubmissionProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveSubmissionProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSubmission"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED / INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_EDITABLE (not in_progress) / TIME_EXPIRED / SUBMISSION_LOCKED */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE (serialized content over the cap) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    submitSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submitted submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSubmission"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED / INSUFFICIENT_ROLE */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_EDITABLE (not in_progress) / SUBMISSION_LOCKED */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

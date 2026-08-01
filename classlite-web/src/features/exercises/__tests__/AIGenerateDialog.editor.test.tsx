@@ -49,6 +49,9 @@ function exercise(): Exercise {
     sectionCount: 1,
     questionCount: 0,
     content: contentWithOneSection(),
+    locked: false,
+    lockReason: null,
+    lockedBy: [],
     createdAt: T0,
     updatedAt: T0,
   }

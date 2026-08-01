@@ -2,8 +2,9 @@
 //
 // Mirror of story_2_1_helpers.go's newStorySrv/NewTestServerForUser but
 // mounts the two /api/centers/{id} routes with the full Owner-only chain:
-//   ExtractTenant → RequireVerifiedEmail → RequireCenterContext →
-//   RequireRole("owner") → settingsLimit → handler
+//
+//	ExtractTenant → RequireVerifiedEmail → RequireCenterContext →
+//	RequireRole("owner") → settingsLimit → handler
 //
 // Callers pre-create the center (via CenterService.CreateCenter) and pass
 // (userID, centerID). The helper signs a JWT carrying center + owner

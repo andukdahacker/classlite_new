@@ -4,16 +4,17 @@
 // red-phase mechanics and dev-reconcile points.
 //
 // ACCEPTANCE CRITERIA / RISK COVERED
-//   AC1/AC6  owner/admin reach the import endpoints; row-limit rejection.
-//   R15      role re-validated from center_members (SEC-1): teacher/student →
-//            403 INSUFFICIENT_ROLE, and a STALE/ELEVATED owner-JWT handed to a
-//            DB-teacher still 403 (the deciding-factor test, EDGE-2).
-//   R1 (file-read leak)  a cross-tenant object key (centerB/… passed by centerA)
-//            → 403 FORBIDDEN. GetObject bypasses RLS, so this needs its own
-//            negative — the write-isolation test alone would NOT catch it
-//            (story Blocker #4).
-//   Envelope  full {data,meta} on success, {error:{code,message,requestId}} on
-//            failure (GFW-5); missing key → 404 IMPORT_FILE_NOT_FOUND.
+//
+//	AC1/AC6  owner/admin reach the import endpoints; row-limit rejection.
+//	R15      role re-validated from center_members (SEC-1): teacher/student →
+//	         403 INSUFFICIENT_ROLE, and a STALE/ELEVATED owner-JWT handed to a
+//	         DB-teacher still 403 (the deciding-factor test, EDGE-2).
+//	R1 (file-read leak)  a cross-tenant object key (centerB/… passed by centerA)
+//	         → 403 FORBIDDEN. GetObject bypasses RLS, so this needs its own
+//	         negative — the write-isolation test alone would NOT catch it
+//	         (story Blocker #4).
+//	Envelope  full {data,meta} on success, {error:{code,message,requestId}} on
+//	         failure (GFW-5); missing key → 404 IMPORT_FILE_NOT_FOUND.
 //
 // Reuses the handler_test shared helpers classReq / errCodeOf / decodeClassEnvelope
 // (class_handler_atdd_test.go, session_handler_atdd_test.go) — no re-declaration.

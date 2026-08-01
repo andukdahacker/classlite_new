@@ -2,9 +2,9 @@
 //
 // Three routes (per AC9):
 //
-//   GET    /api/centers/{id}/integrations/google-meet/authorize
-//   GET    /api/centers/callback/google-meet
-//   DELETE /api/centers/{id}/integrations/google-meet
+//	GET    /api/centers/{id}/integrations/google-meet/authorize
+//	GET    /api/centers/callback/google-meet
+//	DELETE /api/centers/{id}/integrations/google-meet
 //
 // Authorize + Disconnect sit behind the settingsChain (ExtractTenant →
 // RequireVerifiedEmail → RequireCenterContext → RequireRole("owner") →

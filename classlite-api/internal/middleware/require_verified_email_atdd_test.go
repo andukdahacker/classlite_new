@@ -78,7 +78,9 @@ func TestRequireVerifiedEmail_AC08_UnverifiedContext_Returns403(t *testing.T) {
 	}
 
 	var env struct {
-		Error struct{ Code string `json:"code"` } `json:"error"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v", err)

@@ -534,3 +534,77 @@ func (e *IntegrationConnectCanceledError) Error() string {
 	}
 	return "integration connect canceled: " + e.Provider + " (" + e.UpstreamReason + ")"
 }
+
+// ---------------------------------------------------------------------
+// Story 5.1 — assignment + submission lifecycle errors. Each is a distinct
+// pointer type so the error mapper emits a distinct code the generic
+// ValidationError/ConflictError arms would otherwise flatten.
+// ---------------------------------------------------------------------
+
+// InvalidReferenceError → 422 INVALID_REFERENCE (AC2). The exerciseId or classId
+// on an assignment create does not resolve to a live row in the caller's center
+// (pre-checked; also the FK 23503 fallback). Field names the offending reference.
+type InvalidReferenceError struct {
+	Field string
+}
+
+func (e *InvalidReferenceError) Error() string {
+	return "referenced record does not exist: " + e.Field
+}
+
+// InvalidDeadlineError → 422 INVALID_DEADLINE (AC4). hardDeadlineAt precedes
+// deadlineAt.
+type InvalidDeadlineError struct{}
+
+func (e *InvalidDeadlineError) Error() string {
+	return "hard deadline must be at or after the soft deadline"
+}
+
+// NotEnrolledError → 403 NOT_ENROLLED (AC8). The caller is not actively enrolled
+// in the assignment's class; re-checked on start, progress, AND submit.
+type NotEnrolledError struct{}
+
+func (e *NotEnrolledError) Error() string {
+	return "you are not actively enrolled in this class"
+}
+
+// SubmissionExistsError → 409 SUBMISSION_EXISTS (AC7). A terminal (submitted+)
+// submission already exists for this (assignment, student) — start is refused.
+type SubmissionExistsError struct{}
+
+func (e *SubmissionExistsError) Error() string {
+	return "a submission already exists for this assignment"
+}
+
+// SubmissionNotEditableError → 409 SUBMISSION_NOT_EDITABLE (AC9). A save/submit
+// hit a row that is not in_progress (the DB-guarded UPDATE matched 0 rows).
+type SubmissionNotEditableError struct{}
+
+func (e *SubmissionNotEditableError) Error() string {
+	return "this submission can no longer be edited"
+}
+
+// SubmissionLockedError → 409 SUBMISSION_LOCKED (AC13). The assignment is closed
+// or its inclusive hard deadline has passed; no write is permitted.
+type SubmissionLockedError struct{}
+
+func (e *SubmissionLockedError) Error() string {
+	return "this assignment is closed or past its hard deadline"
+}
+
+// TimeExpiredError → 409 TIME_EXPIRED (AC10). A save arrived after the exercise's
+// server-side time limit (+ grace) elapsed; the last-saved content stands.
+type TimeExpiredError struct{}
+
+func (e *TimeExpiredError) Error() string {
+	return "the time limit for this attempt has expired"
+}
+
+// ExerciseLockedError → 409 EXERCISE_LOCKED (AC15). A content edit or delete was
+// attempted on an exercise that has >= 1 submission (FR-23). Distinct from the
+// stale-precondition CONFLICT so the editor branches to the read-only strip.
+type ExerciseLockedError struct{}
+
+func (e *ExerciseLockedError) Error() string {
+	return "this exercise is locked because it has submissions"
+}

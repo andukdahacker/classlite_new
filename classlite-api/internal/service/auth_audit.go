@@ -127,4 +127,3 @@ func (l *pgAuthAuditLogger) Log(ctx context.Context, entry AuthAuditEntry) error
 	}
 	return nil
 }
-

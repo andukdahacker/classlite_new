@@ -54,6 +54,13 @@ func TestClaimNextJob_SkipLockedDisjoint(t *testing.T) {
 	}
 	results := make(chan result, 2)
 	start := make(chan struct{})
+	// release gates each worker AFTER it has claimed: every worker holds its row
+	// lock until BOTH have claimed, so the two claims are guaranteed to overlap
+	// regardless of goroutine scheduling. (The previous version held the lock for a
+	// fixed 100ms sleep, which flaked under heavy parallel load — a starved sibling
+	// could run its claim only after the first had already released, so both landed
+	// on the same row and the disjoint-count assertion failed.)
+	release := make(chan struct{})
 	var wg sync.WaitGroup
 
 	for i := 0; i < 2; i++ {
@@ -77,24 +84,30 @@ func TestClaimNextJob_SkipLockedDisjoint(t *testing.T) {
 				return
 			}
 			results <- result{id: uuid.UUID(job.ID.Bytes)}
-			// Hold the row lock while the sibling claims, forcing it to SKIP.
-			time.Sleep(100 * time.Millisecond)
+			<-release // hold the row lock until BOTH workers have claimed
 		}()
 	}
 	close(start)
-	wg.Wait()
-	close(results)
 
+	// Collect both claims while their locks are still held, then release the workers.
 	claimed := map[uuid.UUID]bool{}
-	for r := range results {
+	for i := 0; i < 2; i++ {
+		r := <-results
 		if r.err != nil {
+			close(release)
+			wg.Wait()
 			t.Fatalf("concurrent claim errored: %v", r.err)
 		}
 		if claimed[r.id] {
+			close(release)
+			wg.Wait()
 			t.Fatalf("SKIP LOCKED VIOLATION: job %s was claimed by BOTH workers", r.id)
 		}
 		claimed[r.id] = true
 	}
+	close(release)
+	wg.Wait()
+
 	if !claimed[job1] || !claimed[job2] || len(claimed) != 2 {
 		t.Fatalf("expected the two seeded jobs claimed disjointly, got %v", claimed)
 	}
