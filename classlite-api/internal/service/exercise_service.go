@@ -15,9 +15,12 @@
 //     touching another teacher's row gets 404 EXERCISE_NOT_FOUND (same 404 as
 //     not-found — no enumeration oracle).
 //
-// schema_version + code are server-authoritative: Create sets them; Update
-// never touches them (the query omits both columns). The request body cannot
-// smuggle either — Create takes no such fields and Update ignores them.
+// schema_version + code are server-authoritative. `code` is immutable (Update
+// omits it). `schema_version` is stamped to the CURRENT version on every write
+// (Story 4.5 AC1 write-back): a row read at an older version is upgraded through
+// the ladder and its column advanced in the SAME single Update. The request body
+// still cannot smuggle either — Create/Update take no such fields; the version
+// is a server constant (store.ActiveExerciseSchemaVersion()).
 package service
 
 import (
@@ -399,7 +402,7 @@ func (s *ExerciseService) Create(
 			Tags:          normalizeTags(in.Tags),
 			TargetBand:    targetBand,
 			Content:       shellBytes,
-			SchemaVersion: store.CurrentExerciseSchemaVersion,
+			SchemaVersion: int32(store.ActiveExerciseSchemaVersion()),
 		})
 		if cerr != nil {
 			return cerr
@@ -684,10 +687,16 @@ func (s *ExerciseService) Update(
 			}
 		}
 
-		// Content: replace only when the caller sent a new blob (4.2/Duplicate);
-		// otherwise carry the current bytes. Enforce the size cap on replacement.
+		// Content: replace only when the caller sent a new blob (4.2/Duplicate).
+		// Otherwise carry the current bytes — EXCEPT when the stored row is at an
+		// older schema version: decode it through the ladder and persist the
+		// upgraded blob. This is the Story 4.5 AC1 "write-back on next save",
+		// done in this SAME single UPDATE (no separate eager-rewrite pass); the
+		// schema_version column is stamped to current below either way. A
+		// v1-at-current row keeps its bytes verbatim (byte-identical behavior).
 		contentBytes := current.Content
-		if in.Content != nil {
+		switch {
+		case in.Content != nil:
 			raw, merr := in.Content.Marshal()
 			if merr != nil {
 				return fmt.Errorf("update exercise: marshal content: %w", merr)
@@ -696,15 +705,35 @@ func (s *ExerciseService) Update(
 				return &PayloadTooLargeError{LimitBytes: store.MaxContentBytes}
 			}
 			contentBytes = raw
+		case int(current.SchemaVersion) != store.ActiveExerciseSchemaVersion():
+			upgraded, derr := store.UnmarshalExerciseContent(current.Content, int(current.SchemaVersion))
+			if derr != nil {
+				return fmt.Errorf("update exercise: upgrade stored content: %w", derr)
+			}
+			raw, merr := upgraded.Marshal()
+			if merr != nil {
+				return fmt.Errorf("update exercise: marshal upgraded content: %w", merr)
+			}
+			// A field-adding rung can push a near-ceiling blob past the 413 cap on
+			// write-back, even though the caller sent no new content. Enforce the
+			// same ceiling the in.Content arm does so the DoS guard holds on every
+			// path that persists a blob.
+			if len(raw) > store.MaxContentBytes {
+				return &PayloadTooLargeError{LimitBytes: store.MaxContentBytes}
+			}
+			contentBytes = raw
 		}
 
 		updated, err := txQ.UpdateExercise(ctx, generated.UpdateExerciseParams{
-			Title:                 title,
-			Description:           description,
-			Skill:                 skill,
-			Tags:                  tags,
-			TargetBand:            targetBand,
-			Content:               contentBytes,
+			Title:       title,
+			Description: description,
+			Skill:       skill,
+			Tags:        tags,
+			TargetBand:  targetBand,
+			Content:     contentBytes,
+			// Stamp the server-authoritative CURRENT version (Story 4.5 AC1).
+			// The request body cannot smuggle this — it is a server constant.
+			SchemaVersion:         int32(store.ActiveExerciseSchemaVersion()),
 			ID:                    pgUUID(id),
 			PreconditionUpdatedAt: pgtype.Timestamptz{Time: *in.Precondition, Valid: true},
 		})
@@ -825,7 +854,7 @@ func (s *ExerciseService) Duplicate(
 			Tags:          src.Tags,
 			TargetBand:    src.TargetBand,
 			Content:       clonedContent,
-			SchemaVersion: store.CurrentExerciseSchemaVersion,
+			SchemaVersion: int32(store.ActiveExerciseSchemaVersion()),
 		})
 		if err != nil {
 			return err
