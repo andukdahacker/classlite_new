@@ -1319,7 +1319,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List the caller's assignments — student, enrollment-scoped (story 5.2a — AC1,2,3,4)
+         * @description Student only (non-student → 403 INSUFFICIENT_ROLE — teachers use
+         *     GET /api/classes/{classId}/assignments). Returns only assignments whose
+         *     class the caller is ACTIVELY enrolled in (an enrollments row status='active');
+         *     a withdrawn enrollment yields zero rows for that class. Rows are the
+         *     student-safe StudentAssignmentListItem (StudentAssignmentView + exercise
+         *     title/skill + the caller's own submission summary), ordered by
+         *     deadlineAt ASC (due-soonest first), stable tiebreak on id. Paginated (XL-2).
+         */
+        get: operations["listStudentAssignments"];
         put?: never;
         /**
          * Create an assignment — bind an exercise to a class with a deadline (story 5.1 — AC1)
@@ -1410,6 +1420,35 @@ export interface paths {
         };
         /** Get a submission incl. server-anchored time budget (story 5.1 — AC10) */
         get: operations["getSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{id}/attempt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open a submission's attempt bundle — answer-stripped exercise + student's draft (story 5.2a — AC5-12)
+         * @description Student only (non-student → 403 INSUFFICIENT_ROLE). The caller must OWN the
+         *     submission (student_id = caller; else 404 SUBMISSION_NOT_FOUND — never a
+         *     403 that confirms existence) AND be ACTIVELY enrolled in the assignment's
+         *     class (else 403 NOT_ENROLLED — re-checked on read). Returns the full
+         *     Submission (the student's own saved answers), the student-safe assignment
+         *     subset, and the answer-stripped AttemptExercise: correctAnswer/acceptedVariants
+         *     are structurally absent from every AttemptQuestion (never on the wire). Read
+         *     is NOT lock-gated (D6) — a closed assignment or passed hard deadline still
+         *     returns 200 so the FE can render the locked draft read-only; only the 5.1
+         *     write paths enforce SUBMISSION_LOCKED. meta.serverTime is the timer anchor.
+         */
+        get: operations["getSubmissionAttempt"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2816,6 +2855,95 @@ export interface components {
         EnvelopeSubmission: {
             data: components["schemas"]["Submission"];
             meta: components["schemas"]["EnvelopeMeta"];
+        };
+        AttemptQuestion: {
+            text: string;
+            /** @description Per-question type discriminant mirroring the parent group type (e.g. "multiple_choice"). */
+            type: string;
+            /** @description Choice list (MCQ) or the replicated heading bank (Matching) — student-visible. Empty for gap-fill / short-answer / T-F-NG. */
+            options: string[];
+        };
+        AttemptQuestionGroup: {
+            type: components["schemas"]["QuestionGroupType"];
+            instructions: string;
+            questions: components["schemas"]["AttemptQuestion"][];
+        };
+        AttemptSection: {
+            type: components["schemas"]["ExerciseSectionType"];
+            title: string;
+            /** @description Passage / prompt / stimulus / audio-URL text for the section (student-visible). */
+            content: string;
+            /** @description Empty for prompt-only (writing/speaking) sections — round-tripped intact so 5.3/5.4 read the prompt from content. */
+            questionGroups: components["schemas"]["AttemptQuestionGroup"][];
+        };
+        AttemptExercise: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            skill: components["schemas"]["ExerciseSkill"];
+            sections: components["schemas"]["AttemptSection"][];
+            settings: components["schemas"]["ExerciseSettings"];
+        };
+        StudentAssignmentView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            exerciseId: string;
+            /** Format: uuid */
+            classId: string;
+            status: components["schemas"]["AssignmentStatus"];
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            hardDeadlineAt: string | null;
+            instructions: string | null;
+            /** @description Flat late penalty (D1). >= 0. Powers the late-warning banner (s63). */
+            latePenalty: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        StudentAssignmentListItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            exerciseId: string;
+            /** Format: uuid */
+            classId: string;
+            status: components["schemas"]["AssignmentStatus"];
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            hardDeadlineAt: string | null;
+            instructions: string | null;
+            latePenalty: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            exerciseTitle: string;
+            exerciseSkill: components["schemas"]["ExerciseSkill"];
+            /**
+             * Format: uuid
+             * @description The caller's own submission id, or null if not started.
+             */
+            submissionId: string | null;
+            /** @description The caller's own submission status, or null if not started. */
+            submissionStatus: components["schemas"]["SubmissionStatus"] | null;
+        };
+        AttemptBundle: {
+            submission: components["schemas"]["Submission"];
+            assignment: components["schemas"]["StudentAssignmentView"];
+            exercise: components["schemas"]["AttemptExercise"];
+        };
+        EnvelopeAttemptBundle: {
+            data: components["schemas"]["AttemptBundle"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeStudentAssignmentList: {
+            data: components["schemas"]["StudentAssignmentListItem"][];
+            meta: components["schemas"]["EnvelopeMetaListPaginated"];
         };
         AIGenerateSectionParams: {
             /** @description Free-text prompt seed for the section to generate. */
@@ -8478,6 +8606,47 @@ export interface operations {
             };
         };
     };
+    listStudentAssignments: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's enrollment-scoped assignment list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentAssignmentList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-student callers — students only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     createAssignment: {
         parameters: {
             query?: never;
@@ -8854,6 +9023,55 @@ export interface operations {
                 };
             };
             /** @description SUBMISSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSubmissionAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The attempt bundle (submission + student-safe assignment + answer-stripped exercise) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAttemptBundle"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (withdrawn mid-attempt) / INSUFFICIENT_ROLE (non-student) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent, wrong center, or not the caller's own) */
             404: {
                 headers: {
                     [name: string]: unknown;

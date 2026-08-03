@@ -231,3 +231,14 @@ ORDER BY a.created_at;
 SELECT content, schema_version, deleted_at
 FROM exercises
 WHERE id = sqlc.arg('id');
+
+-- name: GetExerciseForAttempt :one
+-- Story 5.2a (AC5,6,10) — single-exercise read for the attempt bundle: title +
+-- skill for the AttemptExercise header PLUS content + schema_version for the
+-- answer-strip mapper (run through the store.UnmarshalExerciseContent ladder). NO
+-- deleted_at filter, mirroring GetExerciseContentByID: an in-flight attempt must
+-- still render its exercise even if the library row was later soft-deleted. RLS
+-- scopes center_id (tenant tx); a cross-tenant id returns pgx.ErrNoRows.
+SELECT id, title, skill, content, schema_version
+FROM exercises
+WHERE id = sqlc.arg('id');
