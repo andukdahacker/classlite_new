@@ -542,6 +542,12 @@ func main() {
 	mux.Handle("GET /api/submissions/{id}", assignmentChain(submissionHandler.Get))
 	mux.Handle("PUT /api/submissions/{id}/progress", assignmentChain(submissionHandler.SaveProgress))
 	mux.Handle("POST /api/submissions/{id}/submit", assignmentChain(submissionHandler.Submit))
+	// Story 5.2a — student attempt-read surface. GET /api/assignments is the STUDENT
+	// collection (enrollment-scoped list) — method+role-branched from POST create on
+	// the same path (D4); GET /api/submissions/{id}/attempt is the answer-stripped
+	// attempt bundle. Both student-only (enforced in-service), same open chain.
+	mux.Handle("GET /api/assignments", assignmentChain(submissionHandler.ListStudentAssignments))
+	mux.Handle("GET /api/submissions/{id}/attempt", assignmentChain(submissionHandler.GetAttempt))
 
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced

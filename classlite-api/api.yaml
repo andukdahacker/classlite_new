@@ -4496,6 +4496,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+    get:
+      operationId: listStudentAssignments
+      summary: List the caller's assignments — student, enrollment-scoped (story 5.2a — AC1,2,3,4)
+      description: |
+        Student only (non-student → 403 INSUFFICIENT_ROLE — teachers use
+        GET /api/classes/{classId}/assignments). Returns only assignments whose
+        class the caller is ACTIVELY enrolled in (an enrollments row status='active');
+        a withdrawn enrollment yields zero rows for that class. Rows are the
+        student-safe StudentAssignmentListItem (StudentAssignmentView + exercise
+        title/skill + the caller's own submission summary), ordered by
+        deadlineAt ASC (due-soonest first), stable tiebreak on id. Paginated (XL-2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The caller's enrollment-scoped assignment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentAssignmentList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-student callers — students only)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/assignments/{id}:
     get:
@@ -4758,6 +4806,56 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "404":
           description: SUBMISSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{id}/attempt:
+    get:
+      operationId: getSubmissionAttempt
+      summary: Open a submission's attempt bundle — answer-stripped exercise + student's draft (story 5.2a — AC5-12)
+      description: |
+        Student only (non-student → 403 INSUFFICIENT_ROLE). The caller must OWN the
+        submission (student_id = caller; else 404 SUBMISSION_NOT_FOUND — never a
+        403 that confirms existence) AND be ACTIVELY enrolled in the assignment's
+        class (else 403 NOT_ENROLLED — re-checked on read). Returns the full
+        Submission (the student's own saved answers), the student-safe assignment
+        subset, and the answer-stripped AttemptExercise: correctAnswer/acceptedVariants
+        are structurally absent from every AttemptQuestion (never on the wire). Read
+        is NOT lock-gated (D6) — a closed assignment or passed hard deadline still
+        returns 200 so the FE can render the locked draft read-only; only the 5.1
+        write paths enforce SUBMISSION_LOCKED. meta.serverTime is the timer anchor.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The attempt bundle (submission + student-safe assignment + answer-stripped exercise)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAttemptBundle'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: NOT_ENROLLED (withdrawn mid-attempt) / INSUFFICIENT_ROLE (non-student)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent, wrong center, or not the caller's own)
           content:
             application/json:
               schema:
@@ -7771,6 +7869,230 @@ components:
           $ref: '#/components/schemas/Submission'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 5.2a — Student attempt-read surface ----------------
+    # The answer-STRIPPED mirror of the ExerciseContent sub-schemas above. These
+    # are DISTINCT types that do NOT declare correctAnswer / acceptedVariants at
+    # all (D1 — structural omission, not a runtime filter). A future field added to
+    # ExerciseQuestion is hidden by default because the mapper whitelists field by
+    # field (AC10). All fields required + explicit (GO-5); no omitempty.
+
+    AttemptQuestion:
+      type: object
+      # Student-visible question surface. NO correctAnswer, NO acceptedVariants —
+      # the answer key is structurally absent from this type (AC10,11).
+      required: [text, type, options]
+      properties:
+        text:
+          type: string
+        type:
+          type: string
+          description: Per-question type discriminant mirroring the parent group type (e.g. "multiple_choice").
+        options:
+          type: array
+          items:
+            type: string
+          description: Choice list (MCQ) or the replicated heading bank (Matching) — student-visible. Empty for gap-fill / short-answer / T-F-NG.
+
+    AttemptQuestionGroup:
+      type: object
+      required: [type, instructions, questions]
+      properties:
+        type:
+          $ref: '#/components/schemas/QuestionGroupType'
+        instructions:
+          type: string
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptQuestion'
+
+    AttemptSection:
+      type: object
+      required: [type, title, content, questionGroups]
+      properties:
+        type:
+          $ref: '#/components/schemas/ExerciseSectionType'
+        title:
+          type: string
+        content:
+          type: string
+          description: Passage / prompt / stimulus / audio-URL text for the section (student-visible).
+        questionGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptQuestionGroup'
+          description: Empty for prompt-only (writing/speaking) sections — round-tripped intact so 5.3/5.4 read the prompt from content.
+
+    AttemptExercise:
+      type: object
+      # The answer-stripped exercise the attempt UIs render. Skill-agnostic — the
+      # mapper strips answers uniformly and preserves section/group ordering (AC12).
+      required: [id, title, skill, sections, settings]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        skill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptSection'
+        settings:
+          $ref: '#/components/schemas/ExerciseSettings'
+
+    StudentAssignmentView:
+      type: object
+      # AC7 whitelist — the student-safe subset of Assignment. OMITS centerId and
+      # createdBy (internal). latePenalty IS included (the s63 late-warning banner
+      # needs it). All fields present + explicit nulls (GO-5); no omitempty.
+      required:
+        - id
+        - exerciseId
+        - classId
+        - status
+        - deadlineAt
+        - hardDeadlineAt
+        - instructions
+        - latePenalty
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        exerciseId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AssignmentStatus'
+        deadlineAt:
+          type: string
+          format: date-time
+        hardDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+        instructions:
+          type: string
+          nullable: true
+        latePenalty:
+          type: number
+          description: Flat late penalty (D1). >= 0. Powers the late-warning banner (s63).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StudentAssignmentListItem:
+      type: object
+      # A StudentAssignmentView plus the exercise header + the caller's own
+      # submission summary (AC2). submissionId/submissionStatus are null when the
+      # student has not started the attempt. Fields inlined (not composed) so the
+      # wire shape is unambiguous for codegen.
+      required:
+        - id
+        - exerciseId
+        - classId
+        - status
+        - deadlineAt
+        - hardDeadlineAt
+        - instructions
+        - latePenalty
+        - createdAt
+        - updatedAt
+        - exerciseTitle
+        - exerciseSkill
+        - submissionId
+        - submissionStatus
+      properties:
+        id:
+          type: string
+          format: uuid
+        exerciseId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AssignmentStatus'
+        deadlineAt:
+          type: string
+          format: date-time
+        hardDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+        instructions:
+          type: string
+          nullable: true
+        latePenalty:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        exerciseTitle:
+          type: string
+        exerciseSkill:
+          $ref: '#/components/schemas/ExerciseSkill'
+        submissionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The caller's own submission id, or null if not started.
+        submissionStatus:
+          # Nullable $ref to the canonical SubmissionStatus (allOf wrapper is the
+          # OpenAPI 3.0 idiom for nullable + $ref) — no inline enum copy to drift.
+          description: The caller's own submission status, or null if not started.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SubmissionStatus'
+
+    AttemptBundle:
+      type: object
+      # The single payload the attempt UIs (5.2b/5.3/5.4) consume: the student's
+      # own submission + the student-safe assignment subset + the answer-stripped
+      # exercise. Assembled read-only in one tenant tx.
+      required: [submission, assignment, exercise]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        assignment:
+          $ref: '#/components/schemas/StudentAssignmentView'
+        exercise:
+          $ref: '#/components/schemas/AttemptExercise'
+
+    EnvelopeAttemptBundle:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AttemptBundle'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeStudentAssignmentList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentAssignmentListItem'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaListPaginated'
 
     # ---------------- Story 4.3a — AI content generation ----------------
     AIGenerateSectionParams:
