@@ -634,6 +634,40 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 5.2c — /assignments (s33 entry) student assignments list. Own
+      // lazy chunk, gated to students, inside AppLayout. The rows deep-link
+      // into the attempt UIs; the `/assignments/:assignmentId/attempt` child
+      // (5.2b) sits under the full-bleed layout, NOT nested here.
+      {
+        path: '/assignments',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['student']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="assignments"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              // Deep import (NOT the barrel) so Rolldown emits a dedicated
+              // chunk for this route — mirrors /my-schedule, /exercises, etc.
+              const { AssignmentsListPage } = await import(
+                '@/features/assignments/AssignmentsListPage'
+              )
+              return { Component: AssignmentsListPage }
+            },
+          },
+        ],
+      },
       // Story 3.4 — /my-schedule (s32) student stub. Own tiny chunk (no
       // calendar), gated to students. The real enrolled-class view is Epic 7.
       {

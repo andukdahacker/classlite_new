@@ -164,6 +164,9 @@ export const STORY_1D_3_KEYS = [
   'sidebar.owner.dashboard',
   'sidebar.owner.people',
   'sidebar.owner.classes',
+  // exercises-owner-nav fix (f654fa5) surfaced the library for owners; register
+  // its nav key here so the parity coverage gate stops flagging it as an orphan.
+  'sidebar.owner.exercises',
   'sidebar.owner.schedule',
   'sidebar.owner.analytics',
   'sidebar.owner.inbox',
