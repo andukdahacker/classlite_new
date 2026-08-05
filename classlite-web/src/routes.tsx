@@ -700,6 +700,39 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 5.2b — /assignments/:assignmentId/attempt quiz-attempt screen (s33).
+  // A FULL-BLEED boundary OUTSIDE `AppLayout` (no sidebar / topbar — the
+  // distraction-free attempt), mirroring the OnboardingLayout precedent.
+  // Role-gated to students (the record-level authz is the start/GET flow). Its
+  // OWN lazy chunk (deep import) — no teacher/owner code ever loads it. The
+  // student /assignments LIST entry point is Story 5-2c; this route is reached
+  // by deep-link until then.
+  {
+    path: '/assignments/:assignmentId/attempt',
+    lazy: async () => {
+      const { default: RouteRoleGate } = await import(
+        '@/components/shared/RouteRoleGate'
+      )
+      return {
+        element: (
+          <RouteRoleGate
+            allowedRoles={['student']}
+            requiredRolesForCopy={['owner', 'admin']}
+            sectionNameKey="assignments"
+          />
+        ),
+      }
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { AttemptPage } = await import('@/features/quiz-attempt/AttemptPage')
+          return { Component: AttemptPage }
+        },
+      },
+    ],
+  },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
   // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
   // pre-auth visits never pull the wizard chunk. Extended

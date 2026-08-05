@@ -26,11 +26,11 @@ export type {
   UseAutoSaveResult,
   UseAutoSaveOptions,
 } from './hooks/useAutoSave'
-export { useCountdown } from './hooks/useCountdown'
+export { useCountdown } from '@/hooks/useCountdown'
 export type {
   UseCountdownOptions,
   UseCountdownResult,
-} from './hooks/useCountdown'
+} from '@/hooks/useCountdown'
 export { onboardingKeys } from './api/onboardingKeys'
 export { useOnboardingProgress } from './api/useOnboardingProgress'
 export type { OnboardingProgressResult } from './api/useOnboardingProgress'

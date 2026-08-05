@@ -24,7 +24,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { useCountdown } from '@/features/onboarding/hooks/useCountdown'
+import { useCountdown } from '@/hooks/useCountdown'
 
 // ATDD red-phase — file does not exist yet; TS2307 is the intended signal.
 

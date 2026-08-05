@@ -39,6 +39,35 @@ import { server } from './msw-server'
 // `Assertion<T>` interface.
 expect.extend({ toHaveNoViolations })
 
+// jsdom polyfills for layout-observing components (Story 5.2b: the
+// `react-resizable-panels` split-pane constructs a `ResizeObserver` and reads
+// `matchMedia` for coarse-pointer detection — neither exists in jsdom, and the
+// missing `ResizeObserver` constructor crashes the split-pane on mount).
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver =
+    ResizeObserverStub as unknown as typeof ResizeObserver
+}
+if (typeof globalThis.matchMedia === 'undefined') {
+  // Default the attempt UI to its DESKTOP tree in jsdom: `min-width` queries
+  // match, coarse-pointer / other queries don't. A test that needs the mobile
+  // tree overrides `globalThis.matchMedia` locally (see the mobile-tree specs).
+  globalThis.matchMedia = ((query: string) => ({
+    matches: query.includes('min-width'),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof globalThis.matchMedia
+}
+
 // @testing-library/react auto-cleanup. With Vitest's `globals: false`
 // (vitest.config.ts), RTL's auto-registration of `afterEach(cleanup)` via
 // the global afterEach hook does not fire. Registering manually here

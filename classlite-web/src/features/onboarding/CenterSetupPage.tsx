@@ -39,7 +39,7 @@ import { useOnboardingProgress } from './api/useOnboardingProgress'
 import { usePutOnboardingProgress } from './api/usePutOnboardingProgress'
 import { useOnboardingAutoSave } from './OnboardingAutoSaveContext'
 import { onboardingSubmitFlag } from './onboardingSubmitFlag'
-import { useCountdown } from './hooks/useCountdown'
+import { useCountdown } from '@/hooks/useCountdown'
 import { RadioGroupTiles } from './components/RadioGroupTile'
 
 /* eslint-disable no-restricted-syntax -- brand-color wire values (FU-2-3a-C) */
