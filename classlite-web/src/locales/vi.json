@@ -1486,6 +1486,7 @@
   "attempt.save.saved": "Đã lưu",
   "attempt.save.unsaved": "Có thay đổi chưa lưu",
   "attempt.save.error": "Chưa lưu được — sẽ thử lại",
+  "attempt.save.offline": "Ngoại tuyến — thay đổi đã lưu trên thiết bị này",
   "attempt.save.label": "Trạng thái tự động lưu",
   "attempt.audio.label": "Âm thanh nghe",
   "attempt.audio.unsupported": "Trình duyệt của bạn không phát được âm thanh này.",

@@ -1,11 +1,17 @@
 /**
- * useAttemptAutosave — Story 5.2b (AC12/AC18, Winston-B3 / Murat). Adapts
- * `exercises/hooks/useExerciseAutosave` to the attempt: a 30s dirty-flush
- * autosave over `PUT /api/submissions/{id}/progress` with a FULL-replace
- * `content` (D1), a `saveSeq` out-of-order guard, a serialized in-flight chain
- * (so full-replace PUTs reach the server in issue order — the newest content is
- * always last), a best-effort beacon on unmount, and an explicit `flush()` the
- * finalizer awaits.
+ * useAttemptAutosave — Story 5.2b (AC12/AC18, Winston-B3 / Murat), generalized
+ * and moved to the shared `attempts` module in Story 5.2d (AC4). A 30s
+ * dirty-flush autosave over `PUT /api/submissions/{id}/progress` with a
+ * FULL-replace `content` (D1), a `saveSeq` out-of-order guard, a serialized
+ * in-flight chain (so full-replace PUTs reach the server in issue order — the
+ * newest content is always last), a best-effort beacon on unmount, and an
+ * explicit `flush()` the finalizer awaits.
+ *
+ * Generic over the content shape `T` (5.2d AC4): quiz supplies its
+ * `{ answers, flagged }` bag, writing (5.3) supplies `{ text }`, speaking (5.4)
+ * its own. Nothing here reads a field of `T` — the whole value is JSON-stringified
+ * into the opaque `SubmissionContent` bag, so genericity is total (proven by the
+ * synthetic string-shaped harness, `attempts/__tests__/genericContract.test.tsx`).
  *
  * Concurrency contract dropped vs. the exercises template: there is NO `If-Match`
  * / 409-conflict-reload machinery — the progress endpoint is DB-guarded server
@@ -21,8 +27,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { apiFetch } from '@/lib/api-fetch'
 import type { components } from '@/lib/api/client'
-import { useQuizAttemptStore } from '@/stores/quizAttemptStore'
-import type { AttemptContent } from '../lib/attemptContent'
+import { useAttemptStore } from '@/stores/attemptStore'
 
 type Submission = components['schemas']['Submission']
 type SaveSubmissionProgressRequest =
@@ -31,9 +36,9 @@ type SaveSubmissionProgressRequest =
 /** Default 30s dirty-flush cadence (AC12). Injectable for real-timer tests. */
 export const DEFAULT_AUTOSAVE_INTERVAL_MS = 30_000
 
-export interface UseAttemptAutosaveOptions {
+export interface UseAttemptAutosaveOptions<T> {
   /** Read the CURRENT full draft at save time — full-replace per save (D1). */
-  getContent: () => AttemptContent
+  getContent: () => T
   /** Dirty-flush cadence in ms; defaults to 30s. */
   intervalMs?: number
   /** Autosave is off on read-only attempts (AC15). */
@@ -57,9 +62,9 @@ export interface UseAttemptAutosaveResult {
 }
 
 /** The raw progress PUT (full-replace content). */
-async function putProgress(
+async function putProgress<T>(
   submissionId: string,
-  content: AttemptContent,
+  content: T,
 ): Promise<Submission> {
   const body: SaveSubmissionProgressRequest = {
     content: content as unknown as components['schemas']['SubmissionContent'],
@@ -75,7 +80,7 @@ async function putProgress(
  * `apiFetch` (mirrors `useExerciseAutosave.beaconPending`) — no React state, no
  * throw. This is NOT the finalizer path (AC18 forbids beacon-then-POST).
  */
-function beaconProgress(submissionId: string, content: AttemptContent): void {
+function beaconProgress<T>(submissionId: string, content: T): void {
   const body: SaveSubmissionProgressRequest = {
     content: content as unknown as components['schemas']['SubmissionContent'],
   }
@@ -85,9 +90,9 @@ function beaconProgress(submissionId: string, content: AttemptContent): void {
   }).catch(() => {})
 }
 
-export function useAttemptAutosave(
+export function useAttemptAutosave<T>(
   submissionId: string,
-  options: UseAttemptAutosaveOptions,
+  options: UseAttemptAutosaveOptions<T>,
 ): UseAttemptAutosaveResult {
   const intervalMs = options.intervalMs ?? DEFAULT_AUTOSAVE_INTERVAL_MS
 
@@ -107,7 +112,7 @@ export function useAttemptAutosave(
   const mountedRef = useRef(true)
 
   // Zustand setters are stable identities — used directly, no ref needed.
-  const setSaveStatus = useQuizAttemptStore((s) => s.setSaveStatus)
+  const setSaveStatus = useAttemptStore((s) => s.setSaveStatus)
   const setSaveStatusRef = useRef(setSaveStatus)
 
   useEffect(() => {

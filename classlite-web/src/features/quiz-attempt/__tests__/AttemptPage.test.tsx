@@ -21,6 +21,7 @@ import {
 } from '@/features/auth/api/authKeys'
 import RouteRoleGate from '@/components/shared/RouteRoleGate'
 import { initialState, useQuizAttemptStore } from '@/stores/quizAttemptStore'
+import { useAttemptStore } from '@/stores/attemptStore'
 import { AttemptPage } from '../AttemptPage'
 import type { components } from '@/lib/api/client'
 
@@ -194,12 +195,14 @@ beforeEach(() => {
   queryClient.clear()
   window.localStorage.clear()
   useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
 })
 afterEach(async () => {
   server.resetHandlers()
   queryClient.clear()
   window.localStorage.clear()
   useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
   if (i18n.language !== 'en') await i18n.changeLanguage('en')
 })
 

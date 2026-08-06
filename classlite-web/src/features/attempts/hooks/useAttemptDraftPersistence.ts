@@ -1,34 +1,37 @@
 /**
- * useAttemptDraftPersistence — Story 5.2b Task 4 (AC22). Write-through mirror of
- * the answer draft to localStorage, so a reload/crash never loses work beyond
- * the last keystroke (the autosave alone leaves an up-to-30s window).
+ * useAttemptDraftPersistence — Story 5.2b Task 4 (AC22), generalized and moved to
+ * the shared `attempts` module in Story 5.2d (AC4). Write-through mirror of the
+ * draft to localStorage, so a reload/crash never loses work beyond the last
+ * keystroke (the autosave alone leaves an up-to-30s window).
  *
  *  - WRITE-THROUGH: every draft change is mirrored to localStorage immediately.
- *  - RECOVER / RECONCILE: `reconcileStoredDraftIntoCache` runs once on load —
- *    it merges any mirror with the server's content (server wins on conflict,
- *    local-only answers recovered) and seeds the draft cache; the page shows a
- *    non-blocking toast when the server overrode a local edit.
+ *  - RECOVER / RECONCILE: `reconcileStoredDraftIntoCache` runs once on load — it
+ *    merges any mirror with the server's content (via the INJECTED merge) and
+ *    seeds the draft cache; the page acts on the merge-defined conflict signal.
  *  - CLEAR: the mirror is removed on successful submit (the page calls
  *    `clearStoredDraft`).
+ *
+ * Content-generic (5.2d AC4): the hook is generic over `T`; the reconcile takes
+ * an injected `normalize` + `merge` + a `noConflict` sentinel (the conflict
+ * signal to report when no reconcile ran, i.e. an already-seeded remount). The
+ * 5.2b CRITICAL #2 seed-before-write ordering guard and the once-guarded
+ * reconcile-into-cache are preserved unchanged, content-agnostic.
  */
 import { useEffect, useRef } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { attemptKeys } from '../api/attemptKeys'
 import {
-  normalizeAttemptContent,
-  type AttemptContent,
-} from '../lib/attemptContent'
-import {
   reconcileDrafts,
   readStoredDraft,
   writeStoredDraft,
+  type DraftMerge,
   type ReconcileResult,
 } from '../lib/attemptDraftStorage'
 
-export interface UseAttemptDraftPersistenceOptions {
+export interface UseAttemptDraftPersistenceOptions<T> {
   submissionId: string
   /** The live draft content to mirror. */
-  content: AttemptContent
+  content: T
   /** Off for read-only attempts (no edits to mirror). */
   enabled?: boolean
   /**
@@ -40,12 +43,12 @@ export interface UseAttemptDraftPersistenceOptions {
 }
 
 /** Mirror the live draft to localStorage on every change (AC22 write-through). */
-export function useAttemptDraftPersistence({
+export function useAttemptDraftPersistence<T>({
   submissionId,
   content,
   enabled = true,
   onMirrorUnavailable,
-}: UseAttemptDraftPersistenceOptions): void {
+}: UseAttemptDraftPersistenceOptions<T>): void {
   const queryClient = useQueryClient()
   const warnedRef = useRef(false)
   const onUnavailableRef = useRef(onMirrorUnavailable)
@@ -63,9 +66,7 @@ export function useAttemptDraftPersistence({
     // `undefined`; a genuinely-empty seeded draft is a defined object, so
     // write-through resumes correctly once reconcile has run.
     if (
-      queryClient.getQueryData<AttemptContent>(
-        attemptKeys.draft(submissionId),
-      ) === undefined
+      queryClient.getQueryData(attemptKeys.draft(submissionId)) === undefined
     ) {
       return
     }
@@ -78,29 +79,43 @@ export function useAttemptDraftPersistence({
 }
 
 /**
- * Load-time recovery + reconcile. Merges any localStorage mirror with the
- * server's `submission.content` (server wins on conflict, local-only answers
- * recovered) and seeds the draft cache with the merged result. Returns the
- * reconcile flags so the page can toast on conflict / recovery. Only seeds when
- * the cache slot is empty (never clobbers in-progress edits on a remount).
+ * Injected content policy for a load-time reconcile (5.2d AC4). The consumer
+ * supplies how an untrusted blob normalizes into `T`, how a local mirror merges
+ * with the server value, and the conflict signal `C` to report when no reconcile
+ * ran (an already-seeded remount).
  */
-export function reconcileStoredDraftIntoCache(
+export interface ReconcileConfig<T, C> {
+  normalize: (raw: unknown) => T
+  merge: DraftMerge<T, C>
+  /** The conflict signal reported when the slot was already seeded (no reconcile). */
+  noConflict: C
+}
+
+/**
+ * Load-time recovery + reconcile. Merges any localStorage mirror with the
+ * server's `submission.content` (via the injected merge) and seeds the draft
+ * cache with the merged result. Returns the merge-defined result so the page can
+ * act (toast) on conflict / recovery. Only seeds when the cache slot is empty
+ * (never clobbers in-progress edits on a remount).
+ */
+export function reconcileStoredDraftIntoCache<T, C>(
   queryClient: QueryClient,
   submissionId: string,
   serverContent: unknown,
-): ReconcileResult {
+  config: ReconcileConfig<T, C>,
+): ReconcileResult<T, C> {
   const key = attemptKeys.draft(submissionId)
-  const existing = queryClient.getQueryData<AttemptContent>(key)
+  const existing = queryClient.getQueryData<T>(key)
   // Already seeded (a remount) — never recompute/re-report a resolved
   // conflict/recovery, else the page re-fires the toast every remount.
   if (existing !== undefined) {
-    return { merged: existing, hadConflict: false, recoveredLocalOnly: false }
+    return { merged: existing, conflict: config.noConflict }
   }
 
-  const server = normalizeAttemptContent(serverContent)
-  const local = readStoredDraft(submissionId)
-  const result = reconcileDrafts(local, server)
-  queryClient.setQueryData<AttemptContent>(key, result.merged)
+  const server = config.normalize(serverContent)
+  const local = readStoredDraft<T>(submissionId, config.normalize)
+  const result = reconcileDrafts(local, server, config.merge)
+  queryClient.setQueryData<T>(key, result.merged)
   // Keep the mirror consistent with what we just seeded.
   writeStoredDraft(submissionId, result.merged)
   return result

@@ -14,11 +14,15 @@ import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-fetch'
 import { Button } from '@/components/ui/button'
-import { useAttemptBootstrap } from './api/useAttemptBootstrap'
-import { reconcileStoredDraftIntoCache } from './hooks/useAttemptDraftPersistence'
+import {
+  useAttemptBootstrap,
+  reconcileStoredDraftIntoCache,
+  SubmissionConfirmation,
+} from '@/features/attempts'
+import { useAttemptStore } from '@/stores/attemptStore'
 import { useQuizAttemptStore } from '@/stores/quizAttemptStore'
 import { ExerciseAttemptShell } from './components/ExerciseAttemptShell'
-import { SubmissionConfirmation } from './components/SubmissionConfirmation'
+import { quizReconcileConfig } from './lib/quizDraftReconcile'
 
 /** Split-pane-shaped skeleton (AC16 — not a spinner). */
 function AttemptSkeleton() {
@@ -91,11 +95,15 @@ export function AttemptPage() {
 
   const query = useAttemptBootstrap(assignmentId ?? '')
 
-  // Reset the UI-only store on entering a fresh attempt (TEST-FE-3 hygiene).
-  const resetStore = useQuizAttemptStore((s) => s.reset)
+  // Reset the UI-only stores on entering a fresh attempt (TEST-FE-3 hygiene).
+  // Two stores after the 5.2d split: the quiz UI store (navigator/split) + the
+  // shared save-status store.
+  const resetQuizStore = useQuizAttemptStore((s) => s.reset)
+  const resetAttemptStore = useAttemptStore((s) => s.reset)
   useEffect(() => {
-    resetStore()
-  }, [assignmentId, resetStore])
+    resetQuizStore()
+    resetAttemptStore()
+  }, [assignmentId, resetQuizStore, resetAttemptStore])
 
   // Reconcile the localStorage mirror into the draft cache once the bundle lands
   // (AC22). This is a cache seed + toast side-effect (not data fetching), so an
@@ -110,9 +118,11 @@ export function AttemptPage() {
       queryClient,
       data.submissionId,
       data.bundle.submission.content,
+      quizReconcileConfig,
     )
-    if (result.hadConflict) toast.info(t('attempt.draft.conflictToast'))
-    else if (result.recoveredLocalOnly) toast.info(t('attempt.draft.recoveredToast'))
+    if (result.conflict.hadConflict) toast.info(t('attempt.draft.conflictToast'))
+    else if (result.conflict.recoveredLocalOnly)
+      toast.info(t('attempt.draft.recoveredToast'))
   }, [data, queryClient, t])
 
   if (submitted) return <SubmissionConfirmation />

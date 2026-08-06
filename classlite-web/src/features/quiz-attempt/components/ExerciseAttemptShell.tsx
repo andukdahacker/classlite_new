@@ -23,13 +23,26 @@ import {
   DrawerTrigger,
 } from '@/components/ui/drawer'
 import type { components } from '@/lib/api/client'
-import { attemptKeys } from '../api/attemptKeys'
-import { useAttemptAutosave } from '../api/useAttemptAutosave'
-import { useAttemptDraft } from '../api/useAttemptDraft'
-import { useSubmitAttempt } from '../api/useSubmitAttempt'
-import { finalizeAttempt, type FinalizeLatch } from '../api/finalizeAttempt'
-import { useAttemptDraftPersistence } from '../hooks/useAttemptDraftPersistence'
-import { useAttemptTimer } from '../hooks/useAttemptTimer'
+import {
+  attemptKeys,
+  useAttemptAutosave,
+  useSubmitAttempt,
+  finalizeAttempt,
+  useAttemptDraftPersistence,
+  useAttemptTimer,
+  createServerClock,
+  formatRemaining,
+  clearStoredDraft,
+  deriveReadOnly,
+  mapWriteError,
+  readOnlyReasonKey,
+  SaveStatusIndicator,
+  AttemptExpiredOverlay,
+  TimerChip,
+  type FinalizeLatch,
+  type ReadOnlyReason,
+} from '@/features/attempts'
+import { useQuizDraft } from '../api/useQuizDraft'
 import {
   answeredCount,
   emptyAttemptContent,
@@ -39,28 +52,13 @@ import {
   unansweredCount,
   type AttemptContent,
 } from '../lib/attemptContent'
-import { createServerClock, formatRemaining } from '../lib/attemptTimer'
-import {
-  clearStoredDraft,
-} from '../lib/attemptDraftStorage'
-import {
-  deriveReadOnly,
-  mapWriteError,
-  readOnlyReasonKey,
-  type ReadOnlyReason,
-} from '../lib/attemptReadOnly'
-import {
-  useQuizAttemptStore,
-} from '@/stores/quizAttemptStore'
+import { useQuizAttemptStore } from '@/stores/quizAttemptStore'
 import { AttemptAudioPlayer } from './AttemptAudioPlayer'
-import { AttemptExpiredOverlay } from './AttemptExpiredOverlay'
 import { ChoiceOption } from './ChoiceOption'
 import { GapInput } from './GapInput'
 import { MatchingBoard, type MatchingRow } from './MatchingBoard'
 import { QuestionNavigatorRail } from './QuestionNavigatorRail'
-import { SaveStatusIndicator } from './SaveStatusIndicator'
 import { SubmitConfirmDialog } from './SubmitConfirmDialog'
-import { TimerChip } from './TimerChip'
 
 type AttemptBundle = components['schemas']['AttemptBundle']
 
@@ -107,7 +105,7 @@ export function ExerciseAttemptShell({
   const readOnly = derived.readOnly || override !== null
   const readOnlyReason: ReadOnlyReason | null = override ?? derived.reason
 
-  const draft = useAttemptDraft(submissionId)
+  const draft = useQuizDraft(submissionId)
   useAttemptDraftPersistence({
     submissionId,
     content: draft.content,

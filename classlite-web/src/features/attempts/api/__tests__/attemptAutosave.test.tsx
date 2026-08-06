@@ -12,19 +12,35 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { queryClient, createTestQueryClient } from '@/lib/query-client'
 import { authKeys, type Session, type UserSummary } from '@/features/auth/api/authKeys'
 import { server } from '@/test/msw-server'
-import {
-  emptyAttemptContent,
-  withAnswer,
-  type AttemptContent,
-} from '../../lib/attemptContent'
-import {
-  initialState,
-  useQuizAttemptStore,
-  type AttemptSaveStatus,
-} from '@/stores/quizAttemptStore'
+import { useAttemptStore, type AttemptSaveStatus } from '@/stores/attemptStore'
 import { useAttemptAutosave } from '../useAttemptAutosave'
 import { useSubmitAttempt } from '../useSubmitAttempt'
 import { finalizeAttempt, type FinalizeLatch, type FinalizeResult } from '../finalizeAttempt'
+
+/**
+ * A local, structurally-quiz-shaped content — the moved autosave test no longer
+ * reaches into the quiz feature (TS-7), but keeps its exact arrange/expect
+ * VALUES. `useAttemptAutosave` is generic over the content shape (5.2d AC4), so a
+ * plain object shape exercises it identically to the quiz `AttemptContent`.
+ */
+interface AttemptContent {
+  schemaVersion: 1
+  answers: Record<string, string>
+  flagged: string[]
+}
+const emptyAttemptContent = (): AttemptContent => ({
+  schemaVersion: 1,
+  answers: {},
+  flagged: [],
+})
+const withAnswer = (
+  content: AttemptContent,
+  handle: string,
+  value: string,
+): AttemptContent => ({
+  ...content,
+  answers: { ...content.answers, [handle]: value },
+})
 
 const SUBMISSION_ID = 'sub-1'
 
@@ -172,11 +188,11 @@ function installRecorder(putStatuses: number[] = []): Recorder {
 
 beforeEach(() => {
   seedSession()
-  useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
 })
 afterEach(() => {
   queryClient.removeQueries({ queryKey: authKeys.session() })
-  useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
   server.resetHandlers()
 })
 
@@ -216,7 +232,7 @@ describe('useAttemptAutosave — no-data-loss, body-verified (WF-8 #4 BLOCKER)',
 
     expect(rec.puts[0].answers).toEqual({ '0:0:0': 'Q1', '0:0:1': 'Q2' })
     await waitFor(() =>
-      expect(useQuizAttemptStore.getState().saveStatus).toBe('error'),
+      expect(useAttemptStore.getState().saveStatus).toBe('error'),
     )
 
     // No success in between — add two more answers, then flush again.
@@ -232,7 +248,7 @@ describe('useAttemptAutosave — no-data-loss, body-verified (WF-8 #4 BLOCKER)',
       '0:0:3': 'Q4',
     })
     await waitFor(() =>
-      expect(useQuizAttemptStore.getState().saveStatus).toBe('saved'),
+      expect(useAttemptStore.getState().saveStatus).toBe('saved'),
     )
   })
 })
@@ -255,8 +271,8 @@ describe('useAttemptAutosave — saveSeq out-of-order guard (WF-8 #5 BLOCKER)', 
 
     // Count how many times the store transitions INTO 'saved'.
     let savedTransitions = 0
-    let prev: AttemptSaveStatus = useQuizAttemptStore.getState().saveStatus
-    const unsub = useQuizAttemptStore.subscribe((s) => {
+    let prev: AttemptSaveStatus = useAttemptStore.getState().saveStatus
+    const unsub = useAttemptStore.subscribe((s) => {
       if (s.saveStatus === 'saved' && prev !== 'saved') savedTransitions += 1
       prev = s.saveStatus
     })
@@ -280,7 +296,7 @@ describe('useAttemptAutosave — saveSeq out-of-order guard (WF-8 #5 BLOCKER)', 
     // 'saved'. The superseded seq-1 completion (mySeq < latestSeq) was dropped,
     // so it never reported "saved" — without the guard this would be 2.
     expect(savedTransitions).toBe(1)
-    expect(useQuizAttemptStore.getState().saveStatus).toBe('saved')
+    expect(useAttemptStore.getState().saveStatus).toBe('saved')
   })
 })
 
@@ -314,13 +330,13 @@ describe('useAttemptAutosave — edit during an in-flight save (Review Patch #3)
     await first
 
     // The completing seq1 must NOT clear dirty / report "saved": Q2 was not in it.
-    expect(useQuizAttemptStore.getState().saveStatus).toBe('unsaved')
+    expect(useAttemptStore.getState().saveStatus).toBe('unsaved')
 
     // The next save carries the FULL {Q1,Q2} and only then reports "saved".
     await api.flush()
     expect(rec.puts[1].answers).toEqual({ '0:0:0': 'Q1', '0:0:1': 'Q2' })
     await waitFor(() =>
-      expect(useQuizAttemptStore.getState().saveStatus).toBe('saved'),
+      expect(useAttemptStore.getState().saveStatus).toBe('saved'),
     )
   })
 })

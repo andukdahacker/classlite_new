@@ -13,6 +13,7 @@ import { server } from '@/test/msw-server'
 import { queryClient, createTestQueryClient } from '@/lib/query-client'
 import { authKeys, type Session, type UserSummary } from '@/features/auth/api/authKeys'
 import { initialState, useQuizAttemptStore } from '@/stores/quizAttemptStore'
+import { useAttemptStore } from '@/stores/attemptStore'
 import { AttemptPage } from '../AttemptPage'
 import type { components } from '@/lib/api/client'
 
@@ -123,11 +124,13 @@ function renderPage() {
 beforeEach(() => {
   queryClient.clear()
   useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
 })
 afterEach(() => {
   server.resetHandlers()
   queryClient.clear()
   useQuizAttemptStore.setState({ ...initialState })
+  useAttemptStore.getState().reset()
 })
 
 describe('keyboard flow (WF-8 #15)', () => {

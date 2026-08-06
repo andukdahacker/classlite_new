@@ -1486,6 +1486,7 @@
   "attempt.save.saved": "Saved",
   "attempt.save.unsaved": "Unsaved changes",
   "attempt.save.error": "Couldn't save — we'll retry",
+  "attempt.save.offline": "Offline — changes saved on this device",
   "attempt.save.label": "Auto-save status",
   "attempt.audio.label": "Listening audio",
   "attempt.audio.unsupported": "Your browser can't play this audio.",
