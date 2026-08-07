@@ -10,14 +10,14 @@ import type { SaveState, WriteDocFormatCommand } from './WriteDocSurface'
 
 /**
  * MobileWritingSurface — `s78` phone-sized writing canvas shell.
- * Story 1d-4 AC5.
+ * Story 1d-4 AC5; Story 5.3 AC18 (Winston S3 + Sally S2/S3).
  *
- * Static visual identity only. Behavior — mobile autosave, IME
- * composition handling, real word counter — ships in Epic 5 Story 5.3
- * mobile variant. This is a PURPOSE-DESIGNED mobile component per UX-4 +
- * UX-DR32 — NOT a responsive squish of `WriteDocSurface`. Fixed top
- * app-bar + fixed bottom toolbar own the viewport edges; the sticky word
- * pill floats above the toolbar when the body scrolls.
+ * A PURPOSE-DESIGNED mobile component per UX-4 + UX-DR32 — NOT a responsive
+ * squish of `WriteDocSurface`. Story 5.3 DE-FRAMES it to viewport-fluid (the
+ * 1d-4 shell hardcoded `h-[844px] w-[390px] border shadow` — a storybook frame;
+ * production needs full-bleed) and, when the caller supplies `stickyBarSlot`,
+ * renders a real sticky bottom STRIP (word counter + an always-reachable Submit)
+ * in place of the old floating `pointer-events-none` word pill.
  *
  * Body text uses Geist 16px (UX-4 minimum) with line-height 1.7 to give
  * Vietnamese IME composition the vertical room it needs.
@@ -26,9 +26,28 @@ export interface MobileWritingSurfaceProps {
   title?: string
   content: ReactNode
   saveState: SaveState
-  wordCount: number
+  /** Numeric word count for the legacy floating pill (grading/storybook). */
+  wordCount?: number
   onBack?: () => void
   onFormat?: (cmd: WriteDocFormatCommand) => void
+  /**
+   * Story 5.3 (AC5) — additive, default `true`. When `false` the formatting
+   * toolbar is omitted (plain-text writing attempt, D1).
+   */
+  showToolbar?: boolean
+  /**
+   * Story 5.3 (AC10) — additive. When provided, REPLACES the built-in appbar save
+   * pill (the writing attempt pins the prominent `SaveStatusIndicator`).
+   */
+  saveSlot?: ReactNode
+  /** Story 5.3 (AC9) — additive calm due-date chip for the appbar. */
+  dueSlot?: ReactNode
+  /**
+   * Story 5.3 (AC18) — additive. When provided, renders a STICKY BOTTOM STRIP
+   * holding this content (the live word-counter strip + an always-reachable
+   * Submit), replacing the legacy floating word pill. Grading consumers omit it.
+   */
+  stickyBarSlot?: ReactNode
 }
 
 const FORMAT_BUTTONS: ReadonlyArray<{
@@ -64,16 +83,21 @@ export function MobileWritingSurface({
   title,
   content,
   saveState,
-  wordCount,
+  wordCount = 0,
   onBack,
   onFormat,
+  showToolbar = true,
+  saveSlot,
+  dueSlot,
+  stickyBarSlot,
 }: MobileWritingSurfaceProps) {
   const { t } = useTranslation()
   const resolvedTitle = title ?? t('mobileWriting.titlePlaceholder')
   return (
     <div
       data-testid="mobile-writing-surface"
-      className="relative flex h-[844px] w-[390px] flex-col overflow-hidden border border-[color:var(--cl-line-soft)] bg-[color:var(--cl-paper)] text-foreground shadow-sm"
+      // Story 5.3 de-frame: full-bleed, viewport-fluid — no hardcoded phone frame.
+      className="relative flex min-h-[100dvh] w-full flex-col overflow-hidden bg-[color:var(--cl-paper)] text-foreground"
       role="region"
       aria-label={t('mobileWriting.regionLabel')}
     >
@@ -87,6 +111,8 @@ export function MobileWritingSurface({
           onClick={onBack}
           aria-label={t('mobileWriting.action.back')}
           data-testid="mobile-writing-surface-back"
+          // AC18 — ensure the icon back button computes ≥44×44 CSS px.
+          className="size-11"
         >
           <ArrowLeft aria-hidden="true" />
         </Button>
@@ -97,13 +123,18 @@ export function MobileWritingSurface({
         >
           {resolvedTitle}
         </span>
-        <span
-          data-testid="mobile-writing-surface-save-pill"
-          data-save-state={saveState}
-          className={cn('ml-auto text-xs font-medium', SAVE_TONE[saveState])}
-        >
-          {t(SAVE_LABEL[saveState])}
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {dueSlot}
+          {saveSlot ?? (
+            <span
+              data-testid="mobile-writing-surface-save-pill"
+              data-save-state={saveState}
+              className={cn('text-xs font-medium', SAVE_TONE[saveState])}
+            >
+              {t(SAVE_LABEL[saveState])}
+            </span>
+          )}
+        </div>
       </div>
 
       <div
@@ -114,31 +145,42 @@ export function MobileWritingSurface({
         {content}
       </div>
 
-      <div
-        data-testid="mobile-writing-surface-word-pill"
-        className="pointer-events-none absolute bottom-16 right-4 rounded-full bg-foreground/85 px-3 py-1 text-xs font-medium text-background shadow"
-      >
-        {t('mobileWriting.footer.wordCount', { count: wordCount })}
-      </div>
+      {stickyBarSlot ? (
+        <div
+          data-testid="mobile-writing-surface-sticky-bar"
+          className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-[color:var(--cl-line-soft)] bg-[color:var(--cl-surface-warm)] px-4 py-2"
+        >
+          {stickyBarSlot}
+        </div>
+      ) : (
+        <div
+          data-testid="mobile-writing-surface-word-pill"
+          className="pointer-events-none absolute bottom-16 right-4 rounded-full bg-foreground/85 px-3 py-1 text-xs font-medium text-background shadow"
+        >
+          {t('mobileWriting.footer.wordCount', { count: wordCount })}
+        </div>
+      )}
 
-      <div
-        role="toolbar"
-        aria-label={t('mobileWriting.toolbar.label')}
-        data-testid="mobile-writing-surface-toolbar"
-        className="flex items-center justify-around border-t border-[color:var(--cl-line-soft)] bg-[color:var(--cl-surface-warm)] px-3 py-2"
-      >
-        {FORMAT_BUTTONS.map(({ cmd, labelKey, Icon }) => (
-          <Toggle
-            key={cmd}
-            size="lg"
-            aria-label={t(labelKey)}
-            data-testid={`mobile-writing-surface-format-${cmd}`}
-            onPressedChange={() => onFormat?.(cmd)}
-          >
-            <Icon aria-hidden="true" />
-          </Toggle>
-        ))}
-      </div>
+      {showToolbar ? (
+        <div
+          role="toolbar"
+          aria-label={t('mobileWriting.toolbar.label')}
+          data-testid="mobile-writing-surface-toolbar"
+          className="flex items-center justify-around border-t border-[color:var(--cl-line-soft)] bg-[color:var(--cl-surface-warm)] px-3 py-2"
+        >
+          {FORMAT_BUTTONS.map(({ cmd, labelKey, Icon }) => (
+            <Toggle
+              key={cmd}
+              size="lg"
+              aria-label={t(labelKey)}
+              data-testid={`mobile-writing-surface-format-${cmd}`}
+              onPressedChange={() => onFormat?.(cmd)}
+            >
+              <Icon aria-hidden="true" />
+            </Toggle>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

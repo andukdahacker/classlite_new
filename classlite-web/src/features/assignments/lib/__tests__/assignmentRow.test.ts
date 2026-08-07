@@ -25,7 +25,13 @@ describe('attemptRouteForSkill (AC4)', () => {
     },
   )
 
-  test.each<ExerciseSkill>(['writing', 'speaking', 'general'])(
+  test('writing deep-links to the 5.3 writing attempt route', () => {
+    expect(attemptRouteForSkill('writing', ASSIGNMENT_ID)).toBe(
+      `/assignments/${ASSIGNMENT_ID}/write`,
+    )
+  })
+
+  test.each<ExerciseSkill>(['speaking', 'general'])(
     'skill %s whose attempt UI is not built yet returns null ("Available soon")',
     (skill) => {
       expect(attemptRouteForSkill(skill, ASSIGNMENT_ID)).toBeNull()

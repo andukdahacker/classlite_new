@@ -35,6 +35,37 @@ export interface WriteDocSurfaceProps {
   /** Seconds. Rendered as `M:SS`. */
   timeOnTaskSec: number
   onFormat?: (cmd: WriteDocFormatCommand) => void
+  /**
+   * Story 5.3 (AC5) — additive, default `true`. When `false` the formatting
+   * toolbar is not rendered (plain-text writing attempt, D1) and the header/body
+   * separator the toolbar's `border-y` provided is restored (Sally N1). Grading
+   * consumers omit it and keep the toolbar.
+   */
+  showToolbar?: boolean
+  /**
+   * Story 5.3 (AC10) — additive. When provided, REPLACES the built-in save pill
+   * in the header (the writing attempt passes the prominent `SaveStatusIndicator`
+   * so the corner pill is not the authoritative indicator). Grading consumers omit
+   * it and keep the built-in pill.
+   */
+  saveSlot?: ReactNode
+  /**
+   * Story 5.3 (AC9) — additive calm due-date countdown slot, rendered in the
+   * header. Grading consumers omit it.
+   */
+  dueCountdown?: ReactNode
+  /**
+   * Story 5.3 (AC6) — additive. When provided, REPLACES the numeric footer word
+   * count with an isolated live meter (so a keystroke re-renders only the meter,
+   * never this shell / the timers — BLOCKER 2). Grading consumers omit it and keep
+   * the numeric `wordCount`.
+   */
+  wordCountSlot?: ReactNode
+  /**
+   * Story 5.3 (AC8) — additive. When provided, REPLACES the numeric footer
+   * time-on-task with an isolated live meter. Grading consumers omit it.
+   */
+  timeSlot?: ReactNode
 }
 
 const FORMAT_BUTTONS: ReadonlyArray<{
@@ -87,6 +118,11 @@ export function WriteDocSurface({
   wordCount,
   timeOnTaskSec,
   onFormat,
+  showToolbar = true,
+  saveSlot,
+  dueCountdown,
+  wordCountSlot,
+  timeSlot,
 }: WriteDocSurfaceProps) {
   const { t } = useTranslation()
   const pill = SAVE_PILL[saveState]
@@ -99,7 +135,13 @@ export function WriteDocSurface({
     >
       <header
         data-testid="write-doc-surface-title-bar"
-        className="flex items-center justify-between gap-3"
+        className={cn(
+          'flex items-center justify-between gap-3',
+          // Sally N1 — with the toolbar off, restore the header/body separator
+          // the toolbar's `border-y` used to provide.
+          !showToolbar &&
+            'border-b border-[color:var(--cl-line-soft)] pb-3',
+        )}
       >
         <h2
           className="font-heading text-3xl text-foreground"
@@ -107,45 +149,52 @@ export function WriteDocSurface({
         >
           {resolvedTitle}
         </h2>
-        <div
-          data-testid="write-doc-surface-save-pill"
-          data-save-state={saveState}
-          className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
-            pill.tone,
-          )}
-        >
-          <span>{t(pill.labelKey)}</span>
-          {saveState === 'saved' && savedAt ? (
-            <time
-              dateTime={savedAt}
-              className="font-mono text-[0.7rem]"
-              data-testid="write-doc-surface-saved-at"
+        <div className="flex items-center gap-3">
+          {dueCountdown}
+          {saveSlot ?? (
+            <div
+              data-testid="write-doc-surface-save-pill"
+              data-save-state={saveState}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+                pill.tone,
+              )}
             >
-              {savedAtLabel ?? savedAt}
-            </time>
-          ) : null}
+              <span>{t(pill.labelKey)}</span>
+              {saveState === 'saved' && savedAt ? (
+                <time
+                  dateTime={savedAt}
+                  className="font-mono text-[0.7rem]"
+                  data-testid="write-doc-surface-saved-at"
+                >
+                  {savedAtLabel ?? savedAt}
+                </time>
+              ) : null}
+            </div>
+          )}
         </div>
       </header>
 
-      <div
-        role="toolbar"
-        aria-label={t('writeDocSurface.toolbar.label')}
-        data-testid="write-doc-surface-toolbar"
-        className="flex items-center gap-1 border-y border-[color:var(--cl-line-soft)] py-1"
-      >
-        {FORMAT_BUTTONS.map(({ cmd, labelKey, Icon }) => (
-          <Toggle
-            key={cmd}
-            size="sm"
-            aria-label={t(labelKey)}
-            data-testid={`write-doc-surface-format-${cmd}`}
-            onPressedChange={() => onFormat?.(cmd)}
-          >
-            <Icon aria-hidden="true" />
-          </Toggle>
-        ))}
-      </div>
+      {showToolbar ? (
+        <div
+          role="toolbar"
+          aria-label={t('writeDocSurface.toolbar.label')}
+          data-testid="write-doc-surface-toolbar"
+          className="flex items-center gap-1 border-y border-[color:var(--cl-line-soft)] py-1"
+        >
+          {FORMAT_BUTTONS.map(({ cmd, labelKey, Icon }) => (
+            <Toggle
+              key={cmd}
+              size="sm"
+              aria-label={t(labelKey)}
+              data-testid={`write-doc-surface-format-${cmd}`}
+              onPressedChange={() => onFormat?.(cmd)}
+            >
+              <Icon aria-hidden="true" />
+            </Toggle>
+          ))}
+        </div>
+      ) : null}
 
       <div
         contentEditable={false}
@@ -159,17 +208,21 @@ export function WriteDocSurface({
         data-testid="write-doc-surface-footer"
         className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--cl-line-soft)] pt-3 text-xs text-foreground"
       >
-        <span data-testid="write-doc-surface-word-count">
-          {t('writeDocSurface.footer.wordCount', { count: wordCount })}
-        </span>
-        <span
-          data-testid="write-doc-surface-time-on-task"
-          className="font-mono"
-        >
-          {t('writeDocSurface.footer.timeOnTask', {
-            time: formatTimeOnTask(timeOnTaskSec),
-          })}
-        </span>
+        {wordCountSlot ?? (
+          <span data-testid="write-doc-surface-word-count">
+            {t('writeDocSurface.footer.wordCount', { count: wordCount })}
+          </span>
+        )}
+        {timeSlot ?? (
+          <span
+            data-testid="write-doc-surface-time-on-task"
+            className="font-mono"
+          >
+            {t('writeDocSurface.footer.timeOnTask', {
+              time: formatTimeOnTask(timeOnTaskSec),
+            })}
+          </span>
+        )}
       </footer>
     </section>
   )

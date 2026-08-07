@@ -255,7 +255,17 @@ describe('AssignmentsListPage — CTA + status mapping (AC4)', () => {
     expect(screen.queryByTestId('assignment-cta-q4')).not.toBeInTheDocument()
   })
 
-  test.each<ExerciseSkill>(['writing', 'speaking'])(
+  test('writing deep-links to the 5.3 writing attempt route (/write)', async () => {
+    server.use(
+      listHandler([item({ id: 'w1', exerciseSkill: 'writing', submissionStatus: null })]),
+    )
+    renderPage()
+    const cta = await screen.findByTestId('assignment-cta-w1')
+    expect(cta).toHaveTextContent(i18n.t('assignments.cta.start'))
+    expect(cta).toHaveAttribute('href', '/assignments/w1/write')
+  })
+
+  test.each<ExerciseSkill>(['speaking'])(
     'skill %s whose attempt UI is not built yet → disabled "Available soon" (not a 404 link)',
     async (skill) => {
       server.use(listHandler([item({ id: 'q5', exerciseSkill: skill, submissionStatus: null })]))

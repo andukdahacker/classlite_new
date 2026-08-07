@@ -15,7 +15,8 @@ type SubmissionStatus = components['schemas']['SubmissionStatus']
  * "Available soon" CTA — D2).
  *
  * - `reading | listening | vocabulary | grammar` → the 5.2b quiz attempt route.
- * - `writing` (5.3) / `speaking` (5.4) → `null` until those stories ship.
+ * - `writing` (5.3) → the writing attempt route (`/write`).
+ * - `speaking` (5.4) → `null` until that story ships.
  * - `general` → `null` (no dedicated attempt UI).
  *
  * The `null` return is the seam Stories 5.3/5.4 extend when their routes land.
@@ -34,6 +35,7 @@ export function attemptRouteForSkill(
     case 'grammar':
       return `/assignments/${assignmentId}/attempt`
     case 'writing':
+      return `/assignments/${assignmentId}/write`
     case 'speaking':
     case 'general':
       return null

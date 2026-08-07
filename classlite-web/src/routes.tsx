@@ -733,6 +733,40 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 5.3 — /assignments/:assignmentId/write writing-attempt screen (s34 /
+  // s78). A sibling FULL-BLEED boundary OUTSIDE `AppLayout` (no sidebar / topbar —
+  // the distraction-free writing surface), mirroring the /attempt route. Role-gated
+  // to students; its OWN lazy chunk (deep import) so no teacher/owner code loads it.
+  // Reached from the student /assignments list via the 5.2c `attemptRouteForSkill`
+  // un-stub (writing → `/write`).
+  {
+    path: '/assignments/:assignmentId/write',
+    lazy: async () => {
+      const { default: RouteRoleGate } = await import(
+        '@/components/shared/RouteRoleGate'
+      )
+      return {
+        element: (
+          <RouteRoleGate
+            allowedRoles={['student']}
+            requiredRolesForCopy={['owner', 'admin']}
+            sectionNameKey="assignments"
+          />
+        ),
+      }
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { WritingAttemptPage } = await import(
+            '@/features/writing-attempt/WritingAttemptPage'
+          )
+          return { Component: WritingAttemptPage }
+        },
+      },
+    ],
+  },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
   // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
   // pre-auth visits never pull the wizard chunk. Extended
