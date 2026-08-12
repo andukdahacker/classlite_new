@@ -5,7 +5,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ApiError } from '@/lib/api-fetch'
-import { useWritingReadOnly } from '../useWritingReadOnly'
+import { useAttemptReadOnly } from '../useAttemptReadOnly'
 
 const HARD_DEADLINE = '2026-08-04T00:10:00Z'
 const BEFORE = Date.parse('2026-08-04T00:09:00Z') // 1 min before hard deadline
@@ -14,11 +14,11 @@ const AFTER = Date.parse('2026-08-04T00:11:00Z') // 1 min after
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-describe('useWritingReadOnly — untimed hard-deadline tick (BLOCKER 3)', () => {
+describe('useAttemptReadOnly — untimed hard-deadline tick (BLOCKER 3)', () => {
   test('an editable untimed attempt flips read-only when serverNow crosses hardDeadlineAt', () => {
     let now = BEFORE
     const { result } = renderHook(() =>
-      useWritingReadOnly({
+      useAttemptReadOnly({
         submissionStatus: 'in_progress',
         assignmentStatus: 'open',
         hardDeadlineAt: HARD_DEADLINE,
@@ -41,7 +41,7 @@ describe('useWritingReadOnly — untimed hard-deadline tick (BLOCKER 3)', () => 
   test('a racing-write 409 (SUBMISSION_LOCKED) overrides to read-only', () => {
     const now = BEFORE
     const { result } = renderHook(() =>
-      useWritingReadOnly({
+      useAttemptReadOnly({
         submissionStatus: 'in_progress',
         assignmentStatus: 'open',
         hardDeadlineAt: null,
@@ -61,7 +61,7 @@ describe('useWritingReadOnly — untimed hard-deadline tick (BLOCKER 3)', () => 
 
   test('an already-submitted bundle is read-only at mount', () => {
     const { result } = renderHook(() =>
-      useWritingReadOnly({
+      useAttemptReadOnly({
         submissionStatus: 'submitted',
         assignmentStatus: 'open',
         hardDeadlineAt: null,

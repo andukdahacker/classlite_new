@@ -15,6 +15,14 @@ import (
 // (imports/speaking/avatars) verify + return metadata without a Hub file.
 const FeatureKnowledge = "knowledge"
 
+// FeatureSpeaking is the object-key feature segment for a student's in-browser
+// speaking recording (Story 5.4). A confirmed speaking upload writes no `files`
+// row (verify-only), so the authoritative A9 25 MB cap gate lives on the
+// mandatory /progress path. This is a named constant so the security-relevant
+// feature checks in the confirm re-check (upload_handler) and the /progress gate
+// (submission_service) cannot silently drift on a typo'd literal.
+const FeatureSpeaking = "speaking"
+
 // AllowedExtensions maps a lower-cased file extension to its single canonical
 // MIME type. The presign path rejects any extension absent from this map and
 // rejects a Content-Type that does not match the extension's canonical type
@@ -28,6 +36,13 @@ var AllowedExtensions = map[string]string{
 	".mp3":  "audio/mpeg",
 	".wav":  "audio/wav",
 	".webm": "audio/webm",
+	// Story 5.4 (D1) — iOS Safari's MediaRecorder emits `audio/mp4` (not webm),
+	// so a speaking recording lands as `.m4a`. Audio-specific canonical MIME; we
+	// deliberately do NOT allowlist `.mp4` (video-ambiguous). Note the widening:
+	// `.m4a` is now globally allowlisted (any feature could presign it, capped at
+	// the 100 MB listening default for non-speaking) — consistent with `.webm`
+	// already being global.
+	".m4a": "audio/mp4",
 	// Story 2.7 — bulk student import spreadsheets (feature `imports`).
 	".csv":  "text/csv",
 	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -37,7 +52,7 @@ var AllowedExtensions = map[string]string{
 // accepts. Reserved slugs are wired as features land.
 var AllowedFeatures = map[string]bool{
 	FeatureKnowledge: true,
-	"speaking":       true,
+	FeatureSpeaking:  true,
 	"avatars":        true,
 	"imports":        true, // Story 2.7 — bulk student import uploads.
 }

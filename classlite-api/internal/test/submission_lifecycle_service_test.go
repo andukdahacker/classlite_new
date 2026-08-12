@@ -22,6 +22,7 @@ type subEnv struct {
 	assignmentSvc *service.AssignmentService
 	submissionSvc *service.SubmissionService
 	exerciseSvc   *service.ExerciseService
+	storage       *service.MockStorageService
 	centerID      uuid.UUID
 	classID       uuid.UUID
 	exerciseID    uuid.UUID
@@ -74,11 +75,13 @@ func setupSubEnv(t *testing.T, clk *clock.MockClock, timeLimitMinutes int) *subE
 	}
 
 	audit := service.NewAuditService(db)
+	storage := service.NewMockStorageService()
 	return &subEnv{
 		db: db, clk: clk,
 		assignmentSvc: service.NewAssignmentService(db, audit, nil, clk),
-		submissionSvc: service.NewSubmissionService(db, audit, clk),
+		submissionSvc: service.NewSubmissionService(db, audit, clk).WithStorage(storage),
 		exerciseSvc:   service.NewExerciseService(db, audit, clk),
+		storage:       storage,
 		centerID:      centerID, classID: classID, exerciseID: exerciseID,
 		teacherID: teacherID, studentID: studentID,
 		studentTC: model.TenantContext{CenterID: centerID.String(), UserID: studentID.String(), Role: model.RoleStudent, EmailVerified: true},

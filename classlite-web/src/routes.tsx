@@ -767,6 +767,40 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 5.4 — /assignments/:assignmentId/speak speaking-attempt screen (s33). A
+  // sibling FULL-BLEED boundary OUTSIDE `AppLayout` (no sidebar / topbar — the
+  // distraction-free recording surface), mirroring the /write route. Role-gated to
+  // students; its OWN lazy chunk (deep import) so no teacher/owner code — and none
+  // of the greenfield MediaRecorder code — loads it. Reached from the student
+  // /assignments list via the `attemptRouteForSkill` un-stub (speaking → `/speak`).
+  {
+    path: '/assignments/:assignmentId/speak',
+    lazy: async () => {
+      const { default: RouteRoleGate } = await import(
+        '@/components/shared/RouteRoleGate'
+      )
+      return {
+        element: (
+          <RouteRoleGate
+            allowedRoles={['student']}
+            requiredRolesForCopy={['owner', 'admin']}
+            sectionNameKey="assignments"
+          />
+        ),
+      }
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { SpeakingAttemptPage } = await import(
+            '@/features/speaking-attempt/SpeakingAttemptPage'
+          )
+          return { Component: SpeakingAttemptPage }
+        },
+      },
+    ],
+  },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
   // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
   // pre-auth visits never pull the wizard chunk. Extended

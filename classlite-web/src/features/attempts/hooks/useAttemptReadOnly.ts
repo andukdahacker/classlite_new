@@ -1,11 +1,12 @@
 /**
- * useWritingReadOnly — Story 5.3 Task 5 (AC16, Winston BLOCKER 3). The read-only
- * derivation for the writing attempt, which — unlike the quiz shell's once-at-load
- * `useMemo` — TICKS off the monotonic due-date clock. For writing, an untimed +
- * due-bound attempt is the NORM (not a rare edge): without this tick an untimed
- * attempt would keep autosaving until a PUT 409s and "overdue" would be merely
- * cosmetic. Ticking flips the attempt read-only the moment `hardDeadlineAt` passes
- * mid-session (no write-409 required).
+ * useAttemptReadOnly — the shared read-only derivation for an attempt surface,
+ * promoted into the spine in Story 5.4 Task 5 (was `useWritingReadOnly`, Story 5.3
+ * AC16, Winston BLOCKER 3). Unlike the quiz shell's once-at-load `useMemo`, it
+ * TICKS off the monotonic due-date clock: for an untimed + due-bound attempt
+ * (the norm for writing AND speaking) this flips the attempt read-only the moment
+ * `hardDeadlineAt` passes mid-session (no write-409 required) — without it an
+ * untimed attempt would keep autosaving/uploading until a PUT 409s and "overdue"
+ * would be merely cosmetic.
  *
  * A racing-write 409 (`mapWriteError` → `readOnly`) can additionally OVERRIDE to
  * read-only (AC16). The tick only calls `setState` when the derived
@@ -19,13 +20,13 @@ import {
   type ReadOnlyReason,
   type ReadOnlyState,
   type WriteErrorOutcome,
-} from '@/features/attempts'
+} from '../lib/attemptReadOnly'
 import type { components } from '@/lib/api/client'
 
 type SubmissionStatus = components['schemas']['SubmissionStatus']
 type AssignmentStatus = components['schemas']['AssignmentStatus']
 
-export interface UseWritingReadOnlyOptions {
+export interface UseAttemptReadOnlyOptions {
   submissionStatus: SubmissionStatus
   assignmentStatus: AssignmentStatus
   hardDeadlineAt: string | null
@@ -35,20 +36,20 @@ export interface UseWritingReadOnlyOptions {
   tickMs?: number
 }
 
-export interface UseWritingReadOnlyResult {
+export interface UseAttemptReadOnlyResult {
   readOnly: boolean
   reason: ReadOnlyReason | null
   /** Apply a racing-write 409/413; sets the read-only override on a lock. */
   applyWriteError: (error: unknown) => WriteErrorOutcome
 }
 
-export function useWritingReadOnly({
+export function useAttemptReadOnly({
   submissionStatus,
   assignmentStatus,
   hardDeadlineAt,
   serverNow,
   tickMs = 1000,
-}: UseWritingReadOnlyOptions): UseWritingReadOnlyResult {
+}: UseAttemptReadOnlyOptions): UseAttemptReadOnlyResult {
   const derive = useCallback(
     (): ReadOnlyState =>
       deriveReadOnly({

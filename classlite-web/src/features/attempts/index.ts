@@ -70,6 +70,19 @@ export {
   type ReadOnlyState,
   type WriteErrorOutcome,
 } from './lib/attemptReadOnly'
+export {
+  useAttemptReadOnly,
+  type UseAttemptReadOnlyOptions,
+  type UseAttemptReadOnlyResult,
+} from './hooks/useAttemptReadOnly'
+
+// --- connectivity + cross-tab coordination (promoted in 5.4 Task 5) ---
+export { useOnlineStatus } from './hooks/useOnlineStatus'
+export {
+  useAttemptBroadcast,
+  type UseAttemptBroadcastOptions,
+  type UseAttemptBroadcastResult,
+} from './hooks/useAttemptBroadcast'
 
 // --- shared UI ---
 export { SaveStatusIndicator } from './components/SaveStatusIndicator'

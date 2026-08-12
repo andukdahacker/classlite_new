@@ -525,7 +525,9 @@ func main() {
 	eventBus := event.NewBus()
 	assignmentSvc := service.NewAssignmentService(pool, auditSvc, eventBus, clock.RealClock{})
 	assignmentHandler := handler.NewAssignmentHandler(assignmentSvc, clock.RealClock{})
-	submissionSvc := service.NewSubmissionService(pool, auditSvc, clock.RealClock{})
+	// WithStorage wires the authoritative speaking over-cap gate on /progress
+	// (Story 5.4, D12) — the same R2 client the presign/confirm handlers use.
+	submissionSvc := service.NewSubmissionService(pool, auditSvc, clock.RealClock{}).WithStorage(uploadStorage)
 	submissionHandler := handler.NewSubmissionHandler(submissionSvc, clock.RealClock{})
 	assignmentChain := func(h middleware.HandlerWithError) http.Handler {
 		return extractTenant(

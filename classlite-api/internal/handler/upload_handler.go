@@ -20,6 +20,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -217,7 +218,31 @@ func (h *UploadHandler) Confirm(w http.ResponseWriter, r *http.Request) error {
 	// verify the object exists and echo its metadata.
 	meta, err := h.Storage.HeadObject(r.Context(), req.Key)
 	if err != nil {
+		// Story 5.4 (AC16 layer-4) — for speaking the confirm re-check is part of
+		// the A9 defense-in-depth, so an UNVERIFIABLE object fails CLOSED (502)
+		// rather than 404: we must not echo "ok" for an object whose size we
+		// could not check. Never phantom-delete something we couldn't verify.
+		if feature == service.FeatureSpeaking {
+			return service.UploadVerificationFailedError{Key: req.Key}
+		}
 		return model.NotFoundError{Resource: "upload", ID: req.Key, Code: "UPLOAD_NOT_FOUND"}
+	}
+	// Story 5.4 (AC16 layer-4, D3) — best-effort stored-size re-check for speaking
+	// audio (the non-knowledge branch writes no `files` row, so the FileService
+	// re-check never runs here). Over-cap → best-effort delete + 413. This is
+	// belt-and-suspenders; the authoritative over-cap gate is on /progress.
+	if feature == service.FeatureSpeaking {
+		if _, _, ext, ok := service.ParseObjectKey(req.Key); ok {
+			if cap, hasCap := service.MaxUploadBytes(feature, ext); hasCap && meta.Size > cap {
+				if derr := h.Storage.Delete(r.Context(), req.Key); derr != nil {
+					slog.WarnContext(r.Context(), "orphaned_object",
+						"reason", "delete_after_over_cap_speaking_confirm_failed",
+						"object_key", req.Key,
+					)
+				}
+				return service.FileTooLargeError{Feature: feature, Ext: ext, LimitBytes: cap, GotBytes: meta.Size}
+			}
+		}
 	}
 	WriteJSON(w, http.StatusOK, meta)
 	return nil

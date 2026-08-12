@@ -107,9 +107,19 @@ func TestPresign_PerFeatureExtensionCaps(t *testing.T) {
 		{"png over 15MB", "big.png", "image/png", "knowledge", 16 * oneMB, http.StatusRequestEntityTooLarge},
 		{"jpg over 15MB", "big.jpg", "image/jpeg", "knowledge", 16 * oneMB, http.StatusRequestEntityTooLarge},
 		{"svg over 15MB", "big.svg", "image/svg+xml", "knowledge", 16 * oneMB, http.StatusRequestEntityTooLarge},
-		{"mp3 under 100MB", "ok.mp3", "audio/mpeg", "speaking", 99 * oneMB, http.StatusOK},
-		{"mp3 over 100MB", "big.mp3", "audio/mpeg", "speaking", 101 * oneMB, http.StatusRequestEntityTooLarge},
-		{"wav over 100MB", "big.wav", "audio/wav", "speaking", 101 * oneMB, http.StatusRequestEntityTooLarge},
+		// Listening/knowledge audio keeps the 100 MB cap (NO regression — Story 5.4
+		// moved the shared `.webm`/`.mp3`/`.wav` audio caps behind the feature so
+		// only `speaking` drops to 25 MB).
+		{"mp3 under 100MB (knowledge)", "ok.mp3", "audio/mpeg", "knowledge", 99 * oneMB, http.StatusOK},
+		{"mp3 over 100MB (knowledge)", "big.mp3", "audio/mpeg", "knowledge", 101 * oneMB, http.StatusRequestEntityTooLarge},
+		{"wav over 100MB (knowledge)", "big.wav", "audio/wav", "knowledge", 101 * oneMB, http.StatusRequestEntityTooLarge},
+		{"webm under 100MB (knowledge)", "ok.webm", "audio/webm", "knowledge", 99 * oneMB, http.StatusOK},
+		// Story 5.4 (AC5,16, D3) — the 25 MB speaking cap, at its boundary, for
+		// BOTH codec containers (webm on Chrome/Android, m4a on iOS Safari).
+		{"speaking webm under 25MB", "take.webm", "audio/webm", "speaking", 24 * oneMB, http.StatusOK},
+		{"speaking webm over 25MB", "take.webm", "audio/webm", "speaking", 26 * oneMB, http.StatusRequestEntityTooLarge},
+		{"speaking m4a under 25MB", "take.m4a", "audio/mp4", "speaking", 24 * oneMB, http.StatusOK},
+		{"speaking m4a over 25MB", "take.m4a", "audio/mp4", "speaking", 26 * oneMB, http.StatusRequestEntityTooLarge},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/clock"
@@ -51,14 +53,123 @@ const (
 
 // SubmissionService owns the submission lifecycle.
 type SubmissionService struct {
-	db    AuthDB
-	audit AuditLogger
-	clk   clock.Clock
+	db      AuthDB
+	audit   AuditLogger
+	clk     clock.Clock
+	storage StorageService
 }
 
-// NewSubmissionService constructs a SubmissionService.
+// NewSubmissionService constructs a SubmissionService. Storage is wired
+// separately via WithStorage (optional) so the many existing call sites that
+// never touch object storage stay unchanged.
 func NewSubmissionService(db AuthDB, audit AuditLogger, clk clock.Clock) *SubmissionService {
 	return &SubmissionService{db: db, audit: audit, clk: clk}
+}
+
+// WithStorage wires the object-storage client used by the authoritative speaking
+// over-cap gate on SaveProgress (Story 5.4, D12). Production always wires it; a
+// nil storage simply skips the gate (older tests that never carry an audioKey).
+func (s *SubmissionService) WithStorage(storage StorageService) *SubmissionService {
+	s.storage = storage
+	return s
+}
+
+// speakingAudioKeyFromContent extracts the 5.4-owned `audioKey` field from an
+// opaque submission content blob. Returns "" when absent (every non-speaking
+// skill, and a keyless speaking submit) — the gate then no-ops.
+func speakingAudioKeyFromContent(raw []byte) string {
+	var probe struct {
+		AudioKey string `json:"audioKey"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return ""
+	}
+	return probe.AudioKey
+}
+
+// enforceSpeakingAudioCap is the AUTHORITATIVE A9 over-cap gate on the mandatory
+// /progress path (Story 5.4 AC16, D12). Because the speaking confirm is skippable
+// (it writes no `files` row), a client can lie `sizeBytes` at presign and skip
+// confirm — this gate is the one path they cannot avoid. When the incoming
+// content carries an `audioKey`, the server HeadObjects it and rejects an
+// over-cap key before it can persist. It also enforces SEC-8 (the key must live
+// under the caller's own center) and forbids stashing a non-speaking key (which
+// would otherwise borrow a laxer per-feature cap).
+//
+// HeadObject failure fails OPEN (logs + proceeds): the real attack — a lied
+// sizeBytes — yields a genuinely over-cap object that HeadObjects fine, so a
+// transient storage error must not cost an honest student their saved work on
+// this mandatory path.
+//
+// The gate only fires when the incoming `audioKey` is NEW (AC16 — "when the
+// incoming audioKey is new"): an unchanged key was already gated on the save
+// that introduced it, so re-checking it would (a) re-HeadObject the same object
+// on every 30s autosave and (b) permanently 413-lock every later save — even a
+// text-only edit — for any key that slipped through the fail-open window above.
+// The prior-key comparison uses one cheap single-row read, cheaper than the
+// remote HeadObject it replaces on the common unchanged-key path.
+func (s *SubmissionService) enforceSpeakingAudioCap(
+	ctx context.Context, tc model.TenantContext, id uuid.UUID, contentRaw []byte,
+) error {
+	if s.storage == nil {
+		return nil
+	}
+	key := speakingAudioKeyFromContent(contentRaw)
+	if key == "" {
+		return nil
+	}
+	if key == s.persistedSpeakingAudioKey(ctx, tc, id) {
+		return nil // unchanged key — already gated when it was new
+	}
+	// SEC-8 — never trust a client-supplied object path. The key MUST live under
+	// the caller's center; a foreign prefix is a cross-tenant injection attempt.
+	if !strings.HasPrefix(key, tc.CenterID+"/") {
+		return KeyPrefixMismatchError{}
+	}
+	_, feature, ext, ok := ParseObjectKey(key)
+	if !ok {
+		return model.ValidationError{Fields: []model.FieldError{{
+			Field: "content.audioKey", Code: "INVALID_CONTENT", Message: "malformed audio key",
+		}}}
+	}
+	if feature != FeatureSpeaking {
+		return model.ValidationError{Fields: []model.FieldError{{
+			Field: "content.audioKey", Code: "INVALID_CONTENT", Message: "audio key must be a speaking upload",
+		}}}
+	}
+	meta, herr := s.storage.HeadObject(ctx, key)
+	if herr != nil {
+		slog.WarnContext(ctx, "speaking_audiokey_head_failed",
+			"object_key", key, "user_id", tc.UserID)
+		return nil // fail open — the mandatory path must not lose honest work
+	}
+	if cap, hasCap := MaxUploadBytes(FeatureSpeaking, ext); hasCap && meta.Size > cap {
+		return FileTooLargeError{Feature: FeatureSpeaking, Ext: ext, LimitBytes: cap, GotBytes: meta.Size}
+	}
+	return nil
+}
+
+// persistedSpeakingAudioKey returns the `audioKey` currently stored on the
+// submission, or "" when there is none or the read fails. A read error yields ""
+// so the caller runs the full gate (fail toward enforcement, never toward a
+// silent skip). One short read tx; RLS-scoped like every other submission read.
+func (s *SubmissionService) persistedSpeakingAudioKey(
+	ctx context.Context, tc model.TenantContext, id uuid.UUID,
+) string {
+	var key string
+	_ = s.readInSubmissionTx(ctx, tc, func(txQ *generated.Queries) error {
+		sub, err := txQ.GetSubmissionByID(ctx, pgUUID(id))
+		if err != nil {
+			return err
+		}
+		raw, cerr := submissionContentJSON(sub)
+		if cerr != nil {
+			return cerr
+		}
+		key = speakingAudioKeyFromContent(raw)
+		return nil
+	})
+	return key
 }
 
 // SubmissionResult is the domain view returned to the handler: the row plus the
@@ -356,6 +467,15 @@ func (s *SubmissionService) SaveProgress(
 	contentBytes, merr := content.Marshal()
 	if merr != nil {
 		return SubmissionResult{}, fmt.Errorf("save progress: marshal: %w", merr)
+	}
+
+	// AUTHORITATIVE A9 over-cap gate (AC16, D12) — HeadObject a NEW incoming
+	// speaking `audioKey` and reject an over-cap / foreign / non-speaking key
+	// BEFORE it persists. Runs outside the DB tx so the HeadObject network call
+	// never holds a pooled connection; skips an unchanged key so a repeat autosave
+	// neither re-HeadObjects nor 413-locks (AC16 "when new").
+	if gerr := s.enforceSpeakingAudioCap(ctx, tc, id, contentBytes); gerr != nil {
+		return SubmissionResult{}, gerr
 	}
 
 	var result SubmissionResult

@@ -124,7 +124,7 @@ As a student, I want to record and submit speaking responses so that I can compl
 - Recording window activates after prep time
 - Playback preview of recording before submission
 - Re-record unlimited times
-- Upload recording to R2 via presigned URL: `{center_id}/speaking/{uuid}.webm`
+- Upload recording to R2 via presigned URL: `{center_id}/speaking/{uuid}.{ext}` (ext follows the captured codec — `.webm` on Chrome/Android, `.m4a` on iOS Safari; amended from the literal `.webm` in Story 5.4 D1)
 - Mobile: large thumb-friendly controls for recording
 
 **API:**
@@ -136,15 +136,15 @@ As a student, I want to record and submit speaking responses so that I can compl
 - Given the prep time expires, When the recording window activates, Then the student can record their response
 - Given a recording is complete, When the student finishes, Then they can preview the playback before submitting
 - Given the student is not satisfied with their recording, When they choose to re-record, Then they can re-record unlimited times
-- Given a recording is ready for upload, When the student submits, Then the audio is uploaded to R2 via presigned URL at `{center_id}/speaking/{uuid}.webm`
+- Given a recording is ready for upload, When the student submits, Then the audio is uploaded to R2 via presigned URL at `{center_id}/speaking/{uuid}.{ext}` (ext follows the captured codec, Story 5.4 D1)
 - Given the student is on mobile, When they use the speaking interface, Then large thumb-friendly controls are available for recording
 - Given the attempt is in progress, When progress is saved, Then `PUT /api/submissions/{id}/progress` is called
 - Given the student submits, When the final recording is uploaded, Then `POST /api/submissions/{id}/submit` finalizes the attempt
 
 **Failure-Path Acceptance Criteria:**
 - Given microphone permission is denied, When the student starts a speaking attempt, Then a clear message explains how to enable microphone access with browser-specific instructions
-- Given the R2 upload fails, When the student clicks submit, Then the upload retries automatically (up to 3 times) with progress indicator, and on permanent failure shows "Upload failed — your recording is saved locally, please try again"
-- Given the Speaking audio per-file cap (locked A9), When the student attempts to upload a file >25 MB, Then the same defense-in-depth enforcement applies as Knowledge Hub (Story 4.4): client pre-check, server pre-check at `/uploads/presign` returns 413 `FILE_TOO_LARGE`, R2 `Content-Length-Range` constraint, server post-check at `/uploads/confirm`.
+- Given the R2 upload fails, When the student clicks submit, Then the upload retries automatically (1 initial + 3 retries = 4 attempts) with a progress indicator, and on permanent failure the recording is kept in memory for this session (NOT durably "saved locally" — a reload loses an un-uploaded take, so the copy is "keep this tab open, it'll upload when you're back online" + a `beforeunload` guard; Story 5.4 D2, honest-copy amendment). IndexedDB durability is FU-5-4-B.
+- Given the Speaking audio per-file cap (locked A9), When the student attempts to upload a file >25 MB, Then defense-in-depth enforcement applies: client pre-check, server pre-check at `/uploads/presign` returns 413 `FILE_TOO_LARGE`, best-effort `/uploads/confirm` HeadObject re-check, AND the AUTHORITATIVE over-cap gate on the mandatory `/progress` path (the server HeadObjects the incoming `audioKey` — confirm is skippable for speaking; Story 5.4 D12). The R2 `Content-Length-Range` layer is N/A — it was DROPPED in Story 4.4a (the T3a spike found R2 does not enforce it on an S3-compatible presigned PUT).
 
 ### Release-Gate Manual Checklist (Real-Device Verification)
 

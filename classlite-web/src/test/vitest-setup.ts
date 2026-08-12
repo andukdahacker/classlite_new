@@ -68,6 +68,55 @@ if (typeof globalThis.matchMedia === 'undefined') {
   })) as unknown as typeof globalThis.matchMedia
 }
 
+// Story 5.4 — jsdom ships no media-capture APIs. These are minimal, always-on
+// SAFETY-NET stubs so a bare render of the speaking attempt (e.g. an axe pass on
+// the pre-record state) doesn't crash on a missing global. The recorder's precise
+// behavior (codec variants, interruption, blob assembly) is driven by the
+// controllable `installMediaMocks()` helper, which saves/restores these — the real
+// pipeline is verified on the A5 real-device gate, NOT in jsdom.
+if (typeof URL.createObjectURL === 'undefined') {
+  URL.createObjectURL = () => 'blob:vitest/stub'
+  URL.revokeObjectURL = () => {}
+}
+if (typeof globalThis.MediaRecorder === 'undefined') {
+  class MediaRecorderStub {
+    static isTypeSupported = (mimeType: string): boolean => mimeType.includes('webm')
+    state: 'inactive' | 'recording' = 'inactive'
+    mimeType = ''
+    ondataavailable: ((event: { data: Blob }) => void) | null = null
+    onstop: (() => void) | null = null
+    onerror: ((event: unknown) => void) | null = null
+    start(): void {
+      this.state = 'recording'
+    }
+    stop(): void {
+      this.state = 'inactive'
+      this.ondataavailable?.({ data: new Blob(['x']) })
+      this.onstop?.()
+    }
+  }
+  globalThis.MediaRecorder = MediaRecorderStub as unknown as typeof MediaRecorder
+}
+if (typeof globalThis.MediaStream === 'undefined') {
+  class MediaStreamStub {
+    getTracks(): unknown[] {
+      return []
+    }
+    getAudioTracks(): unknown[] {
+      return []
+    }
+  }
+  globalThis.MediaStream = MediaStreamStub as unknown as typeof MediaStream
+}
+if (navigator.mediaDevices === undefined) {
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: async () => new globalThis.MediaStream() as MediaStream,
+    },
+  })
+}
+
 // @testing-library/react auto-cleanup. With Vitest's `globals: false`
 // (vitest.config.ts), RTL's auto-registration of `afterEach(cleanup)` via
 // the global afterEach hook does not fire. Registering manually here

@@ -265,7 +265,17 @@ describe('AssignmentsListPage — CTA + status mapping (AC4)', () => {
     expect(cta).toHaveAttribute('href', '/assignments/w1/write')
   })
 
-  test.each<ExerciseSkill>(['speaking'])(
+  test('speaking deep-links to the 5.4 speaking attempt route (/speak)', async () => {
+    server.use(
+      listHandler([item({ id: 'sp1', exerciseSkill: 'speaking', submissionStatus: null })]),
+    )
+    renderPage()
+    const cta = await screen.findByTestId('assignment-cta-sp1')
+    expect(cta).toHaveTextContent(i18n.t('assignments.cta.start'))
+    expect(cta).toHaveAttribute('href', '/assignments/sp1/speak')
+  })
+
+  test.each<ExerciseSkill>(['general'])(
     'skill %s whose attempt UI is not built yet → disabled "Available soon" (not a 404 link)',
     async (skill) => {
       server.use(listHandler([item({ id: 'q5', exerciseSkill: skill, submissionStatus: null })]))

@@ -31,12 +31,15 @@ describe('attemptRouteForSkill (AC4)', () => {
     )
   })
 
-  test.each<ExerciseSkill>(['speaking', 'general'])(
-    'skill %s whose attempt UI is not built yet returns null ("Available soon")',
-    (skill) => {
-      expect(attemptRouteForSkill(skill, ASSIGNMENT_ID)).toBeNull()
-    },
-  )
+  test('speaking deep-links to the 5.4 speaking attempt route', () => {
+    expect(attemptRouteForSkill('speaking', ASSIGNMENT_ID)).toBe(
+      `/assignments/${ASSIGNMENT_ID}/speak`,
+    )
+  })
+
+  test('general (no dedicated attempt UI) returns null ("Available soon")', () => {
+    expect(attemptRouteForSkill('general', ASSIGNMENT_ID)).toBeNull()
+  })
 
   test('unknown skill (server/type version skew) fails safe to null, never undefined', () => {
     // Cast: deliberately model a value outside the generated ExerciseSkill

@@ -16,10 +16,10 @@ type SubmissionStatus = components['schemas']['SubmissionStatus']
  *
  * - `reading | listening | vocabulary | grammar` → the 5.2b quiz attempt route.
  * - `writing` (5.3) → the writing attempt route (`/write`).
- * - `speaking` (5.4) → `null` until that story ships.
+ * - `speaking` (5.4) → the speaking attempt route (`/speak`).
  * - `general` → `null` (no dedicated attempt UI).
  *
- * The `null` return is the seam Stories 5.3/5.4 extend when their routes land.
+ * The `null` return is the seam Story 5.5+ extends when their routes land.
  * @param skill the assignment's exercise skill.
  * @param assignmentId the assignment id used to build the route.
  * @returns the attempt route path, or `null` if not yet available.
@@ -37,6 +37,7 @@ export function attemptRouteForSkill(
     case 'writing':
       return `/assignments/${assignmentId}/write`
     case 'speaking':
+      return `/assignments/${assignmentId}/speak`
     case 'general':
       return null
     default:

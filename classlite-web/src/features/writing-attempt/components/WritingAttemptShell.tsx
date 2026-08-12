@@ -35,13 +35,13 @@ import {
   readOnlyReasonKey,
   SaveStatusIndicator,
   AttemptExpiredOverlay,
+  useOnlineStatus,
+  useAttemptBroadcast,
+  useAttemptReadOnly,
   type FinalizeLatch,
 } from '@/features/attempts'
 import { useAttemptStore } from '@/stores/attemptStore'
 import { useWritingDraft } from '../api/useWritingDraft'
-import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { useAttemptBroadcast } from '../hooks/useAttemptBroadcast'
-import { useWritingReadOnly } from '../hooks/useWritingReadOnly'
 import {
   countWords,
   minWordsFor,
@@ -103,7 +103,7 @@ export function WritingAttemptShell({
     [serverTime, perfAtLoad, perfNow],
   )
 
-  const { readOnly, reason, applyWriteError } = useWritingReadOnly({
+  const { readOnly, reason, applyWriteError } = useAttemptReadOnly({
     submissionStatus: submission.status,
     assignmentStatus: assignment.status,
     hardDeadlineAt: assignment.hardDeadlineAt,
