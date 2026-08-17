@@ -465,7 +465,7 @@ export function SpeakingAttemptShell({
         // a take that was still RECORDING then (takeRef null) settles right after the
         // leaf stops it — OR-in live `heldBlob` so that just-captured, now-stranded
         // take is still reported as "not included" (AC17), never silently dropped.
-        <SubmittedElsewhereOverlay hadUnsavedRecording={foreign.hadUnsaved || heldBlob} />
+        <SubmittedElsewhereOverlay assignmentId={assignment.id} hadUnsavedRecording={foreign.hadUnsaved || heldBlob} />
       ) : null}
 
       {/* Background content — made `inert` while the foreign-submit overlay is up so

@@ -1457,6 +1457,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assignments/{assignmentId}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review my own submission — pre-grade read-back (story 5.5a — assignment-keyed)
+         * @description Student only (non-student → 403 INSUFFICIENT_ROLE). Resolves the caller's
+         *     UNIQUE (student_id, assignment_id) submission — student_id is the
+         *     authenticated principal, NEVER a request param (SEC-1). The caller must be
+         *     ACTIVELY enrolled in the assignment's class (else 403 NOT_ENROLLED). No
+         *     submission for (caller, assignment) → 404 SUBMISSION_NOT_FOUND (never a 403
+         *     existence oracle; a cross-student assignment the caller never submitted to
+         *     is the same 404). Both the submission read AND the assignment read run under
+         *     the tenant RLS tx — a cross-tenant assignmentId leaks nothing.
+         *
+         *     NOT lock-gated (D6) — a closed assignment or passed hard deadline still
+         *     returns 200 read-only. An in_progress submission short-circuits (D10) to a
+         *     resume-CTA payload: inProgress=true, exercise=null, audioUrl=null, NO
+         *     answer-strip and NO presign. A terminal submission returns the answer-
+         *     stripped AttemptExercise (correctAnswer/acceptedVariants structurally
+         *     absent), released=false (grades land in 5.5b), and — for a speaking
+         *     submission carrying an audioKey — a fresh 5-minute presigned GET audioUrl
+         *     (SEC-8 prefix-guarded, minted OUTSIDE the read tx per PERF-1; a non-speaking
+         *     or nil-audioKey submission → audioUrl null). The endpoint name /result is
+         *     the frozen 5.5b contract; the FE route is /assignments/:id/submission.
+         */
+        get: operations["getSubmissionResult"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assignments/{assignmentId}/submission/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fresh presigned GET for my own speaking recording (story 5.5a — on-demand play-intent)
+         * @description Rides the SAME gate ladder as GET /api/assignments/{assignmentId}/result
+         *     (student-only, caller-owned, actively-enrolled). Mints a fresh 5-minute
+         *     presigned GET (SEC-8 prefix-guarded, via StorageService.PresignGetOwned) for
+         *     the caller's own speaking submission audioKey, so a play-intent after the
+         *     inline first-paint URL has aged past ~4 minutes never hits a dead R2 URL.
+         *     Every gated failure returns its error status and mints NOTHING. A submission
+         *     with no audioKey (non-speaking / in_progress) → 404 SUBMISSION_NOT_FOUND (no
+         *     audio to serve). Never a PUT; the URL is never logged (A10).
+         */
+        get: operations["getSubmissionAudioUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/submissions/{id}/progress": {
         parameters: {
             query?: never;
@@ -2944,6 +3009,29 @@ export interface components {
         EnvelopeStudentAssignmentList: {
             data: components["schemas"]["StudentAssignmentListItem"][];
             meta: components["schemas"]["EnvelopeMetaListPaginated"];
+        };
+        StudentSubmissionResult: {
+            submission: components["schemas"]["Submission"];
+            assignment: components["schemas"]["StudentAssignmentView"];
+            /** @description The answer-stripped exercise; null when inProgress (resume CTA short-circuit — D10). */
+            exercise: components["schemas"]["AttemptExercise"] | null;
+            /** @description Grade release flag. Always false in 5.5a (grades land in 5.5b). */
+            released: boolean;
+            /** @description Fresh 5-min presigned GET for a speaking recording, or null (non-speaking / nil key / in_progress). */
+            audioUrl: string | null;
+            /** @description True → the submission is not terminal; render the resume-attempt CTA (D10). */
+            inProgress: boolean;
+        };
+        EnvelopeStudentSubmissionResult: {
+            data: components["schemas"]["StudentSubmissionResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        AudioUrl: {
+            url: string;
+        };
+        EnvelopeAudioUrl: {
+            data: components["schemas"]["AudioUrl"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         AIGenerateSectionParams: {
             /** @description Free-text prompt seed for the section to generate. */
@@ -9072,6 +9160,104 @@ export interface operations {
                 };
             };
             /** @description SUBMISSION_NOT_FOUND (absent, wrong center, or not the caller's own) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSubmissionResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submission review payload (read-back shell; in_progress → resume CTA) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentSubmissionResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (withdrawn) / INSUFFICIENT_ROLE (non-student) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (no submission for the caller + assignment; no cross-student oracle) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSubmissionAudioUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A fresh 5-minute presigned GET url for the caller's own recording */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAudioUrl"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (withdrawn) / INSUFFICIENT_ROLE (non-student) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (no submission, or no audio for the caller + assignment) */
             404: {
                 headers: {
                     [name: string]: unknown;

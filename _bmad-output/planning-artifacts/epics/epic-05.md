@@ -163,6 +163,13 @@ The Speaking pipeline depends on `MediaRecorder` API behavior that is NOT covere
 
 - **Size:** M | **Audience:** Frontend | **Dependencies:** 5.1, 6.1
 
+> **SPLIT (Ducdo 2026-08-13, implemented 2026-08-17):** Epic 5.5 `depends_on 6.1` but all of Epic 6 was backlog, so 5.5 was split:
+> - **5-5a (shipped)** — the Epic-6-INDEPENDENT slice: the "review my submission" pre-grade read-back + own-submission playback. Two amendments to this epic land with it:
+>   - **The student read is ASSIGNMENT-keyed** `GET /api/assignments/{assignmentId}/result` (D1), NOT the submission-keyed `GET /api/submissions/{id}/result` below. The route carries no submissionId and no side-effect-free resolver exists, so the unique `(student, assignment)` resolves server-side. (The teacher grade WRITE stays submission-keyed — `POST /api/submissions/{id}/grade`, Epic 6.)
+>   - **It returns 200 + `released:false` + the read-back when ungraded (D2), NOT 404.** The read-back (writing text / quiz answers / speaking audio) must render pre-grade — a 404 shows nothing. An `in_progress` submission → 200 resume-CTA payload (D10). A second endpoint `GET /api/assignments/{assignmentId}/submission/audio` mints an on-demand fresh 5-min SEC-8 presigned GET for play-intent (D8), via a shared `StorageService.PresignGetOwned`.
+>   - **The FRONTEND route is `/assignments/:assignmentId/submission`** ("review my submission" — D7/D12); `/result` (s35 graded route) is reserved for 5-5b.
+> - **5-5b (blocked on 6.1)** — the graded display below (overall band, per-criterion breakdown, feedback + inline anchored comments, late-penalty math). It adds the grade block above the read-back when `released == true` and registers the `/assignments/:id/result` FE route.
+
 As a student, I want to view my submission results so that I can see my grades, feedback, and understand my performance.
 
 **Screens:** Result view at `/assignments/{id}/result` (s35), Mobile (s79).

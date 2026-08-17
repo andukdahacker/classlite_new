@@ -21,6 +21,21 @@ import { useClassSpawnSchema } from '@/features/onboarding/lib/classSpawnSchema'
 
 // ATDD red-phase — file does not exist yet; TS2307 is the intended signal.
 
+/**
+ * A canonical padded ISO date guaranteed inside the schema's valid window
+ * (>= today − 30d AND <= nowYear + 5y) — computed from the real clock at run
+ * time so the "valid startDate" fixture never rots as the wall clock advances
+ * (a hardcoded past date silently falls outside the 30-day window later).
+ */
+function validStartDate(): string {
+  const d = new Date()
+  const year = d.getUTCFullYear()
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const VALID_START = validStartDate()
+
 describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
   test('single-byte ASCII: 120 chars passes, 121 fails', () => {
     const { result } = renderHook(() => useClassSpawnSchema())
@@ -31,7 +46,7 @@ describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
       classes: [
         {
           cohortName: 'a'.repeat(120),
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],
@@ -62,7 +77,7 @@ describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
       classes: [
         {
           cohortName: vietnameseName,
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],
@@ -80,7 +95,7 @@ describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
       classes: [
         {
           cohortName: emojiName,
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],
@@ -95,7 +110,7 @@ describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
       classes: [
         {
           cohortName: '   ',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],
@@ -106,7 +121,7 @@ describe('useClassSpawnSchema — rune-count invariant on cohortName', () => {
 
 describe('useClassSpawnSchema — padded ISO date discipline (Winston-I4)', () => {
   test.each([
-    ['2026-07-15', true, 'canonical padded'],
+    [VALID_START, true, 'canonical padded'],
     ['2026-7-15', false, 'non-padded month (Safari)'],
     ['2026-07-1', false, 'non-padded day'],
     ['2026/07/15', false, 'wrong separator'],
@@ -188,7 +203,7 @@ describe('useClassSpawnSchema — teacherEmail empty→null transform (Winston-I
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: '',
         },
       ],
@@ -207,7 +222,7 @@ describe('useClassSpawnSchema — teacherEmail empty→null transform (Winston-I
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: '   ',
         },
       ],
@@ -226,7 +241,7 @@ describe('useClassSpawnSchema — teacherEmail empty→null transform (Winston-I
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: '  bob@example.com  ',
         },
       ],
@@ -245,7 +260,7 @@ describe('useClassSpawnSchema — teacherEmail empty→null transform (Winston-I
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: 'not-an-email',
         },
       ],
@@ -270,7 +285,7 @@ describe('useClassSpawnSchema — classes array bounds', () => {
       templateId: '11111111-2222-3333-4444-555555555501',
       classes: Array.from({ length: 20 }, (_, i) => ({
         cohortName: `Class ${i + 1}`,
-        startDate: '2026-07-15',
+        startDate: VALID_START,
         teacherEmail: null,
       })),
     }
@@ -283,7 +298,7 @@ describe('useClassSpawnSchema — classes array bounds', () => {
       templateId: '11111111-2222-3333-4444-555555555501',
       classes: Array.from({ length: 21 }, (_, i) => ({
         cohortName: `Class ${i + 1}`,
-        startDate: '2026-07-15',
+        startDate: VALID_START,
         teacherEmail: null,
       })),
     }
@@ -299,7 +314,7 @@ describe('useClassSpawnSchema — Sally-S4 fold: NO studentEmails field', () => 
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
           studentEmails: ['s1@example.com', 's2@example.com'],
         },
@@ -324,7 +339,7 @@ describe('useClassSpawnSchema — templateId nullable (Build from scratch)', () 
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],
@@ -339,7 +354,7 @@ describe('useClassSpawnSchema — templateId nullable (Build from scratch)', () 
       classes: [
         {
           cohortName: 'Class 1',
-          startDate: '2026-07-15',
+          startDate: VALID_START,
           teacherEmail: null,
         },
       ],

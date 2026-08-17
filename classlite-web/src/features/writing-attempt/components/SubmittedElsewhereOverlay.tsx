@@ -16,11 +16,14 @@ import { Link } from 'react-router'
 import { buttonVariants } from '@/components/ui/button'
 
 export interface SubmittedElsewhereOverlayProps {
+  /** The assignment id — the "view result" link targets its review page (Story 5.5a). */
+  assignmentId: string
   /** True when this tab had unsaved newer text at the time of the foreign submit. */
   hadUnsavedText: boolean
 }
 
 export function SubmittedElsewhereOverlay({
+  assignmentId,
   hadUnsavedText,
 }: SubmittedElsewhereOverlayProps) {
   const { t } = useTranslation()
@@ -60,7 +63,7 @@ export function SubmittedElsewhereOverlay({
       ) : null}
       <Link
         ref={primaryRef}
-        to="/assignments"
+        to={`/assignments/${assignmentId}/submission`}
         className={buttonVariants({ variant: 'default' })}
         data-testid="submitted-elsewhere-view-result"
       >

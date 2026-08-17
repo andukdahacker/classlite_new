@@ -338,7 +338,7 @@ export function WritingAttemptShell({
     >
       {finalizing ? <AttemptExpiredOverlay /> : null}
       {foreign.submitted ? (
-        <SubmittedElsewhereOverlay hadUnsavedText={foreign.hadUnsaved} />
+        <SubmittedElsewhereOverlay assignmentId={assignment.id} hadUnsavedText={foreign.hadUnsaved} />
       ) : null}
 
       {/* Read-only inline banner (AC16) — focusable so the flip can move focus. */}

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/ducdo/classlite-api/internal/model"
 )
 
 // R2StorageService implements StorageService using Cloudflare R2 (S3-compatible).
@@ -72,6 +73,13 @@ func (s *R2StorageService) PresignGet(ctx context.Context, key string, expiry ti
 		return "", fmt.Errorf("presign get object: %w", err)
 	}
 	return result.URL, nil
+}
+
+// PresignGetOwned enforces the SEC-8 owned-key prefix guard, then signs an inline
+// GET (Story 5.5a). Delegates to the shared presignGetOwned so the prefix
+// invariant is defined once.
+func (s *R2StorageService) PresignGetOwned(ctx context.Context, key string, tc model.TenantContext, expiry time.Duration) (string, error) {
+	return presignGetOwned(ctx, s, key, tc, expiry)
 }
 
 // contentDisposition builds an attachment Content-Disposition header value. The

@@ -489,18 +489,22 @@ func (s *FileService) GetFileDownloadURL(ctx context.Context, tc model.TenantCon
 	}
 	// SEC-8 defense-in-depth: the stored key must live under the caller's tenant
 	// prefix. RLS already scopes the row to this center, so this only fails on a
-	// corrupt/legacy key — never on a normal request.
+	// corrupt/legacy key — never on a normal request. The inline (preview) path
+	// routes through PresignGetOwned so the prefix guard lives in ONE place shared
+	// with the Story 5.5a submission-audio reader (Winston STRONG). The attachment
+	// (forced-download) variant needs a Content-Disposition that the opts-less
+	// PresignGetOwned can't carry, so it re-asserts the same prefix invariant inline.
+	if !attachment {
+		url, err := s.storage.PresignGetOwned(ctx, objectKey, tc, downloadURLExpiry)
+		if err != nil {
+			return "", fmt.Errorf("file download: presign get: %w", err)
+		}
+		return url, nil
+	}
 	if !strings.HasPrefix(objectKey, tc.CenterID+"/") {
 		return "", KeyPrefixMismatchError{}
 	}
-	// attachment forces a download under the original name; the inline default
-	// keeps one URL usable for the preview `<img>`/`<audio>`/`<embed>` (AC5).
-	opts := PresignGetOpts{}
-	if attachment {
-		opts.Attachment = true
-		opts.Filename = fileName
-	}
-	url, err := s.storage.PresignGet(ctx, objectKey, downloadURLExpiry, opts)
+	url, err := s.storage.PresignGet(ctx, objectKey, downloadURLExpiry, PresignGetOpts{Attachment: true, Filename: fileName})
 	if err != nil {
 		return "", fmt.Errorf("file download: presign get: %w", err)
 	}

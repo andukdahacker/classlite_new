@@ -13,11 +13,14 @@ import { Link } from 'react-router'
 import { buttonVariants } from '@/components/ui/button'
 
 export interface SubmittedElsewhereOverlayProps {
+  /** The assignment id — the "view result" link targets its review page (Story 5.5a). */
+  assignmentId: string
   /** True when this tab held an un-uploaded recording at the foreign submit. */
   hadUnsavedRecording: boolean
 }
 
 export function SubmittedElsewhereOverlay({
+  assignmentId,
   hadUnsavedRecording,
 }: SubmittedElsewhereOverlayProps) {
   const { t } = useTranslation()
@@ -64,7 +67,7 @@ export function SubmittedElsewhereOverlay({
       ) : null}
       <Link
         ref={primaryRef}
-        to="/assignments"
+        to={`/assignments/${assignmentId}/submission`}
         className={buttonVariants({ variant: 'default', className: 'h-12 px-6 text-base' })}
         data-testid="speaking-submitted-elsewhere-view-result"
       >

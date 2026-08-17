@@ -122,6 +122,84 @@ func (h *SubmissionHandler) GetAttempt(w http.ResponseWriter, r *http.Request) e
 	return nil
 }
 
+// studentSubmissionResultResponse is the api.yaml StudentSubmissionResult (Story
+// 5.5a): the caller's own submission + student-safe assignment + the answer-
+// stripped exercise (null for the in_progress resume CTA) + the pre-grade flags.
+// All fields present, nulls explicit (GO-5).
+type studentSubmissionResultResponse struct {
+	Submission submissionResponse       `json:"submission"`
+	Assignment studentAssignmentView    `json:"assignment"`
+	Exercise   *service.AttemptExercise `json:"exercise"`
+	Released   bool                     `json:"released"`
+	AudioURL   *string                  `json:"audioUrl"`
+	InProgress bool                     `json:"inProgress"`
+}
+
+func studentSubmissionResultToResponse(res service.StudentSubmissionReviewResult) studentSubmissionResultResponse {
+	out := studentSubmissionResultResponse{
+		Submission: submissionToResponse(res.Submission),
+		Assignment: studentAssignmentViewFromRow(res.Assignment),
+		Released:   res.Released,
+		AudioURL:   res.AudioURL,
+		InProgress: res.InProgress,
+	}
+	// D10: the in_progress CTA short-circuit carries a null exercise; a terminal
+	// submission carries the answer-stripped exercise.
+	if !res.InProgress {
+		exercise := res.Exercise
+		out.Exercise = &exercise
+	}
+	return out
+}
+
+// audioURLResponse is the api.yaml AudioUrl (Story 5.5a AC10 on-demand mint).
+type audioURLResponse struct {
+	URL string `json:"url"`
+}
+
+// GetSubmissionResult — GET /api/assignments/{assignmentId}/result (Story 5.5a).
+// The "review my submission" read: the caller's OWN submission read-back (or the
+// in_progress resume CTA). Student-only, owner-keyed, enrolled; NOT lock-gated.
+// Role + ownership + enrollment + the answer strip + the SEC-8 audio presign all
+// live in the service.
+func (h *SubmissionHandler) GetSubmissionResult(w http.ResponseWriter, r *http.Request) error {
+	tc, err := requireOwnerTenant(r)
+	if err != nil {
+		return err
+	}
+	assignmentID, err := parseSettingsPathID(r, "assignmentId", "SUBMISSION_NOT_FOUND", "submission")
+	if err != nil {
+		return err
+	}
+	res, err := h.svc.GetStudentSubmissionReview(r.Context(), tc, assignmentID)
+	if err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, studentSubmissionResultToResponse(res))
+	return nil
+}
+
+// GetSubmissionAudio — GET /api/assignments/{assignmentId}/submission/audio (Story
+// 5.5a AC10). A fresh 5-min presigned GET for the caller's own recording (play-
+// intent refresh). Rides the SAME gate ladder as GetSubmissionResult; the URL is
+// never logged (A10).
+func (h *SubmissionHandler) GetSubmissionAudio(w http.ResponseWriter, r *http.Request) error {
+	tc, err := requireOwnerTenant(r)
+	if err != nil {
+		return err
+	}
+	assignmentID, err := parseSettingsPathID(r, "assignmentId", "SUBMISSION_NOT_FOUND", "submission")
+	if err != nil {
+		return err
+	}
+	url, err := h.svc.GetStudentSubmissionAudioURL(r.Context(), tc, assignmentID)
+	if err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, audioURLResponse{URL: url})
+	return nil
+}
+
 // ListStudentAssignments — GET /api/assignments (AC1-4). The STUDENT collection
 // (D4): student-only, enrollment-scoped. Teachers use the class-scoped list. Meta
 // is built from the service's CLAMPED page/pageSize, not the raw query params.

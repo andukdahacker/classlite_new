@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/ducdo/classlite-api/internal/model"
 )
 
 // MockStorageService records storage operations for testing.
@@ -22,6 +24,15 @@ type MockStorageService struct {
 	// Deleted records every key passed to Delete, in call order — the
 	// delete-on-mismatch matrix asserts which objects were (or were NOT) removed.
 	Deleted []string
+
+	// PresignGetKeys records every key passed to PresignGet, in call order — the
+	// Story 5.5a zero-mint reds assert NO presign happened on gated-failure paths
+	// (non-student / not-enrolled / cross-student-404 / missing-404), and exactly
+	// ONE mint on the owner-terminal happy path.
+	PresignGetKeys []string
+	// LastPresignGetExpiry captures the TTL of the most recent PresignGet call so a
+	// test can pin the 5-minute GET-URL window (Story 5.5a SEC-8 / PresignGetOwned).
+	LastPresignGetExpiry time.Duration
 }
 
 // NewMockStorageService creates a mock with an empty object store.
@@ -83,6 +94,12 @@ func (m *MockStorageService) PresignGet(ctx context.Context, key string, expiry 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Record the mint attempt at method entry (before the PresignError early-return)
+	// so any CALL is observable — the Story 5.5a zero-mint reds prove a gated-failure
+	// path never reaches PresignGet at all.
+	m.PresignGetKeys = append(m.PresignGetKeys, key)
+	m.LastPresignGetExpiry = expiry
+
 	if m.PresignError != nil {
 		return "", m.PresignError
 	}
@@ -92,6 +109,13 @@ func (m *MockStorageService) PresignGet(ctx context.Context, key string, expiry 
 		return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=get&disposition=attachment&filename=%s", key, url.QueryEscape(opts.Filename)), nil
 	}
 	return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=get", key), nil
+}
+
+// PresignGetOwned enforces the SEC-8 owned-key prefix guard, then delegates to
+// this mock's PresignGet (so the mint spy fires). Shares the same prefix-guard
+// implementation as the R2 impl (Story 5.5a).
+func (m *MockStorageService) PresignGetOwned(ctx context.Context, key string, tc model.TenantContext, expiry time.Duration) (string, error) {
+	return presignGetOwned(ctx, m, key, tc, expiry)
 }
 
 // HeadObject returns metadata for a previously stored object.

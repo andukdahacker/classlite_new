@@ -88,6 +88,41 @@ export function rowStatus(submissionStatus: SubmissionStatus | null): RowStatus 
   }
 }
 
+/** A "Review submission" affordance on a terminal-status row (Story 5.5a AC13). */
+export interface ReviewCta {
+  /** The review route for this assignment (`/assignments/{id}/submission`). */
+  to: string
+  /** i18n key for the CTA label (the component resolves it). */
+  label: string
+}
+
+/**
+ * The "Review submission" entry-point CTA for a row, or `null` when there is
+ * nothing submitted to review (Story 5.5a AC13). A terminal submission
+ * (`submitted` / `ai_processing` / `graded`) links to the review surface at
+ * `/assignments/{id}/submission`; a not-started (`null`) or `in_progress` row
+ * returns `null` (no terminal submission to read back yet).
+ * @param submissionStatus the caller's submission status, or `null` if not started.
+ * @param assignmentId the assignment id used to build the review route.
+ * @returns the review CTA `{ to, label }`, or `null`.
+ */
+export function reviewCtaForRow(
+  submissionStatus: SubmissionStatus | null,
+  assignmentId: string,
+): ReviewCta | null {
+  switch (submissionStatus) {
+    case 'submitted':
+    case 'ai_processing':
+    case 'graded':
+      return {
+        to: `/assignments/${assignmentId}/submission`,
+        label: 'assignments.cta.reviewSubmission',
+      }
+    default:
+      return null
+  }
+}
+
 /**
  * Whether a row is overdue: its deadline is strictly in the past AND the
  * student has not yet submitted (AC5). A `submitted` / `ai_processing` /

@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
+
+	"github.com/ducdo/classlite-api/internal/model"
 )
 
 // ObjectMeta contains metadata about a stored object.
@@ -41,6 +44,16 @@ type StorageService interface {
 	// opts.Attachment forces a download under opts.Filename.
 	PresignGet(ctx context.Context, key string, expiry time.Duration, opts PresignGetOpts) (string, error)
 
+	// PresignGetOwned is the SEC-8-guarded inline GET presign (Story 5.5a). It
+	// re-asserts the object key lives under the caller's own center prefix
+	// (tc.CenterID+"/") BEFORE signing, then delegates to PresignGet — so the
+	// object-key access boundary (SEC-8) lives in ONE auditable place shared by
+	// every owned-artifact reader (submission audio playback, Knowledge Hub
+	// inline preview). A foreign-prefix key returns KeyPrefixMismatchError (403
+	// R2_KEY_PREFIX_MISMATCH) having signed nothing. Callers still enforce their
+	// OWN upstream authz (role / ownership / enrollment) before invoking it.
+	PresignGetOwned(ctx context.Context, key string, tc model.TenantContext, expiry time.Duration) (string, error)
+
 	// HeadObject checks if an object exists and returns its metadata.
 	HeadObject(ctx context.Context, key string) (*ObjectMeta, error)
 
@@ -56,4 +69,16 @@ type StorageService interface {
 	// failure is surfaced (not swallowed) so the caller can emit the
 	// `orphaned_object` telemetry counter for a later reaper sweep.
 	Delete(ctx context.Context, key string) error
+}
+
+// presignGetOwned is the single implementation of the SEC-8 owned-GET invariant
+// shared by every StorageService implementation (R2 + mock): a key MUST live
+// under the caller's center prefix before an inline GET is signed. Kept as a
+// free function (not duplicated per impl) so the prefix guard has exactly one
+// auditable home (Story 5.5a — Winston STRONG).
+func presignGetOwned(ctx context.Context, s StorageService, key string, tc model.TenantContext, expiry time.Duration) (string, error) {
+	if !strings.HasPrefix(key, tc.CenterID+"/") {
+		return "", KeyPrefixMismatchError{}
+	}
+	return s.PresignGet(ctx, key, expiry, PresignGetOpts{})
 }

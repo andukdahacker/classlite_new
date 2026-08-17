@@ -20,6 +20,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import {
   attemptRouteForSkill,
   isOverdue,
+  reviewCtaForRow,
   rowStatus,
   type RowCta,
 } from './lib/assignmentRow'
@@ -58,6 +59,9 @@ export function AssignmentRow({
   const route = attemptRouteForSkill(row.exerciseSkill, row.id)
   const { statusKey, cta } = rowStatus(row.submissionStatus)
   const overdue = isOverdue(row.deadlineAt, row.submissionStatus, serverTime)
+  // Story 5.5a AC13 — a terminal row also offers a "Review submission" entry-point
+  // into the pre-grade read-back (`/assignments/{id}/submission`).
+  const reviewCta = reviewCtaForRow(row.submissionStatus, row.id)
 
   return (
     <li
@@ -122,6 +126,17 @@ export function AssignmentRow({
           {t(CTA_KEYS[cta].labelKey)}
         </Link>
       )}
+
+      {reviewCta ? (
+        <Link
+          to={reviewCta.to}
+          aria-label={t('assignments.cta.reviewSubmissionFor', { title: row.exerciseTitle })}
+          className={buttonVariants({ size: 'sm', variant: 'outline' })}
+          data-testid={`assignment-review-cta-${row.id}`}
+        >
+          {t(reviewCta.label)}
+        </Link>
+      ) : null}
     </li>
   )
 }

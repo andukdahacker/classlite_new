@@ -801,6 +801,41 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 5.5a — /assignments/:assignmentId/submission "review my submission" screen
+  // (s35 pre-grade read-back). A sibling FULL-BLEED boundary OUTSIDE `AppLayout`,
+  // mirroring the /write and /speak routes. Role-gated to students; its OWN lazy
+  // chunk (deep named import) so no teacher/owner code loads it. Reached from the
+  // /assignments list terminal rows (`reviewCtaForRow`) and the two
+  // SubmittedElsewhereOverlay "view result" links. The `/result` route is NOT
+  // registered here — it is reserved for the 5-5b graded result.
+  {
+    path: '/assignments/:assignmentId/submission',
+    lazy: async () => {
+      const { default: RouteRoleGate } = await import(
+        '@/components/shared/RouteRoleGate'
+      )
+      return {
+        element: (
+          <RouteRoleGate
+            allowedRoles={['student']}
+            requiredRolesForCopy={['owner', 'admin']}
+            sectionNameKey="assignments"
+          />
+        ),
+      }
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { SubmissionReviewPage } = await import(
+            '@/features/submission-review'
+          )
+          return { Component: SubmissionReviewPage }
+        },
+      },
+    ],
+  },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
   // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
   // pre-auth visits never pull the wizard chunk. Extended

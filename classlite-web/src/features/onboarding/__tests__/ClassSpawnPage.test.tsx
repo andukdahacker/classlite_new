@@ -48,6 +48,17 @@ import {
   spawnSuccessAs,
 } from '../api/__tests__/handlers'
 
+// A canonical padded ISO start date computed from the real clock so the typed
+// "valid" date stays inside the schema's >= today−30d window as the wall clock
+// advances (a hardcoded past date silently rots outside the window later).
+const VALID_START_DATE = (() => {
+  const d = new Date()
+  const year = d.getUTCFullYear()
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+})()
+
 // MSW server lifecycle registered globally in `src/test/vitest-setup.ts`.
 beforeEach(() => {
   server.use(...onboardingHandlers)
@@ -417,7 +428,7 @@ describe('AC6 — Save & spawn: error catalog dispatch', () => {
   async function fillMinimalValidRowAndSpawn(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS Morning')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
   }
 
@@ -459,7 +470,7 @@ describe('AC6 — Save & spawn: error catalog dispatch', () => {
     renderClassSpawnPage()
 
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     // (skip AssignChip flow for brevity — form-level error should surface)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
@@ -567,7 +578,7 @@ describe('AC6 — 429 four sub-tests (Murat-B2)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     // Countdown shows 12s + button disabled. The auto-re-enable-after-N-seconds
@@ -587,7 +598,7 @@ describe('AC6 — 429 four sub-tests (Murat-B2)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     // No countdown UI; button stays enabled
@@ -606,7 +617,7 @@ describe('AC6 — 429 four sub-tests (Murat-B2)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     await waitFor(() =>
@@ -623,7 +634,7 @@ describe('AC6 — 429 four sub-tests (Murat-B2)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     await waitFor(() =>
@@ -659,7 +670,7 @@ describe('AC6 — 3 SELF_INVITE_BLOCKED sub-tests (Murat-S7)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     expect(
@@ -700,7 +711,7 @@ describe('AC6 — spawn-submit-gate three-state (Murat-S5)', () => {
 
     await screen.findByRole('heading', { name: /Create your first classes/i })
     await user.type(screen.getByLabelText(/Cohort name/i), 'IELTS')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     await screen.findByText('DONE_PLACEHOLDER')
@@ -748,7 +759,7 @@ describe('AC7 — Founder auto-assign wire/UI decoupling (Winston-W4)', () => {
 
     // Fill required fields and submit — DO NOT touch AssignChip
     await user.type(screen.getByLabelText(/Cohort name/i), 'Founders A')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     await screen.findByText('DONE_PLACEHOLDER')
@@ -796,7 +807,7 @@ describe('AC7 — Founder auto-assign wire/UI decoupling (Winston-W4)', () => {
     // Now submit and assert the wire carries null (respecting the user's
     // explicit hand-off clear, NOT the Founder auto-assign).
     await user.type(screen.getByLabelText(/Cohort name/i), 'Founders A')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
     await screen.findByText('DONE_PLACEHOLDER')
 
@@ -843,7 +854,7 @@ describe('AC7 — Founder auto-assign wire/UI decoupling (Winston-W4)', () => {
 
     // Fill required fields and submit
     await user.type(screen.getByLabelText(/Cohort name/i), 'Founders A')
-    await user.type(screen.getByLabelText(/Start date/i), '2026-07-15')
+    await user.type(screen.getByLabelText(/Start date/i), VALID_START_DATE)
     await user.click(screen.getByRole('button', { name: /Save & spawn/i }))
 
     await screen.findByText('DONE_PLACEHOLDER')

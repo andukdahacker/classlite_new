@@ -550,6 +550,12 @@ func main() {
 	// attempt bundle. Both student-only (enforced in-service), same open chain.
 	mux.Handle("GET /api/assignments", assignmentChain(submissionHandler.ListStudentAssignments))
 	mux.Handle("GET /api/submissions/{id}/attempt", assignmentChain(submissionHandler.GetAttempt))
+	// Story 5.5a — "review my submission" read surface (assignment-keyed). Both
+	// student-only, owner-keyed, enrolled (enforced in-service); the result read is
+	// the pre-grade read-back / resume CTA, the audio route is the on-demand SEC-8
+	// presign refresh for a speaking recording. Same open chain.
+	mux.Handle("GET /api/assignments/{assignmentId}/result", assignmentChain(submissionHandler.GetSubmissionResult))
+	mux.Handle("GET /api/assignments/{assignmentId}/submission/audio", assignmentChain(submissionHandler.GetSubmissionAudio))
 
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced
