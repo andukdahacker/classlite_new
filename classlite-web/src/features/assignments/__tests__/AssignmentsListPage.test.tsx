@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, delay, http } from 'msw'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { axe } from 'vitest-axe'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
@@ -463,5 +463,64 @@ describe('AssignmentsListPage — i18n + a11y (TEST-FE-4/5, TEST-UX-1)', () => {
     expect(cta).toBeInTheDocument()
     await userEvent.tab()
     await waitFor(() => expect(cta).toHaveFocus())
+  })
+})
+
+describe('AssignmentsListPage — release-discovery unread indicator (Story 5.5b AC15/D-DISCOVERY)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
+  test('a graded row shows the "new result" unread indicator with an accessible label', async () => {
+    server.use(listHandler([item({ id: 'g1', exerciseTitle: 'IELTS Task 2', submissionStatus: 'graded' })]))
+    renderPage()
+    const unread = await screen.findByTestId('assignment-unread-g1')
+    // Not colour-only — the text label carries the meaning in BOTH locales.
+    expect(unread).toHaveTextContent(i18n.t('assignments.unread.newResult'))
+    expect(i18n.exists('assignments.unread.newResult', { lng: 'en' })).toBe(true)
+    expect(i18n.exists('assignments.unread.newResult', { lng: 'vi' })).toBe(true)
+  })
+
+  test('the indicator CLEARS once the result has been marked seen on this device', async () => {
+    const { markResultSeen } = await import('@/lib/resultSeen')
+    markResultSeen('g2')
+    server.use(listHandler([item({ id: 'g2', exerciseTitle: 'IELTS Task 2', submissionStatus: 'graded' })]))
+    renderPage()
+    await screen.findByTestId('assignment-status-g2')
+    expect(screen.queryByTestId('assignment-unread-g2')).not.toBeInTheDocument()
+  })
+
+  test('a non-graded (submitted) row never shows the unread indicator', async () => {
+    server.use(listHandler([item({ id: 's1', exerciseTitle: 'Draft', submissionStatus: 'submitted' })]))
+    renderPage()
+    await screen.findByTestId('assignment-status-s1')
+    expect(screen.queryByTestId('assignment-unread-s1')).not.toBeInTheDocument()
+  })
+
+  test('role-negative: the teacher/owner list is denied entirely (indicator never renders)', async () => {
+    server.use(listHandler([item({ id: 't1', submissionStatus: 'graded' })]))
+    renderPageWithGate('teacher')
+    await waitFor(() => {
+      expect(screen.queryByTestId('assignment-unread-t1')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('assignment-status-t1')).not.toBeInTheDocument()
+    })
+  })
+
+  test('localStorage throwing does not crash the row (SSR/quota-safe)', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('quota / disabled')
+    })
+    try {
+      server.use(listHandler([item({ id: 'q1', exerciseTitle: 'IELTS Task 2', submissionStatus: 'graded' })]))
+      renderPage()
+      // The row still renders — the guarded helper swallows the throw (no unread shown).
+      expect(await screen.findByTestId('assignment-status-q1')).toBeInTheDocument()
+      expect(screen.queryByTestId('assignment-unread-q1')).not.toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

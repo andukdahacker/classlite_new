@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'
 import { ApiError } from '@/lib/api-fetch'
 import { Button } from '@/components/ui/button'
+import { markResultSeen } from '@/lib/resultSeen'
 import { useSubmissionReview } from './api/useSubmissionReview'
 import { SubmissionReviewShell } from './components/SubmissionReviewShell'
 
@@ -34,6 +35,17 @@ function ReviewSkeleton() {
     >
       <div className="h-8 w-1/2 animate-pulse rounded bg-[var(--cl-line)]" />
       <div className="h-5 w-2/3 animate-pulse rounded bg-[var(--cl-line)]" />
+      {/* Grade-block skeleton (AC12): the band-ring hero + criteria placeholders resolve
+          BEFORE/with the essay below — never a lone grey pulse throbbing over a loaded
+          essay. A skeleton, never a spinner. */}
+      <div
+        data-testid="submission-review-grade-skeleton"
+        className="flex flex-col items-center gap-3"
+      >
+        <div className="size-32 animate-pulse rounded-full bg-[var(--cl-line)]" />
+        <div className="h-4 w-2/3 animate-pulse rounded bg-[var(--cl-line)]" />
+        <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--cl-line)]" />
+      </div>
       <div className="h-64 animate-pulse rounded bg-[var(--cl-line)]" />
     </div>
   )
@@ -67,6 +79,16 @@ export function SubmissionReviewPage() {
     query.isSuccess &&
     (query.data.result.inProgress ||
       query.data.result.submission.status === 'in_progress')
+
+  // D-DISCOVERY (AC15): when a RELEASED result is opened, clear its "new result"
+  // unread indicator on the /assignments list. Keyed by assignmentId ONLY — the 5.2c
+  // list row carries no `gradedAt`, so page-write and list-read must align on the same
+  // key (the re-grade-rearm limitation is tracked in FU-5-5b-DISCOVERY).
+  const resultReleased =
+    query.isSuccess && query.data.result.released && query.data.result.grade !== null
+  useEffect(() => {
+    if (resultReleased) markResultSeen(assignmentId ?? '')
+  }, [resultReleased, assignmentId])
 
   // DOM side-effects (FW-4 permits imperative DOM ops in useEffect): title for the
   // SR route-change announcement, and focus the heading once the read-back mounts.
@@ -197,6 +219,8 @@ export function SubmissionReviewPage() {
           assignmentId={assignmentId ?? ''}
           submission={result.submission}
           exercise={exercise}
+          released={result.released}
+          grade={result.grade}
           audioUrl={result.audioUrl}
           serverTime={serverTime}
         />

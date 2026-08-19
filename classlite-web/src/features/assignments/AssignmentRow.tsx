@@ -16,6 +16,7 @@
 import { type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
+import { isResultUnread } from '@/lib/resultSeen'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   attemptRouteForSkill,
@@ -62,6 +63,11 @@ export function AssignmentRow({
   // Story 5.5a AC13 — a terminal row also offers a "Review submission" entry-point
   // into the pre-grade read-back (`/assignments/{id}/submission`).
   const reviewCta = reviewCtaForRow(row.submissionStatus, row.id)
+  // Story 5.5b AC15 (D-DISCOVERY) — a graded row whose result the student has not yet
+  // opened on this device carries a "new result" unread indicator (per-device,
+  // client-tracked; durable cross-device is the Epic-10 Inbox). `graded` status is the
+  // release signal on the list; the indicator clears when the result view is opened.
+  const resultUnread = isResultUnread(row.id, row.submissionStatus === 'graded')
 
   return (
     <li
@@ -102,6 +108,17 @@ export function AssignmentRow({
       >
         {t(statusKey)}
       </span>
+
+      {resultUnread ? (
+        <span
+          data-testid={`assignment-unread-${row.id}`}
+          className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+        >
+          {/* The dot is decorative; the text label carries the meaning (not colour-only). */}
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />
+          {t('assignments.unread.newResult')}
+        </span>
+      ) : null}
 
       {cta === 'none' ? null : route === null ? (
         <Button

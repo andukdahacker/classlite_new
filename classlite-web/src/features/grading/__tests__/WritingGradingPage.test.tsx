@@ -322,6 +322,23 @@ describe('WritingGradingPage — reciprocal pin↔card focus (AC13)', () => {
     fireEvent.mouseOut(card)
     expect(pin()?.classList.contains('cl-anchor-pulse')).toBe(false)
   })
+
+  // Story 5.5b regression pin (Winston W3): the shared CommentCard gained a
+  // `readOnly` prop for the student result view. The teacher surface must NEVER
+  // pass it — an accidental prop-drill from a shared parent would silently disarm
+  // the teacher's Resolve/Edit footer. Pin the interactive control's PRESENCE here.
+  test('teacher comment card keeps its interactive Resolve/Edit footer (no readOnly prop-drill)', async () => {
+    stubQueue()
+    server.use(
+      http.get(GRADING_PATH, () =>
+        HttpResponse.json({ data: gradedViewWithAnchoredComment(), meta: { serverTime: '2026-08-19T00:00:00Z' } }),
+      ),
+    )
+    renderPage()
+    await screen.findByText('Alice Nguyen')
+    expect(screen.getByTestId('comment-card-c-0-resolve')).toBeEnabled()
+    expect(screen.getByTestId('comment-card-c-0-edit')).toBeEnabled()
+  })
 })
 
 describe('WritingGradingPage — desktop-only seam (AC17)', () => {

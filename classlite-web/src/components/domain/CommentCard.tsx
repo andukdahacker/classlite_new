@@ -29,6 +29,13 @@ export interface CommentCardProps {
   resolved?: boolean
   /** Stable selector slug for downstream feature-epic tests. */
   testIdSlug: string
+  /**
+   * Read-only mode (Story 5.5b) — the student result view. Suppresses EVERY
+   * interactive affordance (the Resolve/Edit footer), not merely disabling it: a
+   * disabled control still leaks teacher intent and can be re-enabled (Winston W3).
+   * Default `false` preserves the teacher grading behavior byte-for-byte.
+   */
+  readOnly?: boolean
   onResolve?: () => void
   onEdit?: () => void
 }
@@ -61,6 +68,7 @@ export function CommentCard({
   timestamp,
   resolved,
   testIdSlug,
+  readOnly = false,
   onResolve,
   onEdit,
 }: CommentCardProps) {
@@ -114,24 +122,26 @@ export function CommentCard({
           {body}
         </p>
       ) : null}
-      <footer className="flex gap-2">
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={onResolve}
-          data-testid={`comment-card-${testIdSlug}-resolve`}
-        >
-          {t(resolved ? 'commentCard.action.reopen' : 'commentCard.action.resolve')}
-        </Button>
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={onEdit}
-          data-testid={`comment-card-${testIdSlug}-edit`}
-        >
-          {t('commentCard.action.edit')}
-        </Button>
-      </footer>
+      {readOnly ? null : (
+        <footer className="flex gap-2">
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={onResolve}
+            data-testid={`comment-card-${testIdSlug}-resolve`}
+          >
+            {t(resolved ? 'commentCard.action.reopen' : 'commentCard.action.resolve')}
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={onEdit}
+            data-testid={`comment-card-${testIdSlug}-edit`}
+          >
+            {t('commentCard.action.edit')}
+          </Button>
+        </footer>
+      )}
     </article>
   )
 }

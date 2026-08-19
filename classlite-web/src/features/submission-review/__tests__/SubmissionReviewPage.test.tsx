@@ -108,6 +108,9 @@ function result(overrides: Partial<StudentSubmissionResult> = {}): StudentSubmis
     assignment: assignment(),
     exercise: exercise('writing'),
     released: false,
+    // Story 5.5b: the grade block gates on `released && grade !== null`. The 5-5a
+    // baseline is `released:false, grade:null` — the graded suite overrides both.
+    grade: null,
     audioUrl: null,
     inProgress: false,
     ...overrides,

@@ -75,6 +75,39 @@ export function normalizeAnchor(
   return { start: lo, end: hi }
 }
 
+/** A stored comment's raw offsets + tone — the common shape both the teacher grading
+ * draft (`DraftComment`) and the student wire comment (`AnchoredComment`) satisfy. */
+export interface StoredAnchor {
+  anchorStart: number | null
+  anchorEnd: number | null
+  type: EssayAnchor['type']
+}
+
+/**
+ * Resolve stored anchors into render-ready `EssayAnchor`s, applying the SAME
+ * `normalizeAnchor` demotion on BOTH sides so the two `buildEssayHtml` consumers (the
+ * teacher grading page and the student result reader) cannot drift on identical offsets
+ * — the WF-8 cross-side single source. A null / out-of-range / surrogate-splitting
+ * anchor demotes (dropped here; the caller surfaces it as a whole-essay note). The
+ * surviving anchor keeps its ORIGINAL index so a painted `<mark>`'s `data-anchor-index`
+ * still addresses its comment card.
+ * @param comments stored comments in document order (index = card key).
+ * @param essayText the essay the offsets index into.
+ * @returns one `EssayAnchor` per comment whose anchor survives normalization.
+ */
+export function resolveStoredAnchors(
+  comments: readonly StoredAnchor[],
+  essayText: string,
+): EssayAnchor[] {
+  const spans: EssayAnchor[] = []
+  comments.forEach((comment, index) => {
+    if (comment.anchorStart === null || comment.anchorEnd === null) return
+    const normalized = normalizeAnchor(essayText, comment.anchorStart, comment.anchorEnd)
+    if (normalized) spans.push({ ...normalized, type: comment.type, index })
+  })
+  return spans
+}
+
 /**
  * The UTF-16 offset of (node, offset) measured from the start of root's text
  * content. Walks text nodes in document order. Returns null when node is outside root.

@@ -836,6 +836,17 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 5.5b (D-ROUTE) — /assignments/:assignmentId/result is a REDIRECT ALIAS to the
+  // durable /submission shell, which now renders the released grade above the read-back.
+  // Honors the epic's "5-5b registers the /result route" AND is the stable deep-link
+  // target the eventual release-notification email / Epic-10 Inbox will point at —
+  // without a duplicate page that would fragment the /assignments CTA (which already
+  // points terminal + graded rows at /submission).
+  {
+    path: '/assignments/:assignmentId/result',
+    loader: ({ params }: LoaderFunctionArgs) =>
+      redirect(`/assignments/${params.assignmentId}/submission`),
+  },
   // Story 6.1 — /classes/:id/grading/:aid/:sid teacher Writing grading surface (s23,
   // desktop-only). A sibling FULL-BLEED boundary OUTSIDE `AppLayout` (attempt-route
   // precedent). Staff-gated (owner/admin/teacher); teacher-of-class narrowing is

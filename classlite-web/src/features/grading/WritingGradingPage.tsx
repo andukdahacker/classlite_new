@@ -49,9 +49,10 @@ import {
   buildEssayHtml,
   captureSelectionOffsets,
   normalizeAnchor,
+  resolveStoredAnchors,
   utf16Slice,
   type EssayAnchor,
-} from './lib/essayAnchors'
+} from '@/lib/essayAnchors'
 import {
   clearGradingDraft,
   emptyGradingDraft,
@@ -226,16 +227,13 @@ function GradingWorkspace({
     return () => document.removeEventListener('mouseup', onMouseUp)
   }, [essayText, setDraft])
 
+  // Resolve stored anchors through the SHARED resolver (normalizeAnchor demotion) — the
+  // same single source the student reader uses, so the two buildEssayHtml consumers can
+  // never drift on identical offsets (WF-8 cross-side parity; pinned by the shared
+  // WRITING_ANCHOR_FIXTURE in grading/lib/__tests__/essayAnchorParity.test.ts).
   const spanAnchors: EssayAnchor[] = useMemo(
-    () =>
-      draft.comments
-        .map((c, index): EssayAnchor | null =>
-          c.anchorStart !== null && c.anchorEnd !== null
-            ? { start: c.anchorStart, end: c.anchorEnd, type: c.type, index }
-            : null,
-        )
-        .filter((a): a is EssayAnchor => a !== null),
-    [draft.comments],
+    () => resolveStoredAnchors(draft.comments, essayText),
+    [draft.comments, essayText],
   )
 
   const essayHtml = useMemo(() => buildEssayHtml(essayText, spanAnchors), [essayText, spanAnchors])
