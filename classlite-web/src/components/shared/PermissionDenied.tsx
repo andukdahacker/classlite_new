@@ -52,6 +52,7 @@ export type SectionNameKey =
   | 'exercises'
   | 'knowledgeHub'
   | 'assignments'
+  | 'grading'
 
 export interface PermissionDeniedProps {
   requiredRoles: PermissionDeniedRoles

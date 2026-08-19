@@ -52,6 +52,12 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver =
     ResizeObserverStub as unknown as typeof ResizeObserver
 }
+// `Element.getAnimations` is unimplemented in jsdom; base-ui's ScrollArea viewport
+// calls it on a post-mount timer (surfaces as an uncaught exception after a test
+// that renders a ScrollArea, e.g. the WritingGradingSurface rail). Stub it to [].
+if (typeof Element !== 'undefined' && typeof Element.prototype.getAnimations !== 'function') {
+  Element.prototype.getAnimations = () => []
+}
 if (typeof globalThis.matchMedia === 'undefined') {
   // Default the attempt UI to its DESKTOP tree in jsdom: `min-width` queries
   // match, coarse-pointer / other queries don't. A test that needs the mobile

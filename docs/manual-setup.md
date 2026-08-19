@@ -49,6 +49,15 @@ Reuses the credentials above. Just extend scopes + add a second redirect URI.
 | Set `APP_VERIFY_URL_BASE` | [ ] | [ ] | [ ] |
 | Set `APP_RESET_URL_BASE` | [ ] | [ ] | [ ] |
 
+### Grade-release notification (Story 6.1)
+
+The grade-release email is a code-side `RenderGradeReleasedEmail` template (no Resend dashboard template needed — same inline-HTML pattern as verify/invite). The **student email is gated** so delivery can wait until Story 5-5b renders the grade block; the grade still persists + releases regardless. Deep-links to `{APP_RESULT_URL_BASE}/assignments/{assignmentId}/submission` (the 5-5a result page).
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| Set `GRADE_RELEASE_EMAIL_ENABLED` (default `false` — flip to `true` only once 5-5b renders the grade for students) | [x] `false` | [ ] | [ ] |
+| Set `APP_RESULT_URL_BASE` (app origin for the result deep link, e.g. `https://app.classlite.app`) | [ ] | [ ] | [ ] |
+
 ---
 
 ## Cloudflare R2 (Story 1.2e)

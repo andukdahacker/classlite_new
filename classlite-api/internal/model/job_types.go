@@ -23,6 +23,12 @@ const (
 	// JobTypeAIGenerateDistractors generates distractor options for one MCQ
 	// question.
 	JobTypeAIGenerateDistractors JobType = "ai_generate_distractors"
+	// JobTypeGradeReleaseEmail is the Story 6.1 transactional-outbox job: it is
+	// INSERTed inside the grade-release tx (D2) and, once the tx commits, the
+	// dispatcher publishes event.GradeReleased + sends the student's Resend email
+	// (behind GRADE_RELEASE_EMAIL_ENABLED). Not an AI job — the handler ignores the
+	// gemini client. Idempotency anchor: params.GradeID.
+	JobTypeGradeReleaseEmail JobType = "grade_release_email"
 )
 
 // AIGenerationModeToJobType maps the enqueue request `mode` discriminator to its
@@ -113,4 +119,23 @@ type AIGenerateDistractorsParams struct {
 	QuestionID    string `json:"questionId"`
 	Count         int    `json:"count"`
 	CenterIDClaim string `json:"centerId"`
+}
+
+// GradeReleaseEmailParamsSchemaVersion stamps jobs.params_schema_version for the
+// grade-release outbox payload. Independent of AIJobParamsSchemaVersion and of any
+// content-schema version (GO-7 / P20).
+const GradeReleaseEmailParamsSchemaVersion = 1
+
+// GradeReleaseEmailParams is the Story 6.1 transactional-outbox payload (D2). It
+// is written inside the grade tx and consumed post-commit by the dispatcher to
+// publish event.GradeReleased and send the student's release email. GradeID is the
+// idempotency anchor. The payload carries IDS ONLY — the recipient (student email
+// + name) and assignment title are re-resolved from the tenant-scoped db at send
+// time (chunk-1 code-review Decision B), so a rename/email-change since release is
+// honored and no PII rests in jobs.params. No teacher identity is carried (privacy
+// — StudentGradeView excludes graded_by).
+type GradeReleaseEmailParams struct {
+	GradeID      string `json:"gradeId"`
+	SubmissionID string `json:"submissionId"`
+	AssignmentID string `json:"assignmentId"`
 }

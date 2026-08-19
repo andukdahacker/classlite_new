@@ -59,6 +59,14 @@ type Config struct {
 	// required in non-dev.
 	GeminiAPIKey string
 	GeminiModel  string
+	// Story 6.1 — grade-release notification. GradeReleaseEmailEnabled gates the
+	// STUDENT-facing release email (behind a flag so delivery can wait until 5.5b
+	// renders the grade — John); the grade still persists + releases regardless.
+	// Default false at dev time. AppResultURLBase is the app origin the release
+	// email deep-links into: {base}/assignments/{assignmentId}/submission (the
+	// 5.5a result page — a real, reachable page today).
+	GradeReleaseEmailEnabled bool
+	AppResultURLBase         string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -95,6 +103,8 @@ func Load() Config {
 		MeetOAuthRedirectURL:      getEnv("MEET_OAUTH_REDIRECT_URL", "http://localhost:8080/api/centers/callback/google-meet"),
 		GeminiAPIKey:              getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:               getEnv("GEMINI_MODEL", "gemini-2.0-flash"),
+		GradeReleaseEmailEnabled:  getEnvBool("GRADE_RELEASE_EMAIL_ENABLED", false),
+		AppResultURLBase:          getEnv("APP_RESULT_URL_BASE", "http://localhost:5173"),
 	}
 }
 
@@ -295,6 +305,8 @@ func (c Config) LogSummary() {
 		"meet_oauth_redirect_url_set", c.MeetOAuthRedirectURL != "",
 		"gemini_api_key_set", c.GeminiAPIKey != "",
 		"gemini_model", c.GeminiModel,
+		"grade_release_email_enabled", c.GradeReleaseEmailEnabled,
+		"app_result_url_base_set", c.AppResultURLBase != "",
 	)
 }
 
@@ -303,4 +315,21 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// getEnvBool parses a boolean env var ("true"/"1"/"yes" → true, case-insensitive),
+// falling back to the default when unset or unparseable.
+func getEnvBool(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }

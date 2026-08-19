@@ -792,3 +792,39 @@ _Fresh different-LLM review (Group 5) of the net-new delta, chunks 3+4. Full fin
 - **`document.title` not restored on unmount** — the review page sets `document.title` with no cleanup; the "Review my submission" title lingers on the tab after a client-side Back-to-assignments until another route overwrites it. Low, common SPA pattern. [`classlite-web/src/features/submission-review/SubmissionReviewPage.tsx:71-73`]
 - **Handler uses `requireOwnerTenant` on a student route** — `GetSubmissionResult`/`GetSubmissionAudio` call a guard whose name/godoc imply an upstream `RequireRole("owner")` the open `assignmentChain` does not apply; functionally correct (student role enforced in `revalidateStudent`) but misleading. Consider a correctly-named student-tenant assert. Low, readability. [`classlite-api/internal/handler/attempt_handler.go:251-287`]
 - **`contentType` unused / no typed `<source>` on `<audio>`** — AC10's "contentType selects the container" is not literally implemented; a single `src` works because the browser infers the container. Low, functionally fine. [`classlite-web/src/features/submission-review/components/ResultSpeakingPlayback.tsx:104-115`]
+
+## Deferred from: dev of story 6-1 Writing Grading with Anchored Comments (2026-08-19, Amelia /bmad-dev-story)
+
+Out-of-scope follow-ups flagged by the story spec (not defects):
+
+- **FU-6-1-A — 6.4 deferred-release event table.** 6.1 sets `grades.released_at = now()` at INSERT (grade+release atomic). 6.4's auto-grade "store now, release later" is a NEW row in a future append-only `grade_releases(grade_id, center_id, released_at, released_by)` table (D1). 6.1 does NOT build it, but the reader contract (`released ⇔ latest version has released_at IS NOT NULL`) is written now so 6.4 stays additive — no migration to `grades`.
+- **FU-6-1-B — attach an Epic-10 Inbox sink to `event.GradeReleased`.** 6.1 publishes the event (no subscribers yet). When the Inbox lands (Epic 10), `Bus.Subscribe(event.GradeReleased, …)` writes an inbox row. Note: the outbox dispatcher is at-least-once, so the sink must dedup on `gradeId`.
+- **FU-6-1-C — moderation override of the overall band.** A senior-examiner half-band holistic override of the server-computed band. The `overallBand` display + persistence path is built so the field can become editable (with a reason) without a rewrite; not built in 6.1.
+- **FU-6-1-D — student resubmission under a released grade.** The submission is frozen once graded (immutability trigger + FR-23). If a resubmission flow is ever wanted it must invalidate/version the grade (anchors point into frozen text). Flagged, not built.
+
+Implementation-note follow-ups (thinner-coverage areas to revisit at epic TEA / code review):
+
+- **Handler-layer HTTP integration tests for the 4 grading routes** are lighter than the service layer: the service (all authz/validation/concurrency/outbox logic) is covered by real-DB tests + `-race` concurrency, and role-gating is the standard `RequireRole` middleware (proven elsewhere), but a per-story `NewGradingTestServerBareMux` asserting envelope + role-negative (student → INSUFFICIENT_ROLE) through the real chain is deferred to `/bmad-tea TA`.
+- **FE interaction-level tests** cover the high-value logic (rounding parity, XSS escaping, offset normalization + multibyte, draft persistence, trilogy, live-overall, POST-omits-overallBand, desktop seam). Deferred to TEA: selection-snapshot-survives-composer (jsdom Selection/Range offsets are unreliable), reciprocal pin↔card focus, overlap innermost-focus at the DOM level, draft-survives-refresh + lossless Prev/Next at the component level, already-graded→revise, and role-negative (surface absent from DOM) via the route gate.
+- **Highlight painting uses inline `<mark>` in `essayHtml`** (the shell's contract — wraps across lines natively, no gutter bleed) rather than the `Range.getClientRects()` overlay the spec described as one option; same visual result.
+
+## Deferred from: code review of 6-1-writing-grading-with-anchored-comments (2026-08-19) — backend chunk
+
+- **`current_grades` latest-version reader can hide a released grade.** Once 6.4 appends an unreleased draft version N+1 into `grades`, `DISTINCT ON (submission_id) … version DESC` returns the draft (`released_at IS NULL`) and the student's already-released vN silently disappears. Spec-compliant in 6.1 per D1 (6.1 always releases at insert; 6.4 is planned to release via a separate append-only `grade_releases` event table, not by drafting into `grades`). Revisit when 6.4 designs its stored-then-released flow.
+- **Grading queue has no pagination/LIMIT.** `ListGradingQueue` returns every non-`in_progress` submission for the assignment (users + current_grades joins), no LIMIT/cursor. Bounded by class size and the s23 desktop prev/next flow wants the full ordered list; revisit if class sizes grow (XL-2 page+pageSize / PERF-2).
+- **Grade-release email lost if the worker crashes mid-send.** The dispatcher stuck-job sweep routes a job that crashed after claim but before `MarkJobComplete` to `terminalFail` (no reschedule) — the notification is dropped although the grade is released. Pre-existing 4.3a dispatcher behavior, not introduced by 6.1.
+- **`nullable: true` as a sibling of `allOf` (OpenAPI 3.1).** The `grade`/`exercise` blocks in `StudentSubmissionResult`/`TeacherGradingView` use `allOf: [$ref] + nullable: true`; under 3.1 `nullable` is non-standard and openapi-typescript may emit a non-nullable client type despite the server sending explicit `null`. Verify against the generated client in the frontend-chunk review.
+- **Blanket immutability trigger full-row freeze → unmapped 500 for future writers.** `submission_immutable_after_release` raises P0001 on any UPDATE of a `graded` row (not just frozen columns); only the grading service maps P0001→409. Full-row freeze is intended (NFR-6), but a future non-grading writer (6.2/6.4 penalty recompute, content backfill) would surface a raw 500. Add a global P0001→409 mapping when a second submission-writer appears.
+
+## Deferred from: code review of 6-1-writing-grading-with-anchored-comments (2026-08-19) — frontend chunk
+
+- **`offsetWithin` element-node fallback returns a wrong anchor end** when a selection endpoint lands on a `<mark>` boundary (ignores the child offset). Real correctness edge; needs a DOM-level fix + a selection-capture test harness (jsdom Selection/Range is unreliable — completion-notes already deferred selection-snapshot tests). [essayAnchors.ts]
+- **422 field errors are not mapped to inputs** — both grade/revise mutations funnel every error into one generic toast; a `VALIDATION_ERROR` with `comments[i].text`/`criterion` field errors is not shown against the offending input. UX enhancement.
+- **409 already-graded on release is only a toast** — no explicit transition into the revise flow (partly addressed by the blank-after-release fix).
+- **Per-criterion pinned-comment count not rendered** (AC14 evidence — UX §6.1).
+- **Mobile seam offers only "copy link"**, not the AC17 "email it to me" affordance (first touch is often a phone email tap).
+- **Two same-origin tabs on one submission** last-writer-wins on the localStorage draft (no `storage` event sync).
+- **Detail + queue queries fire on mobile** before the `!isDesktop` seam short-circuits — wasteful fetch on a surface that renders nothing from it.
+- **`DraftComment.id` generator can collide** (`d-${len}-${textLen}`) — currently masked (list keys off array index), latent if anything ever keys on `id`.
+- **Global `document` mouseup** re-opens/re-positions the composer on stray mouse-ups with a lingering selection.
+- **Incomplete-score sentinel `-1`** is handed to `WritingGradingSurface` before all four criteria are set — may render `-1.0` under the student-preview note (surface render path not in the diff — unverified).

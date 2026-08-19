@@ -172,3 +172,9 @@
   padding-inline: 2px;
   border-radius: 2px;
 }
+/* Story 6.1 AC13 — pin pulse while its CommentCard is hovered (reciprocal focus).
+   Toggled imperatively on the <mark> via data-anchor-index by WritingGradingPage. */
+.cl-anchor-pulse {
+  outline: 2px solid var(--cl-accent);
+  outline-offset: 1px;
+}

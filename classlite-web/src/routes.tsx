@@ -836,6 +836,37 @@ const baseRoutes: RouteObject[] = [
       },
     ],
   },
+  // Story 6.1 — /classes/:id/grading/:aid/:sid teacher Writing grading surface (s23,
+  // desktop-only). A sibling FULL-BLEED boundary OUTSIDE `AppLayout` (attempt-route
+  // precedent). Staff-gated (owner/admin/teacher); teacher-of-class narrowing is
+  // enforced server-side. Its OWN lazy chunk (deep named import) so no student code
+  // loads it. key={sid} on the page re-seeds the per-submission draft on queue nav.
+  {
+    path: '/classes/:id/grading/:aid/:sid',
+    lazy: async () => {
+      const { default: RouteRoleGate } = await import(
+        '@/components/shared/RouteRoleGate'
+      )
+      return {
+        element: (
+          <RouteRoleGate
+            allowedRoles={['owner', 'admin', 'teacher']}
+            requiredRolesForCopy={['owner', 'admin']}
+            sectionNameKey="grading"
+          />
+        ),
+      }
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { WritingGradingPage } = await import('@/features/grading')
+          return { Component: WritingGradingPage }
+        },
+      },
+    ],
+  },
   // Story 2-3a — onboarding wizard boundary. Full-bleed shell mounted OUTSIDE
   // `AppLayout` (no sidebar / topbar). Route-level lazy per Winston-W5 so
   // pre-auth visits never pull the wizard chunk. Extended

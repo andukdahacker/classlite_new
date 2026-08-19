@@ -8,6 +8,15 @@ Teachers can grade all submission types — Writing with anchored inline comment
 
 **Size:** L | **Audience:** Full-stack | **Dependencies:** 5.1
 
+> **Implementation amendments (Story 6.1, shipped 2026-08-19 — supersede the prose below where they conflict):**
+> - **Essay is PLAIN TEXT, not rich text.** Story 5.3 (D1) made the writing submission a plain-text `content.text`. Anchors are **UTF-16 code-unit offsets** into that plain text (D3), not rich-text ranges. The "full rich text content" wording is stale.
+> - **`grades.version` column added** (the epic omitted it). Revise (AC6) inserts a new row `version = MAX+1`; `UNIQUE(submission_id, version)` makes it race-safe. "Which row is current" is the shipped SQL view **`current_grades`** (`DISTINCT ON (submission_id) … version DESC`, `security_invoker`).
+> - **Overall band = server-authoritative IELTS half-rounding in INTEGER space** (`.25→.5` up, `.75→next whole` up; all other fractions nearest-half over eighth granularity). The client sends the four criterion bands only — never `overallBand`; the server computes + ignores any client value.
+> - **Release reader contract = `released ⇔ latest grade version has released_at IS NOT NULL`** (D1) — NEVER `submission.status='graded'`, so 6.4's stored-then-released flow stays additive.
+> - **Immutability = a `BEFORE UPDATE` trigger `submission_immutable_after_release`** (the repo's first trigger; convention note in `docs/project-context.md` WF-2), raising `P0001` → mapped to a typed 409.
+> - **Notification = transactional-outbox `event.GradeReleased` + a Resend email**, post-commit, behind `GRADE_RELEASE_EMAIL_ENABLED` (default off until 5.5b renders the grade). NOT a notifications table (Inbox = Epic 10).
+> - **The student-facing graded display (incl. mobile s79 inline comments) is Story 5-5b.** 6.1 exposes only the `/result.grade` block; 5-5b renders it + owns the `/result` FE route.
+
 As a Teacher,
 I want to grade Writing submissions with inline comments anchored to specific text spans,
 So that I can give students precise, contextualized feedback on their essays.

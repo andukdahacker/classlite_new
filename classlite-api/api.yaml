@@ -5083,6 +5083,255 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/submissions/{submissionId}/grade:
+    post:
+      operationId: gradeSubmission
+      summary: Grade a Writing submission and release it — create + release, atomic (story 6.1 — AC4)
+      description: |
+        Teacher/admin/owner only, AND (for a teacher) assigned to the class the
+        submission's assignment belongs to — else 403 INSUFFICIENT_ROLE / 403
+        FORBIDDEN. Non-submitted/absent submission resolved within RLS → 404/409
+        (no cross-tenant existence oracle).
+
+        overallBand is NOT a request field — it is not part of GradeInput and the
+        server computes it from the four criterion scores (IELTS half-rounding,
+        integer-space, AC7). Bodies are strictly decoded, so a request that
+        includes overallBand (or any other unknown field) is REJECTED with 422. In
+        ONE tx (DB writes only, D2): insert grade
+        (version=1, released_at=now()), flip submission submitted→graded, audit
+        grade.created + grade.released, and a durable notification-outbox job row
+        (idempotency key = gradeId). AFTER COMMIT the outbox dispatcher publishes
+        event.GradeReleased + sends the Resend email (behind GRADE_RELEASE_EMAIL_ENABLED,
+        idempotent on gradeId). A second grade on an already-graded submission →
+        409 SUBMISSION_ALREADY_GRADED (checked under the row lock; the losing writer
+        commits zero side effects). Immutable-once-released (NFR-6).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GradeInput'
+      responses:
+        "201":
+          description: Grade created + released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeGrade'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (not teacher of the class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent or cross-tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing/invalid criterion scores or comment shape)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{submissionId}/grade/revise:
+    post:
+      operationId: reviseGrade
+      summary: Revise & re-release a grade — appends version N+1 (story 6.1 — AC6)
+      description: |
+        Same authz as POST …/grade. Inserts a NEW grades row version = MAX+1,
+        released_at=now(); the prior row is untouched and the submission row is NOT
+        updated (it stays graded — the immutability trigger would RAISE otherwise;
+        the current version lives in the current_grades view, D1). reason is
+        required. Two concurrent revises both computing N+1 → the UNIQUE(submission_id,
+        version) index rejects the loser (23505) → 409 CONFLICT retry, loser emits
+        zero side effects (B3). Audit grade.revised + grade.re_released; re-publish +
+        re-notify via the same outbox (post-commit, D2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviseGradeInput'
+      responses:
+        "201":
+          description: New grade version created + released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeGrade'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE / FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND / GRADE_NOT_FOUND (no grade to revise)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: CONFLICT (concurrent revise lost the version race — retry)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "413":
+          description: PAYLOAD_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing reason / invalid scores or comments)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{submissionId}/grading:
+    get:
+      operationId: getSubmissionGrading
+      summary: Teacher grading read — full submission + assignment + student + exercise + current grade (story 6.1 — AC8)
+      description: |
+        Teacher/admin/owner only, teacher-of-class scoped (else 404, no oracle).
+        Returns the FULL submission (NOT answer-stripped — the teacher reads the
+        essay), the assignment, the student {id, fullName}, the exercise, and the
+        latest grade (via current_grades) or null when ungraded. Distinct from the
+        student attempt bundle (wrong principal, strips content).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The teacher grading view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTeacherGradingView'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{classId}/grading-queue:
+    get:
+      operationId: getGradingQueue
+      summary: Teacher grading queue for an assignment — submissions to grade (story 6.1 — AC17)
+      description: |
+        Teacher/admin/owner only, teacher-of-class scoped (else 404). Lists every
+        non-in_progress submission for the given assignment (oldest waiting first)
+        with the student's name and current release state, so the teacher can walk
+        prev/next through the queue. assignmentId is a required query param and must
+        belong to classId (else 404).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assignmentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The grading queue rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeGradingQueue'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND / ASSIGNMENT_NOT_FOUND (absent, cross-tenant, or not the teacher's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Request bodies ----------------
@@ -8204,15 +8453,20 @@ components:
     # ---------------- Story 5.5a — submission review (pre-grade read-back) ----------------
     StudentSubmissionResult:
       type: object
-      # The "review my submission" payload (story 5.5a). Assignment-keyed read of
-      # the caller's OWN terminal submission: the full Submission (own answers), the
-      # student-safe assignment subset, and the answer-stripped AttemptExercise.
-      # released is ALWAYS false pre-Epic-6 (5.5b adds the grade block on release).
+      # The "review my submission" payload (story 5.5a; grade block added 6.1).
+      # Assignment-keyed read of the caller's OWN terminal submission: the full
+      # Submission (own answers), the student-safe assignment subset, and the
+      # answer-stripped AttemptExercise.
+      # released flips true IFF the latest grade version has released_at IS NOT NULL
+      # (D1 — NOT off submission.status, or 6.4's stored-then-released breaks it).
+      # grade is the StudentGradeView when released (excludes graded_by teacher
+      # identity — privacy), else null. 6.1 adds only this backend data; 5.5b renders
+      # it + owns the /result FE route + s79.
       # inProgress=true short-circuits to a resume CTA (exercise + audioUrl null, no
       # strip, no presign — D10). audioUrl is a fresh 5-min presigned GET for a
       # speaking submission's recording, or null (non-speaking / nil audioKey / CTA).
       # All fields present + explicit nulls (GO-5); no omitempty.
-      required: [submission, assignment, exercise, released, audioUrl, inProgress]
+      required: [submission, assignment, exercise, released, grade, audioUrl, inProgress]
       properties:
         submission:
           $ref: '#/components/schemas/Submission'
@@ -8225,7 +8479,12 @@ components:
             - $ref: '#/components/schemas/AttemptExercise'
         released:
           type: boolean
-          description: Grade release flag. Always false in 5.5a (grades land in 5.5b).
+          description: Grade release flag — true IFF the latest grade version has released_at IS NOT NULL (D1).
+        grade:
+          description: The released grade (student-safe, no teacher identity), or null when not released.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/StudentGradeView'
         audioUrl:
           type: string
           nullable: true
@@ -8240,6 +8499,245 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/StudentSubmissionResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---- Story 6.1: Writing grading (keystone — inherited by 5.5b/6.2/6.3/6.4) ----
+
+    CriterionScores:
+      type: object
+      # The four IELTS Writing criterion band scores. Each is 1.0–9.0 on a 0.5 grid
+      # (validated server-side, AC5). All four keys are REQUIRED. camelCase keys map
+      # to the criterion_scores JSONB.
+      required: [taskResponse, coherenceCohesion, lexicalResource, grammaticalRange]
+      properties:
+        taskResponse:
+          type: number
+          description: Task Response band (1.0–9.0, 0.5 grid).
+        coherenceCohesion:
+          type: number
+          description: Coherence & Cohesion band (1.0–9.0, 0.5 grid).
+        lexicalResource:
+          type: number
+          description: Lexical Resource band (1.0–9.0, 0.5 grid).
+        grammaticalRange:
+          type: number
+          description: Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid).
+
+    AnchoredComment:
+      type: object
+      # A teacher comment pinned to a span of the student's essay (or the whole
+      # essay). anchorStart/anchorEnd are UTF-16 CODE-UNIT offsets into
+      # submission.content.text (D3 — matches the browser that produces and consumes
+      # them); a span comment has 0 <= start < end <= utf16Len(text) after trimming
+      # trailing whitespace/newlines; a whole-essay comment has BOTH null.
+      # Out-of-range anchors are demoted to whole-essay (null/null), never dropped.
+      # text is teacher-authored free text — escaped on render (XSS), never trusted
+      # as HTML. This shape is inherited by 6.2/6.3/5.5b.
+      required: [type, criterion, anchorStart, anchorEnd, text]
+      properties:
+        type:
+          type: string
+          enum: [error, praise, suggestion]
+        criterion:
+          type: string
+          enum: [taskResponse, coherenceCohesion, lexicalResource, grammaticalRange]
+        anchorStart:
+          type: integer
+          nullable: true
+          description: UTF-16 code-unit start offset into content.text, or null for a whole-essay comment.
+        anchorEnd:
+          type: integer
+          nullable: true
+          description: UTF-16 code-unit end offset (exclusive) into content.text, or null for a whole-essay comment.
+        text:
+          type: string
+
+    GradeInput:
+      type: object
+      # The grade write body (AC4). overallBand is NOT a request field — the server
+      # computes it (AC7); bodies are strictly decoded, so sending overallBand (or any
+      # unknown field) is rejected with 422. feedback is nullable teacher free text.
+      required: [criterionScores, comments, feedback]
+      properties:
+        criterionScores:
+          $ref: '#/components/schemas/CriterionScores'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnchoredComment'
+        feedback:
+          type: string
+          nullable: true
+
+    ReviseGradeInput:
+      type: object
+      # The revise body (AC6) — GradeInput + a required reason (audited).
+      required: [criterionScores, comments, feedback, reason]
+      properties:
+        criterionScores:
+          $ref: '#/components/schemas/CriterionScores'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnchoredComment'
+        feedback:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          description: Why the grade is being revised (audited as grade.revised).
+
+    Grade:
+      type: object
+      # The teacher-facing grade wire (AC4 response). overallBand is server-computed
+      # (IELTS half-rounding). releasedAt is set on release (Writing 6.1); gradedBy
+      # is the teacher's id (teacher view only — the student StudentGradeView omits
+      # it). All fields present + explicit nulls (GO-5).
+      required: [id, submissionId, version, criterionScores, overallBand, comments, feedback, gradedBy, releasedAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        submissionId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          description: Grade version (1 for the initial grade, N+1 per revision).
+        criterionScores:
+          $ref: '#/components/schemas/CriterionScores'
+        overallBand:
+          type: number
+          description: Server-authoritative overall band (IELTS half-rounding of the four criteria).
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnchoredComment'
+        feedback:
+          type: string
+          nullable: true
+        gradedBy:
+          type: string
+          format: uuid
+          description: The teacher who authored this grade version.
+        releasedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When this version was released (null only for a future stored-but-unreleased grade — D1).
+        createdAt:
+          type: string
+          format: date-time
+
+    StudentGradeView:
+      type: object
+      # The student-facing grade (in /result — 5.5b renders it). EXCLUDES graded_by
+      # teacher identity (privacy default — D1/Winston §7). gradedAt is the grade
+      # row's created_at.
+      required: [overallBand, criterionScores, comments, feedback, gradedAt]
+      properties:
+        overallBand:
+          type: number
+        criterionScores:
+          $ref: '#/components/schemas/CriterionScores'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnchoredComment'
+        feedback:
+          type: string
+          nullable: true
+        gradedAt:
+          type: string
+          format: date-time
+
+    GradingStudent:
+      type: object
+      required: [id, fullName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+
+    TeacherGradingView:
+      type: object
+      # The teacher grading read (AC8). submission carries FULL content (the essay);
+      # exercise is the prompt (answer-stripped shape — writing has no answer key).
+      # grade is the latest version or null when ungraded.
+      required: [submission, assignment, student, exercise, grade]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        assignment:
+          $ref: '#/components/schemas/StudentAssignmentView'
+        student:
+          $ref: '#/components/schemas/GradingStudent'
+        exercise:
+          $ref: '#/components/schemas/AttemptExercise'
+        grade:
+          description: The latest grade version, or null when ungraded.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Grade'
+
+    GradingQueueRow:
+      type: object
+      # One row of the teacher grading queue (AC17). released mirrors the D1 reader
+      # contract (latest version released_at IS NOT NULL). overallBand is null when
+      # ungraded. assignmentTitle/className are the queue's assignment + class (same
+      # for every row).
+      required: [submissionId, studentName, assignmentTitle, className, status, isOverdue, released, overallBand]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        assignmentTitle:
+          type: string
+        className:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        isOverdue:
+          type: boolean
+          description: The submission was late (submitted after the deadline).
+        released:
+          type: boolean
+        overallBand:
+          type: number
+          nullable: true
+          description: The current grade's overall band, or null when ungraded.
+
+    EnvelopeGrade:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Grade'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeTeacherGradingView:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/TeacherGradingView'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeGradingQueue:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GradingQueueRow'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

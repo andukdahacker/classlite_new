@@ -43,6 +43,9 @@ type StudentSubmissionReviewResult struct {
 	Assignment generated.Assignment
 	Exercise   AttemptExercise
 	Released   bool
+	// Grade is the latest RELEASED grade (Story 6.1 / D1) — non-nil iff Released.
+	// The wire view drops the teacher identity (graded_by) at the handler.
+	Grade      *GradeView
 	AudioURL   *string
 	InProgress bool
 }
@@ -123,6 +126,24 @@ func (s *SubmissionService) GetStudentSubmissionReview(
 			return fmt.Errorf("submission review: decode exercise %s: %w", uuidStringFromPg(exRow.ID), dcerr)
 		}
 		result.Exercise = toAttemptExercise(exContent, uuidFromPg(exRow.ID), exRow.Title, exRow.Skill)
+
+		// Story 6.1 (AC10 / D1): released ⇔ the latest grade version has released_at
+		// IS NOT NULL — NEVER off submission.status (6.4 stores-then-releases). A
+		// grade row that is not yet released leaves released=false + grade=nil.
+		cg, cgErr := txQ.GetCurrentGrade(ctx, sub.ID)
+		if cgErr == nil {
+			if cg.ReleasedAt.Valid {
+				gv, gvErr := gradeViewFromCurrent(cg)
+				if gvErr != nil {
+					return gvErr
+				}
+				result.Released = true
+				result.Grade = &gv
+			}
+		} else if !errors.Is(cgErr, pgx.ErrNoRows) {
+			return fmt.Errorf("submission review: current grade: %w", cgErr)
+		}
+
 		// Capture the speaking audioKey (if any) for the OUTSIDE-tx presign (D9).
 		audioKey = speakingAudioKeyFromContent(content)
 		return nil

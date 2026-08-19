@@ -118,11 +118,22 @@ func main() {
 	// shutdown. Gemini is real here (mock-injected only in PR tests); the key is
 	// never logged (EDGE-4/R49). The dispatcher claims across tenants and
 	// re-establishes tenant context from each job row (SEC-6).
+	// The in-process event bus is constructed here (before the dispatcher) so the
+	// Story 6.1 grade-release outbox handler can publish event.GradeReleased; it is
+	// reused by AssignmentService below (single instance — one subscriber registry).
+	eventBus := event.NewBus()
 	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel)
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
 		worker.NewGenerateQuestionsHandler(pool, geminiClient, clock.RealClock{}),
 		worker.NewGenerateDistractorsHandler(pool, geminiClient, clock.RealClock{}),
+		// Story 6.1 — the grade-release outbox handler rides the same pool
+		// dispatcher (D2): post-commit it publishes event.GradeReleased + sends the
+		// student email (behind GRADE_RELEASE_EMAIL_ENABLED). It ignores the gemini
+		// client. RenderGradeReleasedEmail is injected as a func so package worker
+		// need not import package service.
+		worker.NewGradeReleaseEmailHandler(pool, eventBus, emailSender, service.RenderGradeReleasedEmail,
+			service.ResolveGradeReleaseRecipient, cfg.GradeReleaseEmailEnabled, cfg.AppResultURLBase, clock.RealClock{}),
 	)
 	go aiDispatcher.Start(workerCtx)
 
@@ -521,8 +532,8 @@ func main() {
 	// shape (role + teacher-scope + enrollment enforced in-service). Assignment
 	// management is teacher/admin/owner; the submission lifecycle is student-only
 	// (actively-enrolled, re-checked every write). eventBus fans out
-	// AssignmentCreated (no subscribers yet — Epic 6/7 attach).
-	eventBus := event.NewBus()
+	// AssignmentCreated (no subscribers yet — Epic 6/7 attach). eventBus is the
+	// single instance constructed above (also drives Story 6.1 grade-release).
 	assignmentSvc := service.NewAssignmentService(pool, auditSvc, eventBus, clock.RealClock{})
 	assignmentHandler := handler.NewAssignmentHandler(assignmentSvc, clock.RealClock{})
 	// WithStorage wires the authoritative speaking over-cap gate on /progress
@@ -556,6 +567,27 @@ func main() {
 	// presign refresh for a speaking recording. Same open chain.
 	mux.Handle("GET /api/assignments/{assignmentId}/result", assignmentChain(submissionHandler.GetSubmissionResult))
 	mux.Handle("GET /api/assignments/{assignmentId}/submission/audio", assignmentChain(submissionHandler.GetSubmissionAudio))
+
+	// Story 6.1 — teacher Writing grading (keystone). Staff-gated at the route
+	// (RequireRole → INSUFFICIENT_ROLE for students); teacher-of-class narrowing +
+	// all grading rules live in-service. The write paths are atomic (grade tx =
+	// DB-writes-only + outbox row; event/email post-commit off the dispatcher).
+	gradingSvc := service.NewGradingService(pool, auditSvc, clock.RealClock{})
+	gradingHandler := handler.NewGradingHandler(gradingSvc, clock.RealClock{})
+	requireGradingStaff := middleware.RequireRole("owner", "admin", "teacher")
+	gradingChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireGradingStaff(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
+	mux.Handle("POST /api/submissions/{submissionId}/grade", gradingChain(gradingHandler.Grade))
+	mux.Handle("POST /api/submissions/{submissionId}/grade/revise", gradingChain(gradingHandler.Revise))
+	mux.Handle("GET /api/submissions/{submissionId}/grading", gradingChain(gradingHandler.GetGrading))
+	mux.Handle("GET /api/classes/{classId}/grading-queue", gradingChain(gradingHandler.GetQueue))
 
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced

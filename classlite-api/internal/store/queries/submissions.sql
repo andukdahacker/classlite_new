@@ -76,3 +76,51 @@ WHERE s.id = sqlc.arg('id')
 RETURNING s.id, s.center_id, s.assignment_id, s.student_id, s.status, s.content,
           s.schema_version, s.is_late, s.applied_penalty, s.started_at,
           s.submitted_at, s.created_at, s.updated_at;
+
+-- name: LockSubmissionForGrading :one
+-- Story 6.1 (AC4,6 / B3). Row-lock the submission for the grade / revise write
+-- path. FOR UPDATE serializes concurrent grade attempts on the SAME submission so
+-- the already-graded check (grade) and the MAX(version)+1 computation (revise)
+-- happen under the lock, not as a TOCTOU pre-check. RLS-scoped; other-tenant →
+-- pgx.ErrNoRows → 404.
+SELECT id, center_id, assignment_id, student_id, status, content, schema_version,
+       is_late, applied_penalty, started_at, submitted_at, created_at, updated_at
+FROM submissions
+WHERE id = sqlc.arg('id')
+FOR UPDATE;
+
+-- name: GradeSubmission :one
+-- Story 6.1 (AC4). Guarded submitted → graded flip, run under the row lock. WHERE
+-- status='submitted' → 0 rows when the submission was already graded (or is not
+-- yet submitted) → the service maps ErrNoRows to 409 SUBMISSION_ALREADY_GRADED, so
+-- the losing writer commits ZERO side effects. The immutability trigger
+-- (submission_immutable_after_release) additionally RAISEs on any UPDATE of an
+-- already-graded row — belt and braces. Revise (AC6) does NOT call this: the
+-- submission stays 'graded' and would trip the trigger; the current version lives
+-- in the current_grades view, never on the submission (D1).
+UPDATE submissions
+SET status = 'graded',
+    updated_at = sqlc.arg('updated_at')
+WHERE id = sqlc.arg('id')
+  AND status = 'submitted'
+RETURNING id, center_id, assignment_id, student_id, status, content, schema_version,
+          is_late, applied_penalty, started_at, submitted_at, created_at, updated_at;
+
+-- name: ListGradingQueue :many
+-- Story 6.1 (AC17). Teacher grading queue for one assignment: every
+-- non-in_progress submission (submitted / ai_processing / graded) with the
+-- student's display name and current release state. Ordered submitted_at ASC
+-- (oldest waiting first) — the FE walks this list with prev/next. RLS
+-- tenant-scopes; the assignment predicate + teacher-of-class authz are enforced in
+-- the service before this runs. LEFT JOIN current_grades is plain (not LATERAL):
+-- the view is one row per submission, so no row multiplication is possible.
+SELECT su.id AS submission_id, su.student_id, su.status, su.submitted_at, su.is_late,
+       u.full_name AS student_name,
+       (cg.released_at IS NOT NULL)::boolean AS released,
+       cg.overall_band AS overall_band
+FROM submissions su
+JOIN users u ON u.id = su.student_id
+LEFT JOIN current_grades cg ON cg.submission_id = su.id
+WHERE su.assignment_id = sqlc.arg('assignment_id')
+  AND su.status <> 'in_progress'
+ORDER BY su.submitted_at ASC NULLS LAST, su.id ASC;

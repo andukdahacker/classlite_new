@@ -12,6 +12,44 @@ const VerificationEmailSubject = "Verify your ClassLite email address"
 // PasswordResetEmailSubject is hard-coded for the same SEC-11 reason.
 const PasswordResetEmailSubject = "Reset your ClassLite password"
 
+// GradeReleasedEmailSubject is hard-coded (SEC-11). Story 6.1 grade-release
+// notification.
+const GradeReleasedEmailSubject = "Your ClassLite grade is ready"
+
+// RenderGradeReleasedEmail produces subject + HTML body for the Story 6.1
+// grade-release email. studentName + assignmentTitle originate from user input and
+// are HTML-escaped; resultURL deep-links to the student's result page. English-only
+// (i18n deferred). The send itself is gated by GRADE_RELEASE_EMAIL_ENABLED and
+// happens post-commit off the transactional outbox (D2).
+func RenderGradeReleasedEmail(studentName, assignmentTitle, resultURL string) (subject, htmlBody string) {
+	safeName := html.EscapeString(studentName)
+	safeTitle := html.EscapeString(assignmentTitle)
+	safeURL := html.EscapeString(resultURL)
+
+	body := fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; margin: 0; padding: 24px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background: #ffffff; border-radius: 8px; max-width: 480px; width: 100%%; padding: 32px;">
+      <tr>
+        <td>
+          <h1 style="font-size: 20px; margin: 0 0 16px;">Your grade is ready, %s</h1>
+          <p style="margin: 0 0 24px;">Your teacher has graded <strong>%s</strong>. Open ClassLite to see your band score and feedback.</p>
+          <p style="text-align: center; margin: 0 0 24px;">
+            <a href="%s" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">View my grade</a>
+          </p>
+          <p style="font-size: 13px; color: #6b7280; margin: 0 0 8px;">If the button doesn't work, copy and paste this link into your browser:</p>
+          <p style="font-size: 13px; word-break: break-all; margin: 0;"><a href="%s" style="color: #2563eb;">%s</a></p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #9ca3af; margin: 0;">You're receiving this because you submitted work on ClassLite.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, safeName, safeTitle, safeURL, safeURL, safeURL)
+
+	return GradeReleasedEmailSubject, body
+}
+
 // InviteEmailSubjectTemplate is the subject pattern. centerName is the
 // only variable — held against SEC-11 by Resend's sanitization plus the
 // MAX subject cap.

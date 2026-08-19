@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/service"
+	"github.com/ducdo/classlite-api/internal/service/grading"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 )
 
@@ -127,12 +128,23 @@ func (h *SubmissionHandler) GetAttempt(w http.ResponseWriter, r *http.Request) e
 // stripped exercise (null for the in_progress resume CTA) + the pre-grade flags.
 // All fields present, nulls explicit (GO-5).
 type studentSubmissionResultResponse struct {
-	Submission submissionResponse       `json:"submission"`
-	Assignment studentAssignmentView    `json:"assignment"`
-	Exercise   *service.AttemptExercise `json:"exercise"`
-	Released   bool                     `json:"released"`
-	AudioURL   *string                  `json:"audioUrl"`
-	InProgress bool                     `json:"inProgress"`
+	Submission submissionResponse        `json:"submission"`
+	Assignment studentAssignmentView     `json:"assignment"`
+	Exercise   *service.AttemptExercise  `json:"exercise"`
+	Released   bool                      `json:"released"`
+	Grade      *studentGradeViewResponse `json:"grade"`
+	AudioURL   *string                   `json:"audioUrl"`
+	InProgress bool                      `json:"inProgress"`
+}
+
+// studentGradeViewResponse is the api.yaml StudentGradeView (Story 6.1) — the
+// student-facing grade. It EXCLUDES graded_by teacher identity (privacy — D1).
+type studentGradeViewResponse struct {
+	OverallBand     float64                 `json:"overallBand"`
+	CriterionScores criterionScoresResponse `json:"criterionScores"`
+	Comments        []grading.Comment       `json:"comments"`
+	Feedback        *string                 `json:"feedback"`
+	GradedAt        string                  `json:"gradedAt"`
 }
 
 func studentSubmissionResultToResponse(res service.StudentSubmissionReviewResult) studentSubmissionResultResponse {
@@ -148,6 +160,20 @@ func studentSubmissionResultToResponse(res service.StudentSubmissionReviewResult
 	if !res.InProgress {
 		exercise := res.Exercise
 		out.Exercise = &exercise
+	}
+	// Story 6.1 (AC10): a released grade is surfaced student-safe (no graded_by).
+	if res.Grade != nil {
+		comments := res.Grade.Comments
+		if comments == nil {
+			comments = []grading.Comment{}
+		}
+		out.Grade = &studentGradeViewResponse{
+			OverallBand:     res.Grade.OverallBand,
+			CriterionScores: criterionScoresToResponse(res.Grade.Scores),
+			Comments:        comments,
+			Feedback:        res.Grade.Feedback,
+			GradedAt:        res.Grade.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
 	}
 	return out
 }

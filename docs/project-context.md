@@ -1040,6 +1040,12 @@ If `api.yaml` diff is absent but handler or frontend types changed → something
 - Seed data lives in `scripts/seed.sh` only — never in migration files
 - No speculative migrations — only create when the feature is fully scoped and approved
 
+**Trigger precedent (Story 6.1 — `submission_immutable_after_release`, the first trigger in the repo).** Conditional immutability the REVOKE+RLS idiom cannot express (a row frozen only *after* it reaches a terminal state) is enforced with a `BEFORE UPDATE` trigger. Convention so later triggers (6.4's second one) don't invent a new style:
+- Trigger function named `<table>_<invariant>_fn()`; trigger named `<table>_<invariant>` (e.g. `submission_immutable_after_release_fn` / `submission_immutable_after_release`).
+- Raise with a **named SQLSTATE + stable message** (`RAISE EXCEPTION '<invariant>' USING ERRCODE = 'P0001'`); the store maps `(P0001, '<invariant>')` to a typed error → 409, never a bare 500.
+- Ship the trigger in its **own** migration, *after* the table and any append-only ledger that references it (grades before the submission trigger).
+- **Views over an RLS table must be `CREATE VIEW … WITH (security_invoker = true)`** — without it a view runs RLS as its owner (the migration/superuser role) and bypasses tenant isolation. Prove it with a cross-tenant read test through the view (`current_grades`).
+
 #### WF-3: codegen.sh — when to run, when not to
 
 **Must run when:**

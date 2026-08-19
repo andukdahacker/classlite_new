@@ -1571,6 +1571,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/submissions/{submissionId}/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grade a Writing submission and release it — create + release, atomic (story 6.1 — AC4)
+         * @description Teacher/admin/owner only, AND (for a teacher) assigned to the class the
+         *     submission's assignment belongs to — else 403 INSUFFICIENT_ROLE / 403
+         *     FORBIDDEN. Non-submitted/absent submission resolved within RLS → 404/409
+         *     (no cross-tenant existence oracle).
+         *
+         *     overallBand is NOT a request field — it is not part of GradeInput and the
+         *     server computes it from the four criterion scores (IELTS half-rounding,
+         *     integer-space, AC7). Bodies are strictly decoded, so a request that
+         *     includes overallBand (or any other unknown field) is REJECTED with 422. In
+         *     ONE tx (DB writes only, D2): insert grade
+         *     (version=1, released_at=now()), flip submission submitted→graded, audit
+         *     grade.created + grade.released, and a durable notification-outbox job row
+         *     (idempotency key = gradeId). AFTER COMMIT the outbox dispatcher publishes
+         *     event.GradeReleased + sends the Resend email (behind GRADE_RELEASE_EMAIL_ENABLED,
+         *     idempotent on gradeId). A second grade on an already-graded submission →
+         *     409 SUBMISSION_ALREADY_GRADED (checked under the row lock; the losing writer
+         *     commits zero side effects). Immutable-once-released (NFR-6).
+         */
+        post: operations["gradeSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submissionId}/grade/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revise & re-release a grade — appends version N+1 (story 6.1 — AC6)
+         * @description Same authz as POST …/grade. Inserts a NEW grades row version = MAX+1,
+         *     released_at=now(); the prior row is untouched and the submission row is NOT
+         *     updated (it stays graded — the immutability trigger would RAISE otherwise;
+         *     the current version lives in the current_grades view, D1). reason is
+         *     required. Two concurrent revises both computing N+1 → the UNIQUE(submission_id,
+         *     version) index rejects the loser (23505) → 409 CONFLICT retry, loser emits
+         *     zero side effects (B3). Audit grade.revised + grade.re_released; re-publish +
+         *     re-notify via the same outbox (post-commit, D2).
+         */
+        post: operations["reviseGrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submissionId}/grading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Teacher grading read — full submission + assignment + student + exercise + current grade (story 6.1 — AC8)
+         * @description Teacher/admin/owner only, teacher-of-class scoped (else 404, no oracle).
+         *     Returns the FULL submission (NOT answer-stripped — the teacher reads the
+         *     essay), the assignment, the student {id, fullName}, the exercise, and the
+         *     latest grade (via current_grades) or null when ungraded. Distinct from the
+         *     student attempt bundle (wrong principal, strips content).
+         */
+        get: operations["getSubmissionGrading"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classId}/grading-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Teacher grading queue for an assignment — submissions to grade (story 6.1 — AC17)
+         * @description Teacher/admin/owner only, teacher-of-class scoped (else 404). Lists every
+         *     non-in_progress submission for the given assignment (oldest waiting first)
+         *     with the student's name and current release state, so the teacher can walk
+         *     prev/next through the queue. assignmentId is a required query param and must
+         *     belong to classId (else 404).
+         */
+        get: operations["getGradingQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3015,8 +3126,10 @@ export interface components {
             assignment: components["schemas"]["StudentAssignmentView"];
             /** @description The answer-stripped exercise; null when inProgress (resume CTA short-circuit — D10). */
             exercise: components["schemas"]["AttemptExercise"] | null;
-            /** @description Grade release flag. Always false in 5.5a (grades land in 5.5b). */
+            /** @description Grade release flag — true IFF the latest grade version has released_at IS NOT NULL (D1). */
             released: boolean;
+            /** @description The released grade (student-safe, no teacher identity), or null when not released. */
+            grade: components["schemas"]["StudentGradeView"] | null;
             /** @description Fresh 5-min presigned GET for a speaking recording, or null (non-speaking / nil key / in_progress). */
             audioUrl: string | null;
             /** @description True → the submission is not terminal; render the resume-attempt CTA (D10). */
@@ -3024,6 +3137,110 @@ export interface components {
         };
         EnvelopeStudentSubmissionResult: {
             data: components["schemas"]["StudentSubmissionResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        CriterionScores: {
+            /** @description Task Response band (1.0–9.0, 0.5 grid). */
+            taskResponse: number;
+            /** @description Coherence & Cohesion band (1.0–9.0, 0.5 grid). */
+            coherenceCohesion: number;
+            /** @description Lexical Resource band (1.0–9.0, 0.5 grid). */
+            lexicalResource: number;
+            /** @description Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid). */
+            grammaticalRange: number;
+        };
+        AnchoredComment: {
+            /** @enum {string} */
+            type: "error" | "praise" | "suggestion";
+            /** @enum {string} */
+            criterion: "taskResponse" | "coherenceCohesion" | "lexicalResource" | "grammaticalRange";
+            /** @description UTF-16 code-unit start offset into content.text, or null for a whole-essay comment. */
+            anchorStart: number | null;
+            /** @description UTF-16 code-unit end offset (exclusive) into content.text, or null for a whole-essay comment. */
+            anchorEnd: number | null;
+            text: string;
+        };
+        GradeInput: {
+            criterionScores: components["schemas"]["CriterionScores"];
+            comments: components["schemas"]["AnchoredComment"][];
+            feedback: string | null;
+        };
+        ReviseGradeInput: {
+            criterionScores: components["schemas"]["CriterionScores"];
+            comments: components["schemas"]["AnchoredComment"][];
+            feedback: string | null;
+            /** @description Why the grade is being revised (audited as grade.revised). */
+            reason: string;
+        };
+        Grade: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            submissionId: string;
+            /** @description Grade version (1 for the initial grade, N+1 per revision). */
+            version: number;
+            criterionScores: components["schemas"]["CriterionScores"];
+            /** @description Server-authoritative overall band (IELTS half-rounding of the four criteria). */
+            overallBand: number;
+            comments: components["schemas"]["AnchoredComment"][];
+            feedback: string | null;
+            /**
+             * Format: uuid
+             * @description The teacher who authored this grade version.
+             */
+            gradedBy: string;
+            /**
+             * Format: date-time
+             * @description When this version was released (null only for a future stored-but-unreleased grade — D1).
+             */
+            releasedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        StudentGradeView: {
+            overallBand: number;
+            criterionScores: components["schemas"]["CriterionScores"];
+            comments: components["schemas"]["AnchoredComment"][];
+            feedback: string | null;
+            /** Format: date-time */
+            gradedAt: string;
+        };
+        GradingStudent: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+        };
+        TeacherGradingView: {
+            submission: components["schemas"]["Submission"];
+            assignment: components["schemas"]["StudentAssignmentView"];
+            student: components["schemas"]["GradingStudent"];
+            exercise: components["schemas"]["AttemptExercise"];
+            /** @description The latest grade version, or null when ungraded. */
+            grade: components["schemas"]["Grade"] | null;
+        };
+        GradingQueueRow: {
+            /** Format: uuid */
+            submissionId: string;
+            studentName: string;
+            assignmentTitle: string;
+            className: string;
+            status: components["schemas"]["SubmissionStatus"];
+            /** @description The submission was late (submitted after the deadline). */
+            isOverdue: boolean;
+            released: boolean;
+            /** @description The current grade's overall band, or null when ungraded. */
+            overallBand: number | null;
+        };
+        EnvelopeGrade: {
+            data: components["schemas"]["Grade"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeTeacherGradingView: {
+            data: components["schemas"]["TeacherGradingView"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeGradingQueue: {
+            data: components["schemas"]["GradingQueueRow"][];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         AudioUrl: {
@@ -9388,6 +9605,266 @@ export interface operations {
             };
             /** @description SUBMISSION_NOT_EDITABLE (not in_progress) / SUBMISSION_LOCKED */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    gradeSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradeInput"];
+            };
+        };
+        responses: {
+            /** @description Grade created + released */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeGrade"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (not teacher of the class) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent or cross-tenant) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing/invalid criterion scores or comment shape) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reviseGrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviseGradeInput"];
+            };
+        };
+        responses: {
+            /** @description New grade version created + released */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeGrade"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE / FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND / GRADE_NOT_FOUND (no grade to revise) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT (concurrent revise lost the version race — retry) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PAYLOAD_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing reason / invalid scores or comments) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSubmissionGrading: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The teacher grading view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTeacherGradingView"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getGradingQueue: {
+        parameters: {
+            query: {
+                assignmentId: string;
+            };
+            header?: never;
+            path: {
+                classId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grading queue rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeGradingQueue"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND / ASSIGNMENT_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
