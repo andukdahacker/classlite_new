@@ -1139,6 +1139,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/submissions/{submissionId}/ai-grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue an AI Writing-grade job for a submission — 202 + jobId; deducts 1 credit in the SAME tx; never calls Gemini synchronously (story 6.2a — AC1). The worker produces reviewable SUGGESTIONS in job.result (AIWritingGradeResult), never a grade — the teacher reviews in 6.2b and commits via POST /api/submissions/{submissionId}/grade (D1). submissionId comes from the PATH; any client-supplied centerId is ignored (SEC-7 — the job-row center_id is the sole trust anchor, R3). Teacher-of-class authz is enforced in the service BEFORE the job insert (D9). Enqueue is idempotent (D6): a 2nd call while an ai_grade_writing job for this submission is pending/processing returns the EXISTING in-flight job (200) with no second job and no second -1 deduct. Refund on terminal failure is automatic; there is NO 402 balance gate (Story 6.5). */
+        post: operations["enqueueAIWritingGrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{jobId}": {
         parameters: {
             query?: never;
@@ -3217,6 +3234,8 @@ export interface components {
             exercise: components["schemas"]["AttemptExercise"];
             /** @description The latest grade version, or null when ungraded. */
             grade: components["schemas"]["Grade"] | null;
+            /** @description The latest COMPLETE ai_grade_writing suggestion for this submission, or null when none (story 6.2a D2). Rehydrates the 6.2b review UI on reopen. */
+            aiSuggestion: components["schemas"]["AIWritingGradeResult"] | null;
         };
         GradingQueueRow: {
             /** Format: uuid */
@@ -3282,14 +3301,57 @@ export interface components {
         JobStatus: "pending" | "processing" | "complete" | "failed";
         /** @description The AI generation result fragment produced once a job completes — content-shaped (the same structure as an exercise's content) so Story 4.3b can preview and insert it. Null on jobs.result until status=complete. */
         AIGenerationResult: components["schemas"]["ExerciseContent"];
+        AIWritingGradeCriterion: {
+            /** @description Proposed criterion band (1.0–9.0, 0.5 grid — validated server-side, else terminal invalid_band_scores). */
+            band: number;
+            /** @description Short AI justification for the proposed band (teacher-only). */
+            rationale: string;
+            /**
+             * @description AI confidence for this criterion — teacher-only, never shown to students (UX-DR22).
+             * @enum {string}
+             */
+            confidence: "high" | "medium";
+        };
+        AIWritingGradeCriteria: {
+            taskResponse: components["schemas"]["AIWritingGradeCriterion"];
+            coherenceCohesion: components["schemas"]["AIWritingGradeCriterion"];
+            lexicalResource: components["schemas"]["AIWritingGradeCriterion"];
+            grammaticalRange: components["schemas"]["AIWritingGradeCriterion"];
+        };
+        AnchoredAISuggestion: {
+            /** @enum {string} */
+            type: "error" | "praise" | "suggestion";
+            /** @enum {string} */
+            criterion: "taskResponse" | "coherenceCohesion" | "lexicalResource" | "grammaticalRange";
+            /** @description UTF-16 code-unit start offset into content.text, or null for a whole-essay suggestion. */
+            anchorStart: number | null;
+            /** @description UTF-16 code-unit end offset (exclusive), or null for a whole-essay suggestion. */
+            anchorEnd: number | null;
+            text: string;
+            /**
+             * @description AI confidence for this comment — teacher-only (UX-DR22).
+             * @enum {string}
+             */
+            confidence: "high" | "medium";
+        };
+        AIWritingGradeResult: {
+            criteria: components["schemas"]["AIWritingGradeCriteria"];
+            comments: components["schemas"]["AnchoredAISuggestion"][];
+            /** @description Optional whole-essay AI feedback, or null. */
+            overallFeedback: string | null;
+            /** @description Word count of the analysed essay (for the "analysed 287 words · 1.4s" UX line). */
+            analyzedWordCount: number;
+            /** @description Wall-clock the analysis took, in milliseconds (measured via the injected clock — deterministic in tests). */
+            latencyMs: number;
+        };
         Job: {
             /** Format: uuid */
             id: string;
             type: string;
             status: components["schemas"]["JobStatus"];
-            /** @description The typed generation result fragment (content-shaped) once complete; null until then. */
-            result: components["schemas"]["AIGenerationResult"] | null;
-            /** @description On failure, a terminal detail code: invalid_ai_response, stuck_timeout, max_retries_exhausted, generation_failed, or unknown_job_type. */
+            /** @description The typed job result once complete; null until then. Discriminated by `type` (D11): ai_generate_* → AIGenerationResult (content-shaped, story 4.3b); ai_grade_writing → AIWritingGradeResult (reviewable Writing-grade suggestion, story 6.2a). The two are structurally disjoint (AIGenerationResult has `sections`; AIWritingGradeResult has `criteria`), so a consumer narrows by job.type; an unknown type falls to a safe default. */
+            result: (components["schemas"]["AIGenerationResult"] | components["schemas"]["AIWritingGradeResult"]) | null;
+            /** @description On failure, a terminal detail code: invalid_ai_response, invalid_band_scores (ai_grade_writing — the AI proposed out-of-range or off-grid bands, distinct from unparseable output), stuck_timeout, max_retries_exhausted, generation_failed, or unknown_job_type. */
             errorDetails: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -8173,6 +8235,82 @@ export interface operations {
                 };
             };
             /** @description RATE_LIMIT_EXCEEDED (Retry-After header) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    enqueueAIWritingGrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An ai_grade_writing job for this submission is already in flight (pending/processing) — the existing job id is returned, no new job and no second deduct (D6 idempotency). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeJobEnqueued"];
+                };
+            };
+            /** @description AI grade job enqueued (poll GET /api/jobs/{jobId}; reopening the grading read rehydrates the latest suggestion via TeacherGradingView.aiSuggestion). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeJobEnqueued"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (teacher of another class) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent or cross-tenant — no existence oracle) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_WRITING (not a Writing exercise) / SUBMISSION_NOT_GRADABLE (not in submitted/graded status, or no essay content to grade) / AI_GRADE_ENQUEUE_CONFLICT (an in-flight AI grade for this submission changed state between the idempotency conflict and re-read — retry) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description RATE_LIMIT_EXCEEDED (Retry-After — the AI rate limiter, ~20/min) */
             429: {
                 headers: {
                     [name: string]: unknown;

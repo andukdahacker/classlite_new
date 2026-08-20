@@ -89,6 +89,11 @@ rejects an empty `GEMINI_API_KEY` outside development). The key lives in env
 only and is NEVER logged (EDGE-4/R49). A real call is banned from CI — PR tests
 inject a mock.
 
+**Story 6.2a (AI Writing grading)** reuses the same `GEMINI_API_KEY` / `GEMINI_MODEL`
+env vars and the same worker/mock seam — the `ai_grade_writing` job type registers a
+new handler on the existing dispatcher. **No new environment variables or setup are
+required.**
+
 | Task | Dev | Staging | Prod |
 |---|---|---|---|
 | Create a Google AI Studio API key (or GCP `generativelanguage` API key) | [ ] | [ ] | [ ] |

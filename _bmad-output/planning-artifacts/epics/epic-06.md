@@ -74,6 +74,13 @@ So that I can give students precise, contextualized feedback on their essays.
 
 **Size:** L | **Audience:** Full-stack | **Dependencies:** 6.1, 4.3 (job queue)
 
+> **6.2a implementation note (2026-08-20, backend shipped).** Story 6.2 was split into **6.2a** (backend: worker + enqueue + suggestion read) and **6.2b** (frontend: suggestion-review UI + first-run card). Reconciliations against this prose, resolved during 6.2a:
+> - **Criterion key is `grammaticalRange`** everywhere in code (never `grammaticalRangeAccuracy`). The four keys: `taskResponse`, `coherenceCohesion`, `lexicalResource`, `grammaticalRange`.
+> - **`ai_credit_ledger` already exists since Story 4.3a** — reasons `job_deduction`/`job_failed_refund` are live. Story 6.5 adds only the OTHER reasons + the balance gate, not the table.
+> - **The AI worker produces reviewable SUGGESTIONS, never a grade (D1).** It writes to `job.result` (`AIWritingGradeResult`), never a `grades` row and never the `submissions` row. The teacher commits the grade via the existing 6.1 `POST …/grade` path. "Stored on the submission for reference" is satisfied by the grading-read `aiSuggestion` field (D2), not a submissions-row write.
+> - **Confidence + rationale are teacher-only** (UX-DR22) and are never persisted to `grades`.
+> - **Auto-run "if configured" is deferred** (FU-6-2-A) — manual teacher trigger only in v1; neither 6.2a nor 6.2b builds config-driven auto-grade-on-submission.
+
 As a Teacher,
 I want AI to propose band scores and inline comments for Writing submissions,
 So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggestions.
@@ -81,7 +88,7 @@ So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggesti
 **Acceptance Criteria:**
 
 **Given** a teacher opening a Writing submission for grading
-**When** they click "Run AI Grading" (or it runs automatically if configured)
+**When** they click "Run AI Grading" (manual trigger only in v1 — auto-run "if configured" is deferred to FU-6-2-A)
 **Then** a job is created via POST `/api/submissions/{id}/ai-grade` with type `ai_grade_writing`
 **And** the response returns `{ "jobId": "..." }`
 **And** the frontend polls GET `/api/jobs/{jobId}` with progressive backoff (2s → 4s → 8s)
@@ -100,7 +107,7 @@ So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggesti
 
 **Given** AI grading credit consumption
 **When** AI grading is triggered
-**Then** a `-1` ledger entry is inserted in `ai_credit_ledger` (defined in new Story 6.5) in the SAME transaction as the job insert — guarantees atomic deduct + enqueue
+**Then** a `-1` ledger entry is inserted in `ai_credit_ledger` (already exists since Story 4.3a; 6.5 adds only the other reasons + the balance gate) in the SAME transaction as the job insert — guarantees atomic deduct + enqueue
 **And** the credit cost is shown before confirming
 
 **Given** the AI grading worker implementation
@@ -111,8 +118,8 @@ So that I can grade essays in ~3 minutes instead of ~12 by reviewing AI suggesti
 **When** processing a writing grading job
 **Then** the worker sends the student's essay + IELTS Writing rubric to Google Gemini
 **And** parses the response into structured band scores, rationales, and anchored comments
-**And** stores the result in the job's result JSONB
-**And** the result is also stored on the submission for reference
+**And** stores the result in the job's result JSONB (`AIWritingGradeResult`)
+**And** the latest suggestion is surfaced via the teacher grading-read (`GET …/grading` → `aiSuggestion`, 6.2a D2), NOT written to the submission row — the submission stays immutable and the teacher commits the grade via 6.1 `POST …/grade` (D1)
 
 **Given** the first AI grade experience (UX-DR21)
 **When** a new teacher clicks the "Try AI grading" card on their dashboard

@@ -72,6 +72,22 @@ function isTerminal(status: JobStatus | undefined): boolean {
   return status === 'complete' || status === 'failed'
 }
 
+/**
+ * Narrow the widened `Job.result` union back to this hook's AIGenerationResult.
+ * Story 6.2a widened `Job.result` to a `oneOf` that also includes
+ * ai_grade_writing's AIWritingGradeResult (D11). This hook only ever enqueues
+ * ai_generate_* jobs, so a completed job's result IS an AIGenerationResult; the
+ * `sections` discriminant (present on AIGenerationResult/ExerciseContent, absent on
+ * AIWritingGradeResult which has `criteria`) guards against an unexpected shape —
+ * an unknown type falls to `null`, the safe default (D11).
+ */
+function asGenerationResult(result: Job['result']): AIGenerationResult | null {
+  if (result !== null && typeof result === 'object' && 'sections' in result) {
+    return result
+  }
+  return null
+}
+
 function derivePhase(
   jobId: string | null,
   status: JobStatus | undefined,
@@ -195,7 +211,7 @@ export function useAiGenerationJob(exerciseId: string): UseAiGenerationJobResult
   // here trips `preserve-manual-memoization` (its inferred deps are coarser).
   // `?? null` guards a degenerate complete-without-result (handled as `failed`
   // by derivePhase, not a dead-end preview).
-  const result = job?.status === 'complete' ? (job.result ?? null) : null
+  const result = job?.status === 'complete' ? asGenerationResult(job.result ?? null) : null
   // A persistent poll failure has surfaced once POLL_FAILURE_LIMIT is exhausted.
   const pollFailed = jobQuery.isError && pollFailures >= POLL_FAILURE_LIMIT
   const phase: AiJobPhase = derivePhase(jobId, job?.status, result !== null, stuckReached, pollFailed)

@@ -134,6 +134,11 @@ func main() {
 		// need not import package service.
 		worker.NewGradeReleaseEmailHandler(pool, eventBus, emailSender, service.RenderGradeReleasedEmail,
 			service.ResolveGradeReleaseRecipient, cfg.GradeReleaseEmailEnabled, cfg.AppResultURLBase, clock.RealClock{}),
+		// Story 6.2a — the AI Writing-grade handler rides the same pool dispatcher
+		// (jobs.type is free text; no dispatcher change). It reads the essay RLS-scoped
+		// from the job-row tenant, calls Gemini, and produces a reviewable suggestion in
+		// jobs.result — it never writes a grade or the submission (D1).
+		worker.NewGradeWritingHandler(pool, geminiClient, clock.RealClock{}),
 	)
 	go aiDispatcher.Start(workerCtx)
 
@@ -646,6 +651,15 @@ func main() {
 	}
 	mux.Handle("POST /api/exercises/{id}/ai-generate", aiChain(aiGenerationHandler.Enqueue))
 	mux.Handle("GET /api/jobs/{jobId}", aiChain(aiGenerationHandler.PollJob))
+
+	// Story 6.2a — AI Writing-grade enqueue. Rides the SAME aiChain (keeps the AI
+	// rate limiter); teacher-of-class authz + the atomic {job insert + -1 deduct} +
+	// enqueue idempotency live in the service (D9). The worker (aiDispatcher, above)
+	// produces a reviewable suggestion; the teacher commits the grade via the 6.1
+	// POST /grade path. Poll reuses GET /api/jobs/{jobId}.
+	aiGradeSvc := service.NewAIGradeService(pool)
+	aiGradeHandler := handler.NewAIGradeHandler(aiGradeSvc, clock.RealClock{})
+	mux.Handle("POST /api/submissions/{submissionId}/ai-grade", aiChain(aiGradeHandler.Enqueue))
 
 	// Story 2.7 — bulk student import (owner/admin only, DB role re-validated in
 	// the service on confirm). Shares the settingsInviteChain (RequireRole gate +

@@ -3870,6 +3870,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/submissions/{submissionId}/ai-grade:
+    post:
+      operationId: enqueueAIWritingGrade
+      summary: >-
+        Enqueue an AI Writing-grade job for a submission — 202 + jobId; deducts 1
+        credit in the SAME tx; never calls Gemini synchronously (story 6.2a — AC1).
+        The worker produces reviewable SUGGESTIONS in job.result (AIWritingGradeResult),
+        never a grade — the teacher reviews in 6.2b and commits via POST
+        /api/submissions/{submissionId}/grade (D1). submissionId comes from the PATH;
+        any client-supplied centerId is ignored (SEC-7 — the job-row center_id is the
+        sole trust anchor, R3). Teacher-of-class authz is enforced in the service BEFORE
+        the job insert (D9). Enqueue is idempotent (D6): a 2nd call while an
+        ai_grade_writing job for this submission is pending/processing returns the
+        EXISTING in-flight job (200) with no second job and no second -1 deduct. Refund
+        on terminal failure is automatic; there is NO 402 balance gate (Story 6.5).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: AI grade job enqueued (poll GET /api/jobs/{jobId}; reopening the grading read rehydrates the latest suggestion via TeacherGradingView.aiSuggestion).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeJobEnqueued'
+        "200":
+          description: An ai_grade_writing job for this submission is already in flight (pending/processing) — the existing job id is returned, no new job and no second deduct (D6 idempotency).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeJobEnqueued'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (teacher of another class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent or cross-tenant — no existence oracle)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: >-
+            SUBMISSION_NOT_WRITING (not a Writing exercise) / SUBMISSION_NOT_GRADABLE
+            (not in submitted/graded status, or no essay content to grade) /
+            AI_GRADE_ENQUEUE_CONFLICT (an in-flight AI grade for this submission
+            changed state between the idempotency conflict and re-read — retry)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: RATE_LIMIT_EXCEEDED (Retry-After — the AI rate limiter, ~20/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/jobs/{jobId}:
     get:
       operationId: getJob
@@ -8666,8 +8738,10 @@ components:
       type: object
       # The teacher grading read (AC8). submission carries FULL content (the essay);
       # exercise is the prompt (answer-stripped shape — writing has no answer key).
-      # grade is the latest version or null when ungraded.
-      required: [submission, assignment, student, exercise, grade]
+      # grade is the latest version or null when ungraded. aiSuggestion is the latest
+      # COMPLETE ai_grade_writing suggestion or null (story 6.2a D2) — teacher-only,
+      # class-shared (a co-teacher/admin sees it), absent from the student /result path.
+      required: [submission, assignment, student, exercise, grade, aiSuggestion]
       properties:
         submission:
           $ref: '#/components/schemas/Submission'
@@ -8682,6 +8756,11 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/Grade'
+        aiSuggestion:
+          description: The latest COMPLETE ai_grade_writing suggestion for this submission, or null when none (story 6.2a D2). Rehydrates the 6.2b review UI on reopen.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AIWritingGradeResult'
 
     GradingQueueRow:
       type: object
@@ -8841,6 +8920,102 @@ components:
       allOf:
         - $ref: '#/components/schemas/ExerciseContent'
 
+    # ---------------- Story 6.2a — AI Writing-grade suggestion ----------------
+    AIWritingGradeCriterion:
+      type: object
+      # One IELTS Writing criterion's AI proposal: a band + rationale + confidence.
+      # confidence is teacher-only (UX-DR22 — never shown to students); rationale +
+      # confidence are NEVER persisted to grades (D3). All three keys required (a
+      # missing/null band or confidence makes the whole result terminal
+      # invalid_ai_response — the "complete ⇒ gradeable" seam invariant, D10).
+      required: [band, rationale, confidence]
+      properties:
+        band:
+          type: number
+          description: Proposed criterion band (1.0–9.0, 0.5 grid — validated server-side, else terminal invalid_band_scores).
+        rationale:
+          type: string
+          description: Short AI justification for the proposed band (teacher-only).
+        confidence:
+          type: string
+          enum: [high, medium]
+          description: AI confidence for this criterion — teacher-only, never shown to students (UX-DR22).
+
+    AIWritingGradeCriteria:
+      type: object
+      # The four IELTS Writing criteria, each an AI proposal. Keys mirror
+      # CriterionScores (grammaticalRange, NOT grammaticalRangeAccuracy — the shipped
+      # 6.1 contract). All four required (a missing key ⇒ terminal invalid_ai_response).
+      required: [taskResponse, coherenceCohesion, lexicalResource, grammaticalRange]
+      properties:
+        taskResponse:
+          $ref: '#/components/schemas/AIWritingGradeCriterion'
+        coherenceCohesion:
+          $ref: '#/components/schemas/AIWritingGradeCriterion'
+        lexicalResource:
+          $ref: '#/components/schemas/AIWritingGradeCriterion'
+        grammaticalRange:
+          $ref: '#/components/schemas/AIWritingGradeCriterion'
+
+    AnchoredAISuggestion:
+      type: object
+      # The 6.1 AnchoredComment shape (UTF-16 code-unit offsets into
+      # submission.content.text; lowercase type; grammaticalRange criterion key) plus
+      # an AI confidence. Out-of-range / surrogate-splitting anchors are demoted to
+      # whole-essay (both null), never dropped (D5/D10). Structurally a superset of
+      # AnchoredComment: 6.2b maps it into the grade form on accept, dropping confidence
+      # (never persisted to grades — D3).
+      required: [type, criterion, anchorStart, anchorEnd, text, confidence]
+      properties:
+        type:
+          type: string
+          enum: [error, praise, suggestion]
+        criterion:
+          type: string
+          enum: [taskResponse, coherenceCohesion, lexicalResource, grammaticalRange]
+        anchorStart:
+          type: integer
+          nullable: true
+          description: UTF-16 code-unit start offset into content.text, or null for a whole-essay suggestion.
+        anchorEnd:
+          type: integer
+          nullable: true
+          description: UTF-16 code-unit end offset (exclusive), or null for a whole-essay suggestion.
+        text:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium]
+          description: AI confidence for this comment — teacher-only (UX-DR22).
+
+    AIWritingGradeResult:
+      type: object
+      # The AI Writing-grade SUGGESTION produced once an ai_grade_writing job completes
+      # (story 6.2a). Reviewable proposals — NOT a committed grade: the teacher reviews
+      # in 6.2b and commits via POST /grade (D1). The worker does NOT compute an overall
+      # band (6.2b previews it; 6.1 computes the authoritative one on commit). Anything
+      # in jobs.result at status=complete is a fully-valid, gradeable suggestion (the
+      # seam invariant, D10). No omitempty — overallFeedback is explicit null when absent
+      # (GO-5).
+      required: [criteria, comments, overallFeedback, analyzedWordCount, latencyMs]
+      properties:
+        criteria:
+          $ref: '#/components/schemas/AIWritingGradeCriteria'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnchoredAISuggestion'
+        overallFeedback:
+          type: string
+          nullable: true
+          description: Optional whole-essay AI feedback, or null.
+        analyzedWordCount:
+          type: integer
+          description: Word count of the analysed essay (for the "analysed 287 words · 1.4s" UX line).
+        latencyMs:
+          type: integer
+          description: Wall-clock the analysis took, in milliseconds (measured via the injected clock — deterministic in tests).
+
     Job:
       type: object
       required: [id, type, status, result, errorDetails, createdAt, startedAt, completedAt]
@@ -8854,16 +9029,24 @@ components:
           $ref: '#/components/schemas/JobStatus'
         result:
           nullable: true
-          allOf:
+          description: >-
+            The typed job result once complete; null until then. Discriminated by
+            `type` (D11): ai_generate_* → AIGenerationResult (content-shaped, story
+            4.3b); ai_grade_writing → AIWritingGradeResult (reviewable Writing-grade
+            suggestion, story 6.2a). The two are structurally disjoint
+            (AIGenerationResult has `sections`; AIWritingGradeResult has `criteria`), so
+            a consumer narrows by job.type; an unknown type falls to a safe default.
+          oneOf:
             - $ref: '#/components/schemas/AIGenerationResult'
-          description: The typed generation result fragment (content-shaped) once complete; null until then.
+            - $ref: '#/components/schemas/AIWritingGradeResult'
         errorDetails:
           type: string
           nullable: true
           description: >-
             On failure, a terminal detail code: invalid_ai_response,
-            stuck_timeout, max_retries_exhausted, generation_failed, or
-            unknown_job_type.
+            invalid_band_scores (ai_grade_writing — the AI proposed out-of-range
+            or off-grid bands, distinct from unparseable output), stuck_timeout,
+            max_retries_exhausted, generation_failed, or unknown_job_type.
         createdAt:
           type: string
           format: date-time

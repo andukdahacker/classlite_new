@@ -157,9 +157,19 @@ func (d *Dispatcher) dispatch(ctx context.Context, exec generated.DBTX, job gene
 // an invalid_ai_response (AC6, never retried) or a missing target (retry can't
 // help). Terminal on retry exhaustion refunds the credit (AC7).
 func (d *Dispatcher) handleFailure(ctx context.Context, q *generated.Queries, job generated.Job, now pgtype.Timestamptz, genErr error) error {
-	// Invalid AI response → terminal immediately, never retried (AC6).
+	// Invalid AI response → terminal immediately, never retried (AC6). The
+	// error_details reason defaults to the invalid_ai_response sentinel, but a
+	// handler MAY carry a distinct terminal sub-reason (6.2a: invalid_band_scores
+	// vs invalid_ai_response) via a *TerminalReasonError so 6.2b can tell them apart
+	// (D8). Classification stays TYPE-BASED (errors.Is on the sentinel) — the reason
+	// label is read only AFTER the terminal classification, never used to classify.
 	if errors.Is(genErr, ErrInvalidAIResponse) {
-		return d.terminalFail(ctx, q, job, now, model.JobErrorInvalidAIResponse)
+		reason := model.JobErrorInvalidAIResponse
+		var tr *TerminalReasonError
+		if errors.As(genErr, &tr) {
+			reason = tr.Reason
+		}
+		return d.terminalFail(ctx, q, job, now, reason)
 	}
 	// Missing/cross-tenant target → terminal; a retry cannot make it appear.
 	var notFound model.NotFoundError

@@ -82,6 +82,38 @@ SET status = 'pending', retry_count = retry_count + 1, error_details = @error_de
     next_attempt_at = @next_attempt_at, started_at = NULL
 WHERE id = @id AND status = 'processing';
 
+-- name: GetLatestCompleteAIGradeJobForSubmission :one
+-- Story 6.2a (D2/D11) — the grading-read aiSuggestion source: the latest COMPLETE
+-- ai_grade_writing job's result for a submission. RLS-scoped on center_id (the
+-- tenant is set before this runs); class-shared, NOT creator-scoped, so a co-teacher
+-- or admin sees the suggestion (authz is enforced in the service). ORDER BY
+-- completed_at DESC, id DESC is a deterministic tiebreak on same-instant completions.
+-- Returns pgx.ErrNoRows when no completed AI grade exists (→ aiSuggestion null).
+SELECT id, center_id, created_by, type, status, params, params_schema_version, result,
+       result_schema_version, error_details, retry_count, max_retries,
+       next_attempt_at, created_at, started_at, completed_at
+FROM jobs
+WHERE type = 'ai_grade_writing'
+  AND status = 'complete'
+  AND params->>'submissionId' = @submission_id
+ORDER BY completed_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetInflightAIGradeJobForSubmission :one
+-- Story 6.2a (D6) — enqueue idempotency: the existing in-flight (pending/processing)
+-- ai_grade_writing job for a submission. Read after a 23505 on
+-- uq_jobs_ai_grade_inflight rolled the enqueue tx back, so the handler can return
+-- the existing job id instead of minting a second job + a second -1 deduct.
+-- RLS-scoped on center_id. There is at most one such row (the partial unique index).
+SELECT id, center_id, created_by, type, status, params, params_schema_version, result,
+       result_schema_version, error_details, retry_count, max_retries,
+       next_attempt_at, created_at, started_at, completed_at
+FROM jobs
+WHERE type = 'ai_grade_writing'
+  AND status IN ('pending', 'processing')
+  AND params->>'submissionId' = @submission_id
+LIMIT 1;
+
 -- name: FindStuckProcessingJobs :many
 -- The 5-minute stuck sweep (AC7): jobs wedged in 'processing' since before
 -- @threshold (@now - StuckJobTimeout, bound via the injected clock). Returns just

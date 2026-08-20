@@ -111,11 +111,12 @@ type gradingStudentResponse struct {
 }
 
 type teacherGradingViewResponse struct {
-	Submission submissionResponse      `json:"submission"`
-	Assignment studentAssignmentView   `json:"assignment"`
-	Student    gradingStudentResponse  `json:"student"`
-	Exercise   service.AttemptExercise `json:"exercise"`
-	Grade      *gradeResponse          `json:"grade"`
+	Submission   submissionResponse          `json:"submission"`
+	Assignment   studentAssignmentView       `json:"assignment"`
+	Student      gradingStudentResponse      `json:"student"`
+	Exercise     service.AttemptExercise     `json:"exercise"`
+	Grade        *gradeResponse              `json:"grade"`
+	AiSuggestion *model.AIWritingGradeResult `json:"aiSuggestion"`
 }
 
 type gradingQueueRowResponse struct {
@@ -164,10 +165,11 @@ func gradeToResponse(g service.GradeView) gradeResponse {
 
 func teacherGradingViewToResponse(v service.TeacherGradingView) teacherGradingViewResponse {
 	out := teacherGradingViewResponse{
-		Submission: submissionToResponse(v.Submission),
-		Assignment: studentAssignmentViewFromRow(v.Assignment),
-		Student:    gradingStudentResponse{ID: v.Student.ID, FullName: v.Student.FullName},
-		Exercise:   v.Exercise,
+		Submission:   submissionToResponse(v.Submission),
+		Assignment:   studentAssignmentViewFromRow(v.Assignment),
+		Student:      gradingStudentResponse{ID: v.Student.ID, FullName: v.Student.FullName},
+		Exercise:     v.Exercise,
+		AiSuggestion: v.AiSuggestion,
 	}
 	if v.Grade != nil {
 		g := gradeToResponse(*v.Grade)

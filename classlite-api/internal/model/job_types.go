@@ -29,6 +29,13 @@ const (
 	// (behind GRADE_RELEASE_EMAIL_ENABLED). Not an AI job — the handler ignores the
 	// gemini client. Idempotency anchor: params.GradeID.
 	JobTypeGradeReleaseEmail JobType = "grade_release_email"
+	// JobTypeAIGradeWriting is the Story 6.2a AI Writing-grade job: it rides the
+	// SAME 4.3a dispatcher (jobs.type is free text, no migration) and produces a
+	// reviewable AIWritingGradeResult SUGGESTION in jobs.result — it NEVER writes a
+	// grades row or UPDATEs the submission (D1); the teacher commits via the 6.1
+	// grade path. Idempotency anchor: params.SubmissionID + the partial unique index
+	// uq_jobs_ai_grade_inflight (D6).
+	JobTypeAIGradeWriting JobType = "ai_grade_writing"
 )
 
 // AIGenerationModeToJobType maps the enqueue request `mode` discriminator to its
@@ -77,6 +84,12 @@ const (
 	// JobErrorInvalidAIResponse marks a job that failed because Gemini returned
 	// unparseable/invalid output — terminal, NOT retried (AC6).
 	JobErrorInvalidAIResponse = "invalid_ai_response"
+	// JobErrorInvalidBandScores marks a 6.2a ai_grade_writing job whose Gemini bands
+	// were out of range / off the 0.5 grid — terminal, distinct from
+	// invalid_ai_response so 6.2b can tell "the AI proposed impossible bands" apart
+	// from "the AI output was malformed/incomplete" (D8). Both wrap the same terminal
+	// sentinel (ErrInvalidAIResponse); only the error_details label differs.
+	JobErrorInvalidBandScores = "invalid_band_scores"
 	// JobErrorStuckTimeout marks a job the 5-minute sweep reclaimed (AC7).
 	JobErrorStuckTimeout = "stuck_timeout"
 	// JobErrorMaxRetries marks a transient job that exhausted its retries (AC5).
@@ -138,4 +151,14 @@ type GradeReleaseEmailParams struct {
 	GradeID      string `json:"gradeId"`
 	SubmissionID string `json:"submissionId"`
 	AssignmentID string `json:"assignmentId"`
+}
+
+// AIGradeWritingParams is the Story 6.2a ai_grade_writing job payload. It carries
+// ONLY the submission id — the center is NEVER read from the payload (SEC-7/R3);
+// the job-row center_id (set by the dispatcher before the handler runs) is the sole
+// tenant trust anchor, and the essay fetch relies on RLS so a mismatched tenant
+// physically returns 0 rows. There is deliberately no CenterIDClaim field: the
+// enqueue never writes one, and the worker resolves the essay by submission id alone.
+type AIGradeWritingParams struct {
+	SubmissionID string `json:"submissionId"`
 }

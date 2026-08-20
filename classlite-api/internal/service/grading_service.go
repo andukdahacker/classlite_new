@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -102,13 +103,17 @@ type GradingStudentRef struct {
 	FullName string
 }
 
-// TeacherGradingView is the AC8 teacher grading read.
+// TeacherGradingView is the AC8 teacher grading read. AiSuggestion (Story 6.2a D2)
+// is the latest COMPLETE ai_grade_writing suggestion for this submission, or nil —
+// teacher-only, class-shared (a co-teacher/admin sees it), and NEVER on the student
+// /result path.
 type TeacherGradingView struct {
-	Submission SubmissionResult
-	Assignment generated.Assignment
-	Student    GradingStudentRef
-	Exercise   AttemptExercise
-	Grade      *GradeView
+	Submission   SubmissionResult
+	Assignment   generated.Assignment
+	Student      GradingStudentRef
+	Exercise     AttemptExercise
+	Grade        *GradeView
+	AiSuggestion *model.AIWritingGradeResult
 }
 
 // GradingQueueRow is one AC17 queue row (assignmentTitle/className are constant for
@@ -169,7 +174,7 @@ func (s *GradingService) GradeWriting(
 			}
 		}
 
-		comments, verr := grading.NormalizeComments(in.Comments, essayTextFromSubmission(sub))
+		comments, verr := grading.NormalizeComments(in.Comments, grading.EssayText(sub.Content))
 		if verr != nil {
 			return verr
 		}
@@ -251,7 +256,7 @@ func (s *GradingService) ReviseGrade(
 		if maxVersion == 0 {
 			return model.NotFoundError{Resource: "grade", ID: submissionID.String(), Code: "GRADE_NOT_FOUND"}
 		}
-		comments, verr := grading.NormalizeComments(in.Comments, essayTextFromSubmission(sub))
+		comments, verr := grading.NormalizeComments(in.Comments, grading.EssayText(sub.Content))
 		if verr != nil {
 			return verr
 		}
@@ -323,6 +328,10 @@ func (s *GradingService) GetSubmissionForGrading(
 		view.Student = GradingStudentRef{ID: uuidStringFromPg(sub.StudentID), FullName: studentRow.FullName}
 		view.Exercise = toAttemptExercise(exContent, uuidFromPg(exRow.ID), exRow.Title, exRow.Skill)
 
+		if serr := populateAISuggestion(ctx, q, submissionID, &view); serr != nil {
+			return serr
+		}
+
 		cg, cgErr := q.GetCurrentGrade(ctx, sub.ID)
 		if cgErr != nil {
 			if errors.Is(cgErr, pgx.ErrNoRows) {
@@ -338,6 +347,34 @@ func (s *GradingService) GetSubmissionForGrading(
 		return nil
 	})
 	return view, err
+}
+
+// populateAISuggestion sets view.AiSuggestion to the latest COMPLETE ai_grade_writing
+// job's result for this submission, or leaves it nil when none exists (Story 6.2a
+// D2). The query is RLS-scoped and class-shared (not creator-scoped), so a co-teacher
+// /admin sees the suggestion; the deterministic ORDER BY completed_at DESC, id DESC
+// picks the newest on same-instant completions (D11).
+func populateAISuggestion(
+	ctx context.Context, q *generated.Queries, submissionID uuid.UUID, view *TeacherGradingView,
+) error {
+	job, err := q.GetLatestCompleteAIGradeJobForSubmission(ctx, []byte(submissionID.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // no completed AI grade → aiSuggestion stays nil
+		}
+		return fmt.Errorf("grading read: latest ai suggestion: %w", err)
+	}
+	var suggestion model.AIWritingGradeResult
+	if uerr := json.Unmarshal(job.Result, &suggestion); uerr != nil {
+		// Degrade, don't fail: a single undecodable suggestion (schema skew across a
+		// rolling deploy, or a legacy/hand-inserted row) must not 500 the core teacher
+		// grading view — leave the AI panel empty and log for correlation.
+		slog.ErrorContext(ctx, "grading read: decode ai suggestion failed; suppressing",
+			"job_id", uuidStringFromPg(job.ID), "error", uerr)
+		return nil
+	}
+	view.AiSuggestion = &suggestion
+	return nil
 }
 
 // ListGradingQueue is the AC17 teacher grading queue for one assignment.
@@ -695,19 +732,6 @@ type criterionScoresWire struct {
 	CoherenceCohesion float64 `json:"coherenceCohesion"`
 	LexicalResource   float64 `json:"lexicalResource"`
 	GrammaticalRange  float64 `json:"grammaticalRange"`
-}
-
-// essayTextFromSubmission probes the writing text out of a submission's content blob
-// (content.text — Story 5.3 plain-text D1). "" when absent (mirrors
-// speakingAudioKeyFromContent).
-func essayTextFromSubmission(sub generated.Submission) string {
-	var probe struct {
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(sub.Content, &probe); err != nil {
-		return ""
-	}
-	return probe.Text
 }
 
 func gradeViewFromGrade(g generated.Grade) (GradeView, error) {
