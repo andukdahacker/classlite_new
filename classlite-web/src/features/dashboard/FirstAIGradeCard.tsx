@@ -1,32 +1,33 @@
 /**
- * FirstAIGradeCard — Story 2-4 AC7.
+ * FirstAIGradeCard — Story 2-4 AC7, upgraded to the UX-DR21 live-first-run FEEL by
+ * Story 6.2b (T6, FD8 / FU-2-4-F).
  *
- * Static "how a real AI grade will look" preview mounted for the Founder
- * and Solo Teacher personas below the FinishSetupCard. Renders a hardcoded
- * fixture (`sampleAIGrade`) — no wire dependency on Epic 6 (FU-2-4-F
- * picks up the live pipeline).
+ * A "Try AI grading" CTA plays an animated ~15–30s progress ("AI đang phân tích bài
+ * viết…") and then reveals the existing `sampleAIGrade` fixture result with a subtle
+ * transition — NO celebratory modal, and `prefers-reduced-motion` is respected
+ * (S-INFO-16): under reduced motion the reveal is instant (no analysing phase, no
+ * animated bar).
  *
- * Design notes:
- *   - Title copy uses "Grading looks like this." [S-STRONG-12 voice
- *     unification — the earlier "See ClassLite AI in action" read as
- *     brochure].
- *   - Inline `<span class="ai-mark">` marker per [A-BLOCKER-4 + S-INFO-17]
- *     — the canonical `<AiMark>` chip is FU-2-4-C.
- *   - NO "See how grading works" CTA [S-STRONG-7 — dishonest dead-link];
- *     the card delivers value inline. FU-2-4-F wires the live click-to-run
- *     once Epic 6 ships.
- *   - Band-ring SVG is `role="img"` with `aria-labelledby` pointing at
- *     both the "Sample band" prefix and the value node (AC16 fold).
- *   - Motion: v1 renders static; when FU-2-4-F wires the live pipeline it
- *     MUST respect `prefers-reduced-motion: reduce` [S-INFO-16].
+ * SIMULATED (RATIFIED, Ducdo 2026-08-20): the run is purely client-side over the
+ * local fixture — it does NOT call `useAiGradeJob` / the enqueue endpoint, seeds no
+ * fake submission, and burns NO credit. The real endpoint needs a real
+ * teacher-of-class Writing `submissionId`; a dashboard demo must not fabricate one.
+ * Real AI grading is experienced in the s23 grading view on real submissions.
  */
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { sampleAIGrade } from '@/features/dashboard/lib/sampleAIGrade'
 
 // Band-ring geometry — radius 42, circumference = 2π·r ≈ 263.9. Rounded
 // to 264 so the SVG dasharray/offset math stays integer-friendly.
 const BAND_RING_CIRCUMFERENCE = 264
 const BAND_SCORE_MAX = 9
+/** The simulated analysis duration (within the ~15–30s UX-DR21 window). */
+const SIMULATED_ANALYSIS_MS = 18_000
+
+type RunPhase = 'idle' | 'analyzing' | 'revealed'
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0
@@ -35,12 +36,19 @@ function clampPercent(value: number): number {
 
 export default function FirstAIGradeCard() {
   const { t } = useTranslation()
-  // Overall band → circumferential offset so the ring visually reflects
-  // the fixture score. Previously hardcoded to 97 (≈63%) — decoupled from
-  // the data, so a fixture update to 7.5 would show 63% fill with a "7.5"
-  // label mismatch.
-  const bandFraction = clampPercent((sampleAIGrade.overallBand / BAND_SCORE_MAX) * 100) / 100
-  const bandDashOffset = BAND_RING_CIRCUMFERENCE * (1 - bandFraction)
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const [phase, setPhase] = useState<RunPhase>('idle')
+
+  // The simulated run's reveal timer — a client-side animation, NOT a fetch (a
+  // permitted useEffect, FW-4). Cleans up on unmount / re-run so nothing leaks.
+  useEffect(() => {
+    if (phase !== 'analyzing') return
+    const timer = setTimeout(() => setPhase('revealed'), SIMULATED_ANALYSIS_MS)
+    return () => clearTimeout(timer)
+  }, [phase])
+
+  // Reduced motion → skip the animated analysing phase entirely (instant reveal).
+  const run = () => setPhase(reducedMotion ? 'revealed' : 'analyzing')
 
   return (
     <section
@@ -64,6 +72,51 @@ export default function FirstAIGradeCard() {
         {t('dashboard.aiSample.essayExcerpt')}
       </blockquote>
 
+      {phase === 'idle' ? (
+        <div className="mt-6">
+          <Button type="button" data-testid="ai-sample-run" onClick={run}>
+            {t('dashboard.aiSample.tryCta')}
+          </Button>
+        </div>
+      ) : null}
+
+      {phase === 'analyzing' ? <AnalyzingProgress /> : null}
+
+      {phase === 'revealed' ? <GradeReveal onRunAgain={() => setPhase('idle')} /> : null}
+    </section>
+  )
+}
+
+/** The simulated "AI is analysing…" progress state (animated bar respects reduced motion). */
+function AnalyzingProgress() {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-6 flex flex-col gap-3" data-testid="ai-sample-analyzing">
+      <p role="status" aria-live="polite" className="text-sm font-medium text-slate-700">
+        {t('dashboard.aiSample.analyzing')}
+      </p>
+      <div
+        role="progressbar"
+        aria-label={t('dashboard.aiSample.progressLabel')}
+        className="h-2 w-full overflow-hidden rounded-full bg-slate-100"
+      >
+        {/* Indeterminate animated fill — motion-safe so reduced-motion users get a
+            static bar (the reveal is instant for them anyway). */}
+        <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 motion-safe:animate-pulse" />
+      </div>
+    </div>
+  )
+}
+
+/** The revealed fixture grade — the band ring + per-criterion breakdown + feedback. */
+function GradeReveal({ onRunAgain }: { onRunAgain: () => void }) {
+  const { t } = useTranslation()
+  // Overall band → circumferential offset so the ring visually reflects the fixture.
+  const bandFraction = clampPercent((sampleAIGrade.overallBand / BAND_SCORE_MAX) * 100) / 100
+  const bandDashOffset = BAND_RING_CIRCUMFERENCE * (1 - bandFraction)
+
+  return (
+    <div data-testid="ai-sample-revealed" className="motion-safe:animate-in motion-safe:fade-in">
       <div className="mt-6 flex flex-wrap items-center gap-6">
         <div className="flex flex-col items-center">
           <svg
@@ -72,14 +125,7 @@ export default function FirstAIGradeCard() {
             className="h-24 w-24"
             viewBox="0 0 100 100"
           >
-            <circle
-              cx="50"
-              cy="50"
-              r="42"
-              fill="none"
-              stroke="var(--cl-line-soft)"
-              strokeWidth="8"
-            />
+            <circle cx="50" cy="50" r="42" fill="none" stroke="var(--cl-line-soft)" strokeWidth="8" />
             <circle
               cx="50"
               cy="50"
@@ -112,9 +158,7 @@ export default function FirstAIGradeCard() {
         <ul className="flex-1 space-y-2">
           {sampleAIGrade.criteria.map((c) => (
             <li key={c.key} className="flex items-center gap-3">
-              <span className="w-32 shrink-0 text-xs font-medium text-slate-600">
-                {c.label}
-              </span>
+              <span className="w-32 shrink-0 text-xs font-medium text-slate-600">{c.label}</span>
               <div
                 className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"
                 role="progressbar"
@@ -128,9 +172,7 @@ export default function FirstAIGradeCard() {
               >
                 <div
                   className="h-full bg-slate-900"
-                  style={{
-                    width: `${clampPercent((c.band / BAND_SCORE_MAX) * 100)}%`,
-                  }}
+                  style={{ width: `${clampPercent((c.band / BAND_SCORE_MAX) * 100)}%` }}
                 />
               </div>
               <span className="w-10 text-right text-sm font-semibold text-slate-900">
@@ -145,11 +187,12 @@ export default function FirstAIGradeCard() {
         {t('dashboard.aiSample.feedbackQuote')}
       </p>
 
-      <footer className="mt-6 border-t border-slate-100 pt-4">
-        <p className="text-xs text-slate-500">
-          {t('dashboard.aiSample.disclaimer')}
-        </p>
+      <footer className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+        <p className="text-xs text-slate-500">{t('dashboard.aiSample.disclaimer')}</p>
+        <Button type="button" size="sm" variant="ghost" data-testid="ai-sample-run-again" onClick={onRunAgain}>
+          {t('dashboard.aiSample.runAgain')}
+        </Button>
       </footer>
-    </section>
+    </div>
   )
 }

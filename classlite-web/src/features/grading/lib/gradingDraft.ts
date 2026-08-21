@@ -10,6 +10,14 @@ import type { CriterionScores } from './computeOverallBand'
 
 export type DraftCommentType = 'error' | 'praise' | 'suggestion'
 
+/** Provenance of a draft comment (Story 6.2b FD2). CLIENT-ONLY — like `id`, it is
+ * NEVER sent (buildGradeInput strips it); the wire `AnchoredComment` is unchanged.
+ * `'ai'` = accepted from an AI suggestion (renders no differently once merged);
+ * `'teacher'` = authored/seeded by the teacher. Used for the merge-dedup on
+ * reopen (an already-merged AI comment is not offered again) — never to gate the
+ * grade write or leak `confidence`/`rationale` (both dropped at the accept map). */
+export type DraftCommentSource = 'ai' | 'teacher'
+
 /** A working comment in the draft. criterion is REQUIRED (one of the four IELTS
  * keys) — the composer no longer offers a null "General" option (chunk-2 review
  * Decision A: the server criterion enum is non-null, so a null was silently
@@ -22,6 +30,9 @@ export interface DraftComment {
   anchorStart: number | null
   anchorEnd: number | null
   text: string
+  /** Client-only provenance (Story 6.2b FD2) — never sent. Legacy drafts persisted
+   * before 6.2b lack it; consumers treat an absent value as `'teacher'`. */
+  source: DraftCommentSource
 }
 
 /**

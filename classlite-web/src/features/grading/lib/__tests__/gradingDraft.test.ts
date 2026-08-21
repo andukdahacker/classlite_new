@@ -15,8 +15,8 @@ afterEach(() => {
 const draft: GradingDraft = {
   scores: { taskResponse: 6, coherenceCohesion: 6.5, lexicalResource: 7, grammaticalRange: 6 },
   comments: [
-    { id: 'c1', type: 'error', criterion: 'taskResponse', anchorStart: 0, anchorEnd: 4, text: 'fix this' },
-    { id: 'c2', type: 'praise', criterion: 'coherenceCohesion', anchorStart: null, anchorEnd: null, text: 'nice' },
+    { id: 'c1', type: 'error', criterion: 'taskResponse', anchorStart: 0, anchorEnd: 4, text: 'fix this', source: 'teacher' },
+    { id: 'c2', type: 'praise', criterion: 'coherenceCohesion', anchorStart: null, anchorEnd: null, text: 'nice', source: 'ai' },
   ],
   composer: null,
 }

@@ -9,6 +9,7 @@
  *     FU-2-4-F's live pipeline)
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { userEvent, within } from 'storybook/test'
 import FirstAIGradeCard from '@/features/dashboard/FirstAIGradeCard'
 
 const meta = {
@@ -65,7 +66,23 @@ export const ReducedMotion: Story = {
     docs: {
       description: {
         story:
-          'v1 renders static content, so `prefers-reduced-motion: reduce` is a no-op. When FU-2-4-F wires the live pipeline the animation MUST honor this parameter.',
+          'Story 6.2b FD8: the CTA now plays a simulated run. Under `prefers-reduced-motion: reduce` the animated analysing phase is skipped and the fixture grade reveals instantly.',
+      },
+    },
+  },
+}
+
+/** The animated analysing phase (after the CTA click) — the ~15–30s simulated run
+ * over the local fixture. No enqueue, no credit (FD8). */
+export const Analyzing: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByTestId('ai-sample-run'))
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: 'After the "Try AI grading" CTA: the simulated analysing progress state.',
       },
     },
   },

@@ -59,6 +59,7 @@ function gradingView(overrides: Partial<TeacherGradingView> = {}): TeacherGradin
     student: { id: 'stu-1', fullName: 'Alice Nguyen' },
     exercise: { id: 'ex-1', title: 'Writing Task 1', skill: 'writing', sections: [], settings: {} as never },
     grade: null,
+    aiSuggestion: null,
     ...overrides,
   }
 }
@@ -206,6 +207,102 @@ describe('WritingGradingPage — server-mirrored overall + grade POST (AC7/AC14)
     expect(capturedBody).toHaveProperty('criterionScores')
     expect(capturedBody).toHaveProperty('comments')
     expect(capturedBody).not.toHaveProperty('overallBand') // server is authoritative (AC7)
+  })
+})
+
+// Story 6.2b (AC1/AC4/AC5/AC8) — the AI suggestion merge into the durable draft, and
+// the wire-strip proof: an accepted AI band + comment reach the grade POST as the
+// plain wire shape — NO `source` / `confidence` / `rationale` (UX-DR22 / FD2).
+type AIWritingGradeResult = components['schemas']['AIWritingGradeResult']
+const AI_GRADE_PATH = `/api/submissions/${SUBMISSION_ID}/ai-grade`
+
+function aiResult(): AIWritingGradeResult {
+  const criterion = (band: number) => ({ band, rationale: `why ${band}`, confidence: 'high' as const })
+  return {
+    criteria: {
+      taskResponse: criterion(6.5),
+      coherenceCohesion: criterion(6),
+      lexicalResource: criterion(7),
+      grammaticalRange: criterion(6.5),
+    },
+    // Anchor 4–9 = "quick" within "The quick brown fox." (the fixture essay).
+    comments: [
+      { type: 'error', criterion: 'taskResponse', anchorStart: 4, anchorEnd: 9, text: 'Tighten this.', confidence: 'high' },
+    ],
+    overallFeedback: null,
+    analyzedWordCount: 4,
+    latencyMs: 1400,
+  }
+}
+
+describe('WritingGradingPage — AI suggestion merge + wire strip (AC4/AC5/AC8)', () => {
+  test('accepted AI bands + comment reach the grade POST with NO source/confidence/rationale', async () => {
+    stubQueue()
+    server.use(
+      http.get(GRADING_PATH, () =>
+        HttpResponse.json({ data: gradingView(), meta: { serverTime: '2026-08-19T00:00:00Z' } }),
+      ),
+      http.post(AI_GRADE_PATH, () =>
+        HttpResponse.json({ data: { jobId: 'job-w-1' }, meta: { serverTime: 't' } }, { status: 202 }),
+      ),
+      http.get('/api/jobs/:jobId', () =>
+        HttpResponse.json(
+          {
+            data: {
+              id: 'job-w-1',
+              type: 'ai_grade_writing',
+              status: 'complete',
+              result: aiResult(),
+              errorDetails: null,
+              createdAt: '2026-08-20T00:00:00Z',
+              startedAt: '2026-08-20T00:00:00Z',
+              completedAt: '2026-08-20T00:00:01Z',
+            },
+            meta: { serverTime: 't' },
+          },
+          { status: 200 },
+        ),
+      ),
+    )
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.post(GRADE_PATH, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ data: gradeResponse, meta: { serverTime: 't' } }, { status: 201 })
+      }),
+    )
+    renderPage()
+    await screen.findByText('Alice Nguyen')
+
+    // Run AI grading through the confirm gate.
+    fireEvent.click(screen.getByTestId('ai-run-grading'))
+    fireEvent.click(await screen.findByTestId('ai-grade-confirm-run'))
+    await screen.findByTestId('ai-grade-suggestion')
+
+    // Accept all four AI bands + the one AI comment into the draft.
+    for (const key of ['taskResponse', 'coherenceCohesion', 'lexicalResource', 'grammaticalRange']) {
+      fireEvent.click(screen.getByTestId(`ai-band-${key}-accept`))
+    }
+    fireEvent.click(screen.getByTestId('ai-comment-ai-c-0-accept'))
+
+    // Release the grade.
+    fireEvent.click(screen.getByTestId('writing-grading-surface-submit'))
+    fireEvent.click(await screen.findByTestId('grading-release-confirm'))
+
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    const body = capturedBody as unknown as {
+      criterionScores: Record<string, number>
+      comments: Array<Record<string, unknown>>
+    }
+    // The accepted AI bands landed in the draft → the grade POST.
+    expect(body.criterionScores.lexicalResource).toBe(7)
+    // The accepted AI comment is the plain wire shape — no AI-only fields (AC8).
+    const comment = body.comments[0]
+    expect(Object.keys(comment).sort()).toEqual(['anchorEnd', 'anchorStart', 'criterion', 'text', 'type'])
+    expect(comment).not.toHaveProperty('source')
+    expect(comment).not.toHaveProperty('confidence')
+    expect(comment).not.toHaveProperty('rationale')
+    expect(comment.text).toBe('Tighten this.')
   })
 })
 

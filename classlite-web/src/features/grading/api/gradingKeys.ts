@@ -14,4 +14,10 @@ export const gradingKeys = {
     [...gradingKeys.all, 'mutation', 'grade', submissionId] as const,
   reviseMutation: (submissionId: string) =>
     [...gradingKeys.all, 'mutation', 'revise', submissionId] as const,
+  // Story 6.2b (T5, FD1): the ai-grade ENQUEUE mutation key. The subsequent
+  // poll reuses the shared `jobKeys.detail(jobId)` (['jobs', jobId]) — no new
+  // factory member for the poll, so the two ai-grade consumers (this + the
+  // 4.3b generation hook) share the one job-poll cache slot.
+  aiGradeMutation: (submissionId: string) =>
+    [...gradingKeys.all, 'mutation', 'aiGrade', submissionId] as const,
 }

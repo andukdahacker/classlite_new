@@ -31,3 +31,7 @@ export {
   type ExerciseListScope,
   type ExerciseListParams,
 } from './api/exercisesKeys'
+// The shared async-job poll key (`['jobs', jobId]`, architecture.md:452). Exported
+// so cross-feature ai-job consumers (Story 6.2b's grading ai-grade poll) reuse the
+// exact key via the barrel (TS-7) rather than reaching into the deep path.
+export { jobKeys } from './api/jobKeys'

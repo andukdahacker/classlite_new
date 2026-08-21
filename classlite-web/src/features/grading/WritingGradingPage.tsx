@@ -39,6 +39,7 @@ import { useGradingSubmission, type TeacherGradingView } from './api/useGradingS
 import { useGradeSubmission, type GradeInput } from './api/useGradeSubmission'
 import { useReviseGrade } from './api/useReviseGrade'
 import { useGradingQueue, type GradingQueueRow } from './api/useGradingQueue'
+import { AiGradePanel, type AcceptedAiComment } from './components/AiGradePanel'
 import {
   CRITERION_KEYS,
   isValidBand,
@@ -89,6 +90,7 @@ function draftFromGrade(view: TeacherGradingView): () => GradingDraft {
       anchorStart: c.anchorStart,
       anchorEnd: c.anchorEnd,
       text: c.text,
+      source: 'teacher', // seeded from a released grade (Story 6.2b FD2)
     }))
     return { scores, comments, composer: null }
   }
@@ -168,7 +170,21 @@ function GradingWorkspace({
   const alreadyGraded = view.submission.status === 'graded'
 
   const seed = useMemo(() => draftFromGrade(view), [view])
-  const { draft, setDraft } = useGradingDraft(submissionId, alreadyGraded ? seed : undefined)
+  const { draft, setDraft: persistDraft } = useGradingDraft(submissionId, alreadyGraded ? seed : undefined)
+
+  // "Touched this session" — flipped by ANY draft mutation through the wrapped setter.
+  // `draftDirty` (the AC12 ready-overlay gate) must mean "the teacher started working
+  // this session", NOT "the draft has content": a revise/reopen seeded from a released
+  // grade has scores+comments but no in-progress work, and would otherwise spuriously
+  // hide the first AI result behind the Review? overlay (code-review 2026-08-21).
+  const [draftTouched, setDraftTouched] = useState(false)
+  const setDraft = useCallback(
+    (updater: (prev: GradingDraft) => GradingDraft) => {
+      setDraftTouched(true)
+      persistDraft(updater)
+    },
+    [persistDraft],
+  )
 
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -291,6 +307,7 @@ function GradingWorkspace({
             anchorStart: c.anchorStart,
             anchorEnd: c.anchorEnd,
             text: c.text.trim(),
+            source: 'teacher', // teacher-authored via the composer (Story 6.2b FD2)
           },
         ],
         composer: null,
@@ -311,6 +328,63 @@ function GradingWorkspace({
     (key: keyof CriterionScores, value: number) =>
       setDraft((prev) => ({ ...prev, scores: { ...prev.scores, [key]: value } })),
     [setDraft],
+  )
+
+  // --- AI suggestion merge into the durable draft (Story 6.2b FD2/FD5) ---
+  // Accepting an AI band writes the band NUMBER only into draft.scores (rationale +
+  // confidence dropped at this boundary); the overall recomputes via the existing math.
+  const acceptAiBand = useCallback(
+    (key: keyof CriterionScores, band: number) => setScore(key, band),
+    [setScore],
+  )
+  // Accepting an AI comment appends a DraftComment{ source:'ai' }; confidence/rationale
+  // are absent from the payload so they can never reach `grades`. Dedup on reopen
+  // (AC9): an identical already-merged AI comment is not appended again.
+  const acceptAiComment = useCallback(
+    (comment: AcceptedAiComment) =>
+      setDraft((prev) => {
+        const alreadyMerged = prev.comments.some(
+          (existing) =>
+            existing.source === 'ai' &&
+            existing.criterion === comment.criterion &&
+            existing.text === comment.text &&
+            existing.anchorStart === comment.anchorStart &&
+            existing.anchorEnd === comment.anchorEnd,
+        )
+        if (alreadyMerged) return prev
+        return {
+          ...prev,
+          comments: [
+            ...prev.comments,
+            {
+              // A collision-free id: the prior `ai-${length}-${textLen}` scheme could
+              // repeat after a delete (length is not monotonic), producing a duplicate
+              // React key (code-review 2026-08-21).
+              id: `ai-${crypto.randomUUID()}`,
+              type: comment.type,
+              criterion: comment.criterion,
+              anchorStart: comment.anchorStart,
+              anchorEnd: comment.anchorEnd,
+              text: comment.text,
+              source: 'ai',
+            },
+          ],
+        }
+      }),
+    [setDraft],
+  )
+
+  // Gates the non-blocking "ready — Review?" overlay so a completed run never clobbers
+  // in-progress work (AC12). Dirty = the teacher edited this session OR a composer is
+  // open (unsaved work) — a purely seeded revise/reopen draft is NOT dirty.
+  const draftDirty = draftTouched || draft.composer !== null
+
+  // Criteria already scored in the durable draft — a band present here renders as
+  // "Applied" in the AI panel (never re-offered), so a reopen can't clobber a manual
+  // edit of that band (code-review 2026-08-21).
+  const appliedBandCriteria = useMemo(
+    () => new Set(CRITERION_KEYS.filter((key) => draft.scores[key] !== undefined)),
+    [draft.scores],
   )
 
   const buildGradeInput = useCallback((): GradeInput => {
@@ -435,6 +509,15 @@ function GradingWorkspace({
       </p>
 
       <BandInputPanel scores={draft.scores} onChange={setScore} math={math} />
+
+      <AiGradePanel
+        submissionId={submissionId}
+        rehydratedSuggestion={view.aiSuggestion}
+        draftDirty={draftDirty}
+        appliedBandCriteria={appliedBandCriteria}
+        onAcceptBand={acceptAiBand}
+        onAcceptComment={acceptAiComment}
+      />
 
       <div
         ref={surfaceRef}
