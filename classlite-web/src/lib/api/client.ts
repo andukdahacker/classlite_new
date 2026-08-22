@@ -1699,6 +1699,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fresh presigned GET for a speaking submission's recording — teacher grading (story 6.3a — AC2/D5)
+         * @description Teacher/admin/owner only, teacher-of-class scoped (assertTeacherOfSubmissionClass
+         *     — else 403 FORBIDDEN; a same-tenant WRONG-teacher gets 403 and mints NOTHING,
+         *     the novel R9 authz surface). Mints a fresh 5-minute presigned GET (SEC-8
+         *     prefix-guarded, via StorageService.PresignGetOwned) for the speaking
+         *     submission's audioKey so a play-intent after the inline first-paint URL has
+         *     aged past ~4 minutes never hits a dead R2 URL — mirrors the student
+         *     GET /api/assignments/{assignmentId}/submission/audio but with teacher-of-class
+         *     authz. A non-speaking / empty-audioKey submission → 404 SUBMISSION_NOT_FOUND.
+         *     cross-tenant/absent resolved within RLS → 404 (no oracle). Never a PUT; the URL
+         *     is never logged (A10).
+         */
+        get: operations["getTeacherSubmissionAudioUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3166,6 +3195,16 @@ export interface components {
             /** @description Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid). */
             grammaticalRange: number;
         };
+        SpeakingCriterionScores: {
+            /** @description Fluency & Coherence band (1.0–9.0, 0.5 grid). */
+            fluencyCoherence: number;
+            /** @description Lexical Resource band (1.0–9.0, 0.5 grid). */
+            lexicalResource: number;
+            /** @description Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid). */
+            grammaticalRange: number;
+            /** @description Pronunciation band (1.0–9.0, 0.5 grid). */
+            pronunciation: number;
+        };
         AnchoredComment: {
             /** @enum {string} */
             type: "error" | "praise" | "suggestion";
@@ -3189,6 +3228,27 @@ export interface components {
             /** @description Why the grade is being revised (audited as grade.revised). */
             reason: string;
         };
+        TimestampedComment: {
+            /** @enum {string} */
+            type: "error" | "praise" | "suggestion";
+            /** @enum {string} */
+            criterion: "fluencyCoherence" | "lexicalResource" | "grammaticalRange" | "pronunciation";
+            /** @description Milliseconds into the recording, or null for a general (unpinned) comment. */
+            timestampMs: number | null;
+            text: string;
+        };
+        SpeakingGradeInput: {
+            criterionScores: components["schemas"]["SpeakingCriterionScores"];
+            comments: components["schemas"]["TimestampedComment"][];
+            feedback: string | null;
+        };
+        ReviseSpeakingGradeInput: {
+            criterionScores: components["schemas"]["SpeakingCriterionScores"];
+            comments: components["schemas"]["TimestampedComment"][];
+            feedback: string | null;
+            /** @description Why the grade is being revised (audited as grade.revised). */
+            reason: string;
+        };
         Grade: {
             /** Format: uuid */
             id: string;
@@ -3196,10 +3256,10 @@ export interface components {
             submissionId: string;
             /** @description Grade version (1 for the initial grade, N+1 per revision). */
             version: number;
-            criterionScores: components["schemas"]["CriterionScores"];
+            criterionScores: components["schemas"]["CriterionScores"] | components["schemas"]["SpeakingCriterionScores"];
             /** @description Server-authoritative overall band (IELTS half-rounding of the four criteria). */
             overallBand: number;
-            comments: components["schemas"]["AnchoredComment"][];
+            comments: (components["schemas"]["AnchoredComment"] | components["schemas"]["TimestampedComment"])[];
             feedback: string | null;
             /**
              * Format: uuid
@@ -3236,6 +3296,13 @@ export interface components {
             grade: components["schemas"]["Grade"] | null;
             /** @description The latest COMPLETE ai_grade_writing suggestion for this submission, or null when none (story 6.2a D2). Rehydrates the 6.2b review UI on reopen. */
             aiSuggestion: components["schemas"]["AIWritingGradeResult"] | null;
+            /** @description A fresh 5-min presigned GET for a speaking submission's recording, or null (non-speaking / empty audioKey). Story 6.3a (D5, SEC-8). */
+            audioUrl: string | null;
+            /**
+             * @description hasAudio for a speaking submission with a non-empty audioKey; none otherwise. No server HeadObject (D6).
+             * @enum {string}
+             */
+            audioStatus: "hasAudio" | "none";
         };
         GradingQueueRow: {
             /** Format: uuid */
@@ -9763,7 +9830,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GradeInput"];
+                "application/json": components["schemas"]["GradeInput"] | components["schemas"]["SpeakingGradeInput"];
             };
         };
         responses: {
@@ -9803,7 +9870,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted) */
+            /** @description SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted) / SUBMISSION_SKILL_MISMATCH (body shape does not match the submission's skill — story 6.3a D2/SEC-7) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9843,7 +9910,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviseGradeInput"];
+                "application/json": components["schemas"]["ReviseGradeInput"] | components["schemas"]["ReviseSpeakingGradeInput"];
             };
         };
         responses: {
@@ -9883,7 +9950,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description CONFLICT (concurrent revise lost the version race — retry) */
+            /** @description CONFLICT (concurrent revise lost the version race — retry) / SUBMISSION_SKILL_MISMATCH (body shape does not match the submission's skill — story 6.3a D2/SEC-7) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10002,6 +10069,57 @@ export interface operations {
                 };
             };
             /** @description CLASS_NOT_FOUND / ASSIGNMENT_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getTeacherSubmissionAudioUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classId: string;
+                assignmentId: string;
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A fresh 5-minute presigned GET url for the recording */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAudioUrl"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (not teacher of the class) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or no audio for a non-speaking submission) */
             404: {
                 headers: {
                     [name: string]: unknown;

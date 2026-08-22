@@ -5190,8 +5190,16 @@ paths:
         required: true
         content:
           application/json:
+            # oneOf writing-or-speaking (story 6.3a — D10). The server resolves the
+            # submission's exercise.skill (SEC-7, never a client field), strict-decodes
+            # the body into the matching member, and dispatches GradeWriting /
+            # GradeSpeaking. A body whose shape does not match the resolved skill → 409
+            # SUBMISSION_SKILL_MISMATCH. openapi-zod-client is disabled, so this emits a
+            # clean `GradeInput | SpeakingGradeInput` TS union (zero codegen risk).
             schema:
-              $ref: '#/components/schemas/GradeInput'
+              oneOf:
+                - $ref: '#/components/schemas/GradeInput'
+                - $ref: '#/components/schemas/SpeakingGradeInput'
       responses:
         "201":
           description: Grade created + released
@@ -5218,7 +5226,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "409":
-          description: SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted)
+          description: SUBMISSION_ALREADY_GRADED (already graded) / SUBMISSION_NOT_GRADABLE (not yet submitted) / SUBMISSION_SKILL_MISMATCH (body shape does not match the submission's skill — story 6.3a D2/SEC-7)
           content:
             application/json:
               schema:
@@ -5262,8 +5270,12 @@ paths:
         required: true
         content:
           application/json:
+            # oneOf writing-or-speaking revise (story 6.3a — D10), same skill-branch
+            # discrimination as POST …/grade.
             schema:
-              $ref: '#/components/schemas/ReviseGradeInput'
+              oneOf:
+                - $ref: '#/components/schemas/ReviseGradeInput'
+                - $ref: '#/components/schemas/ReviseSpeakingGradeInput'
       responses:
         "201":
           description: New grade version created + released
@@ -5290,7 +5302,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "409":
-          description: CONFLICT (concurrent revise lost the version race — retry)
+          description: CONFLICT (concurrent revise lost the version race — retry) / SUBMISSION_SKILL_MISMATCH (body shape does not match the submission's skill — story 6.3a D2/SEC-7)
           content:
             application/json:
               schema:
@@ -5399,6 +5411,68 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "404":
           description: CLASS_NOT_FOUND / ASSIGNMENT_NOT_FOUND (absent, cross-tenant, or not the teacher's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio:
+    get:
+      operationId: getTeacherSubmissionAudioUrl
+      summary: Fresh presigned GET for a speaking submission's recording — teacher grading (story 6.3a — AC2/D5)
+      description: |
+        Teacher/admin/owner only, teacher-of-class scoped (assertTeacherOfSubmissionClass
+        — else 403 FORBIDDEN; a same-tenant WRONG-teacher gets 403 and mints NOTHING,
+        the novel R9 authz surface). Mints a fresh 5-minute presigned GET (SEC-8
+        prefix-guarded, via StorageService.PresignGetOwned) for the speaking
+        submission's audioKey so a play-intent after the inline first-paint URL has
+        aged past ~4 minutes never hits a dead R2 URL — mirrors the student
+        GET /api/assignments/{assignmentId}/submission/audio but with teacher-of-class
+        authz. A non-speaking / empty-audioKey submission → 404 SUBMISSION_NOT_FOUND.
+        cross-tenant/absent resolved within RLS → 404 (no oracle). Never a PUT; the URL
+        is never logged (A10).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A fresh 5-minute presigned GET url for the recording
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAudioUrl'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff) / FORBIDDEN (not teacher of the class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent, cross-tenant, or no audio for a non-speaking submission)
           content:
             application/json:
               schema:
@@ -8596,6 +8670,30 @@ components:
           type: number
           description: Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid).
 
+    SpeakingCriterionScores:
+      type: object
+      # The four IELTS Speaking criterion band scores (story 6.3a — D3). A TWIN of
+      # CriterionScores (a distinct key set: fluencyCoherence/pronunciation vs
+      # taskResponse/coherenceCohesion — the writing struct's named fields are not
+      # reusable). Each is 1.0–9.0 on a 0.5 grid (validated server-side, AC5). All
+      # four keys REQUIRED. camelCase keys map to the criterion_scores JSONB (reused
+      # UNCHANGED — no migration, D1). lexicalResource/grammaticalRange share their
+      # spelling with the writing keys.
+      required: [fluencyCoherence, lexicalResource, grammaticalRange, pronunciation]
+      properties:
+        fluencyCoherence:
+          type: number
+          description: Fluency & Coherence band (1.0–9.0, 0.5 grid).
+        lexicalResource:
+          type: number
+          description: Lexical Resource band (1.0–9.0, 0.5 grid).
+        grammaticalRange:
+          type: number
+          description: Grammatical Range & Accuracy band (1.0–9.0, 0.5 grid).
+        pronunciation:
+          type: number
+          description: Pronunciation band (1.0–9.0, 0.5 grid).
+
     AnchoredComment:
       type: object
       # A teacher comment pinned to a span of the student's essay (or the whole
@@ -8660,12 +8758,84 @@ components:
           type: string
           description: Why the grade is being revised (audited as grade.revised).
 
+    TimestampedComment:
+      type: object
+      # A teacher comment pinned to a moment on the student's speaking recording (or a
+      # general/unpinned note) — story 6.3a (D4). timestampMs is milliseconds into the
+      # audio, or null for a general comment (the analog of writing's whole-essay null
+      # anchor). On persist, NormalizeTimestampComments demotes a negative or absurdly
+      # out-of-range pin to null (general) but NEVER drops it, and a plausible pin PAST
+      # a rounded-down persisted duration is KEPT (lenient max(persisted,maxPin)+1s
+      # bound — the FE-decoded-vs-BE-persisted divergence). A DISTINCT shape from the
+      # writing text-offset AnchoredComment. text is teacher free text — escaped on
+      # render (XSS), never trusted as HTML.
+      required: [type, criterion, timestampMs, text]
+      properties:
+        type:
+          type: string
+          enum: [error, praise, suggestion]
+        criterion:
+          type: string
+          enum: [fluencyCoherence, lexicalResource, grammaticalRange, pronunciation]
+        timestampMs:
+          type: integer
+          nullable: true
+          description: Milliseconds into the recording, or null for a general (unpinned) comment.
+        text:
+          type: string
+
+    SpeakingGradeInput:
+      type: object
+      # The SPEAKING grade write body (story 6.3a — AC8). Server discriminates the
+      # grade branch from the submission's exercise.skill (SEC-7 — NEVER a client
+      # field); a body whose shape does not match the resolved skill → 409
+      # SUBMISSION_SKILL_MISMATCH. overallBand is NOT a request field — the server
+      # computes it from the four speaking criteria (OverallBandFromFour, AC5).
+      # feedback is nullable teacher free text.
+      required: [criterionScores, comments, feedback]
+      properties:
+        criterionScores:
+          $ref: '#/components/schemas/SpeakingCriterionScores'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimestampedComment'
+        feedback:
+          type: string
+          nullable: true
+
+    ReviseSpeakingGradeInput:
+      type: object
+      # The speaking revise body (story 6.3a — AC8) — SpeakingGradeInput + a required
+      # reason (audited).
+      required: [criterionScores, comments, feedback, reason]
+      properties:
+        criterionScores:
+          $ref: '#/components/schemas/SpeakingCriterionScores'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimestampedComment'
+        feedback:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          description: Why the grade is being revised (audited as grade.revised).
+
     Grade:
       type: object
       # The teacher-facing grade wire (AC4 response). overallBand is server-computed
       # (IELTS half-rounding). releasedAt is set on release (Writing 6.1); gradedBy
       # is the teacher's id (teacher view only — the student StudentGradeView omits
       # it). All fields present + explicit nulls (GO-5).
+      #
+      # criterionScores + comments are SKILL-POLYMORPHIC (story 6.3a): a Writing grade
+      # carries the four writing keys + text-anchored comments, a Speaking grade the four
+      # speaking keys + timestamp-pinned comments. Modelled as a oneOf so the generated
+      # client is a discriminable union (openapi-zod-client is disabled repo-wide, so
+      # this adds no runtime-validation risk); consumers narrow on the disjoint keys
+      # (taskResponse vs fluencyCoherence; anchorStart vs timestampMs).
       required: [id, submissionId, version, criterionScores, overallBand, comments, feedback, gradedBy, releasedAt, createdAt]
       properties:
         id:
@@ -8678,14 +8848,18 @@ components:
           type: integer
           description: Grade version (1 for the initial grade, N+1 per revision).
         criterionScores:
-          $ref: '#/components/schemas/CriterionScores'
+          oneOf:
+            - $ref: '#/components/schemas/CriterionScores'
+            - $ref: '#/components/schemas/SpeakingCriterionScores'
         overallBand:
           type: number
           description: Server-authoritative overall band (IELTS half-rounding of the four criteria).
         comments:
           type: array
           items:
-            $ref: '#/components/schemas/AnchoredComment'
+            oneOf:
+              - $ref: '#/components/schemas/AnchoredComment'
+              - $ref: '#/components/schemas/TimestampedComment'
         feedback:
           type: string
           nullable: true
@@ -8741,7 +8915,13 @@ components:
       # grade is the latest version or null when ungraded. aiSuggestion is the latest
       # COMPLETE ai_grade_writing suggestion or null (story 6.2a D2) — teacher-only,
       # class-shared (a co-teacher/admin sees it), absent from the student /result path.
-      required: [submission, assignment, student, exercise, grade, aiSuggestion]
+      # audioUrl/audioStatus (story 6.3a — D5/D6): for a SPEAKING submission the read
+      # mints a fresh 5-min presigned GET (SEC-8, via StorageService.PresignGetOwned,
+      # OUTSIDE the read tx — PERF-1) so the teacher's waveform player can decode
+      # immediately. audioStatus is hasAudio (non-empty audioKey) or none (non-speaking
+      # / empty key) — no server HeadObject probe (D6): the FE classifies a missing R2
+      # object from the signed GET (404 → "re-record"; transient 5xx → inline retry).
+      required: [submission, assignment, student, exercise, grade, aiSuggestion, audioUrl, audioStatus]
       properties:
         submission:
           $ref: '#/components/schemas/Submission'
@@ -8761,6 +8941,14 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AIWritingGradeResult'
+        audioUrl:
+          type: string
+          nullable: true
+          description: A fresh 5-min presigned GET for a speaking submission's recording, or null (non-speaking / empty audioKey). Story 6.3a (D5, SEC-8).
+        audioStatus:
+          type: string
+          enum: [hasAudio, none]
+          description: hasAudio for a speaking submission with a non-empty audioKey; none otherwise. No server HeadObject (D6).
 
     GradingQueueRow:
       type: object

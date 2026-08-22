@@ -847,11 +847,13 @@ const baseRoutes: RouteObject[] = [
     loader: ({ params }: LoaderFunctionArgs) =>
       redirect(`/assignments/${params.assignmentId}/submission`),
   },
-  // Story 6.1 — /classes/:id/grading/:aid/:sid teacher Writing grading surface (s23,
-  // desktop-only). A sibling FULL-BLEED boundary OUTSIDE `AppLayout` (attempt-route
-  // precedent). Staff-gated (owner/admin/teacher); teacher-of-class narrowing is
-  // enforced server-side. Its OWN lazy chunk (deep named import) so no student code
-  // loads it. key={sid} on the page re-seeds the per-submission draft on queue nav.
+  // Story 6.1 + 6.3a — /classes/:id/grading/:aid/:sid teacher grading surface (s23
+  // Writing / s24 Speaking, desktop-only). A sibling FULL-BLEED boundary OUTSIDE
+  // `AppLayout` (attempt-route precedent). Staff-gated (owner/admin/teacher);
+  // teacher-of-class narrowing is enforced server-side. The GradingRoute dispatcher
+  // fetch-before-dispatches by exercise.skill (route resolution can't know the skill),
+  // dynamic-importing WritingGradingPage vs SpeakingGradingPage into separate chunks so
+  // no student code loads either (D8). key={sid} on the page re-seeds the draft on nav.
   {
     path: '/classes/:id/grading/:aid/:sid',
     lazy: async () => {
@@ -872,8 +874,8 @@ const baseRoutes: RouteObject[] = [
       {
         index: true,
         lazy: async () => {
-          const { WritingGradingPage } = await import('@/features/grading')
-          return { Component: WritingGradingPage }
+          const { GradingRoute } = await import('@/features/grading')
+          return { Component: GradingRoute }
         },
       },
     ],

@@ -577,7 +577,9 @@ func main() {
 	// (RequireRole → INSUFFICIENT_ROLE for students); teacher-of-class narrowing +
 	// all grading rules live in-service. The write paths are atomic (grade tx =
 	// DB-writes-only + outbox row; event/email post-commit off the dispatcher).
-	gradingSvc := service.NewGradingService(pool, auditSvc, clock.RealClock{})
+	// WithStorage (story 6.3a — D5) mints the teacher audio presign on the Speaking
+	// grading read + the on-demand refresh route (SEC-8 PresignGetOwned).
+	gradingSvc := service.NewGradingService(pool, auditSvc, clock.RealClock{}).WithStorage(uploadStorage)
 	gradingHandler := handler.NewGradingHandler(gradingSvc, clock.RealClock{})
 	requireGradingStaff := middleware.RequireRole("owner", "admin", "teacher")
 	gradingChain := func(h middleware.HandlerWithError) http.Handler {
@@ -593,6 +595,8 @@ func main() {
 	mux.Handle("POST /api/submissions/{submissionId}/grade/revise", gradingChain(gradingHandler.Revise))
 	mux.Handle("GET /api/submissions/{submissionId}/grading", gradingChain(gradingHandler.GetGrading))
 	mux.Handle("GET /api/classes/{classId}/grading-queue", gradingChain(gradingHandler.GetQueue))
+	// Story 6.3a — teacher on-demand audio-refresh for Speaking grading (D5).
+	mux.Handle("GET /api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio", gradingChain(gradingHandler.GetTeacherAudio))
 
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced

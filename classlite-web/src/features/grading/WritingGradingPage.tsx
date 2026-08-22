@@ -80,18 +80,28 @@ function readEssayText(view: TeacherGradingView): string {
 function draftFromGrade(view: TeacherGradingView): () => GradingDraft {
   return () => {
     if (!view.grade) return emptyGradingDraft()
-    const scores: Partial<CriterionScores> = { ...view.grade.criterionScores }
-    const comments: DraftComment[] = view.grade.comments.map((c, i) => ({
-      id: `g-${i}`,
-      type: c.type,
-      // The server criterion enum is non-null (Decision A) — fall back to the first
-      // key only for defensive typing on legacy/empty data.
-      criterion: (c.criterion as keyof CriterionScores) ?? CRITERION_KEYS[0],
-      anchorStart: c.anchorStart,
-      anchorEnd: c.anchorEnd,
-      text: c.text,
-      source: 'teacher', // seeded from a released grade (Story 6.2b FD2)
-    }))
+    // criterionScores + comments are a skill-polymorphic union on the wire (Grade
+    // oneOf). This is always a writing grade on this page; narrow on the disjoint
+    // writing keys to stay type-safe against the union without a cast.
+    const cs = view.grade.criterionScores
+    const scores: Partial<CriterionScores> = 'taskResponse' in cs ? { ...cs } : {}
+    const comments: DraftComment[] = view.grade.comments.flatMap((c, i) =>
+      'anchorStart' in c
+        ? [
+            {
+              id: `g-${i}`,
+              type: c.type,
+              // The server criterion enum is non-null (Decision A) — fall back to the
+              // first key only for defensive typing on legacy/empty data.
+              criterion: (c.criterion as keyof CriterionScores) ?? CRITERION_KEYS[0],
+              anchorStart: c.anchorStart,
+              anchorEnd: c.anchorEnd,
+              text: c.text,
+              source: 'teacher' as const, // seeded from a released grade (Story 6.2b FD2)
+            },
+          ]
+        : [],
+    )
     return { scores, comments, composer: null }
   }
 }

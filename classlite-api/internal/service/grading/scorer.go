@@ -75,8 +75,19 @@ func (b Band) Float() float64 {
 // band × 8 is an exact multiple of 4, so the sum is a multiple of 4 and the mean
 // in eighths (sum/4) is an exact integer — the division never truncates real data.
 func OverallBand(cs CriterionScores) Band {
+	return OverallBandFromFour(cs.all())
+}
+
+// OverallBandFromFour is the skill-agnostic core of OverallBand (story 6.3a — D1). It
+// scores any four half-band criteria (Writing OR Speaking) with the identical IELTS
+// half-rounding rule, entirely in integer eighth-band space. OverallBand delegates
+// here so the two never diverge; the Speaking grade path calls it directly (packing
+// speaking bands into the writing struct — reuse-by-abuse — is REJECTED, D1).
+//
+// Precondition: each element passed Validate{,Speaking}CriterionScores (a half-band).
+func OverallBandFromFour(bands [4]float64) Band {
 	sumEighths := 0
-	for _, band := range cs.all() {
+	for _, band := range bands {
 		sumEighths += int(math.Round(band * 8))
 	}
 	meanEighths := sumEighths / 4 // exact: sumEighths is a multiple of 4

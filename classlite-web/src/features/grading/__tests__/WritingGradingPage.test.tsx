@@ -60,6 +60,10 @@ function gradingView(overrides: Partial<TeacherGradingView> = {}): TeacherGradin
     exercise: { id: 'ex-1', title: 'Writing Task 1', skill: 'writing', sections: [], settings: {} as never },
     grade: null,
     aiSuggestion: null,
+    // Story 6.3a added audioUrl/audioStatus to TeacherGradingView (a writing
+    // submission has no recording → none / null).
+    audioUrl: null,
+    audioStatus: 'none',
     ...overrides,
   }
 }

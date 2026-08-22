@@ -57,21 +57,32 @@ const (
 
 	initialGradeVersion = 1
 
-	// skillWriting is the only exercise skill this grading surface accepts (s23 is
-	// Writing-only; Speaking is 6.3, quiz auto-grading is 6.4).
-	skillWriting = "writing"
+	// skillWriting / skillSpeaking are the exercise skills this grading surface grades
+	// (the grade path branches by the submission's DB skill — SEC-7, never a client
+	// field). quiz auto-grading is 6.4.
+	skillWriting  = "writing"
+	skillSpeaking = "speaking"
 )
 
-// GradingService owns the Writing grading write + read paths.
+// GradingService owns the Writing + Speaking grading write + read paths.
 type GradingService struct {
-	db    AuthDB
-	audit AuditLogger
-	clk   clock.Clock
+	db      AuthDB
+	audit   AuditLogger
+	clk     clock.Clock
+	storage StorageService // story 6.3a (D5) — mints teacher audio presigns; nil until WithStorage
 }
 
 // NewGradingService constructs a GradingService.
 func NewGradingService(db AuthDB, audit AuditLogger, clk clock.Clock) *GradingService {
 	return &GradingService{db: db, audit: audit, clk: clk}
+}
+
+// WithStorage injects the StorageService used to mint teacher audio presigns for
+// Speaking grading (story 6.3a — D5; GradingService had no storage before). Returns
+// the same service for a fluent main.go wiring, mirroring SubmissionService.WithStorage.
+func (s *GradingService) WithStorage(storage StorageService) *GradingService {
+	s.storage = storage
+	return s
 }
 
 // GradeWriteInput is a validated-at-the-handler grade/revise payload. OverallBand is
@@ -84,6 +95,12 @@ type GradeWriteInput struct {
 }
 
 // GradeView is the domain grade returned to the teacher (parsed from the row).
+// ScoresRaw/CommentsRaw carry the criterion_scores / comments JSONB VERBATIM so the
+// grade response is skill-agnostic (story 6.3a — a Speaking grade's criterion_scores
+// hold the four speaking keys + timestamp-pinned comments, a Writing grade's hold the
+// four writing keys + text-anchored comments). Scores/Comments remain the typed
+// Writing view (populated for Writing; zero/best-effort for Speaking — the response
+// passes the raw bytes through, never the typed fields).
 type GradeView struct {
 	ID           string
 	SubmissionID string
@@ -91,6 +108,8 @@ type GradeView struct {
 	Scores       grading.CriterionScores
 	OverallBand  float64
 	Comments     []grading.Comment
+	ScoresRaw    json.RawMessage
+	CommentsRaw  json.RawMessage
 	Feedback     *string
 	GradedBy     string
 	ReleasedAt   *time.Time
@@ -114,7 +133,19 @@ type TeacherGradingView struct {
 	Exercise     AttemptExercise
 	Grade        *GradeView
 	AiSuggestion *model.AIWritingGradeResult
+	// AudioUrl/AudioStatus (story 6.3a — D5/D6): for a Speaking submission the read
+	// mints a fresh 5-min presigned GET (SEC-8, OUTSIDE the read tx — PERF-1);
+	// AudioStatus is "hasAudio" (non-empty audioKey) or "none" (no HeadObject — D6).
+	AudioUrl    *string
+	AudioStatus string
 }
+
+// Audio status values for TeacherGradingView (D6 — FE classifies a missing object
+// from the signed GET; the server does no HeadObject probe).
+const (
+	audioStatusHasAudio = "hasAudio"
+	audioStatusNone     = "none"
+)
 
 // GradingQueueRow is one AC17 queue row (assignmentTitle/className are constant for
 // the queue, stamped by the service).
@@ -283,6 +314,177 @@ func (s *GradingService) ReviseGrade(
 	return out, err
 }
 
+// SpeakingGradeWriteInput is a validated-at-the-handler speaking grade/revise payload
+// (story 6.3a). OverallBand is NEVER carried (AC5). Reason is required for revise,
+// ignored for grade. The Speaking twin of GradeWriteInput.
+type SpeakingGradeWriteInput struct {
+	Scores   grading.SpeakingCriterionScores
+	Comments []grading.TimestampedComment
+	Feedback *string
+	Reason   string
+}
+
+// GradeSpeaking creates + releases the initial grade for a submitted Speaking
+// submission (AC8). Mirrors GradeWriting exactly — reuses LockSubmissionForGrading /
+// GradeSubmission flip / outbox / 23505+P0001 translation UNCHANGED (D1, no grades
+// migration); only the criterion twin (ValidateSpeakingCriterionScores) + the
+// timestamp-comment normalize differ from the Writing path.
+func (s *GradingService) GradeSpeaking(
+	ctx context.Context, tc model.TenantContext, submissionID uuid.UUID, in SpeakingGradeWriteInput,
+) (GradeView, error) {
+	if err := grading.ValidateSpeakingCriterionScores(in.Scores); err != nil {
+		return GradeView{}, err
+	}
+	var out GradeView
+	err := s.mutateInGradingTx(ctx, tc, func(tx pgx.Tx, q *generated.Queries) error {
+		userID, role, rerr := revalidateStaffRole(ctx, q, tc)
+		if rerr != nil {
+			return rerr
+		}
+		sub, gerr := q.LockSubmissionForGrading(ctx, pgUUID(submissionID))
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return gradingSubmissionNotFound(submissionID)
+			}
+			return fmt.Errorf("grade speaking: lock submission: %w", gerr)
+		}
+		assignment, aerr := loadAssignmentForGrading(ctx, q, sub)
+		if aerr != nil {
+			return aerr
+		}
+		if serr := assertTeacherOfSubmissionClass(ctx, q, role, userID.String(), assignment); serr != nil {
+			return serr
+		}
+		if serr := assertSpeakingExercise(ctx, q, assignment); serr != nil {
+			return serr
+		}
+		switch sub.Status {
+		case submissionStatusSubmitted:
+			// gradable
+		case submissionStatusGraded:
+			return alreadyGradedConflict(submissionID)
+		default: // in_progress / ai_processing
+			return model.ConflictError{
+				Resource: "submission", ID: submissionID.String(),
+				Code: "SUBMISSION_NOT_GRADABLE", Message: "submission is not ready to grade",
+			}
+		}
+
+		content, cerr := submissionContentJSON(sub)
+		if cerr != nil {
+			return cerr
+		}
+		durationMs := grading.SpeakingDurationMsFromContent(content)
+		comments, verr := grading.NormalizeTimestampComments(in.Comments, durationMs)
+		if verr != nil {
+			return verr
+		}
+		gradeRow, ierr := s.insertSpeakingGradeRow(ctx, q, sub, userID, initialGradeVersion, in, comments)
+		if ierr != nil {
+			return translateGradeWriteError(ierr, false)
+		}
+		if _, uerr := q.GradeSubmission(ctx, generated.GradeSubmissionParams{
+			ID: sub.ID, UpdatedAt: pgTimestamptz(s.clk.Now()),
+		}); uerr != nil {
+			if errors.Is(uerr, pgx.ErrNoRows) {
+				return alreadyGradedConflict(submissionID)
+			}
+			return translateGradeWriteError(uerr, false)
+		}
+		if aerr := s.auditGrade(ctx, tx, tc, sub.ID, gradeCreatedAction, gradeRow, ""); aerr != nil {
+			return aerr
+		}
+		if aerr := s.auditGrade(ctx, tx, tc, sub.ID, gradeReleasedAction, gradeRow, ""); aerr != nil {
+			return aerr
+		}
+		if oerr := s.enqueueGradeReleaseOutbox(ctx, q, sub, assignment, gradeRow, userID); oerr != nil {
+			return oerr
+		}
+		view, cerr := gradeViewFromGrade(gradeRow)
+		if cerr != nil {
+			return cerr
+		}
+		out = view
+		return nil
+	})
+	return out, err
+}
+
+// ReviseSpeakingGrade appends a new speaking grade version N+1 and re-releases (AC8).
+// The Speaking twin of ReviseGrade — same append-only + 23505-retry contract.
+func (s *GradingService) ReviseSpeakingGrade(
+	ctx context.Context, tc model.TenantContext, submissionID uuid.UUID, in SpeakingGradeWriteInput,
+) (GradeView, error) {
+	if strings.TrimSpace(in.Reason) == "" {
+		return GradeView{}, model.ValidationError{Fields: []model.FieldError{{
+			Field: "reason", Code: "REQUIRED", Message: "a revision reason is required",
+		}}}
+	}
+	if err := grading.ValidateSpeakingCriterionScores(in.Scores); err != nil {
+		return GradeView{}, err
+	}
+	var out GradeView
+	err := s.mutateInGradingTx(ctx, tc, func(tx pgx.Tx, q *generated.Queries) error {
+		userID, role, rerr := revalidateStaffRole(ctx, q, tc)
+		if rerr != nil {
+			return rerr
+		}
+		sub, gerr := q.GetSubmissionByID(ctx, pgUUID(submissionID))
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return gradingSubmissionNotFound(submissionID)
+			}
+			return fmt.Errorf("revise speaking grade: get submission: %w", gerr)
+		}
+		assignment, aerr := loadAssignmentForGrading(ctx, q, sub)
+		if aerr != nil {
+			return aerr
+		}
+		if serr := assertTeacherOfSubmissionClass(ctx, q, role, userID.String(), assignment); serr != nil {
+			return serr
+		}
+		if serr := assertSpeakingExercise(ctx, q, assignment); serr != nil {
+			return serr
+		}
+		maxVersion, merr := q.MaxGradeVersion(ctx, sub.ID)
+		if merr != nil {
+			return fmt.Errorf("revise speaking grade: max version: %w", merr)
+		}
+		if maxVersion == 0 {
+			return model.NotFoundError{Resource: "grade", ID: submissionID.String(), Code: "GRADE_NOT_FOUND"}
+		}
+		content, cerr := submissionContentJSON(sub)
+		if cerr != nil {
+			return cerr
+		}
+		durationMs := grading.SpeakingDurationMsFromContent(content)
+		comments, verr := grading.NormalizeTimestampComments(in.Comments, durationMs)
+		if verr != nil {
+			return verr
+		}
+		gradeRow, ierr := s.insertSpeakingGradeRow(ctx, q, sub, userID, int(maxVersion)+1, in, comments)
+		if ierr != nil {
+			return translateGradeWriteError(ierr, true) // 23505 → GRADE_REVISE_CONFLICT
+		}
+		if aerr := s.auditGrade(ctx, tx, tc, sub.ID, gradeRevisedAction, gradeRow, in.Reason); aerr != nil {
+			return aerr
+		}
+		if aerr := s.auditGrade(ctx, tx, tc, sub.ID, gradeReReleasedAction, gradeRow, in.Reason); aerr != nil {
+			return aerr
+		}
+		if oerr := s.enqueueGradeReleaseOutbox(ctx, q, sub, assignment, gradeRow, userID); oerr != nil {
+			return oerr
+		}
+		view, cerr := gradeViewFromGrade(gradeRow)
+		if cerr != nil {
+			return cerr
+		}
+		out = view
+		return nil
+	})
+	return out, err
+}
+
 // GetSubmissionForGrading is the AC8 teacher grading read (full submission — NOT
 // answer-stripped — assignment, student, exercise, latest grade|null).
 func (s *GradingService) GetSubmissionForGrading(
@@ -292,6 +494,7 @@ func (s *GradingService) GetSubmissionForGrading(
 		return TeacherGradingView{}, err
 	}
 	var view TeacherGradingView
+	var audioKey string // captured in-tx; presigned OUTSIDE the committed tx (PERF-1 — D5)
 	err := s.readInGradingTx(ctx, tc, func(q *generated.Queries) error {
 		sub, gerr := q.GetSubmissionByID(ctx, pgUUID(submissionID))
 		if gerr != nil {
@@ -323,6 +526,7 @@ func (s *GradingService) GetSubmissionForGrading(
 		if cerr != nil {
 			return cerr
 		}
+		audioKey = speakingAudioKeyFromContent(content) // "" for non-speaking / keyless
 		view.Submission = SubmissionResult{Row: sub, Content: content}
 		view.Assignment = assignment
 		view.Student = GradingStudentRef{ID: uuidStringFromPg(sub.StudentID), FullName: studentRow.FullName}
@@ -346,7 +550,124 @@ func (s *GradingService) GetSubmissionForGrading(
 		view.Grade = &gv
 		return nil
 	})
-	return view, err
+	if err != nil {
+		return TeacherGradingView{}, err
+	}
+	// D5/D6/PERF-1 — the read tx has COMMITTED; only now sign the R2 GET. A non-empty
+	// audioKey ⇒ a Speaking submission with a recording (audioStatus hasAudio); "" ⇒
+	// non-speaking / keyless (audioStatus none, zero mint — no HeadObject probe).
+	//
+	// A recording's PRESENCE is reported by audioStatus and never depends on whether the
+	// presign succeeded: a transient R2/network failure (or unconfigured storage) leaves
+	// audioUrl null but keeps audioStatus=hasAudio, so the FE recovers via the dedicated
+	// audio-refresh route (D6) instead of the whole grading read 500ing and hiding the
+	// already-assembled grade behind a secondary audio concern.
+	if audioKey != "" {
+		view.AudioStatus = audioStatusHasAudio
+		if s.storage != nil {
+			url, perr := s.storage.PresignGetOwned(ctx, audioKey, tc, submissionAudioURLExpiry)
+			if perr != nil {
+				slog.WarnContext(ctx, "grading read: audio presign failed; degrading to null audioUrl (client recovers via refresh route)",
+					"submission_id", submissionID.String(), "error", perr)
+			} else {
+				view.AudioUrl = &url
+			}
+		}
+	} else {
+		view.AudioStatus = audioStatusNone
+	}
+	return view, nil
+}
+
+// ResolveSubmissionSkill reads the exercise skill of a submission (RLS-scoped — a
+// cross-tenant/absent id is 404, no oracle) so the handler can strict-decode the grade
+// body into the matching skill shape BEFORE dispatch (story 6.3a — D2, SEC-7). It does
+// no authz beyond RLS visibility; the subsequent GradeWriting/GradeSpeaking enforces
+// the teacher-of-class narrowing.
+func (s *GradingService) ResolveSubmissionSkill(
+	ctx context.Context, tc model.TenantContext, submissionID uuid.UUID,
+) (string, error) {
+	if err := assertGradingRole(tc.Role); err != nil {
+		return "", err
+	}
+	var skill string
+	err := s.readInGradingTx(ctx, tc, func(q *generated.Queries) error {
+		sub, gerr := q.GetSubmissionByID(ctx, pgUUID(submissionID))
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return gradingSubmissionNotFound(submissionID)
+			}
+			return fmt.Errorf("resolve skill: get submission: %w", gerr)
+		}
+		assignment, aerr := loadAssignmentForGrading(ctx, q, sub)
+		if aerr != nil {
+			return aerr
+		}
+		exRow, xerr := q.GetExerciseForAttempt(ctx, assignment.ExerciseID)
+		if xerr != nil {
+			return fmt.Errorf("resolve skill: get exercise: %w", xerr)
+		}
+		skill = exRow.Skill
+		return nil
+	})
+	return skill, err
+}
+
+// GetTeacherSubmissionAudioURL mints a FRESH 5-min presigned GET for a Speaking
+// submission's recording, gated by teacher-of-class authz (story 6.3a — AC2/D5). The
+// NOVEL R9 surface: a same-tenant WRONG-teacher → 403 ForbiddenError with ZERO mint
+// (authz before mint); cross-tenant/absent → 404 via RLS. A non-speaking / keyless
+// submission → 404. The presign runs OUTSIDE the read tx (PERF-1). classID/assignmentID
+// scope the route — the submission must belong to them (else 404, no oracle).
+func (s *GradingService) GetTeacherSubmissionAudioURL(
+	ctx context.Context, tc model.TenantContext, classID, assignmentID, submissionID uuid.UUID,
+) (string, error) {
+	if err := assertGradingRole(tc.Role); err != nil {
+		return "", err
+	}
+	var audioKey string
+	err := s.readInGradingTx(ctx, tc, func(q *generated.Queries) error {
+		sub, gerr := q.GetSubmissionByID(ctx, pgUUID(submissionID))
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return gradingSubmissionNotFound(submissionID)
+			}
+			return fmt.Errorf("teacher audio: get submission: %w", gerr)
+		}
+		assignment, aerr := loadAssignmentForGrading(ctx, q, sub)
+		if aerr != nil {
+			return aerr
+		}
+		// Authz BEFORE any path-binding disclosure or mint (R9 zero-mint).
+		if serr := assertTeacherOfSubmissionClass(ctx, q, tc.Role, tc.UserID, assignment); serr != nil {
+			return serr
+		}
+		// Path consistency: the submission must belong to the route's assignment+class.
+		if uuidStringFromPg(sub.AssignmentID) != assignmentID.String() ||
+			uuidStringFromPg(assignment.ClassID) != classID.String() {
+			return gradingSubmissionNotFound(submissionID)
+		}
+		content, cerr := submissionContentJSON(sub)
+		if cerr != nil {
+			return cerr
+		}
+		audioKey = speakingAudioKeyFromContent(content)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if audioKey == "" {
+		return "", gradingSubmissionNotFound(submissionID) // no recording to serve
+	}
+	if s.storage == nil {
+		return "", fmt.Errorf("teacher audio: storage not configured")
+	}
+	url, perr := s.storage.PresignGetOwned(ctx, audioKey, tc, submissionAudioURLExpiry)
+	if perr != nil {
+		return "", fmt.Errorf("teacher audio: presign: %w", perr)
+	}
+	return url, nil
 }
 
 // populateAISuggestion sets view.AiSuggestion to the latest COMPLETE ai_grade_writing
@@ -462,6 +783,50 @@ func (s *GradingService) insertGradeRow(
 		return generated.Grade{}, fmt.Errorf("marshal comments: %w", err)
 	}
 	band := grading.OverallBand(in.Scores)
+	overall, err := numericFromDecimal(band.Decimal())
+	if err != nil {
+		return generated.Grade{}, err
+	}
+	now := s.clk.Now()
+	return q.InsertGrade(ctx, generated.InsertGradeParams{
+		SubmissionID:    sub.ID,
+		CenterID:        sub.CenterID,
+		GradedBy:        pgUUID(gradedBy),
+		Version:         int32(version),
+		CriterionScores: scoresJSON,
+		OverallBand:     overall,
+		Comments:        commentsJSON,
+		Feedback:        pgTextFromPtr(in.Feedback),
+		ReleasedAt:      pgTimestamptz(now),
+		CreatedAt:       pgTimestamptz(now),
+	})
+}
+
+// insertSpeakingGradeRow is the Speaking twin of insertGradeRow (story 6.3a — D1). It
+// marshals the four Speaking criterion keys + timestamp-pinned comments into the SAME
+// grades JSONB columns (reused UNCHANGED — no migration) and computes the authoritative
+// overall band via OverallBandFromFour.
+func (s *GradingService) insertSpeakingGradeRow(
+	ctx context.Context, q *generated.Queries, sub generated.Submission, gradedBy uuid.UUID,
+	version int, in SpeakingGradeWriteInput, comments []grading.TimestampedComment,
+) (generated.Grade, error) {
+	scoresJSON, err := json.Marshal(speakingCriterionScoresWire{
+		FluencyCoherence: in.Scores.FluencyCoherence,
+		LexicalResource:  in.Scores.LexicalResource,
+		GrammaticalRange: in.Scores.GrammaticalRange,
+		Pronunciation:    in.Scores.Pronunciation,
+	})
+	if err != nil {
+		return generated.Grade{}, fmt.Errorf("marshal speaking criterion scores: %w", err)
+	}
+	if comments == nil {
+		comments = []grading.TimestampedComment{}
+	}
+	commentsJSON, err := json.Marshal(comments)
+	if err != nil {
+		return generated.Grade{}, fmt.Errorf("marshal speaking comments: %w", err)
+	}
+	band := in.Scores.Band()
 	overall, err := numericFromDecimal(band.Decimal())
 	if err != nil {
 		return generated.Grade{}, err
@@ -668,6 +1033,31 @@ func assertWritingExercise(
 	return nil
 }
 
+// assertSpeakingExercise rejects a grade/revise against a non-Speaking submission
+// (story 6.3a — SEC-7). The sibling of assertWritingExercise: without it a
+// writing/quiz submission could be stamped with four Speaking bands + timestamp
+// comments. → 409 SUBMISSION_NOT_SPEAKING (checked inside the tx → zero side effects).
+func assertSpeakingExercise(
+	ctx context.Context, q *generated.Queries, assignment generated.Assignment,
+) error {
+	exRow, err := q.GetExerciseForAttempt(ctx, assignment.ExerciseID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("grading: exercise %s missing for assignment %s",
+				uuidStringFromPg(assignment.ExerciseID), uuidStringFromPg(assignment.ID))
+		}
+		return fmt.Errorf("grading: get exercise skill: %w", err)
+	}
+	if exRow.Skill != skillSpeaking {
+		return model.ConflictError{
+			Resource: "submission",
+			Code:     "SUBMISSION_NOT_SPEAKING",
+			Message:  "only Speaking submissions can be graded here",
+		}
+	}
+	return nil
+}
+
 func loadAssignmentForGrading(
 	ctx context.Context, q *generated.Queries, sub generated.Submission,
 ) (generated.Assignment, error) {
@@ -734,6 +1124,15 @@ type criterionScoresWire struct {
 	GrammaticalRange  float64 `json:"grammaticalRange"`
 }
 
+// speakingCriterionScoresWire is the criterion_scores JSONB shape for a Speaking grade
+// (camelCase — mirrors api.yaml SpeakingCriterionScores). Story 6.3a.
+type speakingCriterionScoresWire struct {
+	FluencyCoherence float64 `json:"fluencyCoherence"`
+	LexicalResource  float64 `json:"lexicalResource"`
+	GrammaticalRange float64 `json:"grammaticalRange"`
+	Pronunciation    float64 `json:"pronunciation"`
+}
+
 func gradeViewFromGrade(g generated.Grade) (GradeView, error) {
 	return gradeViewFrom(g.ID, g.SubmissionID, g.GradedBy, g.Version, g.CriterionScores,
 		g.OverallBand, g.Comments, g.Feedback, g.ReleasedAt, g.CreatedAt)
@@ -766,6 +1165,19 @@ func gradeViewFrom(
 	if err != nil {
 		return GradeView{}, err
 	}
+	// Raw passthrough (story 6.3a): keep the stored criterion_scores / comments JSONB
+	// verbatim so the response is skill-agnostic. Guard an empty/absent blob to its JSON
+	// empty shape (GO-5 — never a bare null): scores → {}, comments → [], symmetrically,
+	// so a stored/legacy null never leaks as `criterionScores: null` (violating the
+	// required-object schema).
+	scoresJSON := json.RawMessage(scoresRaw)
+	if len(scoresJSON) == 0 || string(scoresJSON) == "null" {
+		scoresJSON = json.RawMessage("{}")
+	}
+	commentsJSON := json.RawMessage(commentsRaw)
+	if len(commentsJSON) == 0 || string(commentsJSON) == "null" {
+		commentsJSON = json.RawMessage("[]")
+	}
 	view := GradeView{
 		ID:           uuidStringFromPg(id),
 		SubmissionID: uuidStringFromPg(submissionID),
@@ -778,6 +1190,8 @@ func gradeViewFrom(
 		},
 		OverallBand: band,
 		Comments:    comments,
+		ScoresRaw:   scoresJSON,
+		CommentsRaw: commentsJSON,
 		Feedback:    textPtrFromPg(feedback),
 		GradedBy:    uuidStringFromPg(gradedBy),
 		CreatedAt:   createdAt.Time,
