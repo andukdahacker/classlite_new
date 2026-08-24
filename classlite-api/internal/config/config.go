@@ -67,6 +67,13 @@ type Config struct {
 	// 5.5a result page — a real, reachable page today).
 	GradeReleaseEmailEnabled bool
 	AppResultURLBase         string
+	// Story 6.3b0 — the bundled ffmpeg used by internal/media to transcode
+	// browser-recorded speaking clips (webm/mp4) into Gemini-ingestible
+	// Opus/Ogg. Resolved from CLASSLITE_FFMPEG_PATH with a bare "ffmpeg" default
+	// (PATH lookup). main.go asserts it is present + runnable at boot
+	// (CheckFFmpegAvailable) so a missing binary fails fast instead of surfacing
+	// three retries deep in a production speaking-grade job (AC5/D3).
+	FFmpegPath string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -105,6 +112,7 @@ func Load() Config {
 		GeminiModel:               getEnv("GEMINI_MODEL", "gemini-2.0-flash"),
 		GradeReleaseEmailEnabled:  getEnvBool("GRADE_RELEASE_EMAIL_ENABLED", false),
 		AppResultURLBase:          getEnv("APP_RESULT_URL_BASE", "http://localhost:5173"),
+		FFmpegPath:                getEnv("CLASSLITE_FFMPEG_PATH", "ffmpeg"),
 	}
 }
 
@@ -307,6 +315,7 @@ func (c Config) LogSummary() {
 		"gemini_model", c.GeminiModel,
 		"grade_release_email_enabled", c.GradeReleaseEmailEnabled,
 		"app_result_url_base_set", c.AppResultURLBase != "",
+		"ffmpeg_path", c.FFmpegPath,
 	)
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/logging"
+	"github.com/ducdo/classlite-api/internal/media"
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
@@ -49,6 +50,16 @@ func main() {
 	}
 
 	cfg.LogSummary()
+
+	// Story 6.3b0 — fail fast if the bundled ffmpeg is missing/unrunnable. The
+	// AI speaking-grade worker (6-3b) transcodes every student recording through
+	// internal/media before the Gemini call; a missing binary would otherwise
+	// only surface three retries deep in a production job (AC5/D3).
+	if err := media.CheckFFmpegAvailable(context.Background(), cfg.FFmpegPath); err != nil {
+		slog.Error("ffmpeg availability check failed", "error", err, "ffmpeg_path", cfg.FFmpegPath)
+		os.Exit(1)
+	}
+	slog.Info("ffmpeg available", "ffmpeg_path", cfg.FFmpegPath)
 
 	pool, err := store.NewPool(context.Background(), cfg.DatabaseURL)
 	if err != nil {

@@ -28,6 +28,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Install ffmpeg (Story 6.3b0 — audio transcode integration tests)
+        # The internal/media FFmpegTranscoder tests are INTEGRATION tests against
+        # a real ffmpeg (webm/mp4 → Opus/Ogg). Install it explicitly rather than
+        # relying on the runner image so the tests always RUN (AC7: no silent
+        # green). ffprobe ships in the same apt package and is used by the AC2
+        # structural assertion.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
       - name: Lint (golangci-lint)
         # Runs the standard-linter set defined in classlite-api/.golangci.yml
         # (errcheck / govet / staticcheck / unused / ineffassign). Replaces the
@@ -65,5 +76,22 @@ jobs:
         run: cd classlite-api && go test ./... -race -v
         env:
           DATABASE_URL: postgres://classlite:test@localhost:5432/classlite_test?sslmode=disable
+      - name: Verify audio transcode tests ran (AC7 — no silent skip)
+        # Guards the Story 6.3b0 requirement that the FFmpegTranscoder integration
+        # tests are NOT silently skipped in CI. If ffmpeg were somehow absent the
+        # tests LOUD-skip; this step fails the build on any SKIP and requires the
+        # normalization test to have actually PASSED.
+        run: |
+          set -o pipefail  # a non-zero `go test` exit (build failure/panic) must fail the step, not be swallowed by tee
+          cd classlite-api
+          go test -run 'TestFFmpegTranscoder|TestCheckFFmpegAvailable' -v ./internal/media/... | tee /tmp/media-test.out
+          if grep -q -- '--- SKIP' /tmp/media-test.out; then
+            echo "::error::Story 6.3b0 AC7 — audio transcode tests were SKIPPED (ffmpeg missing?). CI must provide ffmpeg."
+            exit 1
+          fi
+          if ! grep -q -- '--- PASS: TestFFmpegTranscoder_NormalizesWebmAndM4a_ATDD' /tmp/media-test.out; then
+            echo "::error::Story 6.3b0 AC7 — the transcode normalization test did not run/pass."
+            exit 1
+          fi
       - name: Build
         run: cd classlite-api && go build ./cmd/api/...

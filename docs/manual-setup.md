@@ -144,6 +144,22 @@ Do **not** wipe existing records — edit in place to minimize propagation delay
 
 ---
 
+## ffmpeg — Audio Transcode (Story 6.3b0)
+
+The API runtime now **requires `ffmpeg`**. The AI speaking-grade worker (Epic 6) transcodes browser-recorded clips (webm/mp4) into Gemini-ingestible Opus/Ogg via `internal/media` before the Gemini call — Gemini rejects webm/mp4. Boot runs `CheckFFmpegAvailable` and **fails fast** (`os.Exit(1)`) if the binary is missing/unrunnable, so a bad image never silently ships.
+
+`CLASSLITE_FFMPEG_PATH` selects the binary (default `ffmpeg` → PATH lookup). It is **not** an external-service secret — no dashboard, no credential — just a runtime dependency provided per environment:
+
+| Environment | How ffmpeg is provided | Dev | Staging | Prod |
+|---|---|---|---|---|
+| **Local dev** | Install on PATH (`brew install ffmpeg` / `apt-get install ffmpeg`), or set `CLASSLITE_FFMPEG_PATH` | [x] | — | — |
+| **CI (`ci-api`)** | `apt-get install -y ffmpeg` step (integration tests are guarded against silent skip — AC7) | [x] | — | — |
+| **Prod/Staging image** | Bundled **static** ffmpeg copied into the distroless-static runtime from `mwader/static-ffmpeg` (pinned tag), `CLASSLITE_FFMPEG_PATH=/usr/local/bin/ffmpeg` set in the Dockerfile | — | [ ] | [ ] |
+
+⚠️ **Human-review item (Winston/D3):** the `classlite-api/Dockerfile` change that bundles ffmpeg touches the deploy surface (base image, image size, CVE posture). Review points: (1) the pinned `mwader/static-ffmpeg:<version>` tag + its CVE posture, (2) the image-size delta, (3) that the copied binary is genuinely static (`ldd` → "not a dynamic executable"). Bump the pin deliberately, never float it.
+
+---
+
 ## Cross-cutting env vars
 
 | Task | Dev | Staging | Prod |
