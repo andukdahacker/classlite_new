@@ -29,6 +29,7 @@ import (
 
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/service/grading"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 	"github.com/google/uuid"
@@ -76,15 +77,12 @@ func (s *SubmissionService) WithStorage(storage StorageService) *SubmissionServi
 
 // speakingAudioKeyFromContent extracts the 5.4-owned `audioKey` field from an
 // opaque submission content blob. Returns "" when absent (every non-speaking
-// skill, and a keyless speaking submit) — the gate then no-ops.
+// skill, and a keyless speaking submit) — the gate then no-ops. It delegates to
+// grading.SpeakingAudioKeyFromContent, the single source of truth shared with the
+// 6.3b ai_grade_speaking worker (D7 — the key derivation must never drift between the
+// manual presign paths and the AI download path).
 func speakingAudioKeyFromContent(raw []byte) string {
-	var probe struct {
-		AudioKey string `json:"audioKey"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return ""
-	}
-	return probe.AudioKey
+	return grading.SpeakingAudioKeyFromContent(raw)
 }
 
 // enforceSpeakingAudioCap is the AUTHORITATIVE A9 over-cap gate on the mandatory

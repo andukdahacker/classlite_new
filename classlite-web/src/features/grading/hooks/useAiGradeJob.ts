@@ -139,14 +139,16 @@ function isTerminal(status: JobStatus | undefined): boolean {
 
 /**
  * Narrow the widened `Job.result` union to this hook's AIWritingGradeResult.
- * 6.2a widened `Job.result` to a `oneOf` (D11): ai_generate_* → AIGenerationResult
- * (has `sections`), ai_grade_writing → AIWritingGradeResult (has `criteria`). This
- * hook only enqueues ai_grade_writing, so a completed job's result IS a grade
- * result; the `criteria` discriminant guards an unexpected shape — an unknown type
- * falls to `null`, the safe default.
+ * The `oneOf` now has THREE arms (D11/D10): ai_generate_* → AIGenerationResult (has
+ * `sections`), ai_grade_writing → AIWritingGradeResult (has `comments`),
+ * ai_grade_speaking → AISpeakingGradeResult (has `moments`). `criteria` is NO LONGER
+ * a safe discriminant (6.3b's speaking result also has `criteria`), so we narrow on
+ * `comments` — unique to the writing result. This hook only enqueues ai_grade_writing,
+ * so a completed job's result IS a writing-grade result; the `comments` discriminant
+ * guards an unexpected shape — an unknown type falls to `null`, the safe default.
  */
 function asWritingGradeResult(result: Job['result']): AIWritingGradeResult | null {
-  if (result !== null && typeof result === 'object' && 'criteria' in result) {
+  if (result !== null && typeof result === 'object' && 'comments' in result) {
     return result
   }
   return null

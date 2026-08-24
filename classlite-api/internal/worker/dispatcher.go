@@ -199,7 +199,23 @@ func (d *Dispatcher) handleFailure(ctx context.Context, q *generated.Queries, jo
 			"retry_count", job.RetryCount+1, "backoff", backoff.String())
 		return nil
 	}
-	return d.terminalFail(ctx, q, job, now, model.JobErrorMaxRetries)
+	// Retries exhausted → terminal + refund. A transient error MAY carry a distinct
+	// exhaustion label via *TransientReasonError (6.3b: a transcode-infra ladder lands
+	// on audio_unavailable, the anti-hostage guarantee — D17); otherwise the generic
+	// max_retries_exhausted (AC5). This stays TYPE-BASED and generic — the dispatcher
+	// never imports internal/media; the worker did the translation at its boundary.
+	return d.terminalFail(ctx, q, job, now, exhaustionReason(genErr))
+}
+
+// exhaustionReason picks the terminal error_details for a retry-exhausted transient
+// job: a handler-supplied *TransientReasonError.Reason (6.3b audio_unavailable), else
+// the generic max_retries_exhausted.
+func exhaustionReason(genErr error) string {
+	var trr *TransientReasonError
+	if errors.As(genErr, &trr) && trr.Reason != "" {
+		return trr.Reason
+	}
+	return model.JobErrorMaxRetries
 }
 
 // terminalFail marks the job failed and refunds the credit. The refund fires ONLY

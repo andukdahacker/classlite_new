@@ -87,6 +87,7 @@ function speakingGradingView(overrides: Partial<TeacherGradingView> = {}): Teach
     exercise: { id: 'ex-1', title: 'Speaking Part 2', skill: 'speaking', sections: [], settings: {} as never },
     grade: null,
     aiSuggestion: null,
+    aiSpeakingSuggestion: null,
     audioUrl: 'https://r2.example/c-1/speaking/x.webm?sig=1',
     audioStatus: 'hasAudio',
     ...overrides,

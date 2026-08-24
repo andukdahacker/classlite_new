@@ -133,6 +133,10 @@ type TeacherGradingView struct {
 	Exercise     AttemptExercise
 	Grade        *GradeView
 	AiSuggestion *model.AIWritingGradeResult
+	// AiSpeakingSuggestion (story 6.3b — D10): the latest COMPLETE ai_grade_speaking
+	// suggestion, or nil when none. A SEPARATE field from AiSuggestion (writing) —
+	// teacher-only, class-shared, absent from the student /result path.
+	AiSpeakingSuggestion *model.AISpeakingGradeResult
 	// AudioUrl/AudioStatus (story 6.3a — D5/D6): for a Speaking submission the read
 	// mints a fresh 5-min presigned GET (SEC-8, OUTSIDE the read tx — PERF-1);
 	// AudioStatus is "hasAudio" (non-empty audioKey) or "none" (no HeadObject — D6).
@@ -535,6 +539,9 @@ func (s *GradingService) GetSubmissionForGrading(
 		if serr := populateAISuggestion(ctx, q, submissionID, &view); serr != nil {
 			return serr
 		}
+		if serr := populateAISpeakingSuggestion(ctx, q, submissionID, &view); serr != nil {
+			return serr
+		}
 
 		cg, cgErr := q.GetCurrentGrade(ctx, sub.ID)
 		if cgErr != nil {
@@ -695,6 +702,30 @@ func populateAISuggestion(
 		return nil
 	}
 	view.AiSuggestion = &suggestion
+	return nil
+}
+
+// populateAISpeakingSuggestion is the SPEAKING twin of populateAISuggestion (D10): it
+// loads the latest COMPLETE ai_grade_speaking suggestion into the grading view. Same
+// class-shared, degrade-don't-fail contract — a single undecodable row leaves the
+// speaking AI panel empty (logged) rather than 500-ing the teacher grading view.
+func populateAISpeakingSuggestion(
+	ctx context.Context, q *generated.Queries, submissionID uuid.UUID, view *TeacherGradingView,
+) error {
+	job, err := q.GetLatestCompleteAISpeakingGradeJobForSubmission(ctx, []byte(submissionID.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // no completed AI speaking grade → aiSpeakingSuggestion stays nil
+		}
+		return fmt.Errorf("grading read: latest ai speaking suggestion: %w", err)
+	}
+	var suggestion model.AISpeakingGradeResult
+	if uerr := json.Unmarshal(job.Result, &suggestion); uerr != nil {
+		slog.ErrorContext(ctx, "grading read: decode ai speaking suggestion failed; suppressing",
+			"job_id", uuidStringFromPg(job.ID), "error", uerr)
+		return nil
+	}
+	view.AiSpeakingSuggestion = &suggestion
 	return nil
 }
 

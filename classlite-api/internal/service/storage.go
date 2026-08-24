@@ -8,6 +8,17 @@ import (
 	"github.com/ducdo/classlite-api/internal/model"
 )
 
+// maxSpeakingAudioBytes bounds the server-side owned audio download (Story 6.3b, D6)
+// at the 25 MB speaking upload cap — the same ceiling media.MaxTranscodeInputBytes
+// enforces pre-transcode, so a legitimate recording always fits and a hostile/mis-sized
+// object is refused rather than read fully into memory.
+const maxSpeakingAudioBytes = 25 * 1024 * 1024
+
+// maxStorageReadBytes is the R2 GetObject read ceiling — the LARGER of its two callers'
+// caps (bulk import 5 MB, owned audio download 25 MB) so neither is silently truncated.
+// Each caller then enforces its own tighter cap on the returned bytes.
+const maxStorageReadBytes = maxSpeakingAudioBytes
+
 // ObjectMeta contains metadata about a stored object.
 type ObjectMeta struct {
 	Key         string `json:"key"`
@@ -63,6 +74,16 @@ type StorageService interface {
 	// MUST enforce the tenant-key prefix guard before invoking it.
 	GetObject(ctx context.Context, key string) ([]byte, error)
 
+	// GetObjectOwned is the SEC-8-guarded server-side download (Story 6.3b — the
+	// AI speaking grader reads the recording off R2, not via presign). It re-asserts
+	// the object key lives under the caller's own center prefix (tc.CenterID+"/")
+	// BEFORE the fetch, then delegates to GetObject bounded to the speaking upload
+	// cap. A foreign-prefix key returns KeyPrefixMismatchError having fetched NOTHING
+	// (the defense-in-depth guard behind the RLS submission read, D6/D13). Like
+	// PresignGetOwned, the guard lives in ONE shared free function so the R2 + mock
+	// impls cannot drift.
+	GetObjectOwned(ctx context.Context, key string, tc model.TenantContext) ([]byte, error)
+
 	// Delete removes an object from storage (Story 4.4a). Best-effort cleanup on
 	// the confirm delete-on-mismatch (AC9) and storage-full (AC12) paths: an
 	// upload that fails post-PUT validation must not linger in R2. A Delete
@@ -81,4 +102,26 @@ func presignGetOwned(ctx context.Context, s StorageService, key string, tc model
 		return "", KeyPrefixMismatchError{}
 	}
 	return s.PresignGet(ctx, key, expiry, PresignGetOpts{})
+}
+
+// getObjectOwned is the single implementation of the SEC-8 owned-DOWNLOAD invariant
+// shared by every StorageService implementation (R2 + mock): a key MUST live under the
+// caller's center prefix before its bytes are fetched (Story 6.3b — D6, the twin of
+// presignGetOwned). The guard fires BEFORE s.GetObject, so a foreign-prefix key reads
+// ZERO bytes (T-A/T-B). Kept as a free function (not duplicated per impl) so the guard
+// has exactly one auditable home and the mock's guard can never drift from R2's — else
+// the R3=9 audio-download tenant tests go vacuous (Murat). The fetched body is bounded
+// to maxSpeakingAudioBytes.
+func getObjectOwned(ctx context.Context, s StorageService, key string, tc model.TenantContext) ([]byte, error) {
+	if !strings.HasPrefix(key, tc.CenterID+"/") {
+		return nil, KeyPrefixMismatchError{}
+	}
+	body, err := s.GetObject(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxSpeakingAudioBytes {
+		return nil, ObjectTooLargeError{Key: key, GotBytes: len(body), LimitBytes: maxSpeakingAudioBytes}
+	}
+	return body, nil
 }

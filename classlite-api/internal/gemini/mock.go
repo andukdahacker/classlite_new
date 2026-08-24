@@ -54,7 +54,48 @@ const (
 	// terminal), proving the dispatcher classifies by errors.Is on the sentinel, NOT
 	// strings.Contains on the message (D8).
 	MockTransientErrorContainingInvalid MockMode = "transient_error_containing_invalid"
+
+	// --- Story 6.3b — AI Speaking-grade modes ---
+
+	// MockValidSpeakingGrade returns a well-formed AISpeakingGradeResponse: four valid
+	// bands, a PRESENT transcript (→ transcriptionStatus available), and two moments —
+	// one IN-bound (text "PINNED", keeps its pin) and one OUT-of-bound (text
+	// "OUTOFBOUND", demoted to null but KEPT, D11). The demote assertion is coupled to
+	// SpeakingGradeFixtureDurationSec so it is never vacuously green.
+	MockValidSpeakingGrade MockMode = "valid_speaking_grade"
+	// MockPartialSpeakingGrade returns four valid bands but a NULL transcript → a
+	// nil-error COMPLETE carrying transcriptionStatus=unavailable (partial_success):
+	// the credit is NOT refunded (D3/D15).
+	MockPartialSpeakingGrade MockMode = "partial_speaking_grade"
+	// MockInvalidSpeakingBandScores returns a criterion band of 9.5 (off the 0.5 grid
+	// AND out of the 1.0–9.0 range) → terminal invalid_band_scores (AC5).
+	MockInvalidSpeakingBandScores MockMode = "invalid_speaking_band_scores"
+	// MockIncompleteBandsNoTranscript returns a result MISSING the pronunciation
+	// criterion (a nil band) AND a null transcript — the T-C over-charge probe: it must
+	// go terminal+refund (bands checked BEFORE the partial return), never be laundered
+	// into a no-refund partial_success (D3).
+	MockIncompleteBandsNoTranscript MockMode = "incomplete_bands_no_transcript"
+	// MockSpeakingNullMomentConfidence returns four valid bands + a transcript but a
+	// moment whose confidence is null → terminal invalid_ai_response (the completeness
+	// pre-check that guards the positional-zip nil-deref, D5/D11) — DISTINCT from a
+	// structurally-bad moment (which is dropped).
+	MockSpeakingNullMomentConfidence MockMode = "speaking_null_moment_confidence"
+	// MockSpeakingMalformedMoment returns four valid bands + a transcript + one
+	// structurally-bad moment (bad type/criterion/blank text, marked "BADMOMENT")
+	// alongside one good moment → complete + charged, the bad moment DROPPED (D11).
+	MockSpeakingMalformedMoment MockMode = "speaking_malformed_moment"
 )
+
+// SpeakingGradeFixtureDurationSec is the recording duration (seconds) seeded by
+// test.SeedSpeakingSubmissionForTenant and analysed by the speaking mock modes. The
+// mock's OUT-of-bound moment timestamp is expressed relative to it (past the lenient
+// max(duration,60min)+1s demote bound), so the demote-not-drop assertion in the worker
+// tests is coupled to a KNOWN duration and cannot go vacuously green.
+const SpeakingGradeFixtureDurationSec = 278
+
+// speakingOutOfBoundMomentMs is a pin far past the lenient NormalizeTimestampComments
+// bound (max(durationMs, 60min)+1s) — guaranteed to demote for any real duration.
+const speakingOutOfBoundMomentMs = 9_999_999
 
 // WritingGradeFixtureEssay is the exact essay text seeded by
 // test.SeedWritingSubmissionForTenant and analysed by MockValidWritingGrade. The
@@ -133,6 +174,18 @@ func (m *MockClient) Generate(_ context.Context, _ GenerateRequest) (json.RawMes
 		return m.invalidBandScores(), nil
 	case MockIncompleteWritingGrade:
 		return m.incompleteWritingGrade(), nil
+	case MockValidSpeakingGrade:
+		return m.validSpeakingGrade(), nil
+	case MockPartialSpeakingGrade:
+		return m.partialSpeakingGrade(), nil
+	case MockInvalidSpeakingBandScores:
+		return m.invalidSpeakingBandScores(), nil
+	case MockIncompleteBandsNoTranscript:
+		return m.incompleteBandsNoTranscript(), nil
+	case MockSpeakingNullMomentConfidence:
+		return m.speakingNullMomentConfidence(), nil
+	case MockSpeakingMalformedMoment:
+		return m.speakingMalformedMoment(), nil
 	case MockValidSection:
 		fallthrough
 	default:
@@ -271,6 +324,136 @@ func (m *MockClient) incompleteWritingGrade() json.RawMessage {
 			// grammaticalRange deliberately omitted.
 		},
 		"comments":        []any{},
+		"overallFeedback": nil,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// --- Story 6.3b speaking-grade generators ---
+
+// validSpeakingCriteriaBlob returns the four valid IELTS Speaking criteria. The
+// fluencyCoherence rationale carries the R49 ResponseMarker (when set) so the
+// secret-logging test can prove the raw response is never logged.
+func (m *MockClient) validSpeakingCriteriaBlob() map[string]any {
+	fcRationale := "Speaks at length with natural pace."
+	if m.cfg.ResponseMarker != "" {
+		fcRationale = fcRationale + " " + m.cfg.ResponseMarker
+	}
+	return map[string]any{
+		"fluencyCoherence": map[string]any{"band": 6.5, "rationale": fcRationale, "confidence": "high"},
+		"lexicalResource":  map[string]any{"band": 6.0, "rationale": "Adequate range of vocabulary.", "confidence": "medium"},
+		"grammaticalRange": map[string]any{"band": 6.0, "rationale": "Mostly accurate structures.", "confidence": "medium"},
+		"pronunciation":    map[string]any{"band": 6.5, "rationale": "Generally clear.", "confidence": "high"},
+	}
+}
+
+// validSpeakingGrade returns a well-formed speaking grade over the fixture recording:
+// four valid bands, a PRESENT transcript, and two moments (one in-bound "PINNED", one
+// out-of-bound "OUTOFBOUND" for the demote-not-drop assertion). The R49 markers, when
+// set, ride inside the transcript + overallFeedback so the secret-logging test proves
+// they are never logged.
+func (m *MockClient) validSpeakingGrade() json.RawMessage {
+	transcript := "Well, my hometown is a small coastal city and I really enjoy living there."
+	if m.cfg.ResponseMarker != "" {
+		transcript = transcript + " " + m.cfg.ResponseMarker
+	}
+	overall := "A confident, fluent performance overall."
+	if m.cfg.PromptMarker != "" {
+		overall = overall + " " + m.cfg.PromptMarker
+	}
+	body := map[string]any{
+		"criteria": m.validSpeakingCriteriaBlob(),
+		"moments": []any{
+			// IN-bound pin — SURVIVES with its timestamp.
+			map[string]any{"type": "praise", "criterion": "fluencyCoherence", "timestampMs": 5000, "text": "PINNED strong, natural opening.", "confidence": "high"},
+			// OUT-of-bound pin — DEMOTED to null (general), never dropped (D11).
+			map[string]any{"type": "suggestion", "criterion": "pronunciation", "timestampMs": speakingOutOfBoundMomentMs, "text": "OUTOFBOUND general delivery note.", "confidence": "medium"},
+		},
+		"transcript":      transcript,
+		"overallFeedback": overall,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// partialSpeakingGrade returns four valid bands but a NULL transcript → a nil-error
+// COMPLETE carrying transcriptionStatus=unavailable (partial_success, no refund).
+func (m *MockClient) partialSpeakingGrade() json.RawMessage {
+	body := map[string]any{
+		"criteria":        m.validSpeakingCriteriaBlob(),
+		"moments":         []any{},
+		"transcript":      nil,
+		"overallFeedback": nil,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// invalidSpeakingBandScores returns a parseable response with an off-grid, out-of-range
+// band (9.5) → terminal invalid_band_scores (AC5).
+func (m *MockClient) invalidSpeakingBandScores() json.RawMessage {
+	criteria := m.validSpeakingCriteriaBlob()
+	criteria["fluencyCoherence"] = map[string]any{"band": 9.5, "rationale": "x", "confidence": "high"}
+	body := map[string]any{
+		"criteria":        criteria,
+		"moments":         []any{},
+		"transcript":      "a transcript",
+		"overallFeedback": nil,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// incompleteBandsNoTranscript returns a result MISSING the pronunciation criterion (a
+// nil band → the completeness check trips) AND a null transcript. The T-C over-charge
+// probe: bands are checked BEFORE the partial return, so this is terminal+refund, NOT a
+// no-refund partial_success (D3).
+func (m *MockClient) incompleteBandsNoTranscript() json.RawMessage {
+	body := map[string]any{
+		"criteria": map[string]any{
+			"fluencyCoherence": map[string]any{"band": 6.5, "rationale": "x", "confidence": "high"},
+			"lexicalResource":  map[string]any{"band": 6.0, "rationale": "x", "confidence": "medium"},
+			"grammaticalRange": map[string]any{"band": 6.0, "rationale": "x", "confidence": "medium"},
+			// pronunciation deliberately omitted → nil band → invalid_ai_response.
+		},
+		"moments":         []any{},
+		"transcript":      nil,
+		"overallFeedback": nil,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// speakingNullMomentConfidence returns four valid bands + a transcript but a moment
+// with a NULL confidence → terminal invalid_ai_response (the completeness pre-check
+// guarding the positional-zip nil-deref, D5/D11).
+func (m *MockClient) speakingNullMomentConfidence() json.RawMessage {
+	body := map[string]any{
+		"criteria": m.validSpeakingCriteriaBlob(),
+		"moments": []any{
+			map[string]any{"type": "error", "criterion": "lexicalResource", "timestampMs": 3000, "text": "a note", "confidence": nil},
+		},
+		"transcript":      "a transcript",
+		"overallFeedback": nil,
+	}
+	raw, _ := json.Marshal(body)
+	return raw
+}
+
+// speakingMalformedMoment returns four valid bands + a transcript + one structurally-
+// bad moment (an invalid type, marked "BADMOMENT") alongside one good moment. The bad
+// moment is DROPPED, the grade ships, the credit is charged (D11).
+func (m *MockClient) speakingMalformedMoment() json.RawMessage {
+	body := map[string]any{
+		"criteria": m.validSpeakingCriteriaBlob(),
+		"moments": []any{
+			// Structurally-bad: an unknown type → DROPPED (never terminal, D11).
+			map[string]any{"type": "not_a_real_type", "criterion": "fluencyCoherence", "timestampMs": 1000, "text": "BADMOMENT bad type.", "confidence": "high"},
+			// Good moment → survives.
+			map[string]any{"type": "praise", "criterion": "grammaticalRange", "timestampMs": 2000, "text": "Nice complex sentence.", "confidence": "high"},
+		},
+		"transcript":      "a transcript",
 		"overallFeedback": nil,
 	}
 	raw, _ := json.Marshal(body)

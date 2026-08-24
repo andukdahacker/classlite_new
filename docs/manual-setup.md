@@ -94,6 +94,17 @@ env vars and the same worker/mock seam — the `ai_grade_writing` job type regis
 new handler on the existing dispatcher. **No new environment variables or setup are
 required.**
 
+**Story 6.3b (AI Speaking grading)** likewise reuses the same `GEMINI_API_KEY` /
+`GEMINI_MODEL` — the `ai_grade_speaking` job type registers another handler. **No new
+env vars.** But there is a HARD model requirement (D16): `GEMINI_MODEL` **MUST be a
+multimodal (audio-capable) model** — the speaking worker POSTs the recording as inline
+audio. A text-only model is refused at run time and looks like a provider hiccup (three
+retries → refund), NOT a config error. The default `gemini-2.0-flash` is multimodal.
+**Model coupling:** there is one shared model for authoring + writing + speaking (no
+per-job-type config in v1), so swapping `GEMINI_MODEL` for speaking changes authoring/
+writing cost + behavior too — validate any swap against all three. (ffmpeg for the audio
+transcode is a 6-3b0 runtime dependency — see the ffmpeg section below.)
+
 | Task | Dev | Staging | Prod |
 |---|---|---|---|
 | Create a Google AI Studio API key (or GCP `generativelanguage` API key) | [ ] | [ ] | [ ] |

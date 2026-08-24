@@ -193,3 +193,49 @@ func SpeakingDurationMsFromContent(content []byte) int {
 	}
 	return int(ms)
 }
+
+// SpeakingAudioKeyFromContent extracts the 5.4-owned `audioKey` from a speaking
+// submission's raw content JSON (D7). "" when absent / unparseable / non-speaking. It
+// is the single source of truth for the audio-object key: the service presign call
+// sites AND the 6.3b ai_grade_speaking worker both read through here, so the key
+// derivation can never drift between the manual and AI paths (worker→service cycle —
+// relocated to `grading`, alongside EssayText).
+func SpeakingAudioKeyFromContent(content []byte) string {
+	var probe struct {
+		AudioKey string `json:"audioKey"`
+	}
+	if err := json.Unmarshal(content, &probe); err != nil {
+		return ""
+	}
+	return probe.AudioKey
+}
+
+// ValidSpeakingMoment reports whether an AI moment is STRUCTURALLY valid: a known
+// comment type, one of the four Speaking criteria, and non-blank text. 6.3b DROPS a
+// moment that fails this (D11 — a structurally-bad moment never sinks a full-value
+// grade), which is the deliberate DIVERGENCE from NormalizeTimestampComments (which
+// returns a ValidationError, because the MANUAL grade write must still 422 a teacher's
+// bad comment). The two share these predicates so the taxonomy never drifts.
+func ValidSpeakingMoment(momentType, criterion, text string) bool {
+	return validCommentTypes[momentType] && validSpeakingCriteria[criterion] && strings.TrimSpace(text) != ""
+}
+
+// BoundSpeakingTimestampMs applies the lenient demote-not-drop pin bound (the SAME
+// rule NormalizeTimestampComments uses): a nil, negative, or > max(durationMs,
+// maxCommentTimestampMs)+1s pin becomes nil (a general/unpinned moment); an in-bound
+// pin is kept. It NEVER signals "drop" — a demoted moment is still kept by the caller.
+func BoundSpeakingTimestampMs(ms *int, durationMs int) *int {
+	if ms == nil {
+		return nil
+	}
+	bound := durationMs
+	if bound < maxCommentTimestampMs {
+		bound = maxCommentTimestampMs
+	}
+	bound += timestampSlackMs
+	if *ms >= 0 && *ms <= bound {
+		kept := *ms
+		return &kept
+	}
+	return nil
+}

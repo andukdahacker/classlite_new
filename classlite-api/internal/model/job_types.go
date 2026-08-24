@@ -36,6 +36,15 @@ const (
 	// grade path. Idempotency anchor: params.SubmissionID + the partial unique index
 	// uq_jobs_ai_grade_inflight (D6).
 	JobTypeAIGradeWriting JobType = "ai_grade_writing"
+	// JobTypeAIGradeSpeaking is the Story 6.3b AI Speaking-grade job: the SPEAKING
+	// twin of JobTypeAIGradeWriting. It rides the SAME 4.3a dispatcher (no migration),
+	// downloads the recording (SEC-8), transcodes it (6.3b0 → ogg), sends the audio +
+	// IELTS Speaking rubric to Gemini, and produces a reviewable AISpeakingGradeResult
+	// SUGGESTION in jobs.result — it NEVER writes a grades row or UPDATEs the submission
+	// (D1); the teacher commits via the 6.3a grade path. Idempotency anchor:
+	// params.SubmissionID + the partial unique index uq_jobs_ai_grade_speaking_inflight
+	// (D9).
+	JobTypeAIGradeSpeaking JobType = "ai_grade_speaking"
 )
 
 // AIGenerationModeToJobType maps the enqueue request `mode` discriminator to its
@@ -94,6 +103,24 @@ const (
 	JobErrorStuckTimeout = "stuck_timeout"
 	// JobErrorMaxRetries marks a transient job that exhausted its retries (AC5).
 	JobErrorMaxRetries = "max_retries_exhausted"
+	// JobErrorAudioUnavailable marks a 6.3b ai_grade_speaking job whose recording could
+	// not be downloaded (missing / poisoned-key R2 object) OR could not be transcoded
+	// (media.ErrTranscodeFailed / media.ErrUnsupportedAudio — terminal), OR whose
+	// transient transcode-retry ladder was exhausted (media.ErrTranscodeUnavailable →
+	// reschedule ×3 → this terminal label, D17). Distinct from invalid_ai_response: the
+	// AI was never reached (or the failure was infra, not a bad generation), so 6-3c
+	// surfaces "we couldn't process this recording; your credit was returned".
+	JobErrorAudioUnavailable = "audio_unavailable"
+)
+
+// Transcription outcome flags carried in an AISpeakingGradeResult (6.3b — D3).
+// The bands are ALWAYS present on a complete result (the seam invariant); the
+// transcript is OPTIONAL. Unavailable ⇒ partial_success: a nil-error COMPLETE that
+// keeps its charge (the moments still deliver skimming value — D15, credit NOT
+// refunded), never a terminal failure.
+const (
+	TranscriptionStatusAvailable   = "available"
+	TranscriptionStatusUnavailable = "unavailable"
 )
 
 // Credit-ledger reasons (ai_credit_ledger.reason). 4.3a writes only these two;
@@ -160,5 +187,15 @@ type GradeReleaseEmailParams struct {
 // physically returns 0 rows. There is deliberately no CenterIDClaim field: the
 // enqueue never writes one, and the worker resolves the essay by submission id alone.
 type AIGradeWritingParams struct {
+	SubmissionID string `json:"submissionId"`
+}
+
+// AIGradeSpeakingParams is the Story 6.3b ai_grade_speaking job payload — the SPEAKING
+// twin of AIGradeWritingParams. It carries ONLY the submission id; the center is NEVER
+// read from the payload (SEC-7/R3) — the job-row center_id (set by the dispatcher
+// before the handler runs) is the sole tenant trust anchor, and the submission +
+// audio-object reads rely on RLS/SEC-8 so a mismatched tenant physically fails closed.
+// There is deliberately no CenterIDClaim field.
+type AIGradeSpeakingParams struct {
 	SubmissionID string `json:"submissionId"`
 }

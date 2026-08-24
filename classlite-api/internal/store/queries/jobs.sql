@@ -114,6 +114,37 @@ WHERE type = 'ai_grade_writing'
   AND params->>'submissionId' = @submission_id
 LIMIT 1;
 
+-- name: GetLatestCompleteAISpeakingGradeJobForSubmission :one
+-- Story 6.3b (D9/D10) — the SPEAKING twin of GetLatestCompleteAIGradeJobForSubmission:
+-- the latest COMPLETE ai_grade_speaking job's result for a submission, powering the
+-- teacher grading-read aiSpeakingSuggestion. RLS-scoped on center_id (class-shared,
+-- authz enforced in the service). ORDER BY completed_at DESC, id DESC is the
+-- deterministic tiebreak on same-instant completions. pgx.ErrNoRows → aiSpeakingSuggestion null.
+SELECT id, center_id, created_by, type, status, params, params_schema_version, result,
+       result_schema_version, error_details, retry_count, max_retries,
+       next_attempt_at, created_at, started_at, completed_at
+FROM jobs
+WHERE type = 'ai_grade_speaking'
+  AND status = 'complete'
+  AND params->>'submissionId' = @submission_id
+ORDER BY completed_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetInflightAISpeakingGradeJobForSubmission :one
+-- Story 6.3b (D9) — the SPEAKING twin of GetInflightAIGradeJobForSubmission: the
+-- existing in-flight (pending/processing) ai_grade_speaking job for a submission,
+-- read after a 23505 on uq_jobs_ai_grade_speaking_inflight rolled the enqueue tx back
+-- so the handler returns the existing job id instead of minting a second job + a
+-- second -1 deduct (the money bug). RLS-scoped; at most one such row (partial index).
+SELECT id, center_id, created_by, type, status, params, params_schema_version, result,
+       result_schema_version, error_details, retry_count, max_retries,
+       next_attempt_at, created_at, started_at, completed_at
+FROM jobs
+WHERE type = 'ai_grade_speaking'
+  AND status IN ('pending', 'processing')
+  AND params->>'submissionId' = @submission_id
+LIMIT 1;
+
 -- name: FindStuckProcessingJobs :many
 -- The 5-minute stuck sweep (AC7): jobs wedged in 'processing' since before
 -- @threshold (@now - StuckJobTimeout, bound via the injected clock). Returns just

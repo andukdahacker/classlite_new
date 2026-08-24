@@ -218,14 +218,15 @@ type gradingStudentResponse struct {
 }
 
 type teacherGradingViewResponse struct {
-	Submission   submissionResponse          `json:"submission"`
-	Assignment   studentAssignmentView       `json:"assignment"`
-	Student      gradingStudentResponse      `json:"student"`
-	Exercise     service.AttemptExercise     `json:"exercise"`
-	Grade        *gradeResponse              `json:"grade"`
-	AiSuggestion *model.AIWritingGradeResult `json:"aiSuggestion"`
-	AudioUrl     *string                     `json:"audioUrl"`
-	AudioStatus  string                      `json:"audioStatus"`
+	Submission           submissionResponse           `json:"submission"`
+	Assignment           studentAssignmentView        `json:"assignment"`
+	Student              gradingStudentResponse       `json:"student"`
+	Exercise             service.AttemptExercise      `json:"exercise"`
+	Grade                *gradeResponse               `json:"grade"`
+	AiSuggestion         *model.AIWritingGradeResult  `json:"aiSuggestion"`
+	AiSpeakingSuggestion *model.AISpeakingGradeResult `json:"aiSpeakingSuggestion"`
+	AudioUrl             *string                      `json:"audioUrl"`
+	AudioStatus          string                       `json:"audioStatus"`
 }
 
 type gradingQueueRowResponse struct {
@@ -269,13 +270,14 @@ func gradeToResponse(g service.GradeView) gradeResponse {
 
 func teacherGradingViewToResponse(v service.TeacherGradingView) teacherGradingViewResponse {
 	out := teacherGradingViewResponse{
-		Submission:   submissionToResponse(v.Submission),
-		Assignment:   studentAssignmentViewFromRow(v.Assignment),
-		Student:      gradingStudentResponse{ID: v.Student.ID, FullName: v.Student.FullName},
-		Exercise:     v.Exercise,
-		AiSuggestion: v.AiSuggestion,
-		AudioUrl:     v.AudioUrl,
-		AudioStatus:  v.AudioStatus,
+		Submission:           submissionToResponse(v.Submission),
+		Assignment:           studentAssignmentViewFromRow(v.Assignment),
+		Student:              gradingStudentResponse{ID: v.Student.ID, FullName: v.Student.FullName},
+		Exercise:             v.Exercise,
+		AiSuggestion:         v.AiSuggestion,
+		AiSpeakingSuggestion: v.AiSpeakingSuggestion,
+		AudioUrl:             v.AudioUrl,
+		AudioStatus:          v.AudioStatus,
 	}
 	if v.Grade != nil {
 		g := gradeToResponse(*v.Grade)

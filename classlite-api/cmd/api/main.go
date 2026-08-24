@@ -134,6 +134,30 @@ func main() {
 	// reused by AssignmentService below (single instance — one subscriber registry).
 	eventBus := event.NewBus()
 	geminiClient := gemini.NewClient(cfg.GeminiAPIKey, cfg.GeminiModel)
+
+	// Story 6.3b (D16) — the AI speaking grader POSTs audio to Gemini; a text-only
+	// GEMINI_MODEL would be refused at run time and look like a provider hiccup
+	// (three retries → refund). There is no per-job-type model config for v1 (one
+	// multimodal flash-class model serves authoring + writing + speaking). We cannot
+	// prove multimodality without a live call, so this is an enforced OPS-CHECKLIST
+	// line, not a network probe: the configured model MUST be audio-capable — see
+	// docs/manual-setup.md. An ops swap here changes authoring/writing cost+behavior too.
+	slog.Info("gemini model configured — MUST be multimodal/audio-capable for 6.3b speaking grading (ops-checklist, see manual-setup.md)",
+		"gemini_model", cfg.GeminiModel)
+
+	// R2-backed storage (mock in dev without R2 creds). Hoisted ABOVE the dispatcher
+	// (Story 6.3b) so the speaking grader can download the recording server-side
+	// (SEC-8 GetObjectOwned). Also consumed by the hardened upload endpoints (Story
+	// 4.4a) and the Story 2.7 bulk-import parser.
+	var uploadStorage service.StorageService = service.NewMockStorageService()
+	if cfg.R2AccountID != "" {
+		uploadStorage = service.NewR2StorageService(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName)
+	}
+
+	// Story 6.3b0 — the bundled ffmpeg transcoder (webm/mp4 → ogg). Injected into
+	// the speaking grader below (the dispatcher/4.3a spine stays media-agnostic, D17).
+	audioTranscoder := media.NewFFmpegTranscoder(media.FFmpegConfig{FFmpegPath: cfg.FFmpegPath})
+
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
 		worker.NewGenerateQuestionsHandler(pool, geminiClient, clock.RealClock{}),
@@ -150,6 +174,12 @@ func main() {
 		// from the job-row tenant, calls Gemini, and produces a reviewable suggestion in
 		// jobs.result — it never writes a grade or the submission (D1).
 		worker.NewGradeWritingHandler(pool, geminiClient, clock.RealClock{}),
+		// Story 6.3b — the AI Speaking-grade handler. It downloads the recording
+		// (SEC-8 GetObjectOwned), transcodes it (6-3b0), sends the audio + rubric to
+		// Gemini, and produces a reviewable AISpeakingGradeResult suggestion — never a
+		// grade/submission write (D1). storage + transcoder are constructor fields so
+		// the dispatcher stays storage/media-agnostic (D6/D17).
+		worker.NewGradeSpeakingHandler(pool, geminiClient, clock.RealClock{}, uploadStorage, audioTranscoder),
 	)
 	go aiDispatcher.Start(workerCtx)
 
@@ -157,14 +187,6 @@ func main() {
 
 	healthHandler := &handler.HealthHandler{Pool: pool}
 	mux.HandleFunc("GET /health", healthHandler.Check)
-
-	// R2-backed storage (mock in dev without R2 creds). Consumed by the
-	// hardened upload endpoints (Story 4.4a, wired on the knowledgeChain below)
-	// and the Story 2.7 bulk-import parser.
-	var uploadStorage service.StorageService = service.NewMockStorageService()
-	if cfg.R2AccountID != "" {
-		uploadStorage = service.NewR2StorageService(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName)
-	}
 
 	// Cookie config — non-dev demands all four attributes (R7 / AC10).
 	cookieCfg := handler.CookieConfig{

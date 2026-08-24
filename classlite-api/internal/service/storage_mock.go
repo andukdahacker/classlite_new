@@ -33,6 +33,17 @@ type MockStorageService struct {
 	// LastPresignGetExpiry captures the TTL of the most recent PresignGet call so a
 	// test can pin the 5-minute GET-URL window (Story 5.5a SEC-8 / PresignGetOwned).
 	LastPresignGetExpiry time.Duration
+
+	// GetObjectKeys records every key that reaches the underlying GetObject fetch, in
+	// call order (Story 6.3b — T-A/T-B). The audio-guard reds assert it stays EMPTY
+	// when GetObjectOwned's prefix guard rejects a foreign key (zero-fetch), and that a
+	// valid owned fetch appears exactly once.
+	GetObjectKeys []string
+	// GetObjectOwnedTenants records the tc.CenterID of every GetObjectOwned call, in
+	// order (Story 6.3b — T-D3/R3 re-scope). The transcode-retry ladder must re-drive
+	// the owned download under the CORRECT tenant on EACH attempt (not assumed-sticky),
+	// so the retry test asserts every entry is tenant A.
+	GetObjectOwnedTenants []string
 }
 
 // NewMockStorageService creates a mock with an empty object store.
@@ -60,14 +71,33 @@ func (m *MockStorageService) GetObject(ctx context.Context, key string) ([]byte,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Record the fetch attempt at method entry (before the error early-return) so the
+	// Story 6.3b zero-fetch reds can prove a guarded-out download never reached here.
+	m.GetObjectKeys = append(m.GetObjectKeys, key)
+
 	if m.GetObjectError != nil {
 		return nil, m.GetObjectError
 	}
 	content, ok := m.contents[key]
 	if !ok {
-		return nil, fmt.Errorf("object %s not found", key)
+		// Typed not-found (mirrors R2 mapping NoSuchKey → ObjectNotFoundError) so
+		// the 6.3b download classifier maps an unseeded key to TERMINAL
+		// audio_unavailable, not the retryable-transport default (Story 6.3b).
+		return nil, ObjectNotFoundError{Key: key}
 	}
 	return content, nil
+}
+
+// GetObjectOwned enforces the SEC-8 owned-key prefix guard via the shared free
+// function (so the mock's guard can never drift from R2's), then delegates to this
+// mock's GetObject (appending the key to the GetObjectKeys spy). It records the
+// caller's tenant on every call so the transcode-retry test can prove each attempt
+// re-drives the download under the correct tenant (Story 6.3b — D6/D13/D17).
+func (m *MockStorageService) GetObjectOwned(ctx context.Context, key string, tc model.TenantContext) ([]byte, error) {
+	m.mu.Lock()
+	m.GetObjectOwnedTenants = append(m.GetObjectOwnedTenants, tc.CenterID)
+	m.mu.Unlock()
+	return getObjectOwned(ctx, m, key, tc)
 }
 
 // Presign returns a fake presigned URL. Records the key in Objects if not already present.

@@ -13,6 +13,7 @@ package gemini
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,12 +25,26 @@ import (
 // compromised upstream cannot OOM the worker (CQ-3 — no magic values).
 const maxResponseBytes = 10 << 20 // 10 MiB
 
+// textRequestTimeout bounds a text-only generateContent call (authoring + writing
+// grade). audioRequestTimeout is the LONGER bound for the 6.3b speaking-grade audio
+// path: a multimodal transcribe-then-grade request runs longer than a text prompt, so
+// it gets its own client rather than bumping the shared text timeout (D2).
+const (
+	textRequestTimeout  = 60 * time.Second
+	audioRequestTimeout = 120 * time.Second
+)
+
 // GenerateRequest is the provider-agnostic generation request the worker hands
 // to the client. Prompt is the fully-built per-mode instruction; Mode is carried
-// for observability only (never the prompt text).
+// for observability only (never the prompt text). AudioData (6.3b) is optional
+// inline audio the worker attaches for a speaking grade — when non-nil the client
+// sends it as a second inlineData part with AudioMimeType (the 6.3b0 transcoder's
+// output MIME, audio/ogg); text callers leave both zero and the wire is unchanged.
 type GenerateRequest struct {
-	Mode   string
-	Prompt string
+	Mode          string
+	Prompt        string
+	AudioData     []byte
+	AudioMimeType string
 }
 
 // Client is the worker's dependency seam for AI generation. Generate returns the
@@ -41,12 +56,15 @@ type Client interface {
 	Generate(ctx context.Context, req GenerateRequest) (json.RawMessage, error)
 }
 
-// httpClient is the real Gemini generateContent client.
+// httpClient is the real Gemini generateContent client. It holds TWO http clients:
+// httpClient for text-only calls (60s) and audioClient for the longer 6.3b audio path
+// (120s) — so a speaking grade does not steal from, nor lend to, the text timeout (D2).
 type httpClient struct {
-	apiKey     string
-	model      string
-	httpClient *http.Client
-	endpoint   string
+	apiKey      string
+	model       string
+	httpClient  *http.Client
+	audioClient *http.Client
+	endpoint    string
 }
 
 // NewClient builds a production Gemini client. apiKey + model come from config;
@@ -54,10 +72,11 @@ type httpClient struct {
 // header — it is never logged, serialized, or placed in the URL (EDGE-4/R49).
 func NewClient(apiKey, model string) Client {
 	return &httpClient{
-		apiKey:     apiKey,
-		model:      model,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
-		endpoint:   "https://generativelanguage.googleapis.com/v1beta/models",
+		apiKey:      apiKey,
+		model:       model,
+		httpClient:  &http.Client{Timeout: textRequestTimeout},
+		audioClient: &http.Client{Timeout: audioRequestTimeout},
+		endpoint:    "https://generativelanguage.googleapis.com/v1beta/models",
 	}
 }
 
@@ -73,8 +92,20 @@ type geminiContent struct {
 	Parts []geminiPart `json:"parts"`
 }
 
+// geminiPart is one content part. Text carries `omitempty` (6.3b) so an AUDIO part
+// (InlineData set, Text empty) does NOT marshal `"text":""` alongside inlineData —
+// Gemini rejects a part carrying both an empty text and inline data as malformed
+// (400). A text-only part still marshals `{"text":"..."}` exactly as before.
 type geminiPart struct {
-	Text string `json:"text"`
+	Text       string            `json:"text,omitempty"`
+	InlineData *geminiInlineData `json:"inlineData,omitempty"`
+}
+
+// geminiInlineData is a base64 inline blob part (6.3b — the transcoded speaking
+// audio). Data is standard-base64; MimeType is the transcoder's output MIME.
+type geminiInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type geminiGenerationConfig struct {
@@ -97,8 +128,21 @@ type geminiResponseBody struct {
 // JSON text. A transport error or non-2xx status is returned as a transient
 // error carrying only the status code — never the key, prompt, or response body.
 func (c *httpClient) Generate(ctx context.Context, req GenerateRequest) (json.RawMessage, error) {
+	// Text prompt is always part 1. For the 6.3b audio path a second inlineData part
+	// carries the (base64) transcoded recording; text callers emit a single text part
+	// and the wire is byte-for-byte unchanged. base64 inflates ×1.33 but the 6.3b0
+	// voice-Opus re-encode keeps the transcoded clip well under Gemini's 20MB inline cap.
+	parts := []geminiPart{{Text: req.Prompt}}
+	doer := c.httpClient
+	if req.AudioData != nil {
+		parts = append(parts, geminiPart{InlineData: &geminiInlineData{
+			MimeType: req.AudioMimeType,
+			Data:     base64.StdEncoding.EncodeToString(req.AudioData),
+		}})
+		doer = c.audioClient // the longer audio-path timeout (D2)
+	}
 	body := geminiRequestBody{
-		Contents:         []geminiContent{{Parts: []geminiPart{{Text: req.Prompt}}}},
+		Contents:         []geminiContent{{Parts: parts}},
 		GenerationConfig: geminiGenerationConfig{ResponseMimeType: "application/json"},
 	}
 	raw, err := json.Marshal(body)
@@ -116,7 +160,7 @@ func (c *httpClient) Generate(ctx context.Context, req GenerateRequest) (json.Ra
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-goog-api-key", c.apiKey)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := doer.Do(httpReq)
 	if err != nil {
 		// Transport failure — transient. Do NOT echo the URL (it carries the key).
 		return nil, fmt.Errorf("gemini: request failed")

@@ -25,10 +25,19 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// inflightJobUniqueIndex is the partial unique index that enforces at-most-one
-// in-flight ai_grade_writing job per submission (migration 20260819120000, D6). A
-// 23505 naming it is the idempotency signal, not an error.
-const inflightJobUniqueIndex = "uq_jobs_ai_grade_inflight"
+// inflightJobUniqueIndex / inflightSpeakingJobUniqueIndex are the partial unique
+// indexes that enforce at-most-one in-flight ai_grade_writing / ai_grade_speaking job
+// per submission (migrations 20260819120000 / 20260824120000, D6/D9). A 23505 naming
+// EITHER is the idempotency signal, not an error.
+const (
+	inflightJobUniqueIndex         = "uq_jobs_ai_grade_inflight"
+	inflightSpeakingJobUniqueIndex = "uq_jobs_ai_grade_speaking_inflight"
+)
+
+// maxAIGradeAudioDurationMs is the AI-gradable recording ceiling (D12): 20 minutes,
+// which dwarfs any real IELTS speaking answer while rejecting an absurd upload upfront
+// at enqueue (before the credit deduct) rather than three transcode retries deep.
+const maxAIGradeAudioDurationMs = 20 * 60 * 1000
 
 // AIGradeService enqueues ai_grade_writing jobs.
 type AIGradeService struct {
@@ -60,6 +69,11 @@ func (s *AIGradeService) EnqueueAIGrade(
 	}
 
 	var jobID uuid.UUID
+	// resolvedSkill is HOISTED to the outer scope (D16) so the post-tx 23505 handler
+	// picks the SPEAKING twin query + speaking index name — else a 2nd in-flight
+	// speaking enqueue's 23505 escapes the reconcile (surfaces as an error) or, worse,
+	// double-charges. It is set inside the tx from the DB exercise skill (SEC-7).
+	var resolvedSkill string
 	err = s.mutateInTenantTx(ctx, tc, func(q *generated.Queries) error {
 		userID, role, rerr := revalidateStaffRole(ctx, q, tc)
 		if rerr != nil {
@@ -76,14 +90,23 @@ func (s *AIGradeService) EnqueueAIGrade(
 		if aerr != nil {
 			return aerr
 		}
-		// D9: teacher-of-class + Writing + gradable gates run BEFORE InsertJob, inside
-		// the tx, so a rejected enqueue commits ZERO side effects (no job, no deduct).
+		// D9: teacher-of-class + skill + gradable gates run BEFORE InsertJob, inside the
+		// tx, so a rejected enqueue commits ZERO side effects (no job, no deduct).
 		if serr := assertTeacherOfSubmissionClass(ctx, q, role, userID.String(), assignment); serr != nil {
 			return serr
 		}
-		if serr := assertWritingExercise(ctx, q, assignment); serr != nil {
-			return serr
+		// SEC-7: the skill is resolved from the DB exercise, NEVER a client field. It
+		// selects the job type + guards below and (hoisted) the 23505 reconcile query.
+		exRow, xerr := q.GetExerciseForAttempt(ctx, assignment.ExerciseID)
+		if xerr != nil {
+			if errors.Is(xerr, pgx.ErrNoRows) {
+				return fmt.Errorf("enqueue ai grade: exercise %s missing for assignment %s",
+					uuidStringFromPg(assignment.ExerciseID), uuidStringFromPg(assignment.ID))
+			}
+			return fmt.Errorf("enqueue ai grade: get exercise skill: %w", xerr)
 		}
+		resolvedSkill = exRow.Skill
+
 		switch sub.Status {
 		case submissionStatusSubmitted, submissionStatusGraded:
 			// gradable
@@ -93,32 +116,65 @@ func (s *AIGradeService) EnqueueAIGrade(
 				Code: "SUBMISSION_NOT_GRADABLE", Message: "submission is not ready to grade",
 			}
 		}
-		// An empty/unparseable essay body would spend a credit on an empty Gemini prompt
-		// and store analyzedWordCount:0 as a "valid" complete suggestion (no refund fires
-		// on completion). Reject BEFORE InsertJob — same grading.EssayText the worker reads.
-		if strings.TrimSpace(grading.EssayText(sub.Content)) == "" {
+
+		var jobType model.JobType
+		var params []byte
+		var merr error
+		switch resolvedSkill {
+		case skillWriting:
+			// An empty/unparseable essay body would spend a credit on an empty Gemini
+			// prompt and store analyzedWordCount:0 as a "valid" complete suggestion (no
+			// refund fires on completion). Reject BEFORE InsertJob.
+			if strings.TrimSpace(grading.EssayText(sub.Content)) == "" {
+				return model.ConflictError{
+					Resource: "submission", ID: submissionID.String(),
+					Code: "SUBMISSION_NOT_GRADABLE", Message: "submission has no essay content to grade",
+				}
+			}
+			jobType = model.JobTypeAIGradeWriting
+			params, merr = json.Marshal(model.AIGradeWritingParams{SubmissionID: submissionID.String()})
+		case skillSpeaking:
+			// D8: empty-audioKey guard. A keyless recording cannot be downloaded — reject
+			// upfront (the worker WOULD refund, but the guard avoids a pointless
+			// deduct+refund+job round-trip; the reason differs from writing's empty essay).
+			if grading.SpeakingAudioKeyFromContent(sub.Content) == "" {
+				return model.ConflictError{
+					Resource: "submission", ID: submissionID.String(),
+					Code: "SUBMISSION_NOT_GRADABLE", Message: "submission has no recording to grade",
+				}
+			}
+			// D12: enqueue-time duration guard. Reject an over-long recording synchronously
+			// (before the deduct), not deduct→enqueue→download→transcode→dead-end in the worker.
+			if grading.SpeakingDurationMsFromContent(sub.Content) > maxAIGradeAudioDurationMs {
+				return model.ConflictError{
+					Resource: "submission", ID: submissionID.String(),
+					Code: "SUBMISSION_TOO_LONG", Message: "recording is too long for AI grading",
+				}
+			}
+			jobType = model.JobTypeAIGradeSpeaking
+			params, merr = json.Marshal(model.AIGradeSpeakingParams{SubmissionID: submissionID.String()})
+		default:
+			// Dead-defense: the grade path only supports writing/speaking today.
 			return model.ConflictError{
 				Resource: "submission", ID: submissionID.String(),
-				Code: "SUBMISSION_NOT_GRADABLE", Message: "submission has no essay content to grade",
+				Code: "SUBMISSION_NOT_GRADABLE", Message: "this exercise skill cannot be AI graded",
 			}
 		}
-
 		// SEC-7: the payload carries ONLY the submission id — the center is never read
 		// from it; the job-row center_id (from tc) is the tenant anchor.
-		params, merr := json.Marshal(model.AIGradeWritingParams{SubmissionID: submissionID.String()})
 		if merr != nil {
 			return fmt.Errorf("enqueue ai grade: marshal params: %w", merr)
 		}
 		job, jerr := q.InsertJob(ctx, generated.InsertJobParams{
 			CenterID:            pgUUID(centerUUID),
 			CreatedBy:           pgUUID(userID),
-			Type:                string(model.JobTypeAIGradeWriting),
+			Type:                string(jobType),
 			Params:              params,
 			ParamsSchemaVersion: model.AIJobParamsSchemaVersion,
 		})
 		if jerr != nil {
-			// A 23505 on the in-flight index bubbles up untranslated so EnqueueAIGrade
-			// can resolve the existing job after the tx rolls back (D6).
+			// A 23505 on EITHER in-flight index bubbles up untranslated so EnqueueAIGrade
+			// can resolve the existing job after the tx rolls back (D6/D9).
 			return jerr
 		}
 		jobID = uuidFromPg(job.ID)
@@ -134,7 +190,7 @@ func (s *AIGradeService) EnqueueAIGrade(
 	})
 	if err != nil {
 		if isInflightIndexViolation(err) {
-			existingID, ferr := s.findInflightJob(ctx, tc, submissionID)
+			existingID, ferr := s.findInflightJob(ctx, tc, submissionID, resolvedSkill)
 			if ferr != nil {
 				return uuid.Nil, false, ferr
 			}
@@ -145,25 +201,37 @@ func (s *AIGradeService) EnqueueAIGrade(
 	return jobID, false, nil
 }
 
-// isInflightIndexViolation reports whether err is a 23505 on the partial in-flight
-// unique index (D6) — the idempotency signal, distinct from any other unique
-// violation (which stays a real error).
+// isInflightIndexViolation reports whether err is a 23505 on EITHER the writing or the
+// speaking partial in-flight unique index (D6/D9) — the idempotency signal, distinct
+// from any other unique violation (which stays a real error). Covering BOTH names is
+// load-bearing: a miss on the speaking index = a double-charge (D16).
 func isInflightIndexViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == inflightJobUniqueIndex
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return false
+	}
+	return pgErr.ConstraintName == inflightJobUniqueIndex || pgErr.ConstraintName == inflightSpeakingJobUniqueIndex
 }
 
 // findInflightJob returns the id of the existing in-flight (pending/processing)
-// ai_grade_writing job for a submission, in a fresh tenant-scoped read tx (the
-// enqueue tx has rolled back). At most one such row exists (the partial index).
+// ai_grade_{writing,speaking} job for a submission, in a fresh tenant-scoped read tx
+// (the enqueue tx has rolled back). The resolvedSkill (hoisted from the enqueue, D16)
+// selects the SPEAKING twin query so a speaking 23505 resolves the speaking job — not
+// the writing one. At most one such row exists (the partial index).
 func (s *AIGradeService) findInflightJob(
-	ctx context.Context, tc model.TenantContext, submissionID uuid.UUID,
+	ctx context.Context, tc model.TenantContext, submissionID uuid.UUID, resolvedSkill string,
 ) (uuid.UUID, error) {
 	var jobID uuid.UUID
 	err := s.readInTenantTx(ctx, tc, func(q *generated.Queries) error {
-		row, err := q.GetInflightAIGradeJobForSubmission(ctx, []byte(submissionID.String()))
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+		var row generated.Job
+		var qerr error
+		if resolvedSkill == skillSpeaking {
+			row, qerr = q.GetInflightAISpeakingGradeJobForSubmission(ctx, []byte(submissionID.String()))
+		} else {
+			row, qerr = q.GetInflightAIGradeJobForSubmission(ctx, []byte(submissionID.String()))
+		}
+		if qerr != nil {
+			if errors.Is(qerr, pgx.ErrNoRows) {
 				// The in-flight job completed/failed between the 23505 and this read —
 				// nothing to return; surface a conflict so the caller can retry.
 				return model.ConflictError{
@@ -171,7 +239,7 @@ func (s *AIGradeService) findInflightJob(
 					Code: "AI_GRADE_ENQUEUE_CONFLICT", Message: "an AI grade for this submission changed state; retry",
 				}
 			}
-			return fmt.Errorf("enqueue ai grade: find in-flight job: %w", err)
+			return fmt.Errorf("enqueue ai grade: find in-flight job: %w", qerr)
 		}
 		jobID = uuidFromPg(row.ID)
 		return nil

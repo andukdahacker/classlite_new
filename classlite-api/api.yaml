@@ -3874,17 +3874,21 @@ paths:
     post:
       operationId: enqueueAIWritingGrade
       summary: >-
-        Enqueue an AI Writing-grade job for a submission — 202 + jobId; deducts 1
-        credit in the SAME tx; never calls Gemini synchronously (story 6.2a — AC1).
-        The worker produces reviewable SUGGESTIONS in job.result (AIWritingGradeResult),
-        never a grade — the teacher reviews in 6.2b and commits via POST
+        Enqueue an AI-grade job for a submission — 202 + jobId; deducts 1 credit in the
+        SAME tx; never calls Gemini synchronously (story 6.2a — AC1). SKILL-BRANCHED
+        (story 6.3b — D8): the job type is resolved from the submission's DB exercise
+        skill (SEC-7), never a client field — a Writing exercise mints ai_grade_writing,
+        a Speaking exercise mints ai_grade_speaking (transcode + Gemini audio); any other
+        skill is 409 SUBMISSION_NOT_GRADABLE. The worker produces reviewable SUGGESTIONS
+        in job.result (AIWritingGradeResult or AISpeakingGradeResult), never a grade —
+        the teacher reviews (6.2b / 6.3c) and commits via POST
         /api/submissions/{submissionId}/grade (D1). submissionId comes from the PATH;
         any client-supplied centerId is ignored (SEC-7 — the job-row center_id is the
         sole trust anchor, R3). Teacher-of-class authz is enforced in the service BEFORE
-        the job insert (D9). Enqueue is idempotent (D6): a 2nd call while an
-        ai_grade_writing job for this submission is pending/processing returns the
-        EXISTING in-flight job (200) with no second job and no second -1 deduct. Refund
-        on terminal failure is automatic; there is NO 402 balance gate (Story 6.5).
+        the job insert (D9). Enqueue is idempotent (D6): a 2nd call while an ai_grade_*
+        job for this submission is pending/processing returns the EXISTING in-flight job
+        (200) with no second job and no second -1 deduct. Refund on terminal failure is
+        automatic; there is NO 402 balance gate (Story 6.5).
       security:
         - bearerAuth: []
       parameters:
@@ -3896,13 +3900,13 @@ paths:
             format: uuid
       responses:
         "202":
-          description: AI grade job enqueued (poll GET /api/jobs/{jobId}; reopening the grading read rehydrates the latest suggestion via TeacherGradingView.aiSuggestion).
+          description: AI grade job enqueued (poll GET /api/jobs/{jobId}; reopening the grading read rehydrates the latest suggestion via TeacherGradingView.aiSuggestion for Writing or TeacherGradingView.aiSpeakingSuggestion for Speaking).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnvelopeJobEnqueued'
         "200":
-          description: An ai_grade_writing job for this submission is already in flight (pending/processing) — the existing job id is returned, no new job and no second deduct (D6 idempotency).
+          description: An ai_grade_writing or ai_grade_speaking job for this submission is already in flight (pending/processing) — the existing job id is returned, no new job and no second deduct (D6 idempotency).
           content:
             application/json:
               schema:
@@ -3927,8 +3931,10 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         "409":
           description: >-
-            SUBMISSION_NOT_WRITING (not a Writing exercise) / SUBMISSION_NOT_GRADABLE
-            (not in submitted/graded status, or no essay content to grade) /
+            SUBMISSION_NOT_GRADABLE (not in submitted/graded status, no essay/recording
+            content to grade, or an exercise skill that cannot be AI graded — the
+            skill-resolved guard, story 6.3b D8) / SUBMISSION_TOO_LONG (a Speaking
+            recording exceeds the AI-grade duration ceiling — enqueue-time guard, D12) /
             AI_GRADE_ENQUEUE_CONFLICT (an in-flight AI grade for this submission
             changed state between the idempotency conflict and re-read — retry)
           content:
@@ -8921,7 +8927,7 @@ components:
       # immediately. audioStatus is hasAudio (non-empty audioKey) or none (non-speaking
       # / empty key) — no server HeadObject probe (D6): the FE classifies a missing R2
       # object from the signed GET (404 → "re-record"; transient 5xx → inline retry).
-      required: [submission, assignment, student, exercise, grade, aiSuggestion, audioUrl, audioStatus]
+      required: [submission, assignment, student, exercise, grade, aiSuggestion, aiSpeakingSuggestion, audioUrl, audioStatus]
       properties:
         submission:
           $ref: '#/components/schemas/Submission'
@@ -8941,6 +8947,11 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AIWritingGradeResult'
+        aiSpeakingSuggestion:
+          description: The latest COMPLETE ai_grade_speaking suggestion for this submission, or null when none (story 6.3b D10). A SEPARATE field from aiSuggestion (writing) — teacher-only, class-shared, absent from the student /result path. Rehydrates the 6-3c review UI on reopen.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AISpeakingGradeResult'
         audioUrl:
           type: string
           nullable: true
@@ -9204,6 +9215,107 @@ components:
           type: integer
           description: Wall-clock the analysis took, in milliseconds (measured via the injected clock — deterministic in tests).
 
+    AISpeakingGradeCriterion:
+      type: object
+      # One IELTS Speaking criterion's AI proposal: a band + rationale + confidence.
+      # Same shape as AIWritingGradeCriterion but a DISTINCT schema (the speaking result
+      # is narrowed by job.type, D10). confidence + rationale are teacher-only (UX-DR22)
+      # and never persisted to grades (D1). A missing/null band or confidence makes the
+      # whole result terminal invalid_ai_response (the "complete ⇒ gradeable" invariant).
+      required: [band, rationale, confidence]
+      properties:
+        band:
+          type: number
+          description: Proposed criterion band (1.0–9.0, 0.5 grid — validated server-side, else terminal invalid_band_scores).
+        rationale:
+          type: string
+          description: Short AI justification for the proposed band (teacher-only).
+        confidence:
+          type: string
+          enum: [high, medium]
+          description: AI confidence for this criterion — teacher-only, never shown to students (UX-DR22).
+
+    AISpeakingGradeCriteria:
+      type: object
+      # The four IELTS Speaking criteria, each an AI proposal. Keys mirror
+      # SpeakingCriterionScores (fluencyCoherence/lexicalResource/grammaticalRange/
+      # pronunciation). All four required (a missing key ⇒ terminal invalid_ai_response).
+      required: [fluencyCoherence, lexicalResource, grammaticalRange, pronunciation]
+      properties:
+        fluencyCoherence:
+          $ref: '#/components/schemas/AISpeakingGradeCriterion'
+        lexicalResource:
+          $ref: '#/components/schemas/AISpeakingGradeCriterion'
+        grammaticalRange:
+          $ref: '#/components/schemas/AISpeakingGradeCriterion'
+        pronunciation:
+          $ref: '#/components/schemas/AISpeakingGradeCriterion'
+
+    AISpeakingMoment:
+      type: object
+      # One AI "moment" pinned to the recording — the TimestampedComment shape (story
+      # 6.3a) plus an AI confidence. A structurally-malformed moment (bad type/criterion/
+      # blank text) is DROPPED by the worker (D11 — a bad moment never sinks a full-value
+      # grade), and an out-of-bound timestampMs is demoted to null (never dropped). On
+      # accept in 6-3c the confidence is dropped (teacher-only) and the {type,criterion,
+      # timestampMs,text} core feeds the 6-3a grade write.
+      required: [type, criterion, timestampMs, text, confidence]
+      properties:
+        type:
+          type: string
+          enum: [error, praise, suggestion]
+        criterion:
+          type: string
+          enum: [fluencyCoherence, lexicalResource, grammaticalRange, pronunciation]
+        timestampMs:
+          type: integer
+          nullable: true
+          description: Milliseconds into the recording, or null for a general (unpinned) moment.
+        text:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium]
+          description: AI confidence for this moment — teacher-only (UX-DR22).
+
+    AISpeakingGradeResult:
+      type: object
+      # The AI Speaking-grade SUGGESTION produced once an ai_grade_speaking job completes
+      # (story 6.3b). Reviewable proposals — NOT a committed grade (D1): the teacher
+      # reviews in 6-3c and commits via POST /grade (speaking branch). The worker does
+      # NOT compute an overall band. Anything in jobs.result at status=complete is a
+      # fully-valid, gradeable suggestion (the seam invariant, D3) — bands are REQUIRED,
+      # the transcript is OPTIONAL. When transcriptionStatus=unavailable the transcript
+      # is null and the credit is NOT refunded (partial_success — D3/D15). transcript,
+      # confidence, and rationale are TEACHER-ONLY (never reach the student /result path).
+      # No omitempty — transcript/overallFeedback are explicit null when absent (GO-5).
+      required: [criteria, moments, transcript, transcriptionStatus, overallFeedback, analyzedDurationMs, latencyMs]
+      properties:
+        criteria:
+          $ref: '#/components/schemas/AISpeakingGradeCriteria'
+        moments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AISpeakingMoment'
+        transcript:
+          type: string
+          nullable: true
+          description: The auto-transcribed recording (teacher-only), or null when transcription was unavailable (partial_success).
+        transcriptionStatus:
+          type: string
+          enum: [available, unavailable]
+          description: Whether Gemini returned a usable transcript. unavailable ⇒ partial_success (bands proposed, credit NOT refunded — D3/D15).
+        overallFeedback:
+          type: string
+          nullable: true
+          description: Optional whole-recording AI feedback, or null.
+        analyzedDurationMs:
+          type: integer
+          description: Duration of the analysed recording in milliseconds (from the submission's persisted durationSec).
+        latencyMs:
+          type: integer
+          description: Wall-clock the analysis took, in milliseconds (measured via the injected clock — deterministic in tests).
+
     Job:
       type: object
       required: [id, type, status, result, errorDetails, createdAt, startedAt, completedAt]
@@ -9219,22 +9331,27 @@ components:
           nullable: true
           description: >-
             The typed job result once complete; null until then. Discriminated by
-            `type` (D11): ai_generate_* → AIGenerationResult (content-shaped, story
+            `type` (D11/D10): ai_generate_* → AIGenerationResult (content-shaped, story
             4.3b); ai_grade_writing → AIWritingGradeResult (reviewable Writing-grade
-            suggestion, story 6.2a). The two are structurally disjoint
-            (AIGenerationResult has `sections`; AIWritingGradeResult has `criteria`), so
+            suggestion, story 6.2a); ai_grade_speaking → AISpeakingGradeResult
+            (reviewable Speaking-grade suggestion, story 6.3b). The three are
+            structurally disjoint (AIGenerationResult has `sections`; AIWritingGradeResult
+            has `comments`; AISpeakingGradeResult has `moments`+`transcriptionStatus`), so
             a consumer narrows by job.type; an unknown type falls to a safe default.
           oneOf:
             - $ref: '#/components/schemas/AIGenerationResult'
             - $ref: '#/components/schemas/AIWritingGradeResult'
+            - $ref: '#/components/schemas/AISpeakingGradeResult'
         errorDetails:
           type: string
           nullable: true
           description: >-
             On failure, a terminal detail code: invalid_ai_response,
-            invalid_band_scores (ai_grade_writing — the AI proposed out-of-range
-            or off-grid bands, distinct from unparseable output), stuck_timeout,
-            max_retries_exhausted, generation_failed, or unknown_job_type.
+            invalid_band_scores (ai_grade_writing/ai_grade_speaking — the AI proposed
+            out-of-range or off-grid bands, distinct from unparseable output),
+            audio_unavailable (ai_grade_speaking — the recording could not be
+            downloaded or transcoded, or the transcode-retry ladder was exhausted),
+            stuck_timeout, max_retries_exhausted, generation_failed, or unknown_job_type.
         createdAt:
           type: string
           format: date-time

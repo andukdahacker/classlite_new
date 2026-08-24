@@ -66,6 +66,33 @@ func (e KeyPrefixMismatchError) Error() string {
 	return "object key does not belong to your center"
 }
 
+// ObjectNotFoundError → the object genuinely does not exist in storage (R2
+// NoSuchKey / 404, or an unseeded mock key). TERMINAL for the owned-download
+// path (Story 6.3b): a retry cannot conjure a missing recording, so the
+// ai_grade_speaking worker maps this to terminal audio_unavailable. Distinct
+// from a transient transport error (network / 5xx / timeout), which the worker
+// classifies as retryable — the download twin of the transcode 3-class contract.
+type ObjectNotFoundError struct {
+	Key string
+}
+
+func (e ObjectNotFoundError) Error() string {
+	return fmt.Sprintf("object %s not found", e.Key)
+}
+
+// ObjectTooLargeError → the owned object exceeds the server-side download cap
+// (Story 6.3b, D6 — maxSpeakingAudioBytes). TERMINAL: a retry cannot shrink it,
+// so the worker maps it to terminal audio_unavailable (never Gemini).
+type ObjectTooLargeError struct {
+	Key        string
+	GotBytes   int
+	LimitBytes int
+}
+
+func (e ObjectTooLargeError) Error() string {
+	return fmt.Sprintf("owned object %s is %d bytes, over the %d-byte cap", e.Key, e.GotBytes, e.LimitBytes)
+}
+
 // FolderCycleError → 422 FOLDER_CYCLE. A move would place a folder inside its
 // own descendant — the 4.4b tree render must terminate (AC2).
 type FolderCycleError struct{}

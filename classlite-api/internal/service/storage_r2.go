@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/ducdo/classlite-api/internal/model"
 )
 
@@ -127,21 +129,40 @@ func (s *R2StorageService) GetObject(ctx context.Context, key string) ([]byte, e
 
 	result, err := s.client.GetObject(ctx, input)
 	if err != nil {
+		// Classify a genuinely-missing object (R2 NoSuchKey / 404) as a TYPED
+		// terminal not-found so the 6.3b owned-download path fails terminal
+		// (a retry cannot conjure it), while a transient transport error
+		// (network / 5xx / timeout) flows through as-is → the worker's download
+		// classifier treats it as retryable (Story 6.3b, D17-symmetric).
+		var noSuchKey *s3types.NoSuchKey
+		var notFound *s3types.NotFound
+		if errors.As(err, &noSuchKey) || errors.As(err, &notFound) {
+			return nil, ObjectNotFoundError{Key: key}
+		}
 		return nil, fmt.Errorf("get object %s: %w", key, err)
 	}
 	defer func() { _ = result.Body.Close() }()
 
-	// Bound the server-side read (code review P1). The bulk-import parser is the
-	// only GetObject caller and caps files at maxImportFileBytes; LimitReader
-	// (+1 byte so an over-cap object is still detectable by len) prevents a large
-	// or decompression-bomb object from being read fully into memory. The
-	// oversize check + typed 413 lives in the import service, which never masks
-	// this as a 404 the way a raw download error is.
-	body, err := io.ReadAll(io.LimitReader(result.Body, maxImportFileBytes+1))
+	// Bound the server-side read (code review P1). LimitReader (+1 byte so an
+	// over-cap object is still detectable by len) prevents a large or
+	// decompression-bomb object from being read fully into memory. The ceiling is
+	// the LARGER of the two GetObject callers' caps — bulk import (maxImportFileBytes,
+	// 5 MB; its own >len 413 check still fires below the ceiling) and the 6.3b owned
+	// audio download (maxSpeakingAudioBytes, 25 MB; a smaller ceiling would silently
+	// truncate a real 20-min recording and every transcode would then fail). Each
+	// caller enforces its OWN tighter cap on the returned bytes.
+	body, err := io.ReadAll(io.LimitReader(result.Body, maxStorageReadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read object %s body: %w", key, err)
 	}
 	return body, nil
+}
+
+// GetObjectOwned enforces the SEC-8 owned-key prefix guard via the shared free
+// function (identical to the mock, so the guard never drifts), then delegates to R2's
+// GetObject bounded to the speaking upload cap (Story 6.3b — D6).
+func (s *R2StorageService) GetObjectOwned(ctx context.Context, key string, tc model.TenantContext) ([]byte, error) {
+	return getObjectOwned(ctx, s, key, tc)
 }
 
 // Delete removes an object from R2 (Story 4.4a — confirm delete-on-mismatch /
