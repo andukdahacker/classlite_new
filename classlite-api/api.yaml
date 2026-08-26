@@ -5371,6 +5371,121 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/submissions/{submissionId}/auto-grade/overrides:
+    post:
+      operationId: overrideAutoGradeAnswer
+      summary: "[PROVISIONAL] Teacher override of one objective auto-grade answer (story 6.4a — AC13)"
+      description: |
+        Teacher/admin/owner only. Sets a single answer's mark, recomputes the effective
+        raw/percentage/band in place on the working row, and returns the updated
+        breakdown. Objective submissions only. Blocked after release. WIRE CONTRACT
+        PROVISIONAL (D16) — request/response shapes are co-finalized when 6-4b is
+        designed; expect refinement.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OverrideAutoGradeAnswerRequest'
+      responses:
+        "200":
+          description: The recomputed auto-grade breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAutoGradeView'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_ALREADY_RELEASED (override after release) / SUBMISSION_NOT_OBJECTIVE (writing/speaking) / AUTO_GRADE_NOT_FOUND (no working row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: INVALID_QUESTION_REF (questionRef does not resolve to a gradable question)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/submissions/{submissionId}/release:
+    post:
+      operationId: releaseAutoGrade
+      summary: "[PROVISIONAL] Teacher release of an objective auto-grade (story 6.4a — AC16)"
+      description: |
+        Teacher/admin/owner only. Appends the definitive objective grade to the grades
+        ledger (kind=objective discriminator), flips the submission submitted -> graded,
+        and enqueues the grade-release notification — reusing the 6.1 atomic
+        grade+release path. Unresolved needs_review answers count as wrong in the
+        definitive grade (D10). Objective submissions only. WIRE CONTRACT PROVISIONAL
+        (D16) — co-finalized with 6-4b.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The released grade
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeGrade'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-staff)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: SUBMISSION_ALREADY_RELEASED (re-release) / SUBMISSION_NOT_OBJECTIVE (writing/speaking) / AUTO_GRADE_NOT_FOUND (no working row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/classes/{classId}/grading-queue:
     get:
       operationId: getGradingQueue
@@ -8960,6 +9075,113 @@ components:
           type: string
           enum: [hasAudio, none]
           description: hasAudio for a speaking submission with a non-empty audioKey; none otherwise. No server HeadObject (D6).
+        autoGrade:
+          description: >
+            Story 6.4a (AC11, D12). Additive per-answer objective auto-grade breakdown,
+            present ONLY for an objective submission (exercise has >=1 question group);
+            null/absent for writing/speaking. Teacher-only — the correctAnswer /
+            acceptedVariants / per-answer breakdown are stripped from the student /result
+            path. PROVISIONAL until release (D16 — co-finalized with 6-4b).
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AutoGradeView'
+
+    AutoGradeView:
+      type: object
+      # Story 6.4a (AC11). The objective auto-grade breakdown a teacher reviews before
+      # release. rawScore/maxScore/percentage/provisionalBand are the cached provisional
+      # (needs_review EXCLUDED from the denominator, D6/D7); released flips true once the
+      # definitive grade is appended to the grades ledger. PROVISIONAL wire shape (D16).
+      required: [rawScore, maxScore, percentage, provisionalBand, released, answers]
+      properties:
+        rawScore:
+          type: integer
+        maxScore:
+          type: integer
+        percentage:
+          type: number
+        provisionalBand:
+          type: number
+        released:
+          type: boolean
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutoGradeAnswerView'
+
+    AutoGradeAnswerView:
+      type: object
+      # Story 6.4a (AC11, D12). One question's breakdown. correctAnswer/acceptedVariants
+      # are TEACHER-ONLY (the store returns them; the handler strips them for any non-staff
+      # serialization — they never reach the student bundle). autoMark is the engine verdict;
+      # overrideMark is the teacher's manual mark (null when not overridden); effectiveMark
+      # is overrideMark ?? autoMark.
+      required: [questionRef, questionText, studentAnswer, studentFlagged, correctAnswer, acceptedVariants, autoMark, overrideMark, effectiveMark]
+      properties:
+        questionRef:
+          type: string
+          description: Colon handle "{sectionIndex}:{groupIndex}:{questionIndex}" (D5).
+        questionText:
+          type: string
+        studentAnswer:
+          type: string
+        studentFlagged:
+          type: boolean
+          description: The student's own "review later" self-flag (informational; does not affect marking).
+        correctAnswer:
+          type: string
+          description: Teacher-only. Stripped from the student /result path.
+        acceptedVariants:
+          type: array
+          items:
+            type: string
+          description: Teacher-only. Stripped from the student /result path.
+        autoMark:
+          $ref: '#/components/schemas/AutoMark'
+        overrideMark:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/OverrideMark'
+        effectiveMark:
+          $ref: '#/components/schemas/AutoMark'
+
+    AutoMark:
+      type: string
+      enum: [correct, wrong, needs_review]
+      description: >
+        Objective auto-grade verdict (Story 6.4a, D6). correct/wrong for all types;
+        needs_review only for free-text near-misses (fill_in_blank/short_answer) and only
+        pre-resolution — at release an unresolved needs_review counts as wrong (D10).
+
+    OverrideMark:
+      type: string
+      enum: [correct, wrong]
+      description: >
+        A teacher's manual override mark (Story 6.4a, D11). Only correct/wrong — an override
+        never targets needs_review, so overrideMark can never carry it (unlike autoMark /
+        effectiveMark, which can). Null when the answer has not been overridden.
+
+    OverrideAutoGradeAnswerRequest:
+      type: object
+      # Story 6.4a (AC13, D11). PROVISIONAL wire shape (D16 — co-finalized with 6-4b).
+      required: [questionRef, mark]
+      properties:
+        questionRef:
+          type: string
+          description: Colon handle "{sectionIndex}:{groupIndex}:{questionIndex}" (D5).
+        mark:
+          type: string
+          enum: [correct, wrong]
+          description: The teacher's manual mark for this answer. needs_review is not a valid override target.
+
+    EnvelopeAutoGradeView:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AutoGradeView'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
     GradingQueueRow:
       type: object

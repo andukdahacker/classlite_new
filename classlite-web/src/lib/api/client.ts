@@ -1675,6 +1675,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/submissions/{submissionId}/auto-grade/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [PROVISIONAL] Teacher override of one objective auto-grade answer (story 6.4a — AC13)
+         * @description Teacher/admin/owner only. Sets a single answer's mark, recomputes the effective
+         *     raw/percentage/band in place on the working row, and returns the updated
+         *     breakdown. Objective submissions only. Blocked after release. WIRE CONTRACT
+         *     PROVISIONAL (D16) — request/response shapes are co-finalized when 6-4b is
+         *     designed; expect refinement.
+         */
+        post: operations["overrideAutoGradeAnswer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submissionId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [PROVISIONAL] Teacher release of an objective auto-grade (story 6.4a — AC16)
+         * @description Teacher/admin/owner only. Appends the definitive objective grade to the grades
+         *     ledger (kind=objective discriminator), flips the submission submitted -> graded,
+         *     and enqueues the grade-release notification — reusing the 6.1 atomic
+         *     grade+release path. Unresolved needs_review answers count as wrong in the
+         *     definitive grade (D10). Objective submissions only. WIRE CONTRACT PROVISIONAL
+         *     (D16) — co-finalized with 6-4b.
+         */
+        post: operations["releaseAutoGrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/{classId}/grading-queue": {
         parameters: {
             query?: never;
@@ -3305,6 +3354,54 @@ export interface components {
              * @enum {string}
              */
             audioStatus: "hasAudio" | "none";
+            /** @description Story 6.4a (AC11, D12). Additive per-answer objective auto-grade breakdown, present ONLY for an objective submission (exercise has >=1 question group); null/absent for writing/speaking. Teacher-only — the correctAnswer / acceptedVariants / per-answer breakdown are stripped from the student /result path. PROVISIONAL until release (D16 — co-finalized with 6-4b). */
+            autoGrade?: components["schemas"]["AutoGradeView"] | null;
+        };
+        AutoGradeView: {
+            rawScore: number;
+            maxScore: number;
+            percentage: number;
+            provisionalBand: number;
+            released: boolean;
+            answers: components["schemas"]["AutoGradeAnswerView"][];
+        };
+        AutoGradeAnswerView: {
+            /** @description Colon handle "{sectionIndex}:{groupIndex}:{questionIndex}" (D5). */
+            questionRef: string;
+            questionText: string;
+            studentAnswer: string;
+            /** @description The student's own "review later" self-flag (informational; does not affect marking). */
+            studentFlagged: boolean;
+            /** @description Teacher-only. Stripped from the student /result path. */
+            correctAnswer: string;
+            /** @description Teacher-only. Stripped from the student /result path. */
+            acceptedVariants: string[];
+            autoMark: components["schemas"]["AutoMark"];
+            overrideMark: components["schemas"]["OverrideMark"] | null;
+            effectiveMark: components["schemas"]["AutoMark"];
+        };
+        /**
+         * @description Objective auto-grade verdict (Story 6.4a, D6). correct/wrong for all types; needs_review only for free-text near-misses (fill_in_blank/short_answer) and only pre-resolution — at release an unresolved needs_review counts as wrong (D10).
+         * @enum {string}
+         */
+        AutoMark: "correct" | "wrong" | "needs_review";
+        /**
+         * @description A teacher's manual override mark (Story 6.4a, D11). Only correct/wrong — an override never targets needs_review, so overrideMark can never carry it (unlike autoMark / effectiveMark, which can). Null when the answer has not been overridden.
+         * @enum {string}
+         */
+        OverrideMark: "correct" | "wrong";
+        OverrideAutoGradeAnswerRequest: {
+            /** @description Colon handle "{sectionIndex}:{groupIndex}:{questionIndex}" (D5). */
+            questionRef: string;
+            /**
+             * @description The teacher's manual mark for this answer. needs_review is not a valid override target.
+             * @enum {string}
+             */
+            mark: "correct" | "wrong";
+        };
+        EnvelopeAutoGradeView: {
+            data: components["schemas"]["AutoGradeView"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         GradingQueueRow: {
             /** Format: uuid */
@@ -10069,6 +10166,135 @@ export interface operations {
             };
             /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    overrideAutoGradeAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideAutoGradeAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description The recomputed auto-grade breakdown */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAutoGradeView"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_ALREADY_RELEASED (override after release) / SUBMISSION_NOT_OBJECTIVE (writing/speaking) / AUTO_GRADE_NOT_FOUND (no working row) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVALID_QUESTION_REF (questionRef does not resolve to a gradable question) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    releaseAutoGrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The released grade */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeGrade"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-staff) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or not the teacher's class) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SUBMISSION_ALREADY_RELEASED (re-release) / SUBMISSION_NOT_OBJECTIVE (writing/speaking) / AUTO_GRADE_NOT_FOUND (no working row) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

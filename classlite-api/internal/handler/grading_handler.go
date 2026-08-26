@@ -227,6 +227,9 @@ type teacherGradingViewResponse struct {
 	AiSpeakingSuggestion *model.AISpeakingGradeResult `json:"aiSpeakingSuggestion"`
 	AudioUrl             *string                      `json:"audioUrl"`
 	AudioStatus          string                       `json:"audioStatus"`
+	// AutoGrade (story 6.4a — AC11): the objective per-answer breakdown for an objective
+	// submission, null for writing/speaking. Teacher-only (this read is staff-gated).
+	AutoGrade *autoGradeViewResponse `json:"autoGrade"`
 }
 
 type gradingQueueRowResponse struct {
@@ -282,6 +285,10 @@ func teacherGradingViewToResponse(v service.TeacherGradingView) teacherGradingVi
 	if v.Grade != nil {
 		g := gradeToResponse(*v.Grade)
 		out.Grade = &g
+	}
+	if v.AutoGrade != nil {
+		ag := autoGradeViewToResponse(*v.AutoGrade)
+		out.AutoGrade = &ag
 	}
 	return out
 }

@@ -631,6 +631,15 @@ func main() {
 	// Story 6.3a — teacher on-demand audio-refresh for Speaking grading (D5).
 	mux.Handle("GET /api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio", gradingChain(gradingHandler.GetTeacherAudio))
 
+	// Story 6.4a — objective auto-grade teacher override + release (D11/D16, PROVISIONAL
+	// wire). Same staff gate as the grading chain. Override recomputes one answer in place;
+	// release appends the definitive grade to the ledger + flips submitted -> graded +
+	// enqueues the release notification (reusing the 6.1 atomic path).
+	autoGradeSvc := service.NewAutoGradeService(pool, auditSvc, clock.RealClock{})
+	autoGradeHandler := handler.NewAutoGradeHandler(autoGradeSvc, clock.RealClock{})
+	mux.Handle("POST /api/submissions/{submissionId}/auto-grade/overrides", gradingChain(autoGradeHandler.Override))
+	mux.Handle("POST /api/submissions/{submissionId}/release", gradingChain(autoGradeHandler.Release))
+
 	// Story 4.4a — Knowledge Hub + hardened presigned uploads. Same open chain
 	// shape as exerciseChain (role — owner/admin/teacher; student → 403 — enforced
 	// in the service). The upload endpoints now run behind auth (they were

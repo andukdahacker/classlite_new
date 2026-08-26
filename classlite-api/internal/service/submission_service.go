@@ -54,17 +54,20 @@ const (
 
 // SubmissionService owns the submission lifecycle.
 type SubmissionService struct {
-	db      AuthDB
-	audit   AuditLogger
-	clk     clock.Clock
-	storage StorageService
+	db        AuthDB
+	audit     AuditLogger
+	clk       clock.Clock
+	storage   StorageService
+	autoGrade AutoGrader
 }
 
 // NewSubmissionService constructs a SubmissionService. Storage is wired
 // separately via WithStorage (optional) so the many existing call sites that
-// never touch object storage stay unchanged.
+// never touch object storage stay unchanged. The production submit-hook
+// auto-grader (Story 6.4a, D13) is wired by default; tests override it via
+// WithAutoGrade to inject a failing/panicking double.
 func NewSubmissionService(db AuthDB, audit AuditLogger, clk clock.Clock) *SubmissionService {
-	return &SubmissionService{db: db, audit: audit, clk: clk}
+	return &SubmissionService{db: db, audit: audit, clk: clk, autoGrade: NewSubmitAutoGrader()}
 }
 
 // WithStorage wires the object-storage client used by the authoritative speaking
@@ -72,6 +75,14 @@ func NewSubmissionService(db AuthDB, audit AuditLogger, clk clock.Clock) *Submis
 // nil storage simply skips the gate (older tests that never carry an audioKey).
 func (s *SubmissionService) WithStorage(storage StorageService) *SubmissionService {
 	s.storage = storage
+	return s
+}
+
+// WithAutoGrade overrides the synchronous objective auto-grade hook (Story 6.4a, D13).
+// Production uses the default real grader wired in NewSubmissionService; the fault-
+// injection tests inject a double that panics/errors to prove submit still commits.
+func (s *SubmissionService) WithAutoGrade(g AutoGrader) *SubmissionService {
+	s.autoGrade = g
 	return s
 }
 
@@ -592,6 +603,15 @@ func (s *SubmissionService) Submit(
 		if lerr := s.audit.LogWithinTx(ctx, tx, tc, submissionSubmittedAction, submissionAuditEntity, uuidFromPg(submitted.ID), changes); lerr != nil {
 			return fmt.Errorf("submit: audit: %w", lerr)
 		}
+		// Story 6.4a (D4/D13) — synchronous objective auto-grade inside a SAVEPOINT fault
+		// boundary. It runs AFTER the durable, audited flip so a grading defect can NEVER
+		// block the submission: on ANY failure (returned error OR panic) we roll back to
+		// the savepoint and let the outer tx still commit 'submitted'. In pgx v5 a failed
+		// statement poisons the whole tx — ROLLBACK TO SAVEPOINT un-poisons it. Non-
+		// objective / malformed content is skipped cleanly (no row) inside the grader.
+		if gradeErr := s.runAutoGradeHook(ctx, tx, tc, uuidFromPg(submitted.ID)); gradeErr != nil {
+			return gradeErr
+		}
 		result = SubmissionResult{Row: submitted}
 		return nil
 	})
@@ -629,6 +649,42 @@ func (s *SubmissionService) readInSubmissionTx(
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// runAutoGradeHook runs the objective auto-grade engine inside a SAVEPOINT (Story 6.4a,
+// D13). A returned error means the SAVEPOINT machinery itself failed (a real tx fault to
+// propagate); a grading failure is contained — rolled back to the savepoint and logged,
+// never surfaced — so submit still commits. A nil auto-grader (defensive) is a no-op.
+func (s *SubmissionService) runAutoGradeHook(
+	ctx context.Context, tx pgx.Tx, tc model.TenantContext, submissionID uuid.UUID,
+) error {
+	if s.autoGrade == nil {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, "SAVEPOINT auto_grade"); err != nil {
+		return fmt.Errorf("submit: auto-grade savepoint: %w", err)
+	}
+	gradeErr := func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("auto-grade panic: %v", r)
+			}
+		}()
+		return s.autoGrade.GradeOnSubmit(ctx, tx, tc, submissionID)
+	}()
+	if gradeErr != nil {
+		if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT auto_grade"); rbErr != nil {
+			return fmt.Errorf("submit: auto-grade rollback: %w", rbErr)
+		}
+		// EDGE-4-safe: log the failure without PII (no answers, no content).
+		slog.WarnContext(ctx, "auto-grade failed; submission committed ungraded",
+			"submission_id", submissionID.String())
+		return nil
+	}
+	if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT auto_grade"); err != nil {
+		return fmt.Errorf("submit: auto-grade release savepoint: %w", err)
+	}
+	return nil
 }
 
 func (s *SubmissionService) mutateInSubmissionTx(

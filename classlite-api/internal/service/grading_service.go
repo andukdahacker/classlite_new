@@ -142,6 +142,11 @@ type TeacherGradingView struct {
 	// AudioStatus is "hasAudio" (non-empty audioKey) or "none" (no HeadObject — D6).
 	AudioUrl    *string
 	AudioStatus string
+	// AutoGrade (story 6.4a — AC11/D12): the objective per-answer breakdown, present only
+	// for an objective submission (exercise has >=1 question group), nil for writing/
+	// speaking. Teacher-only — the handler strips correctAnswer/acceptedVariants for any
+	// non-staff serialization; the student /result path carries no autoGrade block at all.
+	AutoGrade *AutoGradeView
 }
 
 // Audio status values for TeacherGradingView (D6 — FE classifies a missing object
@@ -544,17 +549,25 @@ func (s *GradingService) GetSubmissionForGrading(
 		}
 
 		cg, cgErr := q.GetCurrentGrade(ctx, sub.ID)
-		if cgErr != nil {
-			if errors.Is(cgErr, pgx.ErrNoRows) {
-				return nil // ungraded → grade stays nil
-			}
+		if cgErr != nil && !errors.Is(cgErr, pgx.ErrNoRows) {
 			return fmt.Errorf("grading read: current grade: %w", cgErr)
 		}
-		gv, gvErr := gradeViewFromCurrent(cg)
-		if gvErr != nil {
-			return gvErr
+		released := false
+		if cgErr == nil {
+			gv, gvErr := gradeViewFromCurrent(cg)
+			if gvErr != nil {
+				return gvErr
+			}
+			view.Grade = &gv
+			released = cg.ReleasedAt.Valid
 		}
-		view.Grade = &gv
+		// Story 6.4a (AC11) — additive objective auto-grade breakdown for objective
+		// submissions (exercise has >=1 question group). Absent for writing/speaking.
+		if grading.HasGradableGroups(exContent) {
+			if agErr := populateAutoGrade(ctx, q, sub.ID, exContent, released, &view); agErr != nil {
+				return agErr
+			}
+		}
 		return nil
 	})
 	if err != nil {
