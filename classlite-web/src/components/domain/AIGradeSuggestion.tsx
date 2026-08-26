@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 
+import { AiAvatar, ConfidenceBadge, type AiConfidence } from './AiSuggestionChrome'
 import { CommentCard, type CommentType } from './CommentCard'
 
 /**
@@ -35,7 +35,7 @@ export type AiCriterionKey =
   | 'coherenceCohesion'
   | 'lexicalResource'
   | 'grammaticalRange'
-export type AiConfidence = 'high' | 'medium'
+export type { AiConfidence }
 /** Wire comment enum (`suggestion`), mapped to the CommentCard taxonomy (`suggest`). */
 export type AiCommentType = 'error' | 'praise' | 'suggestion'
 
@@ -98,36 +98,6 @@ function toCardType(type: AiCommentType): CommentType {
  * the domain tier does not import a feature lib, FW-7). */
 function isValidBand(value: number): boolean {
   return Number.isFinite(value) && value >= BAND_MIN && value <= BAND_MAX && Number.isInteger(value * 2)
-}
-
-/** The gradient "AI" avatar — distinguishes an AI card from the teacher's dark "You". */
-function AiAvatar({ label }: { label: string }) {
-  return (
-    <span
-      data-testid="ai-avatar"
-      aria-hidden="true"
-      className="inline-flex size-6 items-center justify-center rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-[0.625rem] font-semibold text-white"
-    >
-      {label}
-    </span>
-  )
-}
-
-function ConfidenceBadge({ confidence }: { confidence: AiConfidence }) {
-  const { t } = useTranslation()
-  return (
-    <span
-      data-testid="ai-confidence"
-      className={cn(
-        'rounded-full px-2 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide',
-        confidence === 'high'
-          ? 'bg-[color:var(--cl-tint-green)] text-[color:var(--cl-green)]'
-          : 'bg-[color:var(--cl-tint-gold)] text-[color:var(--cl-amber)]',
-      )}
-    >
-      {t(`grading.ai.confidence.${confidence}`)}
-    </span>
-  )
 }
 
 export function AIGradeSuggestion({

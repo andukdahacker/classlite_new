@@ -35,6 +35,17 @@ import { computePeaks } from './computePeaks'
 export interface WaveformPin {
   id: string
   timestampMs: number
+  /** Provenance (Story 6.3c, SD6). Optional + additive — an absent `source` renders the
+   * shipped 6-3a teacher-pin exactly as before; `'ai'` reads distinctly (fuchsia, the AI
+   * avatar hue) so an un-accepted/accepted AI-moment marker is visually separable from a
+   * teacher pin (and from the `activePinId` highlight, which still wins). */
+  source?: 'teacher' | 'ai'
+}
+
+/** The non-active marker color for a pin, branched on provenance (SD6). The active
+ * highlight (`bg-ring ring-2 ring-ring`) is applied by the caller and takes precedence. */
+function markerColor(source: WaveformPin['source']): string {
+  return source === 'ai' ? 'bg-fuchsia-500' : 'bg-primary'
 }
 
 export interface AudioWaveformPlayerProps {
@@ -562,6 +573,7 @@ export function AudioWaveformPlayer({
                   key={pin.id}
                   type="button"
                   data-testid={`waveform-pin-${pin.id}`}
+                  data-source={pin.source ?? 'teacher'}
                   aria-label={t('speakingGrading.pin.markerLabel', { time: formatMs(pin.timestampMs) })}
                   aria-current={active ? 'true' : undefined}
                   onClick={() => onMarkerClick(pin)}
@@ -571,7 +583,7 @@ export function AudioWaveformPlayer({
                   className={cn(
                     'absolute top-1 h-[calc(100%-0.5rem)] w-[3px] -translate-x-1/2 rounded-full',
                     onNudgePin ? 'cursor-ew-resize' : 'cursor-pointer',
-                    active ? 'bg-ring ring-2 ring-ring' : 'bg-primary',
+                    active ? 'bg-ring ring-2 ring-ring' : markerColor(pin.source),
                   )}
                   style={{ left: `${cluster.fraction * 100}%` }}
                 />
@@ -604,6 +616,7 @@ export function AudioWaveformPlayer({
                         <button
                           type="button"
                           data-testid={`waveform-pin-${pin.id}`}
+                          data-source={pin.source ?? 'teacher'}
                           aria-current={activePinId === pin.id ? 'true' : undefined}
                           onClick={() => {
                             seekToPin(pin)

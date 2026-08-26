@@ -16,6 +16,13 @@ import { useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 
 import { AudioWaveformPlayer, type WaveformPin } from '@/components/domain/AudioWaveformPlayer'
+import {
+  AiMomentCard,
+  type AiMomentType,
+  type AiSpeakingBandProposal,
+  type AiSpeakingCriterionKey,
+  type AiSpeakingMomentProposal,
+} from '@/components/domain/AISpeakingGradeSuggestion'
 import { CommentCard, type CommentType } from '@/components/domain/CommentCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,8 +46,11 @@ import { useGradingQueue, type GradingQueueRow } from './api/useGradingQueue'
 import { useGradeSpeaking, type SpeakingGradeInput } from './api/useGradeSpeaking'
 import { useReviseSpeakingGrade } from './api/useReviseSpeakingGrade'
 import { useTeacherSubmissionAudioUrl } from './api/useTeacherSubmissionAudioUrl'
+import { AiSpeakingGradePanel } from './components/AiSpeakingGradePanel'
+import { useAiGradeSpeakingJob } from './hooks/useAiGradeSpeakingJob'
 import { isValidBand } from './lib/computeOverallBand'
 import {
+  computeSpeakingOverallBand,
   SPEAKING_CRITERION_KEYS,
   speakingOverallBandMath,
   type SpeakingCriterionKey,
@@ -55,6 +65,10 @@ import {
 } from './lib/speakingGradingDraft'
 
 const DEFAULT_COMMENT_TYPE: SpeakingDraftCommentType = 'error'
+
+/** Stable empty proposal list — passed to the rail/waveform while the ready overlay gates
+ * the (un-reviewed) AI moments, so the memoized `pins` don't churn on every pending render. */
+const EMPTY_MOMENTS: AiSpeakingMomentProposal[] = []
 
 /** Map the wire/draft comment type to the CommentCard taxonomy ('suggestion'→'suggest'). */
 function toCardType(type: SpeakingDraftCommentType): CommentType {
@@ -175,7 +189,24 @@ function SpeakingGradingWorkspace({
   const { t } = useTranslation()
   const alreadyGraded = view.grade != null
   const seed = useMemo(() => draftFromSpeakingGrade(view), [view])
-  const { draft, setDraft } = useSpeakingGradingDraft(submissionId, alreadyGraded ? seed : undefined)
+  const { draft, setDraft: persistDraft } = useSpeakingGradingDraft(
+    submissionId,
+    alreadyGraded ? seed : undefined,
+  )
+
+  // "Touched this session" — flipped by ANY draft mutation through the wrapped setter.
+  // `draftDirty` (the AC15 ready-overlay gate) must mean "the teacher started working this
+  // session", NOT "the draft has content": a revise/reopen seeded from a released grade has
+  // scores+comments but no in-progress work, and would otherwise spuriously hide the first
+  // AI result behind the Review? overlay (mirrors the 6.2b patch).
+  const [draftTouched, setDraftTouched] = useState(false)
+  const setDraft = useCallback(
+    (updater: (prev: SpeakingGradingDraft) => SpeakingGradingDraft) => {
+      setDraftTouched(true)
+      persistDraft(updater)
+    },
+    [persistDraft],
+  )
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [reviseOpen, setReviseOpen] = useState(false)
@@ -303,12 +334,260 @@ function SpeakingGradingWorkspace({
     }
   }, [])
 
-  const pins: WaveformPin[] = useMemo(
+  // --- AI grading (Story 6.3c, SD2/SD3/SD5) ---
+  const aiJob = useAiGradeSpeakingJob(submissionId)
+
+  const [dismissedBands, setDismissedBands] = useState<ReadonlySet<AiSpeakingCriterionKey>>(new Set())
+  const [dismissedMoments, setDismissedMoments] = useState<ReadonlySet<string>>(new Set())
+  const [acceptedMoments, setAcceptedMoments] = useState<ReadonlySet<string>>(new Set())
+  // Moment ids currently open in per-card Edit — "Accept all praise" SKIPS these so it
+  // never merges the stale AI-original text over a teacher's in-progress edit (6.2b patch).
+  const [editingMoments, setEditingMoments] = useState<ReadonlySet<string>>(new Set())
+  // Bumped on every confirmed run (onConfirmRun). Moment ids are POSITIONAL (`ai-m-${i}`),
+  // so a re-run reuses them; folding the run token into each moment card's React key forces
+  // a remount per run — otherwise a card that was mid-Edit (not accepted) in the prior run
+  // would keep its stale local text/criterion buffer over the NEW run's moment (review-fix
+  // 2026-08-25). Pairs with the `acceptedMoments` reset in onConfirmRun.
+  const [runToken, setRunToken] = useState(0)
+  // AC15 non-blocking ready overlay state — see the phase-edge block below draftDirty. Lives
+  // on the PAGE (single source of truth) so it gates the band strip AND the interleaved
+  // moment cards + waveform pins together (review-fix 2026-08-25). Declared here so
+  // onConfirmRun (below) can clear it.
+  const [aiReviewPending, setAiReviewPending] = useState(false)
+
+  // Two-signal rehydrate (SD3): the LIVE completed result when the poll is done, else the
+  // class-shared `view.aiSpeakingSuggestion`. A non-triggering co-teacher has no local job
+  // (phase 'idle' + jobId null → the poll query is disabled), so they read the class-shared
+  // suggestion and NEVER poll a creator-private job (AC13).
+  //
+  // Review-fix 2026-08-25: fall back to `view.aiSpeakingSuggestion` on every non-`ready`
+  // phase EXCEPT `generating` — so a re-run that ends `failed`/`stuck` keeps the still-valid
+  // prior suggestion visible (the teacher no longer loses it and must pay again to see it).
+  // `generating` alone hides it, so the fresh run shows only the skeleton (never the old
+  // band strip stacked under a "generating" spinner) until the new result supersedes it.
+  const liveResult = aiJob.phase === 'ready' ? aiJob.result : null
+  const suggestion = liveResult ?? (aiJob.phase === 'generating' ? null : view.aiSpeakingSuggestion)
+  const hasExistingSuggestion = view.aiSpeakingSuggestion !== null || aiJob.phase === 'ready'
+
+  // Criteria already scored in the durable draft render as "Applied" in the AI strip (never
+  // re-offered), so a reopen can't clobber a manual edit of that band (6.2b patch).
+  const appliedBandCriteria = useMemo(
+    () => new Set(SPEAKING_CRITERION_KEYS.filter((key) => draft.scores[key] !== undefined)),
+    [draft.scores],
+  )
+
+  const bandProposals: AiSpeakingBandProposal[] = suggestion
+    ? SPEAKING_CRITERION_KEYS.map((key) => ({
+        criterion: key,
+        band: suggestion.criteria[key].band,
+        rationale: suggestion.criteria[key].rationale,
+        confidence: suggestion.criteria[key].confidence,
+        accepted: appliedBandCriteria.has(key),
+      })).filter((p) => !dismissedBands.has(p.criterion))
+    : []
+
+  const overallBand = suggestion
+    ? computeSpeakingOverallBand({
+        fluencyCoherence: suggestion.criteria.fluencyCoherence.band,
+        lexicalResource: suggestion.criteria.lexicalResource.band,
+        grammaticalRange: suggestion.criteria.grammaticalRange.band,
+        pronunciation: suggestion.criteria.pronunciation.band,
+      })
+    : 0
+
+  // All moment proposals (stable ids) — the lookup source for Accept + dedup.
+  const allMomentProposals: AiSpeakingMomentProposal[] = useMemo(
     () =>
-      draft.comments
-        .filter((c) => c.timestampMs !== null)
-        .map((c) => ({ id: c.id, timestampMs: c.timestampMs as number })),
+      suggestion
+        ? suggestion.moments.map((m, i) => ({
+            id: `ai-m-${i}`,
+            type: m.type,
+            criterion: m.criterion,
+            timestampMs: m.timestampMs,
+            text: m.text,
+            confidence: m.confidence,
+          }))
+        : [],
+    [suggestion],
+  )
+
+  // A proposal already merged into the persisted draft (a prior session's accept) — its
+  // original (timestampMs,text,criterion) matches a source:'ai' draft comment. Dedup on
+  // reopen so it is not re-offered nor duplicated (AC12).
+  const isMomentMerged = useCallback(
+    (m: AiSpeakingMomentProposal) =>
+      draft.comments.some(
+        (c) =>
+          c.source === 'ai' &&
+          c.criterion === m.criterion &&
+          c.text === m.text &&
+          c.timestampMs === m.timestampMs,
+      ),
     [draft.comments],
+  )
+
+  // The un-accepted, non-dismissed proposals that render inline in the rail (AC6). An
+  // accepted moment leaves this list (it now lives in draft.comments as a source:'ai' card).
+  const momentProposals = allMomentProposals.filter(
+    (m) => !dismissedMoments.has(m.id) && !acceptedMoments.has(m.id) && !isMomentMerged(m),
+  )
+  // Mirror the `acceptAllPraise` filter EXACTLY (it also skips in-edit cards) so the
+  // "Accept all praise" button never renders when clicking it would be a no-op (a card
+  // mid-edit is excluded from the batch). `momentProposals` already drops dismissed /
+  // accepted / merged; the extra guard here is the `editingMoments` skip.
+  const hasUnacceptedPraise = momentProposals.some(
+    (m) => m.type === 'praise' && !editingMoments.has(m.id),
+  )
+
+  const acceptAiBand = useCallback(
+    (key: AiSpeakingCriterionKey, band: number) => setScore(key, band),
+    [setScore],
+  )
+  const dismissAiBand = useCallback(
+    (key: AiSpeakingCriterionKey) => setDismissedBands((prev) => new Set(prev).add(key)),
+    [],
+  )
+
+  // Accept an AI moment: append a SpeakingDraftComment{source:'ai'} — confidence is DROPPED
+  // (never carried into the draft, so it can never reach `grades` — UX-DR22/AC9). timestampMs
+  // comes from the original proposal (the card only edits type/criterion/text).
+  const acceptAiMoment = useCallback(
+    (id: string, next: { type: AiMomentType; criterion: AiSpeakingCriterionKey; text: string }) => {
+      const proposal = allMomentProposals.find((m) => m.id === id)
+      if (!proposal) return
+      setDraft((prev) => {
+        const already = prev.comments.some(
+          (c) =>
+            c.source === 'ai' &&
+            c.criterion === next.criterion &&
+            c.text === next.text &&
+            c.timestampMs === proposal.timestampMs,
+        )
+        if (already) return prev
+        return {
+          ...prev,
+          comments: [
+            ...prev.comments,
+            {
+              id: makeCommentId(),
+              type: next.type,
+              criterion: next.criterion,
+              timestampMs: proposal.timestampMs,
+              text: next.text,
+              source: 'ai',
+            },
+          ],
+        }
+      })
+      setAcceptedMoments((prev) => new Set(prev).add(id))
+    },
+    [allMomentProposals, setDraft],
+  )
+  const dismissAiMoment = useCallback(
+    (id: string) => setDismissedMoments((prev) => new Set(prev).add(id)),
+    [],
+  )
+  const onMomentEditingChange = useCallback(
+    (id: string, editing: boolean) =>
+      setEditingMoments((prev) => {
+        const next = new Set(prev)
+        if (editing) next.add(id)
+        else next.delete(id)
+        return next
+      }),
+    [],
+  )
+
+  // "Accept all praise" — accept every un-accepted, non-dismissed, non-editing praise moment
+  // in one action; other types untouched; a card mid-edit is SKIPPED so its buffer is not
+  // silently discarded (6.2b patch). One batched draft update + accepted-set update.
+  const acceptAllPraise = useCallback(() => {
+    const toAccept = allMomentProposals.filter(
+      (m) =>
+        m.type === 'praise' &&
+        !acceptedMoments.has(m.id) &&
+        !dismissedMoments.has(m.id) &&
+        !editingMoments.has(m.id) &&
+        !isMomentMerged(m),
+    )
+    if (toAccept.length === 0) return
+    setDraft((prev) => {
+      const comments = [...prev.comments]
+      for (const m of toAccept) {
+        const already = comments.some(
+          (c) =>
+            c.source === 'ai' &&
+            c.criterion === m.criterion &&
+            c.text === m.text &&
+            c.timestampMs === m.timestampMs,
+        )
+        if (already) continue
+        comments.push({
+          id: makeCommentId(),
+          type: m.type,
+          criterion: m.criterion,
+          timestampMs: m.timestampMs,
+          text: m.text,
+          source: 'ai',
+        })
+      }
+      return { ...prev, comments }
+    })
+    setAcceptedMoments((prev) => {
+      const next = new Set(prev)
+      for (const m of toAccept) next.add(m.id)
+      return next
+    })
+  }, [allMomentProposals, acceptedMoments, dismissedMoments, editingMoments, isMomentMerged, setDraft])
+
+  const onConfirmRun = useCallback(() => {
+    setDismissedBands(new Set())
+    setDismissedMoments(new Set())
+    // Reset acceptedMoments too (it was previously left intact): with positional ids a
+    // surviving `ai-m-0` would otherwise filter out the NEW run's first moment, silently
+    // hiding a paid suggestion (review-fix 2026-08-25). Accepted work is already committed
+    // as source:'ai' draft comments and survives independently.
+    setAcceptedMoments(new Set())
+    setEditingMoments(new Set())
+    setRunToken((n) => n + 1)
+    // A new run's suggestion must never stay hidden behind a stale ready overlay.
+    setAiReviewPending(false)
+    aiJob.enqueue()
+  }, [aiJob])
+
+  // Session-edited gate for the non-blocking ready overlay (AC15) — NOT "draft has content".
+  const draftDirty = draftTouched || draft.composer !== null
+
+  // AC15 non-blocking ready overlay (review-fix 2026-08-25 — the gate now lives on the PAGE,
+  // the single source of truth, so it withholds BOTH the panel band strip AND the
+  // interleaved moment cards + waveform pins until the teacher opts in; previously the panel
+  // gated only its own band strip while the moments/pins appeared immediately). A completion
+  // while the draft is dirty raises the overlay; Review (or a fresh run) clears it. Uses the
+  // React-sanctioned "adjust state while rendering" pattern on the phase rising edge.
+  const [prevAiPhase, setPrevAiPhase] = useState(aiJob.phase)
+  if (prevAiPhase !== aiJob.phase) {
+    setPrevAiPhase(aiJob.phase)
+    if (aiJob.phase === 'ready' && draftDirty) setAiReviewPending(true)
+  }
+  const reviewSuggestion = useCallback(() => setAiReviewPending(false), [])
+
+  // While the overlay is pending, withhold the un-accepted AI moment proposals from BOTH the
+  // rail and the waveform (they reveal together with the band strip on Review).
+  const revealedMoments = aiReviewPending ? EMPTY_MOMENTS : momentProposals
+
+  // Merged waveform markers (SD6): teacher/accepted-AI draft-comment pins (with their
+  // source) ∪ un-accepted AI moment proposal pins (source 'ai'). A null-timestamp item
+  // gets no marker (it lives in the rail's general zone only).
+  const pins: WaveformPin[] = useMemo(
+    () => [
+      ...draft.comments
+        .filter((c) => c.timestampMs !== null)
+        .map((c) => ({ id: c.id, timestampMs: c.timestampMs as number, source: c.source })),
+      ...revealedMoments
+        .filter((m) => m.timestampMs !== null)
+        .map((m) => ({ id: m.id, timestampMs: m.timestampMs as number, source: 'ai' as const })),
+    ],
+    [draft.comments, revealedMoments],
   )
 
   const math = useMemo(() => speakingOverallBandMath(draft.scores), [draft.scores])
@@ -435,12 +714,32 @@ function SpeakingGradingWorkspace({
 
       <SpeakingBandInputs scores={draft.scores} onChange={setScore} onClear={clearScore} math={math} />
 
+      <AiSpeakingGradePanel
+        aiJob={aiJob}
+        suggestion={suggestion}
+        hasExistingSuggestion={hasExistingSuggestion}
+        reviewPending={aiReviewPending}
+        onReview={reviewSuggestion}
+        bands={bandProposals}
+        overallBand={overallBand}
+        hasUnacceptedPraise={hasUnacceptedPraise}
+        onConfirmRun={onConfirmRun}
+        onAcceptBand={acceptAiBand}
+        onDismissBand={dismissAiBand}
+        onAcceptAllPraise={acceptAllPraise}
+      />
+
       <NotesRail
         comments={draft.comments}
+        aiMoments={revealedMoments}
+        momentRunToken={runToken}
         activePinId={activePinId}
         onDelete={removeComment}
         onEdit={editComment}
         onSeek={seekToPin}
+        onAcceptMoment={acceptAiMoment}
+        onDismissMoment={dismissAiMoment}
+        onMomentEditingChange={onMomentEditingChange}
       />
 
       <div className="flex justify-end">
@@ -579,25 +878,103 @@ function BandInput({
 }
 
 // --- timeline-shaped notes rail (D9: sorted by timestampMs, general zoned) ---
+//
+// Story 6.3c (SD5): the rail now INTERLEAVES un-accepted AI moment proposals with the
+// teacher's own (and accepted-AI) draft comments, sorted chronologically by timestampMs —
+// the epic's "AI + teacher notes together on the timeline" (epic AC L198). A teacher/
+// accepted-AI comment renders as the shipped `CommentCard`; an un-accepted AI proposal
+// renders as an `AiMomentCard` (Accept/Edit/Dismiss). A null-timestamp item of either kind
+// falls into the general (unpinned) zone — never dropped (AC6).
+
+type RailEntry =
+  | { kind: 'comment'; ts: number | null; comment: SpeakingDraftComment }
+  | { kind: 'moment'; ts: number | null; moment: AiSpeakingMomentProposal }
 
 function NotesRail({
   comments,
+  aiMoments,
+  momentRunToken,
   activePinId,
   onDelete,
   onEdit,
   onSeek,
+  onAcceptMoment,
+  onDismissMoment,
+  onMomentEditingChange,
 }: {
   comments: SpeakingDraftComment[]
+  aiMoments: AiSpeakingMomentProposal[]
+  /** Bumped per confirmed run — folded into each moment card's React key so a re-run
+   * remounts the card (clearing its stale per-card Edit buffer). See runToken above. */
+  momentRunToken: number
   activePinId: string | null
   onDelete: (id: string) => void
   onEdit: (id: string) => void
   onSeek: (id: string, timestampMs: number | null) => void
+  onAcceptMoment: (
+    id: string,
+    next: { type: AiMomentType; criterion: AiSpeakingCriterionKey; text: string },
+  ) => void
+  onDismissMoment: (id: string) => void
+  onMomentEditingChange: (id: string, editing: boolean) => void
 }) {
   const { t } = useTranslation()
-  const pinned = comments
-    .filter((c) => c.timestampMs !== null)
-    .sort((a, b) => (a.timestampMs as number) - (b.timestampMs as number))
-  const general = comments.filter((c) => c.timestampMs === null)
+
+  const entries: RailEntry[] = [
+    ...comments.map((c): RailEntry => ({ kind: 'comment', ts: c.timestampMs, comment: c })),
+    ...aiMoments.map((m): RailEntry => ({ kind: 'moment', ts: m.timestampMs, moment: m })),
+  ]
+  const pinned = entries
+    .filter((e) => e.ts !== null)
+    .sort((a, b) => (a.ts as number) - (b.ts as number))
+  const general = entries.filter((e) => e.ts === null)
+
+  const renderEntry = (entry: RailEntry) => {
+    if (entry.kind === 'moment') {
+      return (
+        <li key={`m-${momentRunToken}-${entry.moment.id}`}>
+          <AiMomentCard
+            moment={entry.moment}
+            active={activePinId === entry.moment.id}
+            onSeek={onSeek}
+            onAccept={onAcceptMoment}
+            onDismiss={onDismissMoment}
+            onEditingChange={onMomentEditingChange}
+          />
+        </li>
+      )
+    }
+    const c = entry.comment
+    return (
+      <li
+        key={c.id}
+        data-testid={`rail-item-${c.id}`}
+        data-active={activePinId === c.id ? 'true' : undefined}
+        className={cn('flex flex-col gap-1 rounded-lg', activePinId === c.id && 'ring-2 ring-ring')}
+      >
+        {c.timestampMs !== null ? (
+          // AC6 — the timestamp seeks the playhead + highlights this pin.
+          <button
+            type="button"
+            data-testid={`rail-seek-${c.id}`}
+            onClick={() => onSeek(c.id, c.timestampMs)}
+            aria-label={t('speakingGrading.pin.markerLabel', { time: formatMs(c.timestampMs) })}
+            className="self-start font-mono text-xs font-medium text-primary underline underline-offset-2"
+          >
+            {formatMs(c.timestampMs)}
+          </button>
+        ) : null}
+        <CommentCard
+          type={toCardType(c.type)}
+          criterionKey={`criterion.${c.criterion}`}
+          body={c.text}
+          testIdSlug={c.id}
+          onResolve={() => onDelete(c.id)}
+          onEdit={() => onEdit(c.id)}
+        />
+      </li>
+    )
+  }
 
   return (
     <section
@@ -608,62 +985,21 @@ function NotesRail({
       <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground">
         {t('speakingGrading.rail.title')}
       </h2>
-      {comments.length === 0 ? (
+      {entries.length === 0 ? (
         <p role="status" className="text-sm text-muted-foreground">
           {t('speakingGrading.rail.empty')}
         </p>
       ) : (
         <>
-          <ol className="flex flex-col gap-3">
-            {pinned.map((c) => (
-              <li
-                key={c.id}
-                data-testid={`rail-item-${c.id}`}
-                data-active={activePinId === c.id ? 'true' : undefined}
-                className={cn('flex flex-col gap-1 rounded-lg', activePinId === c.id && 'ring-2 ring-ring')}
-              >
-                {/* AC6 — the timestamp seeks the playhead + highlights this pin. */}
-                <button
-                  type="button"
-                  data-testid={`rail-seek-${c.id}`}
-                  onClick={() => onSeek(c.id, c.timestampMs)}
-                  aria-label={t('speakingGrading.pin.markerLabel', {
-                    time: formatMs(c.timestampMs as number),
-                  })}
-                  className="self-start font-mono text-xs font-medium text-primary underline underline-offset-2"
-                >
-                  {formatMs(c.timestampMs as number)}
-                </button>
-                <CommentCard
-                  type={toCardType(c.type)}
-                  criterionKey={`criterion.${c.criterion}`}
-                  body={c.text}
-                  testIdSlug={c.id}
-                  onResolve={() => onDelete(c.id)}
-                  onEdit={() => onEdit(c.id)}
-                />
-              </li>
-            ))}
-          </ol>
+          {/* Pinned entries render as a flat sequence: a `li` (teacher/accepted-AI comment)
+              or an `AiMomentCard` (`article`) — both valid flow children of the `ol`. */}
+          <ol className="flex flex-col gap-3">{pinned.map(renderEntry)}</ol>
           {general.length > 0 ? (
             <div className="flex flex-col gap-3" data-testid="speaking-grading-general-zone">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('speakingGrading.rail.generalZone')}
               </h3>
-              <ol className="flex flex-col gap-3">
-                {general.map((c) => (
-                  <li key={c.id}>
-                    <CommentCard
-                      type={toCardType(c.type)}
-                      criterionKey={`criterion.${c.criterion}`}
-                      body={c.text}
-                      testIdSlug={c.id}
-                      onResolve={() => onDelete(c.id)}
-                      onEdit={() => onEdit(c.id)}
-                    />
-                  </li>
-                ))}
-              </ol>
+              <ol className="flex flex-col gap-3">{general.map(renderEntry)}</ol>
             </div>
           ) : null}
         </>

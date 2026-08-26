@@ -427,7 +427,9 @@ function ReadyOverlay({ onReview }: { onReview: () => void }) {
 
 // --- confirm dialog (FD4 — credit-cost gate on every enqueue) ---
 
-function AiGradeConfirmDialog({
+/** The skill-agnostic −1-credit confirm gate. Exported so the Speaking panel (Story
+ * 6.3c, SD4) reuses it as-is (the `grading.ai.confirm.*` copy is skill-neutral). */
+export function AiGradeConfirmDialog({
   open,
   onOpenChange,
   isRerun,
