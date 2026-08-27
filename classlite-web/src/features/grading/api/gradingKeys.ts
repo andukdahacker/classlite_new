@@ -20,4 +20,12 @@ export const gradingKeys = {
   // 4.3b generation hook) share the one job-poll cache slot.
   aiGradeMutation: (submissionId: string) =>
     [...gradingKeys.all, 'mutation', 'aiGrade', submissionId] as const,
+  // Story 6.4b (D2): the objective override + release mutation keys. Their
+  // invalidation sets DIFFER (D2/Winston): an override does not change queue
+  // membership → invalidate `detail` ONLY; a release flips submitted→graded →
+  // invalidate `detail` + `all`. The two keys keep them independently trackable.
+  overrideMutation: (submissionId: string) =>
+    [...gradingKeys.all, 'mutation', 'override', submissionId] as const,
+  releaseMutation: (submissionId: string) =>
+    [...gradingKeys.all, 'mutation', 'release', submissionId] as const,
 }

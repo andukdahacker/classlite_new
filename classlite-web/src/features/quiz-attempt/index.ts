@@ -8,4 +8,7 @@
  */
 export { AttemptPage, default } from './AttemptPage'
 export { ExerciseAttemptShell } from './components/ExerciseAttemptShell'
-export type { AttemptContent } from './lib/attemptContent'
+export type { AttemptContent, FlatQuestion } from './lib/attemptContent'
+// Story 6.4b — the teacher objective-grading breakdown reuses the attempt's document-order
+// question walk (keyed by the colon handle) to render + order rows (TS-7 barrel reuse).
+export { flattenQuestions, parseHandle, buildHandle } from './lib/attemptContent'

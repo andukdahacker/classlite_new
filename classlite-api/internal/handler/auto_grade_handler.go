@@ -40,13 +40,19 @@ type autoGradeAnswerResponse struct {
 	EffectiveMark    string   `json:"effectiveMark"`
 }
 
+type autoGradeReleasedProjectionResponse struct {
+	RawScore int     `json:"rawScore"`
+	Band     float64 `json:"band"`
+}
+
 type autoGradeViewResponse struct {
-	RawScore        int                       `json:"rawScore"`
-	MaxScore        int                       `json:"maxScore"`
-	Percentage      float64                   `json:"percentage"`
-	ProvisionalBand float64                   `json:"provisionalBand"`
-	Released        bool                      `json:"released"`
-	Answers         []autoGradeAnswerResponse `json:"answers"`
+	RawScore           int                                 `json:"rawScore"`
+	MaxScore           int                                 `json:"maxScore"`
+	Percentage         float64                             `json:"percentage"`
+	ProvisionalBand    float64                             `json:"provisionalBand"`
+	Released           bool                                `json:"released"`
+	ReleasedProjection autoGradeReleasedProjectionResponse `json:"releasedProjection"`
+	Answers            []autoGradeAnswerResponse           `json:"answers"`
 }
 
 // autoGradeViewToResponse maps the service view to the wire shape. This is the teacher
@@ -71,13 +77,23 @@ func autoGradeViewToResponse(v service.AutoGradeView) autoGradeViewResponse {
 			EffectiveMark:    a.EffectiveMark,
 		})
 	}
+	// ReleasedProjection is always populated by buildAutoGradeView; guard nil defensively so
+	// the wire still emits the required {rawScore, band} object rather than panicking.
+	var projection autoGradeReleasedProjectionResponse
+	if v.ReleasedProjection != nil {
+		projection = autoGradeReleasedProjectionResponse{
+			RawScore: v.ReleasedProjection.RawScore,
+			Band:     v.ReleasedProjection.Band,
+		}
+	}
 	return autoGradeViewResponse{
-		RawScore:        v.RawScore,
-		MaxScore:        v.MaxScore,
-		Percentage:      v.Percentage,
-		ProvisionalBand: v.ProvisionalBand,
-		Released:        v.Released,
-		Answers:         answers,
+		RawScore:           v.RawScore,
+		MaxScore:           v.MaxScore,
+		Percentage:         v.Percentage,
+		ProvisionalBand:    v.ProvisionalBand,
+		Released:           v.Released,
+		ReleasedProjection: projection,
+		Answers:            answers,
 	}
 }
 

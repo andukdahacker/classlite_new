@@ -166,12 +166,26 @@ type AutoGradeAnswerView struct {
 
 // AutoGradeView is the objective breakdown a teacher reviews before release (AC11).
 type AutoGradeView struct {
-	RawScore        int
-	MaxScore        int
-	Percentage      float64
-	ProvisionalBand float64
-	Released        bool
-	Answers         []AutoGradeAnswerView
+	RawScore           int
+	MaxScore           int
+	Percentage         float64
+	ProvisionalBand    float64
+	Released           bool
+	ReleasedProjection *AutoGradeReleasedProjection
+	Answers            []AutoGradeAnswerView
+}
+
+// AutoGradeReleasedProjection is the definitive as-if-released score + band (story 6.4b,
+// #1=A): unresolved needs_review counts as wrong over the full denominator — the same math
+// Release uses (D10). Pre-release it is the projection the 6-4b release-reckoning dialog
+// shows; post-release it equals the released grade. Always populated by buildAutoGradeView
+// (never nil for a real breakdown). The WIRE carries only {rawScore, band} (#1=A); the
+// MaxScore/Percentage fields are internal (used by the projection contract test).
+type AutoGradeReleasedProjection struct {
+	RawScore   int
+	MaxScore   int
+	Percentage float64
+	Band       float64
 }
 
 func (s *AutoGradeService) mutateTx(
@@ -543,6 +557,9 @@ func buildAutoGradeView(content store.ExerciseContent, answers []store.AutoGrade
 		score = definitiveScore
 	}
 	raw, max, pct, band := score(answers)
+	// releasedProjection is ALWAYS the definitive as-if-released score/band (#1=A) —
+	// independent of `released`, so the pre-release reckoning dialog can read it verbatim.
+	projRaw, projMax, projPct, projBand := definitiveScore(answers)
 	views := make([]AutoGradeAnswerView, 0, len(answers))
 	for _, a := range answers {
 		question, ok := lookupQuestion(content, a.QuestionRef)
@@ -569,12 +586,13 @@ func buildAutoGradeView(content store.ExerciseContent, answers []store.AutoGrade
 		})
 	}
 	return AutoGradeView{
-		RawScore:        raw,
-		MaxScore:        max,
-		Percentage:      pct,
-		ProvisionalBand: band,
-		Released:        released,
-		Answers:         views,
+		RawScore:           raw,
+		MaxScore:           max,
+		Percentage:         pct,
+		ProvisionalBand:    band,
+		Released:           released,
+		ReleasedProjection: &AutoGradeReleasedProjection{RawScore: projRaw, MaxScore: projMax, Percentage: projPct, Band: projBand},
+		Answers:            views,
 	}
 }
 

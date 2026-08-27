@@ -174,9 +174,12 @@ describe('GradingRoute dispatch (AC11)', () => {
     expect(screen.queryByText(i18n.t('criterion.taskResponse'))).not.toBeInTheDocument()
   })
 
-  test('a non-writing / non-speaking skill renders an unsupported notice, NOT the writing page (P4)', async () => {
+  test('a non-writing / non-speaking / non-objective skill renders an unsupported notice, NOT the writing page (P4)', async () => {
+    // Story 6.4b (AC16/D1): an OBJECTIVE skill (reading/listening/grammar/vocabulary) with
+    // no autoGrade now renders `objectiveGrading.autoGradeUnavailable`, not unsupportedSkill
+    // — so the genuinely-unsupported path is exercised with a non-objective skill here.
     const view = speakingGradingView({
-      exercise: { id: 'ex-1', title: 'Reading 1', skill: 'reading', sections: [], settings: {} as never },
+      exercise: { id: 'ex-1', title: 'General 1', skill: 'general', sections: [], settings: {} as never },
     })
     renderDispatch(view)
     await waitFor(() =>

@@ -1685,12 +1685,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * [PROVISIONAL] Teacher override of one objective auto-grade answer (story 6.4a — AC13)
+         * Teacher override of one objective auto-grade answer (story 6.4a — AC13)
          * @description Teacher/admin/owner only. Sets a single answer's mark, recomputes the effective
          *     raw/percentage/band in place on the working row, and returns the updated
-         *     breakdown. Objective submissions only. Blocked after release. WIRE CONTRACT
-         *     PROVISIONAL (D16) — request/response shapes are co-finalized when 6-4b is
-         *     designed; expect refinement.
+         *     breakdown. Objective submissions only. Blocked after release.
          */
         post: operations["overrideAutoGradeAnswer"];
         delete?: never;
@@ -1709,13 +1707,12 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * [PROVISIONAL] Teacher release of an objective auto-grade (story 6.4a — AC16)
+         * Teacher release of an objective auto-grade (story 6.4a — AC16)
          * @description Teacher/admin/owner only. Appends the definitive objective grade to the grades
          *     ledger (kind=objective discriminator), flips the submission submitted -> graded,
          *     and enqueues the grade-release notification — reusing the 6.1 atomic
          *     grade+release path. Unresolved needs_review answers count as wrong in the
-         *     definitive grade (D10). Objective submissions only. WIRE CONTRACT PROVISIONAL
-         *     (D16) — co-finalized with 6-4b.
+         *     definitive grade (D10). Objective submissions only.
          */
         post: operations["releaseAutoGrade"];
         delete?: never;
@@ -3354,7 +3351,7 @@ export interface components {
              * @enum {string}
              */
             audioStatus: "hasAudio" | "none";
-            /** @description Story 6.4a (AC11, D12). Additive per-answer objective auto-grade breakdown, present ONLY for an objective submission (exercise has >=1 question group); null/absent for writing/speaking. Teacher-only — the correctAnswer / acceptedVariants / per-answer breakdown are stripped from the student /result path. PROVISIONAL until release (D16 — co-finalized with 6-4b). */
+            /** @description Story 6.4a (AC11, D12). Additive per-answer objective auto-grade breakdown, present ONLY for an objective submission (exercise has >=1 question group); null/absent for writing/speaking. Teacher-only — the correctAnswer / acceptedVariants / per-answer breakdown are stripped from the student /result path. */
             autoGrade?: components["schemas"]["AutoGradeView"] | null;
         };
         AutoGradeView: {
@@ -3363,7 +3360,12 @@ export interface components {
             percentage: number;
             provisionalBand: number;
             released: boolean;
+            releasedProjection: components["schemas"]["AutoGradeReleasedProjection"];
             answers: components["schemas"]["AutoGradeAnswerView"][];
+        };
+        AutoGradeReleasedProjection: {
+            rawScore: number;
+            band: number;
         };
         AutoGradeAnswerView: {
             /** @description Colon handle "{sectionIndex}:{groupIndex}:{questionIndex}" (D5). */

@@ -5374,13 +5374,11 @@ paths:
   /api/submissions/{submissionId}/auto-grade/overrides:
     post:
       operationId: overrideAutoGradeAnswer
-      summary: "[PROVISIONAL] Teacher override of one objective auto-grade answer (story 6.4a — AC13)"
+      summary: Teacher override of one objective auto-grade answer (story 6.4a — AC13)
       description: |
         Teacher/admin/owner only. Sets a single answer's mark, recomputes the effective
         raw/percentage/band in place on the working row, and returns the updated
-        breakdown. Objective submissions only. Blocked after release. WIRE CONTRACT
-        PROVISIONAL (D16) — request/response shapes are co-finalized when 6-4b is
-        designed; expect refinement.
+        breakdown. Objective submissions only. Blocked after release.
       security:
         - bearerAuth: []
       parameters:
@@ -5437,14 +5435,13 @@ paths:
   /api/submissions/{submissionId}/release:
     post:
       operationId: releaseAutoGrade
-      summary: "[PROVISIONAL] Teacher release of an objective auto-grade (story 6.4a — AC16)"
+      summary: Teacher release of an objective auto-grade (story 6.4a — AC16)
       description: |
         Teacher/admin/owner only. Appends the definitive objective grade to the grades
         ledger (kind=objective discriminator), flips the submission submitted -> graded,
         and enqueues the grade-release notification — reusing the 6.1 atomic
         grade+release path. Unresolved needs_review answers count as wrong in the
-        definitive grade (D10). Objective submissions only. WIRE CONTRACT PROVISIONAL
-        (D16) — co-finalized with 6-4b.
+        definitive grade (D10). Objective submissions only.
       security:
         - bearerAuth: []
       parameters:
@@ -9081,7 +9078,7 @@ components:
             present ONLY for an objective submission (exercise has >=1 question group);
             null/absent for writing/speaking. Teacher-only — the correctAnswer /
             acceptedVariants / per-answer breakdown are stripped from the student /result
-            path. PROVISIONAL until release (D16 — co-finalized with 6-4b).
+            path.
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AutoGradeView'
@@ -9091,8 +9088,10 @@ components:
       # Story 6.4a (AC11). The objective auto-grade breakdown a teacher reviews before
       # release. rawScore/maxScore/percentage/provisionalBand are the cached provisional
       # (needs_review EXCLUDED from the denominator, D6/D7); released flips true once the
-      # definitive grade is appended to the grades ledger. PROVISIONAL wire shape (D16).
-      required: [rawScore, maxScore, percentage, provisionalBand, released, answers]
+      # definitive grade is appended to the grades ledger. releasedProjection is the
+      # definitive as-if-released score/band (needs_review -> wrong over the full
+      # denominator) — the 6-4b release dialog reads it verbatim (story 6.4b, #1=A).
+      required: [rawScore, maxScore, percentage, provisionalBand, released, releasedProjection, answers]
       properties:
         rawScore:
           type: integer
@@ -9104,10 +9103,25 @@ components:
           type: number
         released:
           type: boolean
+        releasedProjection:
+          $ref: '#/components/schemas/AutoGradeReleasedProjection'
         answers:
           type: array
           items:
             $ref: '#/components/schemas/AutoGradeAnswerView'
+
+    AutoGradeReleasedProjection:
+      type: object
+      # Story 6.4b (#1=A). The definitive as-if-released score + band: unresolved
+      # needs_review counts as wrong over the FULL denominator — the same math Release
+      # uses (6.4a D10). Pre-release this is the projection the release-reckoning dialog
+      # shows; post-release it equals the released grade. The UI reads it verbatim (D3).
+      required: [rawScore, band]
+      properties:
+        rawScore:
+          type: integer
+        band:
+          type: number
 
     AutoGradeAnswerView:
       type: object
@@ -9163,7 +9177,7 @@ components:
 
     OverrideAutoGradeAnswerRequest:
       type: object
-      # Story 6.4a (AC13, D11). PROVISIONAL wire shape (D16 — co-finalized with 6-4b).
+      # Story 6.4a (AC13, D11).
       required: [questionRef, mark]
       properties:
         questionRef:

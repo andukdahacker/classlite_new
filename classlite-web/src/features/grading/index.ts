@@ -13,6 +13,14 @@ export { useGradingQueue, type GradingQueueRow } from './api/useGradingQueue'
 export { useGradeSubmission, type GradeInput, type Grade } from './api/useGradeSubmission'
 export { useReviseGrade, type ReviseGradeInput } from './api/useReviseGrade'
 export { useGradeSpeaking, type SpeakingGradeInput } from './api/useGradeSpeaking'
+// Story 6.4b — objective auto-grade override + release + the s25 review page.
+export { ObjectiveGradingPage } from './ObjectiveGradingPage'
+export {
+  useOverrideAutoGradeAnswer,
+  type AutoGradeView,
+  type OverrideAutoGradeAnswerRequest,
+} from './api/useOverrideAutoGradeAnswer'
+export { useReleaseAutoGrade } from './api/useReleaseAutoGrade'
 export { useReviseSpeakingGrade, type ReviseSpeakingGradeInput } from './api/useReviseSpeakingGrade'
 export { useTeacherSubmissionAudioUrl } from './api/useTeacherSubmissionAudioUrl'
 export {
