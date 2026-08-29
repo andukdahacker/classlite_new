@@ -6,7 +6,7 @@ WHERE user_id = $1 AND center_id = $2;
 -- name: CreateCenterMember :one
 INSERT INTO center_members (user_id, center_id, role)
 VALUES ($1, $2, $3)
-RETURNING user_id, center_id, role, created_at;
+RETURNING user_id, center_id, role, created_at, archived_at;
 
 -- name: CountCenterMembersByUser :one
 -- Story 2.1 — pre-check for the "one center per user in v1" invariant

@@ -57,7 +57,7 @@ func TestInvite_RowShapeAndCrossTenantIsolation(t *testing.T) {
 	}
 
 	result, err := authSvc.AdminInviteStaff(context.Background(), tc,
-		"rowshape-target@example.com", "teacher")
+		service.AdminInviteStaffInput{Email: "rowshape-target@example.com", Role: "teacher"})
 	if err != nil {
 		t.Fatalf("AdminInviteStaff: %v", err)
 	}

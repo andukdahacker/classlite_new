@@ -122,10 +122,14 @@ type AuthService struct {
 	retry     EmailRetryQueue
 	verifyURL string
 	resetURL  string
-	clock     func() time.Time
-	sleep     func(time.Duration)
-	clk       clock.Clock
-	jwt       JWTSigner
+	// Story 7.1a — the frontend accept-invite page base; the staff-invite
+	// email links here with ?token=<raw>. Defaulted for dev/tests; production
+	// main.go overrides via SetInviteAcceptURLBase.
+	inviteAcceptURL string
+	clock           func() time.Time
+	sleep           func(time.Duration)
+	clk             clock.Clock
+	jwt             JWTSigner
 
 	// Story 1.6 — Google OAuth wiring (nil unless main.go calls
 	// SetGoogleOAuth). Endpoints return 503 when nil. Setters are
@@ -159,17 +163,18 @@ func NewAuthServiceWithClock(db AuthDB, hasher Hasher, email EmailSender, audit 
 		c = clock.RealClock{}
 	}
 	return &AuthService{
-		db:        db,
-		hasher:    hasher,
-		email:     email,
-		audit:     audit,
-		retry:     retry,
-		verifyURL: strings.TrimRight(verifyURL, "/"),
-		resetURL:  "http://localhost:5173/reset-password",
-		clock:     c.Now,
-		sleep:     c.Sleep,
-		clk:       c,
-		jwt:       NewJWTSignerWithClock(ephemeralJWTSecret(), c),
+		db:              db,
+		hasher:          hasher,
+		email:           email,
+		audit:           audit,
+		retry:           retry,
+		verifyURL:       strings.TrimRight(verifyURL, "/"),
+		resetURL:        "http://localhost:5173/reset-password",
+		inviteAcceptURL: "http://localhost:5173/accept-invite",
+		clock:           c.Now,
+		sleep:           c.Sleep,
+		clk:             c,
+		jwt:             NewJWTSignerWithClock(ephemeralJWTSecret(), c),
 	}
 }
 
@@ -194,6 +199,13 @@ func (s *AuthService) JWTSigner() JWTSigner {
 // passes Config.AppResetURLBase.
 func (s *AuthService) SetResetURLBase(base string) {
 	s.resetURL = strings.TrimRight(base, "/")
+}
+
+// SetInviteAcceptURLBase overrides the default accept-invite URL base (Story
+// 7.1a). Production main.go passes the frontend accept-invite page URL; the
+// staff-invite email links here with ?token=<raw>.
+func (s *AuthService) SetInviteAcceptURLBase(base string) {
+	s.inviteAcceptURL = strings.TrimRight(base, "/")
 }
 
 // SetGoogleOAuth wires the Google OAuth client + state signer. Optional

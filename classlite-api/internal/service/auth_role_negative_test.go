@@ -51,7 +51,7 @@ func TestAdminInviteStaff_AC13_NonOwnerRoles_Rejected(t *testing.T) {
 				Role:     "owner", // JWT lies — DB is the truth
 			}
 
-			_, err := svc.AdminInviteStaff(context.Background(), tc, "invitee@example.com", "teacher")
+			_, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "invitee@example.com", Role: "teacher"})
 			var fe *service.ForbiddenError
 			if !errors.As(err, &fe) {
 				t.Fatalf("role=%s: expected ForbiddenError, got %T (%v)", role, err, err)
@@ -76,7 +76,7 @@ func TestAdminInviteStaff_AC13_MalformedCenterID_Forbidden(t *testing.T) {
 		UserID:   "00000000-0000-0000-0000-000000000001",
 		Role:     "owner",
 	}
-	_, err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "x@example.com", Role: "teacher"})
 	var fe *service.ForbiddenError
 	if !errors.As(err, &fe) {
 		t.Fatalf("malformed CenterID: expected ForbiddenError, got %T (%v)", err, err)
@@ -94,7 +94,7 @@ func TestAdminInviteStaff_AC13_MalformedUserID_Forbidden(t *testing.T) {
 		UserID:   "not-a-uuid",
 		Role:     "owner",
 	}
-	_, err := svc.AdminInviteStaff(context.Background(), tc, "x@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "x@example.com", Role: "teacher"})
 	var fe *service.ForbiddenError
 	if !errors.As(err, &fe) {
 		t.Fatalf("malformed UserID: expected ForbiddenError, got %T (%v)", err, err)
@@ -119,7 +119,7 @@ func TestAdminInviteStaff_AC13_OwnerSuccess_WritesInviteRow(t *testing.T) {
 		UserID:   test.UUIDString(owner.ID),
 		Role:     "owner",
 	}
-	if _, err := svc.AdminInviteStaff(context.Background(), tc, "newbie@example.com", "teacher"); err != nil {
+	if _, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "newbie@example.com", Role: "teacher"}); err != nil {
 		t.Fatalf("owner AdminInviteStaff: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func TestAdminInviteStaff_AC13_RejectionEmitsAuditRow(t *testing.T) {
 		UserID:   test.UUIDString(teacher.ID),
 		Role:     "owner",
 	}
-	_, _ = svc.AdminInviteStaff(context.Background(), tc, "victim@example.com", "teacher")
+	_, _ = svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "victim@example.com", Role: "teacher"})
 
 	var rows int
 	_ = db.QueryRow(context.Background(),

@@ -925,6 +925,237 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 7.1a — Staff roster + Owner-only actions ====================
+  #
+  # PROVISIONAL WIRE CONTRACT (D10). 7-1a is the producer; Story 7-1b (the s39
+  # staff list / s40 detail / s41 invite modal UI) is the SOLE consumer and
+  # co-finalizes these read + action shapes. Field spellings may still change
+  # when 7-1b is designed — treat StaffMember / PendingInvite / StaffMemberDetail
+  # and the action responses as a working contract, not a hardened one.
+  /api/staff:
+    get:
+      operationId: listStaff
+      summary: Admin/Owner — staff roster (Story 7.1a AC1) — PROVISIONAL (D10)
+      description: |
+        Returns the center's staff as a split object: `members` (accepted
+        center_members rows, role admin/teacher, with per-row load/last-active
+        aggregates and derived status) and `pendingInvites` (unaccepted invite
+        rows). Owners are excluded from both (D3/D11). Admin/Owner only —
+        `RequireRole("owner","admin")`; Teacher/Student → 403 INSUFFICIENT_ROLE.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Staff roster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStaffRoster'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (Teacher/Student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: INTERNAL_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/staff/{userId}:
+    get:
+      operationId: getStaffMember
+      summary: Admin/Owner — staff member detail (Story 7.1a AC4) — PROVISIONAL (D10)
+      description: |
+        Detail for a member (role admin/teacher) of the caller's center. A
+        non-member / student / owner target → 404 STAFF_NOT_FOUND (never 403 —
+        existence non-disclosure across the boundary). Admin/Owner only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Staff member detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStaffMemberDetail'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (Teacher/Student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STAFF_NOT_FOUND (not a member / student / owner)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/staff/{userId}/assign-class:
+    post:
+      operationId: assignStaffClass
+      summary: Owner — assign a class to a teacher (Story 7.1a AC13) — PROVISIONAL (D10)
+      description: |
+        Sets `classes.teacher_id` for the target class to this teacher
+        (mutex-honored). Owner only — `RequireRole("owner")` at the edge PLUS
+        a service-layer DB role re-fetch (SEC-1). Target not a teacher member →
+        404 STAFF_NOT_FOUND; class not in center → 404 CLASS_NOT_FOUND.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignClassRequest'
+      responses:
+        "200":
+          description: Class assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAssignClassResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-Owner caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STAFF_NOT_FOUND / CLASS_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing/invalid classId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/staff/{userId}/archive:
+    post:
+      operationId: archiveStaff
+      summary: Owner — archive a staff member (Story 7.1a AC14) — PROVISIONAL (D10)
+      description: |
+        Soft-archives the member (`center_members.archived_at = now()`). Owner
+        only (edge + SEC-1 DB re-fetch). Archiving self → 409 CANNOT_ARCHIVE_SELF;
+        already archived → 409 STAFF_ALREADY_ARCHIVED; owner/non-member → 404
+        STAFF_NOT_FOUND. Classes are NOT auto-unassigned — the response carries
+        `assignedClassCount` (D17c) so the UI can warn.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Member archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeArchiveStaffResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-Owner caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STAFF_NOT_FOUND (owner / non-member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: CANNOT_ARCHIVE_SELF / STAFF_ALREADY_ARCHIVED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/staff/{userId}/reset-password:
+    post:
+      operationId: resetStaffPassword
+      summary: Owner — trigger a password reset for a member (Story 7.1a AC15) — PROVISIONAL (D10)
+      description: |
+        Creates a `password_resets` row and enqueues a reset email to the
+        member (reusing the reset token primitives — NO verified-gate / silent
+        / padToFloor path, D14). Owner only (edge + SEC-1 DB re-fetch). 204 on
+        success. Non-member → 404 STAFF_NOT_FOUND.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Reset email enqueued (no body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-Owner caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STAFF_NOT_FOUND (non-member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5b — Terms + Holidays + Rooms ====================
   # 12 endpoints (4 per entity × 3 entities). All Owner-only via the shared
   # settingsChain middleware (ExtractTenant → RequireVerifiedEmail →
@@ -7836,6 +8067,31 @@ components:
             enrollment endpoints, Story 2.7 / Epic 7). FR-11 forbids Admin
             callers from picking `owner` here — the service returns 403
             ROLE_ASSIGNMENT_FORBIDDEN in that case.
+        name:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: |
+            Story 7.1a (D2) — optional display name persisted on the invite
+            (invites.name) so the pending-roster row can show a name before
+            acceptance. Additive; older clients omit it.
+        classId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Story 7.1a (D7) — optional target class. Accepted ONLY when
+            `role = teacher` (else 422 VALIDATION_ERROR); the class must
+            resolve in the caller's center (else 404 CLASS_NOT_FOUND). On
+            acceptance by the teacher, `classes.teacher_id` is auto-assigned
+            to the new member (mutex-honored).
+        welcomeNote:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: |
+            Story 7.1a (D2) — optional note appended (HTML-escaped) to the
+            invite email body. Never affects the invite row.
 
     InviteResult:
       type: object
@@ -7863,6 +8119,230 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/InviteResult'
+
+    # ---------------- Story 7.1a — Staff roster + actions (PROVISIONAL, D10) ----------------
+    # 7-1b is the sole consumer and co-finalizes these shapes. `load` is a
+    # NEXT-7-DAYS sliding-window count (D16) — NOT a calendar week — so the field
+    # is named nextSevenDaysSessionCount, not "weekly".
+    StaffLoad:
+      type: object
+      required: [nextSevenDaysSessionCount, weeklyCapacity, heavy]
+      properties:
+        nextSevenDaysSessionCount:
+          type: integer
+          description: |
+            COUNT of the teacher's status='scheduled' sessions with starts_at in
+            the half-open window [now, now+7d). A SLIDING window (D16), not a
+            calendar week. 0 for a non-teaching member.
+        weeklyCapacity:
+          type: integer
+          description: Fixed capacity constant (DefaultWeeklySessionCapacity = 10).
+        heavy:
+          type: boolean
+          description: nextSevenDaysSessionCount >= HeavyLoadThresholdSessionsPerWeek (8).
+    StaffMember:
+      type: object
+      required: [userId, name, email, avatarUrl, role, status, classesAssigned, load, lastActiveAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [admin, teacher]
+        status:
+          type: string
+          enum: [active, archived]
+        classesAssigned:
+          type: integer
+        load:
+          $ref: '#/components/schemas/StaffLoad'
+        lastActiveAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: MAX(refresh_tokens.created_at) proxy; null = never/logged-out (D6).
+    PendingInvite:
+      type: object
+      required: [inviteId, name, email, role, invitedAt, expiresAt, pendingClassId]
+      properties:
+        inviteId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, teacher]
+        invitedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        pendingClassId:
+          type: string
+          format: uuid
+          nullable: true
+    StaffRoster:
+      type: object
+      required: [members, pendingInvites]
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffMember'
+        pendingInvites:
+          type: array
+          items:
+            $ref: '#/components/schemas/PendingInvite'
+    EnvelopeStaffRoster:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StaffRoster'
+    StaffAssignedClass:
+      type: object
+      required: [classId, name]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        name:
+          type: string
+    StaffScheduleGlanceItem:
+      type: object
+      required: [sessionId, classId, className, startsAt, endsAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    StaffActivityItem:
+      type: object
+      required: [event, entityType, at]
+      properties:
+        event:
+          type: string
+        entityType:
+          type: string
+        at:
+          type: string
+          format: date-time
+    StaffMemberDetail:
+      type: object
+      required: [userId, name, email, avatarUrl, languagePref, role, status, assignedClasses, scheduleGlance, load, lastActiveAt, recentActivity]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+        languagePref:
+          type: string
+        role:
+          type: string
+          enum: [admin, teacher]
+        status:
+          type: string
+          enum: [active, archived]
+        assignedClasses:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffAssignedClass'
+        scheduleGlance:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffScheduleGlanceItem'
+        load:
+          $ref: '#/components/schemas/StaffLoad'
+        lastActiveAt:
+          type: string
+          format: date-time
+          nullable: true
+        recentActivity:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffActivityItem'
+    EnvelopeStaffMemberDetail:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StaffMemberDetail'
+    AssignClassRequest:
+      type: object
+      required: [classId]
+      properties:
+        classId:
+          type: string
+          format: uuid
+    AssignClassResult:
+      type: object
+      required: [userId, classId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+    EnvelopeAssignClassResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssignClassResult'
+    ArchiveStaffResult:
+      type: object
+      required: [userId, status, assignedClassCount]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [archived]
+        assignedClassCount:
+          type: integer
+          description: |
+            Classes the archived teacher still owns (D17c ghost visibility) —
+            classes are NOT auto-unassigned; the UI warns with this count.
+    EnvelopeArchiveStaffResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ArchiveStaffResult'
 
     # ---------------- Story 4.1 — Exercise library ----------------
     ExerciseSkill:

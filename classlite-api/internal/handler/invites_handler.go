@@ -20,6 +20,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/service"
+	"github.com/google/uuid"
 )
 
 // InvitesHandler wires AdminInviteStaff to HTTP.
@@ -41,6 +42,12 @@ const maxInviteBodyBytes = 16 * 1024
 type inviteStaffRequestBody struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
+	// Story 7.1a (D2/D7) — optional widened fields. DisallowUnknownFields is
+	// on (decodeInviteStaffBody), so these MUST be declared or a client
+	// sending them 422s.
+	Name        *string `json:"name"`
+	ClassID     *string `json:"classId"`
+	WelcomeNote *string `json:"welcomeNote"`
 }
 
 // inviteResultResponse mirrors api.yaml InviteResult. Never `omitempty`
@@ -73,7 +80,25 @@ func (h *InvitesHandler) Post(w http.ResponseWriter, r *http.Request) error {
 		return decodeErr
 	}
 
-	result, err := h.svc.AdminInviteStaff(r.Context(), tc, body.Email, body.Role)
+	in := service.AdminInviteStaffInput{
+		Email:       body.Email,
+		Role:        body.Role,
+		Name:        body.Name,
+		WelcomeNote: body.WelcomeNote,
+	}
+	// classId arrives as a JSON string; parse to *uuid.UUID. A malformed value
+	// is a 422 (not a 404) — it is client input, not a missing resource.
+	if body.ClassID != nil && *body.ClassID != "" {
+		classID, parseErr := uuid.Parse(*body.ClassID)
+		if parseErr != nil {
+			return model.ValidationError{Fields: []model.FieldError{
+				{Field: "classId", Message: "must be a valid UUID"},
+			}}
+		}
+		in.ClassID = &classID
+	}
+
+	result, err := h.svc.AdminInviteStaff(r.Context(), tc, in)
 	if err != nil {
 		return err
 	}

@@ -457,6 +457,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin/Owner — staff roster (Story 7.1a AC1) — PROVISIONAL (D10)
+         * @description Returns the center's staff as a split object: `members` (accepted
+         *     center_members rows, role admin/teacher, with per-row load/last-active
+         *     aggregates and derived status) and `pendingInvites` (unaccepted invite
+         *     rows). Owners are excluded from both (D3/D11). Admin/Owner only —
+         *     `RequireRole("owner","admin")`; Teacher/Student → 403 INSUFFICIENT_ROLE.
+         */
+        get: operations["listStaff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin/Owner — staff member detail (Story 7.1a AC4) — PROVISIONAL (D10)
+         * @description Detail for a member (role admin/teacher) of the caller's center. A
+         *     non-member / student / owner target → 404 STAFF_NOT_FOUND (never 403 —
+         *     existence non-disclosure across the boundary). Admin/Owner only.
+         */
+        get: operations["getStaffMember"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{userId}/assign-class": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner — assign a class to a teacher (Story 7.1a AC13) — PROVISIONAL (D10)
+         * @description Sets `classes.teacher_id` for the target class to this teacher
+         *     (mutex-honored). Owner only — `RequireRole("owner")` at the edge PLUS
+         *     a service-layer DB role re-fetch (SEC-1). Target not a teacher member →
+         *     404 STAFF_NOT_FOUND; class not in center → 404 CLASS_NOT_FOUND.
+         */
+        post: operations["assignStaffClass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{userId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner — archive a staff member (Story 7.1a AC14) — PROVISIONAL (D10)
+         * @description Soft-archives the member (`center_members.archived_at = now()`). Owner
+         *     only (edge + SEC-1 DB re-fetch). Archiving self → 409 CANNOT_ARCHIVE_SELF;
+         *     already archived → 409 STAFF_ALREADY_ARCHIVED; owner/non-member → 404
+         *     STAFF_NOT_FOUND. Classes are NOT auto-unassigned — the response carries
+         *     `assignedClassCount` (D17c) so the UI can warn.
+         */
+        post: operations["archiveStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{userId}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner — trigger a password reset for a member (Story 7.1a AC15) — PROVISIONAL (D10)
+         * @description Creates a `password_resets` row and enqueues a reset email to the
+         *     member (reusing the reset token primitives — NO verified-gate / silent
+         *     / padToFloor path, D14). Owner only (edge + SEC-1 DB re-fetch). 204 on
+         *     success. Non-member → 404 STAFF_NOT_FOUND.
+         */
+        post: operations["resetStaffPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/terms": {
         parameters: {
             query?: never;
@@ -2859,6 +2975,26 @@ export interface components {
              * @enum {string}
              */
             role: "owner" | "admin" | "teacher";
+            /**
+             * @description Story 7.1a (D2) — optional display name persisted on the invite
+             *     (invites.name) so the pending-roster row can show a name before
+             *     acceptance. Additive; older clients omit it.
+             */
+            name?: string | null;
+            /**
+             * Format: uuid
+             * @description Story 7.1a (D7) — optional target class. Accepted ONLY when
+             *     `role = teacher` (else 422 VALIDATION_ERROR); the class must
+             *     resolve in the caller's center (else 404 CLASS_NOT_FOUND). On
+             *     acceptance by the teacher, `classes.teacher_id` is auto-assigned
+             *     to the new member (mutex-honored).
+             */
+            classId?: string | null;
+            /**
+             * @description Story 7.1a (D2) — optional note appended (HTML-escaped) to the
+             *     invite email body. Never affects the invite row.
+             */
+            welcomeNote?: string | null;
         };
         InviteResult: {
             /** Format: uuid */
@@ -2876,6 +3012,130 @@ export interface components {
         };
         EnvelopeInviteResult: {
             data: components["schemas"]["InviteResult"];
+        };
+        StaffLoad: {
+            /**
+             * @description COUNT of the teacher's status='scheduled' sessions with starts_at in
+             *     the half-open window [now, now+7d). A SLIDING window (D16), not a
+             *     calendar week. 0 for a non-teaching member.
+             */
+            nextSevenDaysSessionCount: number;
+            /** @description Fixed capacity constant (DefaultWeeklySessionCapacity = 10). */
+            weeklyCapacity: number;
+            /** @description nextSevenDaysSessionCount >= HeavyLoadThresholdSessionsPerWeek (8). */
+            heavy: boolean;
+        };
+        StaffMember: {
+            /** Format: uuid */
+            userId: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            avatarUrl: string | null;
+            /** @enum {string} */
+            role: "admin" | "teacher";
+            /** @enum {string} */
+            status: "active" | "archived";
+            classesAssigned: number;
+            load: components["schemas"]["StaffLoad"];
+            /**
+             * Format: date-time
+             * @description MAX(refresh_tokens.created_at) proxy; null = never/logged-out (D6).
+             */
+            lastActiveAt: string | null;
+        };
+        PendingInvite: {
+            /** Format: uuid */
+            inviteId: string;
+            name: string | null;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "admin" | "teacher";
+            /** Format: date-time */
+            invitedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: uuid */
+            pendingClassId: string | null;
+        };
+        StaffRoster: {
+            members: components["schemas"]["StaffMember"][];
+            pendingInvites: components["schemas"]["PendingInvite"][];
+        };
+        EnvelopeStaffRoster: {
+            data: components["schemas"]["StaffRoster"];
+        };
+        StaffAssignedClass: {
+            /** Format: uuid */
+            classId: string;
+            name: string;
+        };
+        StaffScheduleGlanceItem: {
+            /** Format: uuid */
+            sessionId: string;
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+        };
+        StaffActivityItem: {
+            event: string;
+            entityType: string;
+            /** Format: date-time */
+            at: string;
+        };
+        StaffMemberDetail: {
+            /** Format: uuid */
+            userId: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            avatarUrl: string | null;
+            languagePref: string;
+            /** @enum {string} */
+            role: "admin" | "teacher";
+            /** @enum {string} */
+            status: "active" | "archived";
+            assignedClasses: components["schemas"]["StaffAssignedClass"][];
+            scheduleGlance: components["schemas"]["StaffScheduleGlanceItem"][];
+            load: components["schemas"]["StaffLoad"];
+            /** Format: date-time */
+            lastActiveAt: string | null;
+            recentActivity: components["schemas"]["StaffActivityItem"][];
+        };
+        EnvelopeStaffMemberDetail: {
+            data: components["schemas"]["StaffMemberDetail"];
+        };
+        AssignClassRequest: {
+            /** Format: uuid */
+            classId: string;
+        };
+        AssignClassResult: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            classId: string;
+        };
+        EnvelopeAssignClassResult: {
+            data: components["schemas"]["AssignClassResult"];
+        };
+        ArchiveStaffResult: {
+            /** Format: uuid */
+            userId: string;
+            /** @enum {string} */
+            status: "archived";
+            /**
+             * @description Classes the archived teacher still owns (D17c ghost visibility) —
+             *     classes are NOT auto-unassigned; the UI warns with this count.
+             */
+            assignedClassCount: number;
+        };
+        EnvelopeArchiveStaffResult: {
+            data: components["schemas"]["ArchiveStaffResult"];
         };
         /** @enum {string} */
         ExerciseSkill: "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary" | "general";
@@ -4786,6 +5046,269 @@ export interface operations {
             };
             /** @description Internal error (INTERNAL_ERROR) */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Staff roster */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStaffRoster"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (Teacher/Student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INTERNAL_ERROR */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getStaffMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Staff member detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStaffMemberDetail"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (Teacher/Student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STAFF_NOT_FOUND (not a member / student / owner) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    assignStaffClass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignClassRequest"];
+            };
+        };
+        responses: {
+            /** @description Class assigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAssignClassResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-Owner caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STAFF_NOT_FOUND / CLASS_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing/invalid classId) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    archiveStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member archived */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeArchiveStaffResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-Owner caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STAFF_NOT_FOUND (owner / non-member) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CANNOT_ARCHIVE_SELF / STAFF_ALREADY_ARCHIVED */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resetStaffPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reset email enqueued (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-Owner caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STAFF_NOT_FOUND (non-member) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

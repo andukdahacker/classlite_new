@@ -70,7 +70,7 @@ func (s *AuthService) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*
 	now := s.clk.Now()
 	tokenHash := hashInviteTokenHex(rawToken)
 
-	inviteID, centerID, _, inviteEmail, inviteRole, _, err := loadInviteByTokenHash(ctx, s.db, tokenHash, now)
+	inviteID, centerID, _, inviteEmail, inviteRole, inviteClassID, _, err := loadInviteByTokenHash(ctx, s.db, tokenHash, now)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (s *AuthService) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*
 			}
 		}
 
-		if err := s.acceptInviteAddMembership(ctx, existing.ID, centerID, inviteRole, inviteID); err != nil {
+		if err := s.acceptInviteAddMembership(ctx, existing.ID, centerID, inviteRole, inviteID, inviteClassID); err != nil {
 			return nil, err
 		}
 		user = existing
@@ -144,7 +144,7 @@ func (s *AuthService) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*
 			return nil, fmt.Errorf("hash password: %w", err)
 		}
 
-		created, err := s.acceptInviteCreateUserAndMember(ctx, normalizedInviteEmail, trimmedName, string(hash), centerID, inviteRole, inviteID)
+		created, err := s.acceptInviteCreateUserAndMember(ctx, normalizedInviteEmail, trimmedName, string(hash), centerID, inviteRole, inviteID, inviteClassID)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +222,7 @@ func (s *AuthService) setPendingInvitePassword(ctx context.Context, userID pgtyp
 // even if the invite is rejected).
 func (s *AuthService) AcceptInviteInternal(ctx context.Context, userID uuid.UUID, inviteTokenHash, oauthEmail string) (*AcceptInviteResult, error) {
 	now := s.clk.Now()
-	inviteID, centerID, _, inviteEmail, inviteRole, _, err := loadInviteByTokenHash(ctx, s.db, inviteTokenHash, now)
+	inviteID, centerID, _, inviteEmail, inviteRole, inviteClassID, _, err := loadInviteByTokenHash(ctx, s.db, inviteTokenHash, now)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (s *AuthService) AcceptInviteInternal(ctx context.Context, userID uuid.UUID
 	// shape — but the user came from Google rather than email/password,
 	// which is irrelevant past this point.
 	userPg := pgtype.UUID{Bytes: userID, Valid: true}
-	if err := s.acceptInviteAddMembership(ctx, userPg, centerID, inviteRole, inviteID); err != nil {
+	if err := s.acceptInviteAddMembership(ctx, userPg, centerID, inviteRole, inviteID, inviteClassID); err != nil {
 		return nil, err
 	}
 
@@ -280,7 +280,12 @@ func (s *AuthService) AcceptInviteInternal(ctx context.Context, userID uuid.UUID
 // acceptInviteAddMembership opens a tx, sets app.current_tenant_id, and
 // runs CreateCenterMember + MarkInviteAcceptedGuarded. Shared by both
 // the password path's existing-user branch and the OAuth-internal path.
-func (s *AuthService) acceptInviteAddMembership(ctx context.Context, userID pgtype.UUID, centerID uuid.UUID, role string, inviteID uuid.UUID) error {
+//
+// Story 7.1a (D13) — classID, when non-nil and the accepted role is teacher,
+// auto-assigns the new member to that class in the SAME tx (mutex-honored),
+// re-validated in-tenant (a stale/cross-tenant class → clean skip, never a
+// cross-tenant write). No-op otherwise.
+func (s *AuthService) acceptInviteAddMembership(ctx context.Context, userID pgtype.UUID, centerID uuid.UUID, role string, inviteID uuid.UUID, classID *uuid.UUID) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin accept-invite tx: %w", err)
@@ -320,8 +325,43 @@ func (s *AuthService) acceptInviteAddMembership(ctx context.Context, userID pgty
 		return &InviteAlreadyAcceptedError{CenterName: centerName}
 	}
 
+	// Story 7.1a (D13) — auto-assign the new teacher to their class, same tx.
+	if err := autoAssignTeacherClass(ctx, q, role, userID, classID); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit accept-invite tx: %w", err)
+	}
+	return nil
+}
+
+// autoAssignTeacherClass sets classes.teacher_id to userID for a teacher accept
+// carrying a class (D7/D13). It runs on the accept tx's tenant-scoped queries
+// handle `q`: GetClassByID is RLS-scoped, so a class not in the accepting
+// center returns pgx.ErrNoRows → CLEAN SKIP (acceptance still succeeds), NEVER a
+// cross-tenant UpdateClass (D13c — the invites.class_id FK bypasses RLS, so the
+// in-tenant re-check is the load-bearing tenant guard). UpdateClass honors the
+// classes_teacher_mutex: setting teacher_id clears pending_teacher_email in the
+// same statement, so a class pending-by-email does not abort on the CHECK.
+// No-op when classID is nil or the accepted role is not teacher.
+func autoAssignTeacherClass(ctx context.Context, q *generated.Queries, role string, userID pgtype.UUID, classID *uuid.UUID) error {
+	if classID == nil || role != model.RoleTeacher {
+		return nil
+	}
+	classPg := pgtype.UUID{Bytes: *classID, Valid: true}
+	if _, err := q.GetClassByID(ctx, classPg); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Class no longer resolvable in this tenant — clean skip (D13c).
+			return nil
+		}
+		return fmt.Errorf("auto-assign: resolve class: %w", err)
+	}
+	if _, err := q.UpdateClass(ctx, generated.UpdateClassParams{
+		ID:        classPg,
+		TeacherID: userID,
+	}); err != nil {
+		return fmt.Errorf("auto-assign: set class teacher: %w", err)
 	}
 	return nil
 }
@@ -335,6 +375,7 @@ func (s *AuthService) acceptInviteCreateUserAndMember(
 	centerID uuid.UUID,
 	role string,
 	inviteID uuid.UUID,
+	classID *uuid.UUID,
 ) (generated.User, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -397,6 +438,13 @@ func (s *AuthService) acceptInviteCreateUserAndMember(
 	if rows == 0 {
 		centerName, _ := fetchCenterName(ctx, tx, pgtype.UUID{Bytes: centerID, Valid: true})
 		return generated.User{}, &InviteAlreadyAcceptedError{CenterName: centerName}
+	}
+
+	// Story 7.1a (D13) — auto-assign the new teacher to their class, same tx.
+	// This is the HEADLINE new-user accept path (the flow a fresh staff member
+	// completes). Tenant context was set above; the re-validation is in-tenant.
+	if err := autoAssignTeacherClass(ctx, q, role, user.ID, classID); err != nil {
+		return generated.User{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

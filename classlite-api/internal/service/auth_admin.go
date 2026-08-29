@@ -31,6 +31,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"net/mail"
 	"strings"
 	"time"
@@ -63,13 +64,25 @@ type InviteResult struct {
 	ExpiresAt time.Time
 }
 
+// AdminInviteStaffInput carries the Story 7.1a widened invite request (D2/D7).
+// Name/WelcomeNote/ClassID are optional; ClassID is accepted only for a teacher
+// invite (else 422) and must resolve in the caller's center (else 404).
+type AdminInviteStaffInput struct {
+	Email       string
+	Role        string
+	Name        *string
+	WelcomeNote *string
+	ClassID     *uuid.UUID
+}
+
 // AdminInviteStaff inserts an invites row for `email` with `role`. Story
 // 1.5 shipped this hook to lock in the SEC-1 role re-validation pattern;
 // Story 2.6 (AC8) widens it to accept Admin callers and enforces FR-11
 // via model.OutranksOwner. See package doc for the surgical addition
 // summary — the tx choreography (Begin → SET LOCAL → member re-fetch →
 // mutate → commit) is preserved verbatim per Winston-INFO fold.
-func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantContext, email, role string) (*InviteResult, error) {
+func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantContext, in AdminInviteStaffInput) (*InviteResult, error) {
+	email, role := in.Email, in.Role
 	// Target role validation — must be one of {owner, admin, teacher}.
 	// Student rejected at 422 because the accept-invite flow provisions
 	// staff seats only; student enrollment goes through a separate
@@ -77,6 +90,16 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleTeacher {
 		return nil, model.ValidationError{Fields: []model.FieldError{
 			{Field: "role", Message: "must be one of owner, admin, teacher"},
+		}}
+	}
+
+	// Story 7.1a (D7) — a classId is meaningful only for a teacher invite
+	// (auto-assign-on-accept). A non-teacher invite carrying a classId is a
+	// 422 (pure input validation, no DB needed). The class's existence in the
+	// caller's center is re-checked in-tenant below.
+	if in.ClassID != nil && role != model.RoleTeacher {
+		return nil, model.ValidationError{Fields: []model.FieldError{
+			{Field: "classId", Message: "classId may only be set on a teacher invite"},
 		}}
 	}
 
@@ -167,36 +190,30 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 		return nil, &RoleAssignmentForbiddenError{}
 	}
 
-	// Duplicate-active-invite gate — predicate is aligned EXACTLY with the
-	// shipped partial unique index `idx_invites_center_email_active`
-	// (WHERE accepted_at IS NULL). Expiry is intentionally NOT in the
-	// predicate: the index can't include it (now() is not IMMUTABLE, so
-	// Postgres rejects it in a partial-index WHERE), so a gate that checked
-	// `expires_at > now` would pass for a lapsed-unaccepted row and then
-	// collide at INSERT (23505 → 500). Any unaccepted invite blocks re-send
-	// with a clean 409 until it is cleared; FU-2-6-F owns "re-send
-	// supersedes a lapsed invite" for Epic 7. Case-insensitive on email.
-	var existingCount int
-	if err := tx.QueryRow(ctx,
-		`SELECT COUNT(*) FROM invites
-		 WHERE center_id = $1
-		   AND LOWER(email) = LOWER($2)
-		   AND accepted_at IS NULL`,
-		centerUUID, normalizedEmail,
-	).Scan(&existingCount); err != nil {
-		return nil, fmt.Errorf("check duplicate invite: %w", err)
-	}
-	if existingCount > 0 {
-		_ = tx.Rollback(context.WithoutCancel(ctx))
-		return nil, &InviteEmailTakenError{Email: normalizedEmail}
+	// Story 7.1a (D7) — re-validate the optional target class IN-TENANT.
+	// GetClassByID is RLS-scoped, so a class not in the caller's center →
+	// pgx.ErrNoRows → 404 CLASS_NOT_FOUND (never a cross-tenant reference).
+	var classArg pgtype.UUID
+	if in.ClassID != nil {
+		classArg = pgtype.UUID{Bytes: *in.ClassID, Valid: true}
+		if _, err := txQ.GetClassByID(ctx, classArg); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				_ = tx.Rollback(context.WithoutCancel(ctx))
+				return nil, model.NotFoundError{Resource: "class", ID: in.ClassID.String(), Code: "CLASS_NOT_FOUND"}
+			}
+			return nil, fmt.Errorf("resolve invite class: %w", err)
+		}
 	}
 
-	// Happy path — write the invite. Token + expiry are placeholder
-	// values; Epic 7 owns the real invite flow (email send + raw token
-	// echo). Story 1.6 migrated invites.token → invites.token_hash so we
-	// persist the sha256-hex; the raw token is currently discarded
-	// because this synthetic hook doesn't email anyone.
-	rawToken, err := newPasswordResetToken() // 32 random bytes, reuse helper
+	var nameArg pgtype.Text
+	if in.Name != nil {
+		nameArg = pgtype.Text{String: strings.TrimSpace(*in.Name), Valid: true}
+	}
+
+	// Story 7.1a (D2) — mint the raw token and KEEP it (the 2.6 hook discarded
+	// it). 32 random bytes; persisted as sha256-hex; echoed only via the email
+	// accept URL, never returned to the caller.
+	rawToken, err := newPasswordResetToken()
 	if err != nil {
 		return nil, fmt.Errorf("invite token: %w", err)
 	}
@@ -204,26 +221,97 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 	tokenHash := hex.EncodeToString(tokenHashBytes[:])
 	now := s.clk.Now()
 	expiresAt := now.Add(inviteTTL)
+
+	// Story 7.1a (D12) — dedup with expired-supersede. The partial unique index
+	// idx_invites_center_email_active guarantees ≤1 unaccepted row per
+	// (center, LOWER(email)). If that row exists and is NON-expired → 409
+	// INVITE_EMAIL_TAKEN (unchanged 2.6 behavior). If it exists but is EXPIRED
+	// → refresh it IN PLACE (new token/expiry/role/name/class_id) instead of
+	// 409 — resolves the previously un-invitable-email deadlock (there is no
+	// resend/revoke endpoint yet). Either branch preserves the ≤1-row index
+	// invariant. Case-insensitive on email.
 	var inviteID pgtype.UUID
-	if err := tx.QueryRow(ctx,
-		`INSERT INTO invites (center_id, inviter_id, email, role, token_hash, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 RETURNING id`,
-		centerUUID, userUUID, normalizedEmail, role, tokenHash, expiresAt,
-	).Scan(&inviteID); err != nil {
-		// Belt-and-suspenders: the app gate above already rejects an active
-		// duplicate, but a concurrent invite for the same (center, email)
-		// can slip past it and collide on idx_invites_center_email_active.
-		// Map the unique violation to the same 409 rather than leaking a
-		// 500. pgUniqueViolationCode is the shared "23505" const (room.go).
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode {
+	var existingID pgtype.UUID
+	var existingExpiresAt time.Time
+	lookupErr := tx.QueryRow(ctx,
+		`SELECT id, expires_at FROM invites
+		 WHERE center_id = $1 AND LOWER(email) = LOWER($2) AND accepted_at IS NULL
+		 LIMIT 1`,
+		centerUUID, normalizedEmail,
+	).Scan(&existingID, &existingExpiresAt)
+	switch {
+	case lookupErr == nil:
+		if existingExpiresAt.After(now) {
+			// A live unaccepted invite still owns the slot — 409.
+			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return nil, &InviteEmailTakenError{Email: normalizedEmail}
 		}
-		return nil, fmt.Errorf("insert invite: %w", err)
+		// Expired — supersede in place (D12). The `AND accepted_at IS NULL`
+		// guard closes a TOCTOU race: the lookup SELECT above is unlocked, so a
+		// concurrent AcceptInvite could mark this row accepted between read and
+		// update. Without the guard the supersede would rotate token/expiry/role/
+		// class_id on an already-accepted invite; with it the UPDATE matches 0
+		// rows and we fall back to the same 409 as a live invite.
+		tag, err := tx.Exec(ctx,
+			`UPDATE invites
+			 SET token_hash = $1, expires_at = $2, role = $3, name = $4, class_id = $5, inviter_id = $6
+			 WHERE id = $7 AND accepted_at IS NULL`,
+			tokenHash, expiresAt, role, nameArg, classArg, userUUID, existingID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("supersede expired invite: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			// The row was accepted concurrently — the slot is taken.
+			_ = tx.Rollback(context.WithoutCancel(ctx))
+			return nil, &InviteEmailTakenError{Email: normalizedEmail}
+		}
+		inviteID = existingID
+	case errors.Is(lookupErr, pgx.ErrNoRows):
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO invites (center_id, inviter_id, email, role, token_hash, expires_at, name, class_id)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			 RETURNING id`,
+			centerUUID, userUUID, normalizedEmail, role, tokenHash, expiresAt, nameArg, classArg,
+		).Scan(&inviteID); err != nil {
+			// Belt-and-suspenders: a concurrent invite for the same
+			// (center, email) can slip past the app gate and collide on
+			// idx_invites_center_email_active. Map 23505 to the same 409.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode {
+				return nil, &InviteEmailTakenError{Email: normalizedEmail}
+			}
+			return nil, fmt.Errorf("insert invite: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("check duplicate invite: %w", lookupErr)
 	}
+
+	// Look up centerName + inviterName for the email BEFORE commit (both are
+	// tenant-scoped reads under the open tx).
+	centerName, _ := fetchCenterName(ctx, tx, pgtype.UUID{Bytes: centerUUID, Valid: true})
+	var inviterName string
+	if caller, err := txQ.GetUserByID(ctx, pgtype.UUID{Bytes: userUUID, Valid: true}); err == nil {
+		inviterName = caller.FullName
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit invite tx: %w", err)
+	}
+
+	// Story 7.1a (D2/D17b) — REAL invite email, best-effort. The accept URL
+	// carries the raw token as ?token=<raw> for POST /api/auth/accept-invite.
+	// centerName + inviterName are CRLF-stripped (SMTP-header-injection guard —
+	// centers.name has no CRLF ban); the welcomeNote is HTML-escaped when
+	// appended. Enqueue failure NEVER fails the committed invite write (AC22 —
+	// mirrors the class-spawn best-effort pattern).
+	acceptURL := s.inviteAcceptURL + "?token=" + rawToken
+	subject, body := RenderInviteEmail(stripCRLFAndControls(centerName), stripCRLFAndControls(inviterName), role, acceptURL)
+	if in.WelcomeNote != nil && strings.TrimSpace(*in.WelcomeNote) != "" {
+		body = appendInviteWelcomeNote(body, *in.WelcomeNote)
+	}
+	if s.retry != nil {
+		_ = s.retry.Enqueue(EmailJob{To: normalizedEmail, Subject: subject, HTML: body})
 	}
 
 	inviteUUID, err := pgUUIDToGoogle(inviteID)
@@ -246,6 +334,27 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 		Role:      role,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// appendInviteWelcomeNote injects an HTML-ESCAPED welcome-note paragraph into
+// the rendered invite email body (D2). The note is anchored after the fixed
+// intro sentence; if the template ever changes so the anchor is gone, it falls
+// back to inserting before </body>. HTML-escaping is the load-bearing guard
+// (AC22 — a <script> welcomeNote must not survive into the body); the note is
+// also run through stripCRLFAndControls first, uniform with centerName/
+// inviterName, so CR/LF/control chars never leak if the note is ever reused in
+// a subject or plaintext part (defense-in-depth against header injection).
+func appendInviteWelcomeNote(body, note string) string {
+	const anchor = `This link is valid for 7 days.</p>`
+	noteHTML := `<p style="margin: 0 0 24px; padding: 12px; background: #f3f4f6; border-radius: 6px;">` +
+		html.EscapeString(stripCRLFAndControls(strings.TrimSpace(note))) + `</p>`
+	if strings.Contains(body, anchor) {
+		return strings.Replace(body, anchor, anchor+noteHTML, 1)
+	}
+	if strings.Contains(body, "</body>") {
+		return strings.Replace(body, "</body>", noteHTML+"</body>", 1)
+	}
+	return body + noteHTML
 }
 
 // auditRoleRevalidationBlocked writes the SEC-1 rejection audit row.

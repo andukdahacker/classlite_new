@@ -97,6 +97,10 @@ func main() {
 	if cfg.AppResetURLBase != "" {
 		authSvc.SetResetURLBase(cfg.AppResetURLBase)
 	}
+	// Story 7.1a — the staff-invite email accept URL base (query-param token).
+	if cfg.AppInviteURLBase != "" {
+		authSvc.SetInviteAcceptURLBase(cfg.AppInviteURLBase)
+	}
 
 	// Story 1.6 — Google OAuth wiring. If the operator left the
 	// credentials empty (dev parity), the OAuth endpoints will return 503
@@ -446,6 +450,44 @@ func main() {
 		)
 	}
 	mux.Handle("POST /api/centers/{id}/invites", settingsInviteChain(invitesHandler.Post))
+
+	// Story 7.1a — staff roster reads + Owner-only actions. Two chains over the
+	// shared tenant guards: reads are RequireRole("owner","admin"); the three
+	// mutating actions are RequireRole("owner") at the edge PLUS a service-layer
+	// SEC-1 DB role re-fetch. Force-logout is NOT re-mounted — it already ships
+	// at POST /api/admin/users/{userId}/force-logout (D8); 7-1b wires that button.
+	staffSvc := service.NewStaffService(pool, authAudit, retryQ, clock.RealClock{})
+	if cfg.AppResetURLBase != "" {
+		staffSvc.SetResetURLBase(cfg.AppResetURLBase)
+	}
+	staffHandler := handler.NewStaffHandler(staffSvc, clock.RealClock{})
+	staffReadChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireOwnerOrAdmin(
+						settingsLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+	staffActionChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireOwner(
+						settingsLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+	mux.Handle("GET /api/staff", staffReadChain(staffHandler.List))
+	mux.Handle("GET /api/staff/{userId}", staffReadChain(staffHandler.GetDetail))
+	mux.Handle("POST /api/staff/{userId}/assign-class", staffActionChain(staffHandler.AssignClass))
+	mux.Handle("POST /api/staff/{userId}/archive", staffActionChain(staffHandler.Archive))
+	mux.Handle("POST /api/staff/{userId}/reset-password", staffActionChain(staffHandler.ResetPassword))
 
 	// Story 2-5b — Terms + Holidays + Rooms endpoints (12 routes). Share the
 	// settingsChain wiring above so the same middleware order + rate limit

@@ -119,7 +119,7 @@ func TestAdminInviteStaff_AC9_HierarchyMatrix(t *testing.T) {
 			}
 
 			inviteEmail := "target-" + tc.name + "@example.com"
-			result, err := svc.AdminInviteStaff(context.Background(), ctxJWT, inviteEmail, tc.targetRole)
+			result, err := svc.AdminInviteStaff(context.Background(), ctxJWT, service.AdminInviteStaffInput{Email: inviteEmail, Role: tc.targetRole})
 
 			if tc.wantErrType != nil {
 				tc.wantErrType(err, t)
@@ -187,10 +187,10 @@ func TestAdminInviteStaff_AC8_DuplicateActiveInvite(t *testing.T) {
 		Role:     "owner",
 	}
 
-	if _, err := svc.AdminInviteStaff(context.Background(), tc, "dup-target@example.com", "teacher"); err != nil {
+	if _, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "dup-target@example.com", Role: "teacher"}); err != nil {
 		t.Fatalf("first invite: %v", err)
 	}
-	_, err := svc.AdminInviteStaff(context.Background(), tc, "dup-target@example.com", "teacher")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "dup-target@example.com", Role: "teacher"})
 	var taken *service.InviteEmailTakenError
 	if !errors.As(err, &taken) {
 		t.Fatalf("second invite: expected *InviteEmailTakenError, got %T (%v)", err, err)
@@ -200,7 +200,7 @@ func TestAdminInviteStaff_AC8_DuplicateActiveInvite(t *testing.T) {
 	}
 
 	// Case-insensitive dedup: `Dup-Target@ExAmPle.com` collides too.
-	_, err = svc.AdminInviteStaff(context.Background(), tc, "Dup-Target@ExAmPle.com", "teacher")
+	_, err = svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "Dup-Target@ExAmPle.com", Role: "teacher"})
 	if !errors.As(err, &taken) {
 		t.Fatalf("case-variant invite: expected *InviteEmailTakenError, got %T (%v)", err, err)
 	}
@@ -225,7 +225,7 @@ func TestAdminInviteStaff_AC8_StudentRoleRejected(t *testing.T) {
 		UserID:   test.UUIDString(owner.ID),
 		Role:     "owner",
 	}
-	_, err := svc.AdminInviteStaff(context.Background(), tc, "student-target@example.com", "student")
+	_, err := svc.AdminInviteStaff(context.Background(), tc, service.AdminInviteStaffInput{Email: "student-target@example.com", Role: "student"})
 	var val model.ValidationError
 	if !errors.As(err, &val) {
 		t.Fatalf("expected model.ValidationError, got %T (%v)", err, err)

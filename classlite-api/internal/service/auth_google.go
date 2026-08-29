@@ -178,7 +178,7 @@ func (s *AuthService) InitiateGoogleOAuth(ctx context.Context, in InitiateGoogle
 		// Verify the invite exists + isn't expired + isn't accepted.
 		// We don't need centerName / inviterEmail here — those are only
 		// echoed in error responses, not on the init happy path.
-		_, _, _, _, _, _, err := loadInviteByTokenHash(ctx, s.db, inviteTokenHash, s.clk.Now())
+		_, _, _, _, _, _, _, err := loadInviteByTokenHash(ctx, s.db, inviteTokenHash, s.clk.Now())
 		if err != nil {
 			return nil, err
 		}
@@ -709,12 +709,19 @@ func jsonDecode(r io.Reader, out any) error {
 // Return tuple (id, centerID, inviterID, email, name, role, fields...) — too
 // many to enumerate cleanly; named struct InviteRow is the alternative
 // but would force an additional package re-export. Keep it positional.
+//
+// Story 7.1a (D13a) — classID is the invites.class_id column, surfaced through
+// the widened get_invite_by_token_hash function (migration 20260828120200) so
+// the accept path can auto-assign a teacher to their class (D7). nil when the
+// invite carries no class. It is NOT re-validated here (the token lookup is
+// pre-tenant/RLS-bypassing); the accept path re-checks it in-tenant (D13c).
 func loadInviteByTokenHash(ctx context.Context, db generated.DBTX, tokenHash string, now time.Time) (
 	inviteID uuid.UUID,
 	centerID uuid.UUID,
 	inviterID uuid.UUID,
 	email string,
 	role string,
+	classID *uuid.UUID,
 	acceptedAt *time.Time,
 	err error,
 ) {
@@ -722,23 +729,28 @@ func loadInviteByTokenHash(ctx context.Context, db generated.DBTX, tokenHash str
 		idPg         pgtype.UUID
 		centerPg     pgtype.UUID
 		inviterPg    pgtype.UUID
+		classPg      pgtype.UUID
 		expiresAtPg  pgtype.Timestamptz
 		acceptedAtPg pgtype.Timestamptz
 	)
 	row := db.QueryRow(ctx,
-		`SELECT id, center_id, inviter_id, email, role, expires_at, accepted_at
+		`SELECT id, center_id, inviter_id, email, role, expires_at, accepted_at, class_id
 		 FROM get_invite_by_token_hash($1)`,
 		tokenHash,
 	)
-	if scanErr := row.Scan(&idPg, &centerPg, &inviterPg, &email, &role, &expiresAtPg, &acceptedAtPg); scanErr != nil {
+	if scanErr := row.Scan(&idPg, &centerPg, &inviterPg, &email, &role, &expiresAtPg, &acceptedAtPg, &classPg); scanErr != nil {
 		if errors.Is(scanErr, pgx.ErrNoRows) {
-			return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, &InviteNotFoundError{}
+			return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, nil, &InviteNotFoundError{}
 		}
-		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, fmt.Errorf("get invite by token hash: %w", scanErr)
+		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, nil, fmt.Errorf("get invite by token hash: %w", scanErr)
 	}
 	inviteID = uuid.UUID(idPg.Bytes)
 	centerID = uuid.UUID(centerPg.Bytes)
 	inviterID = uuid.UUID(inviterPg.Bytes)
+	if classPg.Valid {
+		c := uuid.UUID(classPg.Bytes)
+		classID = &c
+	}
 
 	// AC4 idempotency check: already-accepted → 409. We need the center
 	// name in the details payload, so fetch it before returning.
@@ -746,7 +758,7 @@ func loadInviteByTokenHash(ctx context.Context, db generated.DBTX, tokenHash str
 		t := acceptedAtPg.Time
 		acceptedAt = &t
 		centerName, _ := fetchCenterName(ctx, db, centerPg)
-		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", &t,
+		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, &t,
 			&InviteAlreadyAcceptedError{CenterName: centerName}
 	}
 
@@ -754,11 +766,11 @@ func loadInviteByTokenHash(ctx context.Context, db generated.DBTX, tokenHash str
 	if !expiresAtPg.Valid || !expiresAtPg.Time.After(now) {
 		centerName, _ := fetchCenterName(ctx, db, centerPg)
 		inviterEmail, _ := fetchUserEmail(ctx, db, inviterPg)
-		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil,
+		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, nil,
 			&InviteExpiredError{CenterName: centerName, InviterEmail: inviterEmail}
 	}
 
-	return inviteID, centerID, inviterID, email, role, nil, nil
+	return inviteID, centerID, inviterID, email, role, classID, nil, nil
 }
 
 // fetchCenterName runs a one-shot lookup for the center.name. Best-effort
