@@ -465,7 +465,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Admin/Owner — staff roster (Story 7.1a AC1) — PROVISIONAL (D10)
+         * Admin/Owner — staff roster (Story 7.1a AC1)
          * @description Returns the center's staff as a split object: `members` (accepted
          *     center_members rows, role admin/teacher, with per-row load/last-active
          *     aggregates and derived status) and `pendingInvites` (unaccepted invite
@@ -489,7 +489,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Admin/Owner — staff member detail (Story 7.1a AC4) — PROVISIONAL (D10)
+         * Admin/Owner — staff member detail (Story 7.1a AC4)
          * @description Detail for a member (role admin/teacher) of the caller's center. A
          *     non-member / student / owner target → 404 STAFF_NOT_FOUND (never 403 —
          *     existence non-disclosure across the boundary). Admin/Owner only.
@@ -513,7 +513,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Owner — assign a class to a teacher (Story 7.1a AC13) — PROVISIONAL (D10)
+         * Owner — assign a class to a teacher (Story 7.1a AC13)
          * @description Sets `classes.teacher_id` for the target class to this teacher
          *     (mutex-honored). Owner only — `RequireRole("owner")` at the edge PLUS
          *     a service-layer DB role re-fetch (SEC-1). Target not a teacher member →
@@ -536,7 +536,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Owner — archive a staff member (Story 7.1a AC14) — PROVISIONAL (D10)
+         * Owner — archive a staff member (Story 7.1a AC14)
          * @description Soft-archives the member (`center_members.archived_at = now()`). Owner
          *     only (edge + SEC-1 DB re-fetch). Archiving self → 409 CANNOT_ARCHIVE_SELF;
          *     already archived → 409 STAFF_ALREADY_ARCHIVED; owner/non-member → 404
@@ -560,7 +560,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Owner — trigger a password reset for a member (Story 7.1a AC15) — PROVISIONAL (D10)
+         * Owner — trigger a password reset for a member (Story 7.1a AC15)
          * @description Creates a `password_resets` row and enqueues a reset email to the
          *     member (reusing the reset token primitives — NO verified-gate / silent
          *     / padToFloor path, D14). Owner only (edge + SEC-1 DB re-fetch). 204 on

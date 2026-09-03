@@ -281,6 +281,50 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 7.1b — /people/staff roster + /people/staff/:userId detail. Wires
+      // the previously-DEAD sidebar link (sidebarNavConfig points here for
+      // owner+admin but no route matched it). One shared RouteRoleGate
+      // (owner/admin) with the new `people` section copy; each page is
+      // deep-imported so Rolldown emits its own chunk (students/teachers never
+      // download them). The invite modal + Owner-action dialogs are in-page
+      // Dialogs, so this single boundary covers the feature.
+      {
+        path: '/people/staff',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="people"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { StaffListPage } = await import(
+                '@/features/people/StaffListPage'
+              )
+              return { Component: StaffListPage }
+            },
+          },
+          {
+            path: ':userId',
+            lazy: async () => {
+              const { StaffDetailPage } = await import(
+                '@/features/people/StaffDetailPage'
+              )
+              return { Component: StaffDetailPage }
+            },
+          },
+        ],
+      },
       // Story 4.1 — /exercises library. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). Create/edit is a Dialog
       // (not a /exercises/new child route), so this single boundary covers the

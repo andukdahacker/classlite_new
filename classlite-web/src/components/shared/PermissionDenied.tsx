@@ -49,6 +49,7 @@ export type SectionNameKey =
   | 'classes'
   | 'schedule'
   | 'students'
+  | 'people'
   | 'exercises'
   | 'knowledgeHub'
   | 'assignments'

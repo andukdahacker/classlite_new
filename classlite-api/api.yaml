@@ -927,15 +927,15 @@ paths:
 
   # ==================== Story 7.1a — Staff roster + Owner-only actions ====================
   #
-  # PROVISIONAL WIRE CONTRACT (D10). 7-1a is the producer; Story 7-1b (the s39
-  # staff list / s40 detail / s41 invite modal UI) is the SOLE consumer and
-  # co-finalizes these read + action shapes. Field spellings may still change
-  # when 7-1b is designed — treat StaffMember / PendingInvite / StaffMemberDetail
-  # and the action responses as a working contract, not a hardened one.
+  # FINALIZED WIRE CONTRACT (D10). 7-1a is the producer; Story 7-1b (the s39
+  # staff list / s40 detail / s41 invite modal UI) consumed every field
+  # end-to-end and co-finalized these read + action shapes — the provisional
+  # markers were stripped once the UI rendered them all (7-1b Task 10). The
+  # codegen re-run was additive/comment-only (no field-shape drift).
   /api/staff:
     get:
       operationId: listStaff
-      summary: Admin/Owner — staff roster (Story 7.1a AC1) — PROVISIONAL (D10)
+      summary: Admin/Owner — staff roster (Story 7.1a AC1)
       description: |
         Returns the center's staff as a split object: `members` (accepted
         center_members rows, role admin/teacher, with per-row load/last-active
@@ -972,7 +972,7 @@ paths:
   /api/staff/{userId}:
     get:
       operationId: getStaffMember
-      summary: Admin/Owner — staff member detail (Story 7.1a AC4) — PROVISIONAL (D10)
+      summary: Admin/Owner — staff member detail (Story 7.1a AC4)
       description: |
         Detail for a member (role admin/teacher) of the caller's center. A
         non-member / student / owner target → 404 STAFF_NOT_FOUND (never 403 —
@@ -1014,7 +1014,7 @@ paths:
   /api/staff/{userId}/assign-class:
     post:
       operationId: assignStaffClass
-      summary: Owner — assign a class to a teacher (Story 7.1a AC13) — PROVISIONAL (D10)
+      summary: Owner — assign a class to a teacher (Story 7.1a AC13)
       description: |
         Sets `classes.teacher_id` for the target class to this teacher
         (mutex-honored). Owner only — `RequireRole("owner")` at the edge PLUS
@@ -1069,7 +1069,7 @@ paths:
   /api/staff/{userId}/archive:
     post:
       operationId: archiveStaff
-      summary: Owner — archive a staff member (Story 7.1a AC14) — PROVISIONAL (D10)
+      summary: Owner — archive a staff member (Story 7.1a AC14)
       description: |
         Soft-archives the member (`center_members.archived_at = now()`). Owner
         only (edge + SEC-1 DB re-fetch). Archiving self → 409 CANNOT_ARCHIVE_SELF;
@@ -1119,7 +1119,7 @@ paths:
   /api/staff/{userId}/reset-password:
     post:
       operationId: resetStaffPassword
-      summary: Owner — trigger a password reset for a member (Story 7.1a AC15) — PROVISIONAL (D10)
+      summary: Owner — trigger a password reset for a member (Story 7.1a AC15)
       description: |
         Creates a `password_resets` row and enqueues a reset email to the
         member (reusing the reset token primitives — NO verified-gate / silent
@@ -8120,8 +8120,8 @@ components:
         data:
           $ref: '#/components/schemas/InviteResult'
 
-    # ---------------- Story 7.1a — Staff roster + actions (PROVISIONAL, D10) ----------------
-    # 7-1b is the sole consumer and co-finalizes these shapes. `load` is a
+    # ---------------- Story 7.1a — Staff roster + actions (FINALIZED, D10) ----------------
+    # Co-finalized by 7-1b (Task 10) after the UI consumed every field. `load` is a
     # NEXT-7-DAYS sliding-window count (D16) — NOT a calendar week — so the field
     # is named nextSevenDaysSessionCount, not "weekly".
     StaffLoad:
