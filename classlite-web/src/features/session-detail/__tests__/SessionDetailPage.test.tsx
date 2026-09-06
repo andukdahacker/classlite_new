@@ -103,13 +103,15 @@ beforeEach(() => {
     http.get('*/api/sessions/:id/notes', () => emptyList()),
     http.get('*/api/sessions/:id/materials', () => emptyList()),
     http.get('*/api/sessions/:id/exercises', () => emptyList()),
+    // Story 3.5b — the live AttendanceSection now fetches its roster.
+    http.get('*/api/sessions/:id/attendance', () => HttpResponse.json({ data: { roster: [] }, meta: {} })),
     http.get('*/api/classes', () => emptyList()),
   )
 })
 afterEach(() => server.resetHandlers())
 
 describe('SessionDetailPage — content + layout', () => {
-  test('renders the head, three content sections, actions card, and attendance placeholder', async () => {
+  test('renders the head, the live attendance section, three content sections, and actions card', async () => {
     server.use(
       http.get('*/api/sessions/:id', () => HttpResponse.json({ data: sessionDetail(), meta: {} })),
     )
@@ -120,8 +122,9 @@ describe('SessionDetailPage — content + layout', () => {
     expect(screen.getByTestId('session-exercises')).toBeInTheDocument()
     expect(screen.getByTestId('session-notes')).toBeInTheDocument()
     expect(screen.getByTestId('session-actions-card')).toBeInTheDocument()
-    // AC2 — attendance is a dormant future-affordance placeholder, present (not hidden).
-    expect(screen.getByTestId('session-attendance-placeholder')).toBeInTheDocument()
+    // Story 3.5b — attendance is now a LIVE section (the dormant placeholder is gone).
+    expect(screen.getByTestId('session-attendance')).toBeInTheDocument()
+    expect(screen.queryByTestId('session-attendance-placeholder')).not.toBeInTheDocument()
   })
 
   test('has no axe violations in the loaded composition', async () => {

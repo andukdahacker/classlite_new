@@ -21,6 +21,9 @@ export const sessionsKeys = {
   notes: (id: string) => [...sessionsKeys.detail(id), 'notes'] as const,
   materials: (id: string) => [...sessionsKeys.detail(id), 'materials'] as const,
   exercises: (id: string) => [...sessionsKeys.detail(id), 'exercises'] as const,
+  // Story 3.5b — the per-session attendance roster, nested under the session
+  // detail key so invalidating a session's detail cascades to its attendance.
+  attendance: (id: string) => [...sessionsKeys.detail(id), 'attendance'] as const,
   createMutation: () => [...sessionsKeys.all, 'mutation', 'create'] as const,
   updateMutation: (id: string) =>
     [...sessionsKeys.all, 'mutation', 'update', id] as const,

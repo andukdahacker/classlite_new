@@ -460,6 +460,20 @@ func (e *NotAStudentMemberError) Error() string {
 	return "user is not a student member of this center"
 }
 
+// AttendanceNotEnrolledError → 422 NOT_ENROLLED (Story 3.5b, AC7/AC9). A
+// studentId targeted by a PUT/bulk attendance write is not an ACTIVE enrollment
+// of the session's class. Distinct from NotEnrolledError (403 — the *caller* is
+// not enrolled in an assignment's class): here the mark's *target* is not
+// enrolled, which is a request-data fault (422), not a caller-authorization
+// fault. StudentID names the offending id for the message/logs.
+type AttendanceNotEnrolledError struct {
+	StudentID string
+}
+
+func (e *AttendanceNotEnrolledError) Error() string {
+	return "student is not actively enrolled in this class"
+}
+
 // ---------------------------------------------------------------------
 // Story 2.7 — Bulk student import errors.
 //

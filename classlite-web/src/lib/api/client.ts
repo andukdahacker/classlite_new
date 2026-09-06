@@ -1001,6 +1001,71 @@ export interface paths {
         patch: operations["updateSessionExercise"];
         trace?: never;
     };
+    "/api/sessions/{id}/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The per-session attendance roster (story 3.5b — AC4)
+         * @description Every ACTIVE enrollment of the session's class, ordered by name, each with
+         *     its recorded status/markedAt or null when the student is not yet marked.
+         */
+        get: operations["getSessionAttendance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/attendance/{studentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record one student's attendance (story 3.5b — AC6)
+         * @description UPSERT — INSERT on first mark, UPDATE on re-mark of the same
+         *     (session, student). Write-once-editable: there is no clear/un-mark path.
+         */
+        put: operations["setSessionAttendance"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/attendance/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark all (or selected) students to one status (story 3.5b — AC8/AC9)
+         * @description Atomic transactional upsert set. With no studentIds, applies status to
+         *     every active-enrolled student of the session's class ("Mark all"). With
+         *     studentIds (forward-compat; no v1 FE surface), every id must be an active
+         *     enrollment or the WHOLE batch is rejected 422 before any write.
+         */
+        post: operations["bulkSetSessionAttendance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/centers/{id}/integrations/google-meet/authorize": {
         parameters: {
             query?: never;
@@ -2769,6 +2834,40 @@ export interface components {
         };
         EnvelopeSessionExerciseList: {
             data: components["schemas"]["SessionExercise"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @enum {string} */
+        AttendanceStatus: "present" | "late" | "absent";
+        AttendanceRosterEntry: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+            email: string;
+            status: components["schemas"]["AttendanceStatus"] | null;
+            /** Format: date-time */
+            markedAt: string | null;
+        };
+        AttendanceRoster: {
+            roster: components["schemas"]["AttendanceRosterEntry"][];
+        };
+        SetAttendanceRequest: {
+            status: components["schemas"]["AttendanceStatus"];
+        };
+        BulkAttendanceRequest: {
+            status: components["schemas"]["AttendanceStatus"];
+            /**
+             * @description Forward-compat (no v1 FE surface). Omitted/empty → apply to ALL
+             *     active-enrolled students. When present, every id must be an active
+             *     enrollment or the whole batch is rejected 422 NOT_ENROLLED.
+             */
+            studentIds?: string[] | null;
+        };
+        EnvelopeAttendanceRoster: {
+            data: components["schemas"]["AttendanceRoster"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeAttendanceEntry: {
+            data: components["schemas"]["AttendanceRosterEntry"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
         /** @enum {string} */
@@ -7771,6 +7870,180 @@ export interface operations {
                 };
             };
             /** @description VALIDATION_ERROR (missing title or non-http(s) link) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getSessionAttendance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session's attendance roster */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAttendanceRoster"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND (absent OR invisible under teacher-scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    setSessionAttendance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                studentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAttendanceRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated roster entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAttendanceEntry"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (studentId not an active enrollment) / VALIDATION_ERROR (invalid status) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    bulkSetSessionAttendance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkAttendanceRequest"];
+            };
+        };
+        responses: {
+            /** @description The full refreshed roster */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAttendanceRoster"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (students) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description SESSION_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_ENROLLED (a studentId is not an active enrollment) / VALIDATION_ERROR (invalid status) */
             422: {
                 headers: {
                     [name: string]: unknown;

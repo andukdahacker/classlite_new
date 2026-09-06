@@ -1974,8 +1974,45 @@ const STORY_3_5_KEYS = [
   'session.exercises.field.link',
   'session.exercises.field.linkPlaceholder',
   'session.attendance.title',
-  'session.attendance.comingSoon',
 ] as const
+
+// Story 3.5b — the live attendance section replaced the dormant placeholder
+// (session.attendance.comingSoon deleted); these are its net-new flat keys.
+const STORY_3_5B_KEYS = [
+  'session.attendance.status.present',
+  'session.attendance.status.late',
+  'session.attendance.status.absent',
+  'session.attendance.unmarked',
+  'session.attendance.summary',
+  'session.attendance.markAllPresent',
+  'session.attendance.markAllAbsent',
+  'session.attendance.undo',
+  'session.attendance.markAllAbsentDone',
+  'session.attendance.markAllAbsentUndone',
+  'session.attendance.saved',
+  'session.attendance.bulkError',
+  'session.attendance.rowError',
+  'session.attendance.loadError',
+  'session.attendance.retry',
+  'session.attendance.empty.owner',
+  'session.attendance.empty.teacher',
+  'session.attendance.enrolCta',
+  'session.attendance.rowLabel',
+] as const
+
+describe('Story 3.5b i18n parity', () => {
+  test('every Story 3.5b attendance key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_3_5B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 3.5b keys', () => {
+    assertI18nInterpolationParity(STORY_3_5B_KEYS)
+  })
+
+  test.each(STORY_3_5B_KEYS)('%s belongs to the session. prefix', (key) => {
+    expect(key.startsWith('session.')).toBe(true)
+  })
+})
 
 describe('Story 3.5 i18n parity', () => {
   test('every Story 3.5 session key exists in both en.json and vi.json', () => {

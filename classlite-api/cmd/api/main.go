@@ -570,6 +570,15 @@ func main() {
 	mux.Handle("PATCH /api/sessions/{id}/exercises/{exerciseId}", sessionChain(sessionContentHandler.UpdateExercise))
 	mux.Handle("DELETE /api/sessions/{id}/exercises/{exerciseId}", sessionChain(sessionContentHandler.DeleteExercise))
 
+	// Story 3.5b — Attendance recording (3 routes on the same sessionChain —
+	// NO RequireRole; role + tenant + teacher-scope enforced in-service).
+	// Recordable on past AND cancelled sessions (no time/status gate).
+	attendanceSvc := service.NewAttendanceService(pool)
+	attendanceHandler := handler.NewAttendanceHandler(attendanceSvc, clock.RealClock{})
+	mux.Handle("GET /api/sessions/{id}/attendance", sessionChain(attendanceHandler.GetRoster))
+	mux.Handle("PUT /api/sessions/{id}/attendance/{studentId}", sessionChain(attendanceHandler.SetOne))
+	mux.Handle("POST /api/sessions/{id}/attendance/bulk", sessionChain(attendanceHandler.BulkMark))
+
 	// Story 3.4.5 — Enrollment linkage (2 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): Create
 	// is Admin/Owner only (DB-revalidated); the roster read is teacher-scoped

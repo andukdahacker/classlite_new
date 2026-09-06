@@ -2,10 +2,11 @@
  * SessionDetailPage — Story 3.5 (AC1/AC7/AC8). The `/sessions/:id` detail screen
  * (s12), deep-imported as its own Rolldown chunk. Owns the single useSession(id)
  * read (FW-1) and the UX-1 trilogy (skeleton / 404 / error) that resolves BEFORE
- * any content section mounts. Layout is a main column (session info → materials →
- * exercises → notes) + a 300–320px right rail (Actions card + the attendance
- * placeholder). Attendance sits LAST (right rail), never in the above-the-fold
- * slot (AC1). Edit/cancel reuse the existing SessionModal (3.4) — not rebuilt.
+ * any content section mounts. Layout is a main column (live attendance →
+ * materials → exercises → notes) + a 300–320px right rail (Actions card).
+ * Attendance leads the main column (Story 3.5b, D9 — the only time-boxed
+ * end-of-session task; reverses 3.5's rail/last placeholder). Edit/cancel reuse
+ * the existing SessionModal (3.4) — not rebuilt.
  */
 import { useState, useSyncExternalStore, type ReactElement } from 'react'
 import { Link, useParams } from 'react-router'
@@ -23,7 +24,7 @@ import { SessionModal } from '@/features/schedule/components/SessionModal'
 import { NotesSection } from './components/NotesSection'
 import { MaterialsSection } from './components/MaterialsSection'
 import { ExercisesSection } from './components/ExercisesSection'
-import { AttendancePlaceholder } from './components/AttendancePlaceholder'
+import { AttendanceSection } from './components/AttendanceSection'
 
 const NOT_FOUND_STATUS = 404
 
@@ -69,6 +70,7 @@ export function SessionDetailPage(): ReactElement {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
         <div className="space-y-4">
+          <AttendanceSection sessionId={detail.id} />
           <MaterialsSection sessionId={detail.id} />
           <ExercisesSection sessionId={detail.id} />
           <NotesSection sessionId={detail.id} />
@@ -86,8 +88,6 @@ export function SessionDetailPage(): ReactElement {
               {t('session.detail.actions.edit')}
             </Button>
           </div>
-
-          <AttendancePlaceholder />
         </aside>
       </div>
 

@@ -3108,6 +3108,172 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 3.5b — Attendance recording ====================
+  # 3 session-scoped, teacher-facing endpoints on the same sessionChain as
+  # session content (extractTenant → requireVerified → requireCenter — NOT
+  # owner-gated). Role + tenant + teacher-scope enforced in-service: a student
+  # is 403 INSUFFICIENT_ROLE (assertClassRole); a teacher-not-of-this-class is
+  # 404 SESSION_NOT_FOUND (assertSessionTeacherScope — teacher-sees-nothing).
+  # Attendance is recordable on past AND cancelled sessions (no time/status gate).
+
+  /api/sessions/{id}/attendance:
+    get:
+      operationId: getSessionAttendance
+      summary: The per-session attendance roster (story 3.5b — AC4)
+      description: |
+        Every ACTIVE enrollment of the session's class, ordered by name, each with
+        its recorded status/markedAt or null when the student is not yet marked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session's attendance roster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAttendanceRoster'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND (absent OR invisible under teacher-scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/sessions/{id}/attendance/{studentId}:
+    put:
+      operationId: setSessionAttendance
+      summary: Record one student's attendance (story 3.5b — AC6)
+      description: |
+        UPSERT — INSERT on first mark, UPDATE on re-mark of the same
+        (session, student). Write-once-editable: there is no clear/un-mark path.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAttendanceRequest'
+      responses:
+        "200":
+          description: The updated roster entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAttendanceEntry'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: NOT_ENROLLED (studentId not an active enrollment) / VALIDATION_ERROR (invalid status)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/sessions/{id}/attendance/bulk:
+    post:
+      operationId: bulkSetSessionAttendance
+      summary: Mark all (or selected) students to one status (story 3.5b — AC8/AC9)
+      description: |
+        Atomic transactional upsert set. With no studentIds, applies status to
+        every active-enrolled student of the session's class ("Mark all"). With
+        studentIds (forward-compat; no v1 FE surface), every id must be an active
+        enrollment or the WHOLE batch is rejected 422 before any write.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAttendanceRequest'
+      responses:
+        "200":
+          description: The full refreshed roster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAttendanceRoster'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (students)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: SESSION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: NOT_ENROLLED (a studentId is not an active enrollment) / VALIDATION_ERROR (invalid status)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5c — Google Meet OAuth integration ====================
   # 3 endpoints per AC9. Authorize + Disconnect ride the shared settingsChain
   # (Owner-only). Callback rides oauthCallbackChain — same middleware minus
@@ -7663,6 +7829,84 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SessionExercise'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 3.5b — Attendance recording ----------------
+    AttendanceStatus:
+      type: string
+      enum: [present, late, absent]
+
+    AttendanceRosterEntry:
+      type: object
+      # All fields present + explicit (nulls not omitted) per GO-5. status +
+      # markedAt are null for an active-enrolled student not yet marked.
+      required: [studentId, name, email, status, markedAt]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        status:
+          allOf:
+            - $ref: '#/components/schemas/AttendanceStatus'
+          nullable: true
+        markedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AttendanceRoster:
+      type: object
+      required: [roster]
+      properties:
+        roster:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttendanceRosterEntry'
+
+    SetAttendanceRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/AttendanceStatus'
+
+    BulkAttendanceRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/AttendanceStatus'
+        studentIds:
+          type: array
+          nullable: true
+          description: |
+            Forward-compat (no v1 FE surface). Omitted/empty → apply to ALL
+            active-enrolled students. When present, every id must be an active
+            enrollment or the whole batch is rejected 422 NOT_ENROLLED.
+          items:
+            type: string
+            format: uuid
+
+    EnvelopeAttendanceRoster:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AttendanceRoster'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeAttendanceEntry:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AttendanceRosterEntry'
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 
