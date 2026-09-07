@@ -28,10 +28,11 @@ RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
           status, created_at, updated_at;
 
 -- name: ListEnrolledStudentsByClass :many
--- Active roster for one class (AC3). JOIN users for the display name/email the
--- downstream consumers (3.5b attendance, 7.2 teacher roster) need. RLS
--- tenant-scopes the enrollments rows; the service enforces teacher-scope on the
--- parent class before calling this. ORDER BY full_name for a stable roster.
+-- Active roster for one class (AC3), FULL (unpaginated). JOIN users for the
+-- display name/email the downstream consumers (3.5b attendance — which needs the
+-- WHOLE active set to validate bulk targets) need. RLS tenant-scopes the
+-- enrollments rows; the service enforces teacher-scope on the parent class before
+-- calling this. ORDER BY full_name for a stable roster.
 SELECT e.id, e.center_id, e.student_id, e.class_id, e.enrolled_at, e.withdrawn_at,
        e.status, e.created_at, e.updated_at,
        u.full_name AS student_name, u.email AS student_email
@@ -39,6 +40,27 @@ FROM enrollments e
 JOIN users u ON u.id = e.student_id
 WHERE e.class_id = $1 AND e.status = 'active'
 ORDER BY u.full_name ASC;
+
+-- name: ListEnrolledStudentsByClassPaged :many
+-- Active roster for one class, PAGINATED (CR-3-4-5-3, Story 7.2a D10) — the
+-- GET /api/classes/{classId}/enrollments read path. Same shape/order as the full
+-- roster (+ e.id for a page-stable tiebreak) with LIMIT/OFFSET (XL-2). Attendance
+-- keeps the full ListEnrolledStudentsByClass; only the HTTP list paginates.
+SELECT e.id, e.center_id, e.student_id, e.class_id, e.enrolled_at, e.withdrawn_at,
+       e.status, e.created_at, e.updated_at,
+       u.full_name AS student_name, u.email AS student_email
+FROM enrollments e
+JOIN users u ON u.id = e.student_id
+WHERE e.class_id = sqlc.arg('class_id') AND e.status = 'active'
+ORDER BY u.full_name ASC, e.id ASC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountEnrolledStudentsByClass :one
+-- meta.total for the paginated class roster (Story 7.2a D10). Same filter as
+-- ListEnrolledStudentsByClassPaged, RLS tenant-scoped.
+SELECT count(*)::bigint AS total
+FROM enrollments e
+WHERE e.class_id = sqlc.arg('class_id') AND e.status = 'active';
 
 -- name: GetActiveEnrollment :one
 -- ALREADY_ENROLLED pre-check (belt; uq_enrollments_active is the suspenders).

@@ -1156,6 +1156,326 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ==================== Story 7.2a — Student roster + detail + notes ====================
+  #
+  # PROVISIONAL READ CONTRACT (D14). 7-2a is the producer; Story 7-2b (the s42
+  # center-wide list / s10a teacher roster / s10 detail UI + notes composer) is
+  # the sole consumer and co-finalizes the READ shapes (StudentListItem /
+  # StudentDetail / StudentNote read + pagination meta) once the UI renders every
+  # field end-to-end — mirror 7-1a D10 (strip these markers + regen). The notes
+  # MUTATION endpoints (POST/PATCH/DELETE) are STABLE, not provisional.
+  #
+  # One role-scoped list (D3): admin/owner → center-wide; teacher → ONLY students
+  # enrolled in a class they teach (the R-SEC axis). Students → 403. Reads are
+  # RequireRole("owner","admin","teacher"); note mutations additionally
+  # re-validate role + visibility in-service (SEC-1).
+  /api/students:
+    get:
+      operationId: listStudents
+      summary: Staff — role-scoped student roster (Story 7.2a AC1/AC2, paginated)
+      description: |
+        The student roster. Admin/Owner see every role='student' member of the
+        center; a Teacher sees ONLY students with an active enrollment in a class
+        they teach (D3 — never another teacher's roster). Paginated (D10). Student
+        caller → 403 INSUFFICIENT_ROLE. `teacher_id` is admin/owner-only (a
+        teacher is already self-scoped; their `teacher_id` is ignored).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: class_id
+          in: query
+          required: false
+          description: >-
+            Narrows WHICH students appear (an active enrollment in this class).
+            Per-student aggregates (overallBand, attendance, at-risk) remain
+            whole-student across all caller-visible classes — they are NOT
+            re-scoped to this class (D2 review ruling 2026-09-07).
+          schema:
+            type: string
+            format: uuid
+        - name: teacher_id
+          in: query
+          required: false
+          description: Admin/Owner only — narrow to a teacher's enrolled students.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Paginated student roster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "500":
+          description: INTERNAL_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/students/{id}:
+    get:
+      operationId: getStudentDetail
+      summary: Staff — student detail composition (Story 7.2a AC6/AC7)
+      description: |
+        Profile + enrolled classes + performance summary (band, per-skill,
+        attendance, submission stats, currentVsFirstDelta) + at-risk + notes.
+        Role-scoped (D11): a Teacher only for a student in a class they teach —
+        otherwise 404 STUDENT_NOT_FOUND (non-disclosure, never 403). A non-student
+        / non-member id → 404. Student caller → 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Student detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentDetail'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND (not a student member / out of teacher scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/students/{id}/notes:
+    get:
+      operationId: listStudentNotes
+      summary: Staff — list a student's notes (Story 7.2a AC13)
+      description: |
+        Non-deleted notes for the student, chronological ASC. Staff-only and
+        role-scoped exactly as the detail read (teacher out-of-scope → 404;
+        student caller → 403).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Notes (chronological ASC)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentNoteList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND (out of teacher scope / not a student)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createStudentNote
+      summary: Staff — create a note on a student (Story 7.2a AC12)
+      description: |
+        Creates a note authored by the caller (STABLE contract, not provisional).
+        `attachments` and @mention are NOT accepted this story (D8). Empty content
+        → 422 VALIDATION_ERROR. Role-scoped as the detail read.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStudentNoteRequest'
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentNote'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND (out of teacher scope / not a student)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (empty content)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/students/{id}/notes/{noteId}:
+    patch:
+      operationId: setStudentNoteFlag
+      summary: Staff — toggle a note's flag (Story 7.2a AC14)
+      description: |
+        Flags/unflags a note (STABLE contract). Role-scoped as the detail read;
+        an unknown/cross-tenant/deleted note → 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetStudentNoteFlagRequest'
+      responses:
+        "200":
+          description: Flag updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentNote'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND / NOTE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteStudentNote
+      summary: Staff — soft-delete a note (Story 7.2a AC14)
+      description: |
+        Soft-deletes a note (STABLE contract). Author OR Owner/Admin only — a
+        teacher deleting another author's note → 403 FORBIDDEN. 204 on success.
+        Role-scoped as the detail read.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Note soft-deleted (no body)
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student) / FORBIDDEN (non-author teacher)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND / NOTE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ==================== Story 2-5b — Terms + Holidays + Rooms ====================
   # 12 endpoints (4 per entity × 3 entities). All Owner-only via the shared
   # settingsChain middleware (ExtractTenant → RequireVerifiedEmail →
@@ -2132,7 +2452,8 @@ paths:
         Active roster for a class, joined to users for studentName + email.
         Owner/Admin see any class in-center; a Teacher may only list classes they
         teach (cross-teacher → 404 CLASS_NOT_FOUND). This is the roster query
-        Story 3.5b (attendance) and Story 7.2 (teacher roster) consume.
+        Story 3.5b (attendance) and Story 7.2 (teacher roster) consume. Paginated
+        (CR-3-4-5-3, Story 7.2a D10) — existing callers default to page 1.
       security:
         - bearerAuth: []
       parameters:
@@ -2142,6 +2463,21 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
       responses:
         "200":
           description: Active enrollments for the class
@@ -7987,7 +8323,8 @@ components:
           items:
             $ref: '#/components/schemas/Enrollment'
         meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
+          # Story 7.2a D10 — CR-3-4-5-3 pagination on the class roster.
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
 
     # ---------------- Story 2.7 — Bulk student import ----------------
     ImportRowStatus:
@@ -8587,6 +8924,265 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ArchiveStaffResult'
+
+    # ---------------- Story 7.2a — Student roster + detail + notes ----------------
+    # PROVISIONAL READ shapes (D14) — 7-2b co-finalizes. Notes request/response
+    # mutation shapes are STABLE. All fields explicit (GO-5): nullables carry
+    # `nullable: true` and are always present in the payload.
+    EnvelopeMetaPagination:
+      type: object
+      required: [serverTime, pagination]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+    AtRiskStatus:
+      type: string
+      enum: [good, normal, at_risk]
+    StudentEnrolledClassLite:
+      type: object
+      required: [classId, className, teacherName]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        teacherName:
+          type: string
+          nullable: true
+    StudentListItem:
+      type: object
+      required:
+        - studentId
+        - name
+        - email
+        - avatarUrl
+        - enrolledClasses
+        - teachers
+        - overallBand
+        - atRiskStatus
+        - atRiskReasons
+        - activeEnrollmentCount
+        - archivedAt
+        - joinedAt
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+        enrolledClasses:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentEnrolledClassLite'
+        teachers:
+          type: array
+          items:
+            type: string
+          description: Distinct teacher names across the student's caller-visible classes.
+        overallBand:
+          type: number
+          nullable: true
+          description: Avg of the last OverallBandWindow released grades; null if none.
+        atRiskStatus:
+          $ref: '#/components/schemas/AtRiskStatus'
+        atRiskReasons:
+          type: array
+          items:
+            type: string
+          description: Slugs of each tripped signal (attendance_below_floor / consecutive_missed / band_drop).
+        activeEnrollmentCount:
+          type: integer
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        joinedAt:
+          type: string
+          format: date-time
+    EnvelopeStudentList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentListItem'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
+    StudentProfile:
+      type: object
+      required: [studentId, name, email, avatarUrl, languagePref, joinedAt]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+        languagePref:
+          type: string
+        joinedAt:
+          type: string
+          format: date-time
+    StudentDetailClass:
+      type: object
+      required: [classId, className, teacherName, targetBand]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        teacherName:
+          type: string
+          nullable: true
+        targetBand:
+          type: number
+          nullable: true
+    StudentPerSkill:
+      type: object
+      # Only the 4 IELTS skills (D6). Each null when no graded submission.
+      required: [reading, listening, writing, speaking]
+      properties:
+        reading:
+          type: number
+          nullable: true
+        listening:
+          type: number
+          nullable: true
+        writing:
+          type: number
+          nullable: true
+        speaking:
+          type: number
+          nullable: true
+    StudentPerformanceSummary:
+      type: object
+      required:
+        - overallBand
+        - perSkill
+        - attendanceRate
+        - pendingCount
+        - missingCount
+        - onTimeRate
+        - currentVsFirstDelta
+      properties:
+        overallBand:
+          type: number
+          nullable: true
+        perSkill:
+          $ref: '#/components/schemas/StudentPerSkill'
+        attendanceRate:
+          type: number
+          nullable: true
+          description: (present+late)/total_marked; null when total_marked=0.
+        pendingCount:
+          type: integer
+        missingCount:
+          type: integer
+        onTimeRate:
+          type: number
+          nullable: true
+          description: submitted_at <= deadline_at / total submitted; null when none submitted.
+        currentVsFirstDelta:
+          type: number
+          nullable: true
+          description: Avg last-N released minus avg first-month released; null when insufficient data.
+    StudentAtRisk:
+      type: object
+      required: [status, reasons]
+      properties:
+        status:
+          $ref: '#/components/schemas/AtRiskStatus'
+        reasons:
+          type: array
+          items:
+            type: string
+    StudentNote:
+      type: object
+      required: [noteId, authorName, content, flagged, createdAt]
+      properties:
+        noteId:
+          type: string
+          format: uuid
+        authorName:
+          type: string
+        content:
+          type: string
+        flagged:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    StudentDetail:
+      type: object
+      required: [profile, enrolledClasses, performanceSummary, atRisk, notes]
+      properties:
+        profile:
+          $ref: '#/components/schemas/StudentProfile'
+        enrolledClasses:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentDetailClass'
+        performanceSummary:
+          $ref: '#/components/schemas/StudentPerformanceSummary'
+        atRisk:
+          $ref: '#/components/schemas/StudentAtRisk'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentNote'
+    EnvelopeStudentDetail:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StudentDetail'
+    EnvelopeStudentNoteList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentNote'
+    EnvelopeStudentNote:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StudentNote'
+    CreateStudentNoteRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+        flagged:
+          type: boolean
+          default: false
+    SetStudentNoteFlagRequest:
+      type: object
+      required: [flagged]
+      properties:
+        flagged:
+          type: boolean
 
     # ---------------- Story 4.1 — Exercise library ----------------
     ExerciseSkill:

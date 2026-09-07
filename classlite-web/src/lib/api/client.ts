@@ -573,6 +573,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/students": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Staff — role-scoped student roster (Story 7.2a AC1/AC2, paginated)
+         * @description The student roster. Admin/Owner see every role='student' member of the
+         *     center; a Teacher sees ONLY students with an active enrollment in a class
+         *     they teach (D3 — never another teacher's roster). Paginated (D10). Student
+         *     caller → 403 INSUFFICIENT_ROLE. `teacher_id` is admin/owner-only (a
+         *     teacher is already self-scoped; their `teacher_id` is ignored).
+         */
+        get: operations["listStudents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/students/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Staff — student detail composition (Story 7.2a AC6/AC7)
+         * @description Profile + enrolled classes + performance summary (band, per-skill,
+         *     attendance, submission stats, currentVsFirstDelta) + at-risk + notes.
+         *     Role-scoped (D11): a Teacher only for a student in a class they teach —
+         *     otherwise 404 STUDENT_NOT_FOUND (non-disclosure, never 403). A non-student
+         *     / non-member id → 404. Student caller → 403.
+         */
+        get: operations["getStudentDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/students/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Staff — list a student's notes (Story 7.2a AC13)
+         * @description Non-deleted notes for the student, chronological ASC. Staff-only and
+         *     role-scoped exactly as the detail read (teacher out-of-scope → 404;
+         *     student caller → 403).
+         */
+        get: operations["listStudentNotes"];
+        put?: never;
+        /**
+         * Staff — create a note on a student (Story 7.2a AC12)
+         * @description Creates a note authored by the caller (STABLE contract, not provisional).
+         *     `attachments` and @mention are NOT accepted this story (D8). Empty content
+         *     → 422 VALIDATION_ERROR. Role-scoped as the detail read.
+         */
+        post: operations["createStudentNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/students/{id}/notes/{noteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Staff — soft-delete a note (Story 7.2a AC14)
+         * @description Soft-deletes a note (STABLE contract). Author OR Owner/Admin only — a
+         *     teacher deleting another author's note → 403 FORBIDDEN. 204 on success.
+         *     Role-scoped as the detail read.
+         */
+        delete: operations["deleteStudentNote"];
+        options?: never;
+        head?: never;
+        /**
+         * Staff — toggle a note's flag (Story 7.2a AC14)
+         * @description Flags/unflags a note (STABLE contract). Role-scoped as the detail read;
+         *     an unknown/cross-tenant/deleted note → 404.
+         */
+        patch: operations["setStudentNoteFlag"];
+        trace?: never;
+    };
     "/api/terms": {
         parameters: {
             query?: never;
@@ -823,7 +926,8 @@ export interface paths {
          * @description Active roster for a class, joined to users for studentName + email.
          *     Owner/Admin see any class in-center; a Teacher may only list classes they
          *     teach (cross-teacher → 404 CLASS_NOT_FOUND). This is the roster query
-         *     Story 3.5b (attendance) and Story 7.2 (teacher roster) consume.
+         *     Story 3.5b (attendance) and Story 7.2 (teacher roster) consume. Paginated
+         *     (CR-3-4-5-3, Story 7.2a D10) — existing callers default to page 1.
          */
         get: operations["listClassEnrollments"];
         put?: never;
@@ -2901,7 +3005,7 @@ export interface components {
         };
         EnvelopeEnrollmentList: {
             data: components["schemas"]["Enrollment"][];
-            meta: components["schemas"]["EnvelopeMeta"];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
         };
         /**
          * @description Per-row classification. `unassigned` = importable but classless (the
@@ -3235,6 +3339,117 @@ export interface components {
         };
         EnvelopeArchiveStaffResult: {
             data: components["schemas"]["ArchiveStaffResult"];
+        };
+        EnvelopeMetaPagination: {
+            /** Format: date-time */
+            serverTime: string;
+            pagination: components["schemas"]["PaginationMeta"];
+        };
+        /** @enum {string} */
+        AtRiskStatus: "good" | "normal" | "at_risk";
+        StudentEnrolledClassLite: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            teacherName: string | null;
+        };
+        StudentListItem: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            avatarUrl: string | null;
+            enrolledClasses: components["schemas"]["StudentEnrolledClassLite"][];
+            /** @description Distinct teacher names across the student's caller-visible classes. */
+            teachers: string[];
+            /** @description Avg of the last OverallBandWindow released grades; null if none. */
+            overallBand: number | null;
+            atRiskStatus: components["schemas"]["AtRiskStatus"];
+            /** @description Slugs of each tripped signal (attendance_below_floor / consecutive_missed / band_drop). */
+            atRiskReasons: string[];
+            activeEnrollmentCount: number;
+            /** Format: date-time */
+            archivedAt: string | null;
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        EnvelopeStudentList: {
+            data: components["schemas"]["StudentListItem"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        StudentProfile: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            avatarUrl: string | null;
+            languagePref: string;
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        StudentDetailClass: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            teacherName: string | null;
+            targetBand: number | null;
+        };
+        StudentPerSkill: {
+            reading: number | null;
+            listening: number | null;
+            writing: number | null;
+            speaking: number | null;
+        };
+        StudentPerformanceSummary: {
+            overallBand: number | null;
+            perSkill: components["schemas"]["StudentPerSkill"];
+            /** @description (present+late)/total_marked; null when total_marked=0. */
+            attendanceRate: number | null;
+            pendingCount: number;
+            missingCount: number;
+            /** @description submitted_at <= deadline_at / total submitted; null when none submitted. */
+            onTimeRate: number | null;
+            /** @description Avg last-N released minus avg first-month released; null when insufficient data. */
+            currentVsFirstDelta: number | null;
+        };
+        StudentAtRisk: {
+            status: components["schemas"]["AtRiskStatus"];
+            reasons: string[];
+        };
+        StudentNote: {
+            /** Format: uuid */
+            noteId: string;
+            authorName: string;
+            content: string;
+            flagged: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        StudentDetail: {
+            profile: components["schemas"]["StudentProfile"];
+            enrolledClasses: components["schemas"]["StudentDetailClass"][];
+            performanceSummary: components["schemas"]["StudentPerformanceSummary"];
+            atRisk: components["schemas"]["StudentAtRisk"];
+            notes: components["schemas"]["StudentNote"][];
+        };
+        EnvelopeStudentDetail: {
+            data: components["schemas"]["StudentDetail"];
+        };
+        EnvelopeStudentNoteList: {
+            data: components["schemas"]["StudentNote"][];
+        };
+        EnvelopeStudentNote: {
+            data: components["schemas"]["StudentNote"];
+        };
+        CreateStudentNoteRequest: {
+            content: string;
+            /** @default false */
+            flagged: boolean;
+        };
+        SetStudentNoteFlagRequest: {
+            flagged: boolean;
         };
         /** @enum {string} */
         ExerciseSkill: "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary" | "general";
@@ -5417,6 +5632,322 @@ export interface operations {
             };
         };
     };
+    listStudents: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                /** @description Narrows WHICH students appear (an active enrollment in this class). Per-student aggregates (overallBand, attendance, at-risk) remain whole-student across all caller-visible classes — they are NOT re-scoped to this class (D2 review ruling 2026-09-07). */
+                class_id?: string;
+                /** @description Admin/Owner only — narrow to a teacher's enrolled students. */
+                teacher_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated student roster */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INTERNAL_ERROR */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getStudentDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Student detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentDetail"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND (not a student member / out of teacher scope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listStudentNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notes (chronological ASC) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentNoteList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND (out of teacher scope / not a student) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createStudentNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStudentNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Note created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentNote"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND (out of teacher scope / not a student) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (empty content) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    deleteStudentNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Note soft-deleted (no body) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student) / FORBIDDEN (non-author teacher) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND / NOTE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    setStudentNoteFlag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStudentNoteFlagRequest"];
+            };
+        };
+        responses: {
+            /** @description Flag updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentNote"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND / NOTE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     listTerms: {
         parameters: {
             query?: never;
@@ -6671,7 +7202,10 @@ export interface operations {
     };
     listClassEnrollments: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: never;
             path: {
                 classId: string;

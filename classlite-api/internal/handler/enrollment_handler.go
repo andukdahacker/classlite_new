@@ -10,6 +10,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
@@ -57,7 +58,7 @@ func enrolledStudentToResponse(e service.EnrolledStudent) enrollmentResponse {
 	}
 }
 
-func rosterRowToResponse(r generated.ListEnrolledStudentsByClassRow) enrollmentResponse {
+func rosterRowToResponse(r generated.ListEnrolledStudentsByClassPagedRow) enrollmentResponse {
 	return enrollmentResponse{
 		ID:           uuidPgToString(r.ID),
 		CenterID:     uuidPgToString(r.CenterID),
@@ -111,7 +112,8 @@ func (h *EnrollmentHandler) ListByClass(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	rows, err := h.svc.ListEnrolledStudentsByClass(r.Context(), tc, classID)
+	page, pageSize := parseSnakePageParams(r)
+	rows, pageMeta, err := h.svc.ListEnrolledStudentsByClass(r.Context(), tc, classID, page, pageSize)
 	if err != nil {
 		return err
 	}
@@ -119,8 +121,35 @@ func (h *EnrollmentHandler) ListByClass(w http.ResponseWriter, r *http.Request) 
 	for i, row := range rows {
 		out[i] = rosterRowToResponse(row)
 	}
-	WriteEnvelope(w, http.StatusOK, h.clk, out)
+	WriteEnvelopeWithMeta(w, http.StatusOK, out, paginatedListMeta{
+		ServerTime: wireTime(h.clk.Now()),
+		Pagination: paginationMetaResponse{
+			Page:       pageMeta.Page,
+			PageSize:   pageMeta.PageSize,
+			Total:      pageMeta.Total,
+			TotalPages: pageMeta.TotalPages,
+		},
+	})
 	return nil
+}
+
+// parseSnakePageParams reads page / page_size query params (XL-2 snake_case;
+// defaults page 1 / service default page size). Clamping happens in the service.
+func parseSnakePageParams(r *http.Request) (int, int) {
+	q := r.URL.Query()
+	page := 1
+	pageSize := service.DefaultPageSize
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			page = n
+		}
+	}
+	if v := q.Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			pageSize = n
+		}
+	}
+	return page, pageSize
 }
 
 // --- request body ---

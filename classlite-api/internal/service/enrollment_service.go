@@ -182,45 +182,54 @@ func (s *EnrollmentService) CreateEnrollment(
 	}, nil
 }
 
-// ListEnrolledStudentsByClass returns the active roster for a class (AC3). Reads
-// run inside a tenant-scoped tx (RLS needs it — PERF-1). Role gate allows
-// owner/admin/teacher; a teacher may only list a class assigned to them
-// (cross-teacher → 404, teacher-sees-nothing).
+// ListEnrolledStudentsByClass returns the active roster for a class (AC3),
+// PAGINATED (CR-3-4-5-3, Story 7.2a D10). Reads run inside a tenant-scoped tx
+// (RLS needs it — PERF-1). Role gate allows owner/admin/teacher; a teacher may
+// only list a class assigned to them (cross-teacher → 404, teacher-sees-nothing).
 func (s *EnrollmentService) ListEnrolledStudentsByClass(
-	ctx context.Context, tc model.TenantContext, classID uuid.UUID,
-) ([]generated.ListEnrolledStudentsByClassRow, error) {
+	ctx context.Context, tc model.TenantContext, classID uuid.UUID, page, pageSize int,
+) ([]generated.ListEnrolledStudentsByClassPagedRow, PageResult, error) {
 	if err := assertClassRole(tc); err != nil {
-		return nil, err
+		return nil, PageResult{}, err
 	}
+	page, pageSize, offset := clampPagination(page, pageSize)
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list enrollments: begin tx: %w", err)
+		return nil, PageResult{}, fmt.Errorf("list enrollments: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	if err := store.SetTenantContext(ctx, tx, tc); err != nil {
-		return nil, fmt.Errorf("list enrollments: %w", err)
+		return nil, PageResult{}, fmt.Errorf("list enrollments: %w", err)
 	}
 	txQ := generated.New(tx)
 
 	current, err := txQ.GetClassByID(ctx, pgUUID(classID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, classNotFound(classID)
+			return nil, PageResult{}, classNotFound(classID)
 		}
-		return nil, fmt.Errorf("list enrollments: get class: %w", err)
+		return nil, PageResult{}, fmt.Errorf("list enrollments: get class: %w", err)
 	}
 	if err := assertTeacherScope(tc, current, classID); err != nil {
-		return nil, err
+		return nil, PageResult{}, err
 	}
 
-	rows, err := txQ.ListEnrolledStudentsByClass(ctx, pgUUID(classID))
+	rows, err := txQ.ListEnrolledStudentsByClassPaged(ctx, generated.ListEnrolledStudentsByClassPagedParams{
+		ClassID: pgUUID(classID),
+		Limit:   int32(pageSize),
+		Offset:  int32(offset),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list enrollments: query: %w", err)
+		return nil, PageResult{}, fmt.Errorf("list enrollments: query: %w", err)
+	}
+	total, err := txQ.CountEnrolledStudentsByClass(ctx, pgUUID(classID))
+	if err != nil {
+		return nil, PageResult{}, fmt.Errorf("list enrollments: count: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("list enrollments: commit: %w", err)
+		return nil, PageResult{}, fmt.Errorf("list enrollments: commit: %w", err)
 	}
-	return rows, nil
+	return rows, pageResult(page, pageSize, total), nil
 }

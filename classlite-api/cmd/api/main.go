@@ -489,6 +489,33 @@ func main() {
 	mux.Handle("POST /api/staff/{userId}/archive", staffActionChain(staffHandler.Archive))
 	mux.Handle("POST /api/staff/{userId}/reset-password", staffActionChain(staffHandler.ResetPassword))
 
+	// Story 7.2a — Student roster + detail + notes (6 routes). ONE read chain
+	// RequireRole("owner","admin","teacher") — students → 403 at the edge (D11);
+	// role-scope (teacher = own-classes only, R-SEC) + 404 non-disclosure +
+	// note-write SEC-1 re-validation are enforced in StudentService. Reuses the
+	// settingsLimit bucket (same as staff). The bare /api/students list mounts
+	// alongside the existing /api/students/import POST routes (distinct methods).
+	studentSvc := service.NewStudentService(pool, clock.RealClock{})
+	studentHandler := handler.NewStudentHandler(studentSvc, clock.RealClock{})
+	requireStudentReadRole := middleware.RequireRole("owner", "admin", "teacher")
+	studentReadChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireStudentReadRole(
+						settingsLimit(http.HandlerFunc(middleware.ErrorMapper(h))),
+					),
+				),
+			),
+		)
+	}
+	mux.Handle("GET /api/students", studentReadChain(studentHandler.List))
+	mux.Handle("GET /api/students/{id}", studentReadChain(studentHandler.GetDetail))
+	mux.Handle("GET /api/students/{id}/notes", studentReadChain(studentHandler.ListNotes))
+	mux.Handle("POST /api/students/{id}/notes", studentReadChain(studentHandler.CreateNote))
+	mux.Handle("PATCH /api/students/{id}/notes/{noteId}", studentReadChain(studentHandler.SetNoteFlag))
+	mux.Handle("DELETE /api/students/{id}/notes/{noteId}", studentReadChain(studentHandler.DeleteNote))
+
 	// Story 2-5b — Terms + Holidays + Rooms endpoints (12 routes). Share the
 	// settingsChain wiring above so the same middleware order + rate limit
 	// apply. Every mutating op emits a `center.{term|holiday|room}.{created|
