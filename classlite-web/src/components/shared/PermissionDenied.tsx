@@ -29,7 +29,7 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
-export type PermissionDeniedRoles = ['owner', 'admin'] | ['owner']
+export type PermissionDeniedRoles = ['owner', 'admin'] | ['owner'] | ['teacher']
 
 /**
  * SectionNameKey — the closed set of gated surfaces that PermissionDenied
@@ -60,12 +60,27 @@ export interface PermissionDeniedProps {
   sectionNameKey?: SectionNameKey
 }
 
+/**
+ * The teacher-gated variant (Story 7.2b D1) is a THIRD explicit case, not a
+ * length collapse — `['teacher']` is length-1 like `['owner']`, so a
+ * length-only branch would render owner-worded copy on a teacher route (the
+ * `StudentRoutesGate` "staff-inclusive copy" assertion). Matches the UX-3
+ * "explicit cases, not a role-string hash" convention.
+ */
+function isTeacherOnly(requiredRoles: PermissionDeniedRoles): boolean {
+  return requiredRoles.length === 1 && requiredRoles[0] === 'teacher'
+}
+
 function bodyKey(requiredRoles: PermissionDeniedRoles): string {
+  if (isTeacherOnly(requiredRoles)) return 'app.permissionDenied.bodyTeacher'
   if (requiredRoles.length === 1) return 'app.permissionDenied.bodyOwner'
   return 'app.permissionDenied.bodyOwnerAdmin'
 }
 
 function requiredRoleSummaryKey(requiredRoles: PermissionDeniedRoles): string {
+  if (isTeacherOnly(requiredRoles)) {
+    return 'app.permissionDenied.requiredRoleSummaryTeacher'
+  }
   if (requiredRoles.length === 1) {
     return 'app.permissionDenied.requiredRoleSummaryOwner'
   }

@@ -325,6 +325,93 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 7.2b — teacher student roster + shared detail. ACTIVATES the
+      // shipped DEAD `/students` sidebar link (sidebarNavConfig.tsx:85 pointed
+      // here but no route matched — it fell through to `*` NotFound). Gated to
+      // teachers; `requiredRolesForCopy={['teacher']}` renders the staff-inclusive
+      // denial copy (D1 PermissionDenied widening). The static `/students/import`
+      // route below outranks `:id` (RR v7 specificity), so "import" never
+      // resolves to the detail — asserted by StudentRoutesPrecedence.test.tsx.
+      // Each page deep-imported for its own Rolldown chunk.
+      {
+        path: '/students',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['teacher']}
+                requiredRolesForCopy={['teacher']}
+                sectionNameKey="students"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { StudentsTeacherPage } = await import(
+                '@/features/people/StudentsTeacherPage'
+              )
+              return { Component: StudentsTeacherPage }
+            },
+          },
+          {
+            path: ':id',
+            lazy: async () => {
+              const { StudentDetailPage } = await import(
+                '@/features/people/StudentDetailPage'
+              )
+              return { Component: StudentDetailPage }
+            },
+          },
+        ],
+      },
+      // Story 7.2b — owner/admin center-wide student list + shared detail
+      // (class-agnostic, D1). A NEW `/people/students` sub-nav entry points here
+      // (sidebarNavConfig). Gated owner/admin; the detail page is the SAME
+      // `StudentDetailPage` the teacher route mounts (one shared page over the
+      // whole-student read). Deep-imported chunks.
+      {
+        path: '/people/students',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="students"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { StudentsCenterPage } = await import(
+                '@/features/people/StudentsCenterPage'
+              )
+              return { Component: StudentsCenterPage }
+            },
+          },
+          {
+            path: ':id',
+            lazy: async () => {
+              const { StudentDetailPage } = await import(
+                '@/features/people/StudentDetailPage'
+              )
+              return { Component: StudentDetailPage }
+            },
+          },
+        ],
+      },
       // Story 4.1 — /exercises library. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). Create/edit is a Dialog
       // (not a /exercises/new child route), so this single boundary covers the

@@ -3421,6 +3421,8 @@ export interface components {
         StudentNote: {
             /** Format: uuid */
             noteId: string;
+            /** Format: uuid */
+            authorId: string;
             authorName: string;
             content: string;
             flagged: boolean;

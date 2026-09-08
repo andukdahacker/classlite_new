@@ -1158,12 +1158,13 @@ paths:
 
   # ==================== Story 7.2a — Student roster + detail + notes ====================
   #
-  # PROVISIONAL READ CONTRACT (D14). 7-2a is the producer; Story 7-2b (the s42
-  # center-wide list / s10a teacher roster / s10 detail UI + notes composer) is
-  # the sole consumer and co-finalizes the READ shapes (StudentListItem /
-  # StudentDetail / StudentNote read + pagination meta) once the UI renders every
-  # field end-to-end — mirror 7-1a D10 (strip these markers + regen). The notes
-  # MUTATION endpoints (POST/PATCH/DELETE) are STABLE, not provisional.
+  # READ CONTRACT co-finalized by Story 7-2b (D13, 2026-09-07). 7-2a is the
+  # producer; the s42 center-wide list / s10a teacher roster / s10 detail UI +
+  # notes composer is the sole consumer and rendered every READ field
+  # (StudentListItem / StudentDetail / StudentNote read + pagination meta)
+  # end-to-end — the provisional markers were stripped with no field-shape
+  # change (codegen re-run was additive/comment-only). The notes MUTATION
+  # endpoints (POST/PATCH/DELETE) were STABLE from 7-2a.
   #
   # One role-scoped list (D3): admin/owner → center-wide; teacher → ONLY students
   # enrolled in a class they teach (the R-SEC axis). Students → 403. Reads are
@@ -8926,8 +8927,9 @@ components:
           $ref: '#/components/schemas/ArchiveStaffResult'
 
     # ---------------- Story 7.2a — Student roster + detail + notes ----------------
-    # PROVISIONAL READ shapes (D14) — 7-2b co-finalizes. Notes request/response
-    # mutation shapes are STABLE. All fields explicit (GO-5): nullables carry
+    # READ shapes co-finalized by Story 7-2b (D13, 2026-09-07) — consumed
+    # end-to-end, no field-shape change. Notes request/response mutation shapes
+    # were STABLE from 7-2a. All fields explicit (GO-5): nullables carry
     # `nullable: true` and are always present in the payload.
     EnvelopeMetaPagination:
       type: object
@@ -9115,9 +9117,12 @@ components:
             type: string
     StudentNote:
       type: object
-      required: [noteId, authorName, content, flagged, createdAt]
+      required: [noteId, authorId, authorName, content, flagged, createdAt]
       properties:
         noteId:
+          type: string
+          format: uuid
+        authorId:
           type: string
           format: uuid
         authorName:

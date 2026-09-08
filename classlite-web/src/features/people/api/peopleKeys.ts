@@ -26,4 +26,32 @@ export const peopleKeys = {
     [...peopleKeys.all, 'mutation', 'resetPassword'] as const,
   forceLogoutMutation: () =>
     [...peopleKeys.all, 'mutation', 'forceLogout'] as const,
+  // Story 7.2b — student roster (paginated) + whole-student detail + notes reads.
+  // `params` is the server-side query slice (page/class_id/teacher_id) so a
+  // filter-chip change is a distinct cache entry (TS-3 partial-match still
+  // cascades from `studentList` because the params object is the last segment).
+  studentList: (params: StudentListParams) =>
+    [...peopleKeys.all, 'student', 'list', params] as const,
+  studentDetail: (studentId: string) =>
+    [...peopleKeys.all, 'student', 'detail', studentId] as const,
+  studentNotes: (studentId: string) =>
+    [...peopleKeys.all, 'student', 'notes', studentId] as const,
+  // Story 7.2b — teacher-note mutation slots.
+  createNoteMutation: () =>
+    [...peopleKeys.all, 'mutation', 'createNote'] as const,
+  flagNoteMutation: () => [...peopleKeys.all, 'mutation', 'flagNote'] as const,
+  deleteNoteMutation: () =>
+    [...peopleKeys.all, 'mutation', 'deleteNote'] as const,
 } as const
+
+/**
+ * StudentListParams — the server-side query slice for the roster read. `page`
+ * is the pager offset (D6); `classId` / `teacherId` are the server-side filter
+ * chips (never client-only, else the client-tab counts drift — AC10). Undefined
+ * fields are omitted from the querystring by the hook.
+ */
+export interface StudentListParams {
+  page: number
+  classId?: string
+  teacherId?: string
+}

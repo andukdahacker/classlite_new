@@ -118,6 +118,7 @@ type studentAtRiskResponse struct {
 
 type studentNoteResponse struct {
 	NoteID     string `json:"noteId"`
+	AuthorID   string `json:"authorId"`
 	AuthorName string `json:"authorName"`
 	Content    string `json:"content"`
 	Flagged    bool   `json:"flagged"`
@@ -452,6 +453,7 @@ func studentDetailToResponse(d *service.StudentDetail) studentDetailResponse {
 func studentNoteToResponse(n service.StudentNoteView) studentNoteResponse {
 	return studentNoteResponse{
 		NoteID:     n.NoteID.String(),
+		AuthorID:   n.AuthorID.String(),
 		AuthorName: n.AuthorName,
 		Content:    n.Content,
 		Flagged:    n.Flagged,

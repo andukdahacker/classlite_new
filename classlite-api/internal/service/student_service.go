@@ -157,6 +157,7 @@ type StudentAtRisk struct {
 // StudentNoteView is one note in a read (D12/D7).
 type StudentNoteView struct {
 	NoteID     uuid.UUID
+	AuthorID   uuid.UUID
 	AuthorName string
 	Content    string
 	Flagged    bool
@@ -550,6 +551,7 @@ func (s *StudentService) CreateNote(
 	}
 	return &StudentNoteView{
 		NoteID:     uuidFromPg(note.ID),
+		AuthorID:   uuidFromPg(note.AuthorID),
 		AuthorName: author.FullName,
 		Content:    note.Content,
 		Flagged:    note.Flagged,
@@ -599,6 +601,7 @@ func (s *StudentService) SetNoteFlag(
 	}
 	return &StudentNoteView{
 		NoteID:     uuidFromPg(updated.ID),
+		AuthorID:   uuidFromPg(updated.AuthorID),
 		AuthorName: author.FullName,
 		Content:    updated.Content,
 		Flagged:    updated.Flagged,
@@ -798,6 +801,7 @@ func noteNotFound(id uuid.UUID) error {
 func noteRowToView(n generated.ListStudentNotesRow) StudentNoteView {
 	return StudentNoteView{
 		NoteID:     uuidFromPg(n.ID),
+		AuthorID:   uuidFromPg(n.AuthorID),
 		AuthorName: n.AuthorName,
 		Content:    n.Content,
 		Flagged:    n.Flagged,
