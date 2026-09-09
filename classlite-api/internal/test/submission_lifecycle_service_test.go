@@ -325,7 +325,7 @@ func TestSubmit_StudentWithdrawnMidAttempt_403(t *testing.T) {
 	// Withdraw the student AFTER they started (Murat #11).
 	TenantContext(t, e.db, pgUUIDFromGo(e.centerID))
 	if _, err := e.db.Exec(context.Background(),
-		`UPDATE enrollments SET status='withdrawn' WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentID); err != nil {
+		`UPDATE enrollments SET status='withdrawn', withdrawn_at=now() WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentID); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
 	_, err := e.submissionSvc.Submit(context.Background(), e.studentTC, uuid.UUID(sub.Row.ID.Bytes))

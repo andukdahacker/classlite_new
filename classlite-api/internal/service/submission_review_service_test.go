@@ -364,7 +364,7 @@ func TestGetStudentSubmissionReview_WithdrawnOrNeverEnrolled_403_NotEnrolled_Zer
 	e := newReviewEnv(t)
 	// Withdraw studentA AFTER they own the (terminal) submission.
 	if _, err := e.db.Exec(context.Background(),
-		`UPDATE enrollments SET status='withdrawn' WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
+		`UPDATE enrollments SET status='withdrawn', withdrawn_at=now() WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
 		t.Fatalf("withdraw A: %v", err)
 	}
 	content, _ := speakingSubmissionContent(e.centerID)
@@ -472,7 +472,7 @@ func TestGetStudentSubmissionReview_ZeroMintOnEveryGatedFailurePath(t *testing.T
 		}},
 		{"not-enrolled", func(t *testing.T, e *reviewEnv) (model.TenantContext, uuid.UUID) {
 			if _, err := e.db.Exec(context.Background(),
-				`UPDATE enrollments SET status='withdrawn' WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
+				`UPDATE enrollments SET status='withdrawn', withdrawn_at=now() WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
 				t.Fatalf("withdraw: %v", err)
 			}
 			content, _ := speakingSubmissionContent(e.centerID)

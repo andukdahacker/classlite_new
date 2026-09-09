@@ -76,3 +76,95 @@ SELECT EXISTS (
     SELECT 1 FROM center_members
     WHERE center_id = $1 AND user_id = $2 AND role = 'student'
 ) AS is_student_member;
+
+-- Story 7.3a — the withdraw/transfer transitions + the s43 needs-attention reads.
+
+-- name: WithdrawEnrollment :one
+-- AC4 — set the student's ACTIVE enrollment in a class to 'withdrawn'. withdrawn_at
+-- is the effective date (coupling CHECK requires it non-null for a terminal status);
+-- updated_at is bumped explicitly (the table's default fires on INSERT only). Matched
+-- by (class_id, student_id, status='active') — 0 rows (pgx.ErrNoRows) means the
+-- student holds no active enrollment there → the service maps NOT_ENROLLED_IN_SOURCE.
+UPDATE enrollments
+SET status = 'withdrawn', withdrawn_at = $3, updated_at = now()
+WHERE class_id = $1 AND student_id = $2 AND status = 'active'
+RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
+          status, created_at, updated_at;
+
+-- name: TransferEnrollmentSource :one
+-- AC3 — set the student's ACTIVE enrollment in the SOURCE class to 'transferred'
+-- (the target is created via CreateEnrollment, in the same tx). Same 0-rows →
+-- NOT_ENROLLED_IN_SOURCE contract as WithdrawEnrollment. uq_enrollments_active
+-- permits the transferred row to coexist with the new active target row.
+UPDATE enrollments
+SET status = 'transferred', withdrawn_at = $3, updated_at = now()
+WHERE class_id = $1 AND student_id = $2 AND status = 'active'
+RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
+          status, created_at, updated_at;
+
+-- name: ListUnassignedStudents :many
+-- AC12 (D4) — `student` center-members with ZERO active enrollments. RLS
+-- tenant-scopes the enrollments NOT EXISTS; center_members carries an explicit
+-- center_id (belt) matching IsStudentMemberOfCenter. Ordered by name for the s43
+-- zone. Paginated (XL-2) — a large center never returns an unbounded payload.
+SELECT u.id AS student_id, u.full_name AS student_name, u.email AS student_email
+FROM center_members cm
+JOIN users u ON u.id = cm.user_id
+WHERE cm.center_id = $1 AND cm.role = 'student'
+  AND NOT EXISTS (
+      SELECT 1 FROM enrollments e
+      WHERE e.student_id = cm.user_id AND e.status = 'active'
+  )
+ORDER BY u.full_name ASC
+LIMIT $2 OFFSET $3;
+
+-- name: CountUnassignedStudents :one
+-- AC12 (D4) — total count for the unassigned zone's pagination meta. Predicate
+-- MUST mirror ListUnassignedStudents exactly.
+SELECT count(*)
+FROM center_members cm
+WHERE cm.center_id = $1 AND cm.role = 'student'
+  AND NOT EXISTS (
+      SELECT 1 FROM enrollments e
+      WHERE e.student_id = cm.user_id AND e.status = 'active'
+  );
+
+-- name: ListOverCapacityClasses :many
+-- AC12 (D4) — classes whose ACTIVE-enrollment count exceeds capacity (only where
+-- capacity IS NOT NULL). Aggregated in SQL, never an N+1 loop (PERF-2). classes +
+-- enrollments are both RLS tenant-scoped. Paginated (XL-2).
+SELECT c.id AS class_id, c.name AS class_name, c.capacity,
+       count(e.id) FILTER (WHERE e.status = 'active')::bigint AS active_count
+FROM classes c
+LEFT JOIN enrollments e ON e.class_id = c.id
+WHERE c.capacity IS NOT NULL
+GROUP BY c.id, c.name, c.capacity
+HAVING count(e.id) FILTER (WHERE e.status = 'active') > c.capacity
+ORDER BY c.name ASC
+LIMIT $1 OFFSET $2;
+
+-- name: CountOverCapacityClasses :one
+-- AC12 (D4) — total count of over-capacity classes for the zone's pagination meta.
+-- Predicate MUST mirror ListOverCapacityClasses; wrap the HAVING aggregate in a
+-- subquery so count(*) counts qualifying classes, not grouped rows.
+SELECT count(*) FROM (
+    SELECT c.id
+    FROM classes c
+    LEFT JOIN enrollments e ON e.class_id = c.id
+    WHERE c.capacity IS NOT NULL
+    GROUP BY c.id, c.capacity
+    HAVING count(e.id) FILTER (WHERE e.status = 'active') > c.capacity
+) sub;
+
+-- name: GetEnrollmentClass :one
+-- Resolve a class for an enrollment action in ONE read: existence/RLS (ErrNoRows →
+-- 404 CLASS_NOT_FOUND), status (D3 enrollable guard), name (email body), and the
+-- teacher recipient (AC14 notify). A class with pending_teacher_email (no assigned
+-- teacher) has teacher_id NULL → teacher_email NULL → the service skips the teacher
+-- email. RLS tenant-scopes the class read; users is global.
+SELECT c.id, c.name AS class_name, c.status AS class_status,
+       c.teacher_id, c.pending_teacher_email,
+       u.full_name AS teacher_name, u.email AS teacher_email
+FROM classes c
+LEFT JOIN users u ON u.id = c.teacher_id
+WHERE c.id = $1;

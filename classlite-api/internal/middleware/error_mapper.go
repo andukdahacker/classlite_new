@@ -112,6 +112,10 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		// Story 3.4.5 enrollment 422 (distinct from the generic ValidationError
 		// arm which would flatten it to VALIDATION_ERROR).
 		var notAStudentMember *service.NotAStudentMemberError
+		// Story 7.3a enrollment-action 422s (distinct codes the generic
+		// ValidationError arm would otherwise flatten).
+		var classNotEnrollable *service.ClassNotEnrollableError
+		var notEnrolledInSource *service.NotEnrolledInSourceError
 		// Story 3.5b attendance — the target studentId is not an active
 		// enrollment → 422 NOT_ENROLLED (distinct from the 403 NotEnrolledError
 		// caller-not-enrolled arm, and from the generic ValidationError arm).
@@ -184,6 +188,16 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"NOT_A_STUDENT_MEMBER",
 				"This user is not a student member of this center.", nil)
+			return
+		case errors.As(err, &classNotEnrollable):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"CLASS_NOT_ENROLLABLE",
+				"This class is not open for enrollment.", nil)
+			return
+		case errors.As(err, &notEnrolledInSource):
+			handler.WriteError(w, r, http.StatusUnprocessableEntity,
+				"NOT_ENROLLED_IN_SOURCE",
+				"The student is not actively enrolled in the source class.", nil)
 			return
 		case errors.As(err, &attendanceNotEnrolled):
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,

@@ -98,8 +98,10 @@ func seedAssignment(t *testing.T, centerID, exerciseID pgtype.UUID, classID uuid
 func seedEnrollment(t *testing.T, centerID, studentID pgtype.UUID, classID uuid.UUID, status string) {
 	t.Helper()
 	sp := SuperuserPool(t)
+	// A terminal status carries withdrawn_at (Story 7.3a coupling CHECK); active stays NULL.
 	if _, err := sp.Exec(context.Background(),
-		`INSERT INTO enrollments (id, center_id, student_id, class_id, status) VALUES ($1,$2,$3,$4,$5)`,
+		`INSERT INTO enrollments (id, center_id, student_id, class_id, status, withdrawn_at)
+		 VALUES ($1,$2,$3,$4,$5, CASE WHEN $5 <> 'active' THEN now() ELSE NULL END)`,
 		uuid.New(), centerID, studentID, classID, status); err != nil {
 		t.Fatalf("seed enrollment: %v", err)
 	}

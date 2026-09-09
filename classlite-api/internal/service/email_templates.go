@@ -97,6 +97,74 @@ func RenderInviteEmail(centerName, inviterName, role, acceptURL string) (subject
 	return subject, body
 }
 
+// enrollmentActionPhrase maps an action + class names to a human sentence fragment
+// used in both enrollment-change emails. All names are HTML-escaped by the caller.
+func enrollmentActionPhrase(action, fromClass, toClass string) (headline, detail string) {
+	switch action {
+	case "transfer":
+		return "Enrollment transfer",
+			fmt.Sprintf("has been transferred from <strong>%s</strong> to <strong>%s</strong>.", fromClass, toClass)
+	case "withdraw":
+		return "Enrollment withdrawal",
+			fmt.Sprintf("has been withdrawn from <strong>%s</strong>.", fromClass)
+	default: // add
+		return "New enrollment",
+			fmt.Sprintf("has been enrolled in <strong>%s</strong>.", toClass)
+	}
+}
+
+// enrollmentEmailShell wraps a headline + inner HTML paragraph in the shared email
+// chrome (matches the other transactional templates).
+func enrollmentEmailShell(headline, innerHTML string) string {
+	return fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; margin: 0; padding: 24px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background: #ffffff; border-radius: 8px; max-width: 480px; width: 100%%; padding: 32px;">
+      <tr>
+        <td>
+          <h1 style="font-size: 20px; margin: 0 0 16px;">%s</h1>
+          %s
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #9ca3af; margin: 0;">You're receiving this because you're on a ClassLite center's roster.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, headline, innerHTML)
+}
+
+// EnrollmentChangeEmailSubject is hard-coded (SEC-11) — no user input reaches the
+// subject line, only the HTML-escaped body.
+const EnrollmentChangeEmailSubject = "Your ClassLite enrollment was updated"
+
+// RenderEnrollmentChangeStudentEmail produces the subject + HTML body for the
+// student-facing enrollment-change email (Story 7.3a AC14), covering add/transfer/
+// withdraw via `action`. studentName + class names originate from user input and
+// are HTML-escaped (SEC-11 defence-in-depth on top of the Resend sanitizer).
+func RenderEnrollmentChangeStudentEmail(studentName, action, fromClassName, toClassName string) (subject, htmlBody string) {
+	safeName := html.EscapeString(studentName)
+	headline, detail := enrollmentActionPhrase(action, html.EscapeString(fromClassName), html.EscapeString(toClassName))
+	inner := fmt.Sprintf(`<p style="margin: 0 0 16px;">Hi %s, your enrollment %s</p>
+          <p style="margin: 0 0 24px;">Open ClassLite to see your current classes.</p>`, safeName, detail)
+	return EnrollmentChangeEmailSubject, enrollmentEmailShell(headline, inner)
+}
+
+// RenderEnrollmentChangeTeacherEmail produces the subject + HTML body for the
+// teacher-facing enrollment-change email (Story 7.3a AC14). teacherName +
+// studentName + class names are HTML-escaped (SEC-11).
+func RenderEnrollmentChangeTeacherEmail(teacherName, studentName, action, fromClassName, toClassName string) (subject, htmlBody string) {
+	safeTeacher := html.EscapeString(teacherName)
+	safeStudent := html.EscapeString(studentName)
+	headline, detail := enrollmentActionPhrase(action, html.EscapeString(fromClassName), html.EscapeString(toClassName))
+	greeting := "Hi,"
+	if safeTeacher != "" {
+		greeting = fmt.Sprintf("Hi %s,", safeTeacher)
+	}
+	inner := fmt.Sprintf(`<p style="margin: 0 0 16px;">%s <strong>%s</strong> %s</p>
+          <p style="margin: 0 0 24px;">Open ClassLite to review your class roster.</p>`, greeting, safeStudent, detail)
+	return EnrollmentChangeEmailSubject, enrollmentEmailShell(headline, inner)
+}
+
 // RenderVerificationEmail produces the subject + HTML body for the verification
 // email sent on registration and resend. The body includes the verifyURL as
 // both a styled button and a raw <a> for clients that don't render buttons.

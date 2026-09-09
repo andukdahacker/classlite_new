@@ -82,6 +82,9 @@ func setupEnrollmentHandlerTest(t *testing.T) enrollmentTestEnv {
 		sp := test.SuperuserPool(t)
 		ctx := context.Background()
 		_, _ = sp.Exec(ctx, `DELETE FROM audit_logs WHERE entity_type = 'enrollment'`)
+		// Story 7.3a: enrollment_history.from/to_class_id → classes is NO ACTION, so
+		// history must be dropped before classes (else the classes DELETE restricts).
+		_, _ = sp.Exec(ctx, `DELETE FROM enrollment_history WHERE center_id = $1`, centerPg)
 		_, _ = sp.Exec(ctx, `DELETE FROM enrollments WHERE center_id = $1`, centerPg)
 		_, _ = sp.Exec(ctx, `DELETE FROM classes WHERE center_id = $1`, centerPg)
 		_, _ = sp.Exec(ctx, `DELETE FROM center_members WHERE center_id = $1`, centerPg)

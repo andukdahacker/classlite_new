@@ -41,9 +41,11 @@ func insertUserRaw(t *testing.T, db *TxDB, email, fullName string) uuid.UUID {
 func insertEnrollmentRaw(t *testing.T, db *TxDB, centerID, studentID, classID uuid.UUID, status string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
+	// A terminal status carries withdrawn_at (Story 7.3a coupling CHECK,
+	// enrollments_status_withdrawal_coupled); active stays NULL.
 	_, err := db.Exec(context.Background(),
-		`INSERT INTO enrollments (id, center_id, student_id, class_id, status)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO enrollments (id, center_id, student_id, class_id, status, withdrawn_at)
+		 VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 <> 'active' THEN now() ELSE NULL END)`,
 		id, centerID, studentID, classID, status,
 	)
 	if err != nil {
@@ -128,7 +130,7 @@ func TestRLS_Enrollment_CrossTenantWrite(t *testing.T) {
 	originalID := insertEnrollmentRaw(t, db, centerBUUID, studentB, classB, "active")
 
 	TenantContext(t, db, centerA.ID)
-	tag, err := db.Exec(ctx, `UPDATE enrollments SET status = 'withdrawn' WHERE id = $1`, originalID)
+	tag, err := db.Exec(ctx, `UPDATE enrollments SET status = 'withdrawn', withdrawn_at = now() WHERE id = $1`, originalID)
 	if err != nil {
 		t.Fatalf("UPDATE returned error (expected silent 0-rows): %v", err)
 	}

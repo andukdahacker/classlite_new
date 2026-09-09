@@ -395,7 +395,7 @@ func TestSubmissionAudio_SameGateLadder_ZeroMintOnFailure(t *testing.T) {
 		{"not-enrolled_403", http.StatusForbidden, "NOT_ENROLLED", func(t *testing.T, e reviewHTTPEnv) (string, string) {
 			sp := test.SuperuserPool(t)
 			if _, err := sp.Exec(context.Background(),
-				`UPDATE enrollments SET status='withdrawn' WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
+				`UPDATE enrollments SET status='withdrawn', withdrawn_at=now() WHERE class_id=$1 AND student_id=$2`, e.classID, e.studentA); err != nil {
 				t.Fatalf("withdraw: %v", err)
 			}
 			aid := revSeedAssignment(t, e.centerID, e.speakingEx, e.classID, e.ownerID, "open")

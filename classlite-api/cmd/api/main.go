@@ -606,11 +606,13 @@ func main() {
 	mux.Handle("PUT /api/sessions/{id}/attendance/{studentId}", sessionChain(attendanceHandler.SetOne))
 	mux.Handle("POST /api/sessions/{id}/attendance/bulk", sessionChain(attendanceHandler.BulkMark))
 
-	// Story 3.4.5 — Enrollment linkage (2 routes). Same open chain shape as
-	// classChain/sessionChain (role + teacher-scope enforced in-service): Create
-	// is Admin/Owner only (DB-revalidated); the roster read is teacher-scoped
-	// (404 off own classes). Backend-only enabler — no frontend this story.
-	enrollmentSvc := service.NewEnrollmentService(pool, auditSvc, clock.RealClock{})
+	// Story 3.4.5 + 7.3a — Enrollment linkage + actions (5 routes). Two chains over
+	// the shared tenant guards. The roster read stays on the OPEN chain (teachers
+	// reach their own class rosters; teacher-scope + 404 enforced in-service). The
+	// action endpoint + the two console reads are Admin/Owner: RequireRole("owner",
+	// "admin") at the edge (defense-in-depth) PLUS the authoritative SEC-1 DB role
+	// re-fetch inside the service (the mutating action) / assertAdminOrOwner (reads).
+	enrollmentSvc := service.NewEnrollmentService(pool, auditSvc, clock.RealClock{}, eventBus, retryQ)
 	enrollmentHandler := handler.NewEnrollmentHandler(enrollmentSvc, clock.RealClock{})
 	enrollmentChain := func(h middleware.HandlerWithError) http.Handler {
 		return extractTenant(
@@ -619,7 +621,18 @@ func main() {
 			),
 		)
 	}
-	mux.Handle("POST /api/enrollments", enrollmentChain(enrollmentHandler.Create))
+	enrollmentAdminChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					requireOwnerOrAdmin(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
+	mux.Handle("POST /api/enrollments", enrollmentAdminChain(enrollmentHandler.Action))
+	mux.Handle("GET /api/enrollments/history", enrollmentAdminChain(enrollmentHandler.ListHistory))
+	mux.Handle("GET /api/enrollments/attention", enrollmentAdminChain(enrollmentHandler.Attention))
 	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
 
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as

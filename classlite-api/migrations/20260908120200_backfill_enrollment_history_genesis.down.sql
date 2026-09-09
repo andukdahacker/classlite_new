@@ -1,0 +1,6 @@
+-- Down: no-op. This migration is a one-way DATA backfill — it reconstructs
+-- genesis 'add' rows for enrollments that predate 7.3a. There is no clean reversal
+-- (a genesis row is indistinguishable from a legitimately null-performer system
+-- row once app writes begin). Rolling back the schema is done by the
+-- create_enrollment_history down (DROP TABLE), which removes these rows with it.
+-- Documented irreversible-data note (WF-2).

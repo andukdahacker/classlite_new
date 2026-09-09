@@ -847,15 +847,86 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Enroll an existing student member into a class (story 3.4.5 — AC2)
-         * @description Links an existing `student` center-member to a class. Admin/Owner only —
-         *     the role is re-validated from center_members, not trusted from the JWT
-         *     (SEC-1). Validations: the class must resolve in the caller's center; the
-         *     studentId must be a student member of the center (else 422
-         *     NOT_A_STUDENT_MEMBER); and the student must not already be actively
-         *     enrolled (else 409 ALREADY_ENROLLED). Transfer/Withdraw are Story 7.3.
+         * Add / transfer / withdraw a student (story 7.3a — AC1-AC4; retrofits 3.4.5 Add)
+         * @description Unified enrollment action endpoint. Body:
+         *     `{ action: 'add'|'transfer'|'withdraw', studentId, toClassId?, fromClassId?,
+         *     effectiveDate?, note? }`. Exactly ONE `enrollment_history` row is written in
+         *     the SAME transaction as the state change (R17), and a best-effort email +
+         *     the `enrollment.changed` event fire post-commit. Admin/Owner only — the role
+         *     is re-validated from center_members, not trusted from the JWT (SEC-1);
+         *     Teacher/Student → 403.
+         *
+         *     The legacy 3.4.5 Add body `{ studentId, classId }` is still accepted and
+         *     normalized to `action='add'` (classId → toClassId).
+         *
+         *     Per action:
+         *     - **add** (`toClassId`): validations class-in-center → 404; not a student
+         *       member → 422 NOT_A_STUDENT_MEMBER; already active → 409 ALREADY_ENROLLED;
+         *       target not `upcoming`/`active` → 422 CLASS_NOT_ENROLLABLE. Returns 201.
+         *     - **transfer** (`fromClassId` + `toClassId`): the active source enrollment is
+         *       set `transferred`, a new active target enrollment is created. No active
+         *       source → 422 NOT_ENROLLED_IN_SOURCE; target not enrollable → 422
+         *       CLASS_NOT_ENROLLABLE; already active in target → 409 ALREADY_ENROLLED.
+         *       Returns 200 with the new target enrollment.
+         *     - **withdraw** (`fromClassId`): the active enrollment is set `withdrawn`. No
+         *       active source → 422 NOT_ENROLLED_IN_SOURCE. Returns 200 with the withdrawn
+         *       enrollment.
          */
-        post: operations["createEnrollment"];
+        post: operations["enrollmentAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/enrollments/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the center's enrollment history, newest-first (story 7.3a — AC11)
+         * @description The immutable enrollment_history timeline, center-wide, paginated (XL-2,
+         *     page/page_size, max 100). Admin/Owner only (Teacher → 403). Each row is
+         *     denormalized with student name, source/target class names, and performer
+         *     name (a null performer is rendered by the client as "System"). Optional
+         *     `student_id` / `class_id` filters (class_id matches either endpoint of a
+         *     transfer).
+         */
+        get: operations["listEnrollmentHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/enrollments/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Needs-attention enrollment data for the console (story 7.3a — AC12)
+         * @description The s43 needs-attention data (7-3b renders it): `unassigned` = `student`
+         *     center-members with zero active enrollments; `overCapacity` = classes whose
+         *     active-enrollment count exceeds `capacity` (only where capacity is set). The
+         *     counts are SQL-aggregated (PERF-2). Admin/Owner only.
+         *
+         *     Each zone is INDEPENDENTLY paginated (XL-2, max 100) so a large center — e.g.
+         *     just after a 2.7 bulk import — never returns an unbounded payload:
+         *     `unassigned_page` / `unassigned_page_size` drive the `unassigned` list;
+         *     `over_capacity_page` / `over_capacity_page_size` drive the `overCapacity` list.
+         *     Each list carries its own `pagination` block.
+         */
+        get: operations["getEnrollmentAttention"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3006,6 +3077,82 @@ export interface components {
         EnvelopeEnrollmentList: {
             data: components["schemas"]["Enrollment"][];
             meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        /** @enum {string} */
+        EnrollmentActionType: "add" | "transfer" | "withdraw";
+        EnrollmentActionRequest: {
+            action?: components["schemas"]["EnrollmentActionType"];
+            /** Format: uuid */
+            studentId: string;
+            /** Format: uuid */
+            toClassId?: string | null;
+            /** Format: uuid */
+            fromClassId?: string | null;
+            /**
+             * Format: uuid
+             * @description Legacy 3.4.5 Add alias for toClassId. Prefer toClassId.
+             */
+            classId?: string | null;
+            /** Format: date */
+            effectiveDate?: string | null;
+            note?: string | null;
+        };
+        EnrollmentHistoryEntry: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            centerId: string;
+            /** Format: uuid */
+            studentId: string;
+            studentName: string;
+            action: components["schemas"]["EnrollmentActionType"];
+            /** Format: uuid */
+            fromClassId: string | null;
+            fromClassName: string | null;
+            /** Format: uuid */
+            toClassId: string | null;
+            toClassName: string | null;
+            /** Format: date */
+            effectiveDate: string;
+            note: string | null;
+            /** Format: uuid */
+            performedBy: string | null;
+            performerName: string | null;
+            /** Format: date-time */
+            performedAt: string;
+        };
+        EnvelopeEnrollmentHistoryList: {
+            data: components["schemas"]["EnrollmentHistoryEntry"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        EnrollmentAttentionStudent: {
+            /** Format: uuid */
+            studentId: string;
+            studentName: string;
+            studentEmail: string;
+        };
+        EnrollmentOverCapacityClass: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            capacity: number;
+            activeCount: number;
+        };
+        EnrollmentAttentionUnassignedPage: {
+            items: components["schemas"]["EnrollmentAttentionStudent"][];
+            pagination: components["schemas"]["PaginationMeta"];
+        };
+        EnrollmentAttentionOverCapacityPage: {
+            items: components["schemas"]["EnrollmentOverCapacityClass"][];
+            pagination: components["schemas"]["PaginationMeta"];
+        };
+        NeedsAttention: {
+            unassigned: components["schemas"]["EnrollmentAttentionUnassignedPage"];
+            overCapacity: components["schemas"]["EnrollmentAttentionOverCapacityPage"];
+        };
+        EnvelopeNeedsAttention: {
+            data: components["schemas"]["NeedsAttention"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         /**
          * @description Per-row classification. `unassigned` = importable but classless (the
@@ -7004,7 +7151,7 @@ export interface operations {
             };
         };
     };
-    createEnrollment: {
+    enrollmentAction: {
         parameters: {
             query?: never;
             header?: never;
@@ -7013,11 +7160,20 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateEnrollmentRequest"];
+                "application/json": components["schemas"]["EnrollmentActionRequest"];
             };
         };
         responses: {
-            /** @description Created enrollment (status=active) */
+            /** @description Applied transfer/withdraw (the affected enrollment) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEnrollment"];
+                };
+            };
+            /** @description Created enrollment (action=add, status=active) */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7053,7 +7209,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description ALREADY_ENROLLED (an active enrollment already exists) */
+            /** @description ALREADY_ENROLLED (an active enrollment already exists in the target) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7071,8 +7227,98 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Validation error / NOT_A_STUDENT_MEMBER (studentId is not a student member) */
+            /**
+             * @description VALIDATION_ERROR / NOT_A_STUDENT_MEMBER (studentId is not a student
+             *     member) / CLASS_NOT_ENROLLABLE (target class is paused/ended) /
+             *     NOT_ENROLLED_IN_SOURCE (no active enrollment in the source class)
+             */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listEnrollmentHistory: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                student_id?: string;
+                class_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated enrollment history (newest-first) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEnrollmentHistoryList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (Admin/Owner only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getEnrollmentAttention: {
+        parameters: {
+            query?: {
+                unassigned_page?: number;
+                unassigned_page_size?: number;
+                over_capacity_page?: number;
+                over_capacity_page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unassigned students + over-capacity classes (each zone paginated) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeNeedsAttention"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (Admin/Owner only) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

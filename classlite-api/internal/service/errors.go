@@ -460,6 +460,28 @@ func (e *NotAStudentMemberError) Error() string {
 	return "user is not a student member of this center"
 }
 
+// ClassNotEnrollableError → 422 CLASS_NOT_ENROLLABLE (Story 7.3a, D3 / CR-3-4-5-2).
+// An Add/Transfer target class is not in an enrollable state — only `upcoming` and
+// `active` accept enrollments; `paused`/`ended` reject. Status names the offending
+// state for the message/logs.
+type ClassNotEnrollableError struct {
+	Status string
+}
+
+func (e *ClassNotEnrollableError) Error() string {
+	return "class is not enrollable in status " + e.Status
+}
+
+// NotEnrolledInSourceError → 422 NOT_ENROLLED_IN_SOURCE (Story 7.3a, AC3/AC4). A
+// transfer/withdraw names a fromClassId in which the student holds no active
+// enrollment. Distinct from AttendanceNotEnrolledError (a different feature's 422
+// NOT_ENROLLED) and from the generic ValidationError arm.
+type NotEnrolledInSourceError struct{}
+
+func (e *NotEnrolledInSourceError) Error() string {
+	return "student has no active enrollment in the source class"
+}
+
 // AttendanceNotEnrolledError → 422 NOT_ENROLLED (Story 3.5b, AC7/AC9). A
 // studentId targeted by a PUT/bulk attendance write is not an ACTIVE enrollment
 // of the session's class. Distinct from NotEnrolledError (403 — the *caller* is
