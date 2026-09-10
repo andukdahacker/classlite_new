@@ -65,6 +65,9 @@ Story-creation for `2-7-bulk-student-import` was started then **halted at the sc
 **NEW debt filed by Story 7-3a (2026-09-09):**
 - **FU-7-3-A — in-app inbox notification (→ Epic 10 Story 10.1)** — 7-3a ships best-effort Resend email to the student + affected teacher(s) on every enrollment action AND publishes `event.EnrollmentChanged` (fans out to zero handlers today). The in-app **inbox** notification (a `notifications` row a teacher/student sees in an inbox) is deferred to Epic 10 — no `notifications` table / subscriber / UI exists yet. Epic 10's inbox subscribes to the already-published `event.EnrollmentChanged` seam. Priority: **P2 (Epic 10)**.
 
+**NEW debt filed by Story 7-3b (2026-09-09):**
+- **FU-7-3-B — server-side student search for the enrolment combobox (backend)** — `GET /api/students` has no `q`/search param (its query builds only `page`/`page_size`/`class_id`/`teacher_id`). The s43 `EnrolmentComposer` student combobox therefore searches **client-side over the first roster page** (`page_size=100`, the shipped `useStudentRoster` window). A center with **>100 students** cannot reach students beyond the loaded page from the combobox (mirrors 7-2b's FU-7-2-C pragmatic ruling). Fix = add a server-side `q` search param to `GET /api/students`, then have the combobox drive it (debounced). Do NOT add a client-only "load all pages" loop. Priority: **P2**.
+
 **RESERVED for Story 7.2:** 2.7 mounts its route at **`/students/import`** (a child path) and must NOT squat bare `/students` — Story 7.2 owns `/students` (the `s42` center-wide list). Confirm no route/nav collision when 7.2 builds.
 
 **DEFERRED to Epic 9 (from 2.7):** R22 plan/seat student-cap enforcement at write time. No plan/subscription/seat infra exists today; 2.7's only write-time limit is the **200-row/import cap**. A greppable `// TODO(2-7): Epic 9` anchor + the 200-row-cap test mark the extension point.

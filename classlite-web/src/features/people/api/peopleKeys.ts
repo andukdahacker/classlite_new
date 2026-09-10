@@ -42,6 +42,17 @@ export const peopleKeys = {
   flagNoteMutation: () => [...peopleKeys.all, 'mutation', 'flagNote'] as const,
   deleteNoteMutation: () =>
     [...peopleKeys.all, 'mutation', 'deleteNote'] as const,
+  // Story 7.3b — enrolment console reads + the single action mutation. All hang
+  // off `all` so `invalidateQueries({ queryKey: peopleKeys.all })` after an
+  // add/transfer/withdraw cascades history + attention + the student roster.
+  enrolmentHistory: (params: EnrolmentHistoryParams) =>
+    [...peopleKeys.all, 'enrolment', 'history', params] as const,
+  needsAttention: (params: NeedsAttentionParams) =>
+    [...peopleKeys.all, 'enrolment', 'attention', params] as const,
+  // ONE mutation slot — the POST /api/enrollments endpoint carries the verb in
+  // its `action` body field, so there is no per-verb key.
+  enrolmentActionMutation: () =>
+    [...peopleKeys.all, 'mutation', 'enrolmentAction'] as const,
 } as const
 
 /**
@@ -54,4 +65,25 @@ export interface StudentListParams {
   page: number
   classId?: string
   teacherId?: string
+}
+
+/**
+ * EnrolmentHistoryParams — the server-side query slice for the immutable
+ * history read (Story 7.3b D4/D12). `page` drives the pager; `studentId` /
+ * `classId` are the optional server-side filters. Undefined fields are omitted
+ * from the querystring by the hook.
+ */
+export interface EnrolmentHistoryParams {
+  page: number
+  studentId?: string
+  classId?: string
+}
+
+/**
+ * NeedsAttentionParams — the two zones paginate INDEPENDENTLY (D11), so the
+ * key carries a page cursor per zone.
+ */
+export interface NeedsAttentionParams {
+  unassignedPage: number
+  overCapacityPage: number
 }

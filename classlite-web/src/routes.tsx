@@ -412,6 +412,39 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 7.3b — owner/admin enrolment console (s43). NET-NEW nav entry
+      // (sidebarNavConfig) + route; the single consumer of the STABLE 7-3a
+      // enrollment contract (add/transfer/withdraw + history + needs-attention).
+      // Gated owner/admin; deep-imported chunk. No `:id` child — the console is
+      // a single page.
+      {
+        path: '/people/enrolment',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="enrolment"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { EnrolmentPage } = await import(
+                '@/features/people/EnrolmentPage'
+              )
+              return { Component: EnrolmentPage }
+            },
+          },
+        ],
+      },
       // Story 4.1 — /exercises library. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). Create/edit is a Dialog
       // (not a /exercises/new child route), so this single boundary covers the

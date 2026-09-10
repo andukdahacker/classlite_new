@@ -173,6 +173,12 @@ export const STORY_1D_3_KEYS = [
   'sidebar.owner.knowledgeHub',
   'sidebar.owner.archive',
   'sidebar.owner.settings',
+  // Story 7.2b — center-wide students roster nav entry (sidebar namespace is
+  // 1D-owned; the key shipped in 7-2b but was never claimed here — reconciled
+  // in Story 7.3b).
+  'sidebar.owner.students',
+  // Story 7.3b — enrolment console nav entry.
+  'sidebar.owner.enrolment',
   // Story 2.7 — import-students nav entry (sidebar namespace is 1D-owned).
   'sidebar.owner.importStudents',
 
@@ -185,6 +191,10 @@ export const STORY_1D_3_KEYS = [
   'sidebar.admin.inbox',
   'sidebar.admin.knowledgeHub',
   'sidebar.admin.archive',
+  // Story 7.2b — center-wide students roster nav entry (reconciled in 7.3b).
+  'sidebar.admin.students',
+  // Story 7.3b — enrolment console nav entry.
+  'sidebar.admin.enrolment',
   // Story 2.7 — import-students nav entry.
   'sidebar.admin.importStudents',
 
