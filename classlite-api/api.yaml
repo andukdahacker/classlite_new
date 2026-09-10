@@ -2660,6 +2660,308 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 7.4a — Anchored Q&A ----------------
+  # Read shapes (Question, QuestionReply, QuestionThread) are PROVISIONAL — the
+  # 7-4b frontend co-finalizes them (mirror 7-2a D14 / 7-3a). Mutation bodies are
+  # stable. Q&A is teacher↔student only: Owner/Admin reach these endpoints and
+  # receive an empty list / 404 (never a 403 at the edge) — the R25/R26 elision.
+  /api/questions:
+    post:
+      operationId: askQuestion
+      summary: Ask a class-anchored question from an attempt (story 7.4a — AC4)
+      description: |
+        A student asks a question anchored to an exercise item (`anchorType='item'`
+        with a positional `anchorRef`) or the whole exercise (`anchorType='exercise'`,
+        `anchorRef` null). `class_id` + `exercise_id` are DERIVED server-side from the
+        `assignmentId` (SEC-7) — never trusted from the body. The caller must own an
+        attempt on the assignment AND be actively enrolled in the class, else 404
+        QUESTION_TARGET_NOT_FOUND (non-disclosure). Non-students → 403
+        INSUFFICIENT_ROLE. `event.question.asked` publishes post-commit.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskQuestionRequest'
+      responses:
+        "201":
+          description: Created question (status=open)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestion'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-student caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: QUESTION_TARGET_NOT_FOUND (not the attempt owner, or not enrolled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing content/anchorType, or anchorRef mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    get:
+      operationId: listQuestions
+      summary: List role-scoped questions (story 7.4a — AC6/AC7)
+      description: |
+        Role-scoped against the DB-fetched role (SEC-1): Student → own questions;
+        Teacher → questions for classes they teach; Owner/Admin → empty list (never
+        null, never 403). Optional `exercise_id`, `class_id`, `status`, `unanswered`
+        filters; paginated (XL-2, page/page_size).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: exercise_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: class_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/QuestionStatus'
+        - name: unanswered
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Role-scoped questions (empty for owner/admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/questions/{id}:
+    get:
+      operationId: getQuestionThread
+      summary: Get one question thread + reader-scoped replies (story 7.4a — AC6)
+      description: |
+        The question plus the replies the caller may see (per-reply visibility:
+        `shared` → class; `personal` → asker + author). A question the caller
+        cannot see → 404 QUESTION_NOT_FOUND (non-disclosure).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The question thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionThread'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: QUESTION_NOT_FOUND (not visible to the caller)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: resolveQuestion
+      summary: Resolve a question (story 7.4a — AC11)
+      description: |
+        One-way `open → resolved` (reopen deferred). Teacher-of-the-class only
+        (SEC-1 DB-role); Student/Owner/Admin/non-teaching-teacher → 404
+        QUESTION_NOT_FOUND. Only `{ status: 'resolved' }` is accepted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveQuestionRequest'
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeResolveResult'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: QUESTION_NOT_FOUND (not the teaching teacher)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (status other than 'resolved')
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/questions/{id}/replies:
+    post:
+      operationId: replyToQuestion
+      summary: Reply to a question (story 7.4a — AC8)
+      description: |
+        Teacher-of-the-class only (SEC-1 DB-role re-validated). `visibility` is
+        `personal` (UX "Private") or `shared` (UX "Shared with your class"). With
+        `resolve=true` the question is flipped resolved in the same transaction
+        ("Send & resolve"). Student → 403 INSUFFICIENT_ROLE; Owner/Admin/
+        non-teaching-teacher → 404 QUESTION_NOT_FOUND.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyRequest'
+      responses:
+        "201":
+          description: Created reply
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionReply'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (a student cannot reply)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: QUESTION_NOT_FOUND (Owner/Admin/non-teaching-teacher)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (missing content, or bad visibility)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/questions/batch-reply:
+    post:
+      operationId: batchReplyToQuestions
+      summary: Reply to many questions at once (story 7.4a — AC12)
+      description: |
+        One reply per listed question (and, if `resolve=true`, resolve each) — ALL
+        in one transaction. If the teacher does not teach the class of ANY listed
+        question, the whole request is 404 QUESTION_NOT_FOUND with zero writes
+        (partial success is impossible). Max 50 questions per batch (→ 422 above).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchReplyRequest'
+      responses:
+        "201":
+          description: Created replies (one per question)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionReplyList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: QUESTION_NOT_FOUND (teacher does not teach one listed question's class)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (empty/oversized questionIds, or bad body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/sessions:
     get:
       operationId: listSessions
@@ -8481,6 +8783,260 @@ components:
         meta:
           # Story 7.2a D10 — CR-3-4-5-3 pagination on the class roster.
           $ref: '#/components/schemas/EnvelopeMetaPagination'
+
+    # ---------------- Story 7.4a — Anchored Q&A ----------------
+    QuestionStatus:
+      type: string
+      enum: [open, resolved]
+
+    QuestionVisibility:
+      type: string
+      # UX "Private" → personal; "Shared with your class" → shared (D5).
+      enum: [personal, shared]
+
+    QuestionAnchorType:
+      type: string
+      enum: [item, exercise]
+
+    QuestionAnchor:
+      type: object
+      # Typed, versioned positional anchor (D2 / GO-7). item anchors carry EITHER
+      # a group/question path OR a passage char span; all index fields nullable so
+      # either shape round-trips. Present only when anchorType='item'.
+      required: [schemaVersion, sectionIndex, questionGroupIndex, questionIndex, charStart, charEnd]
+      properties:
+        schemaVersion:
+          type: integer
+          # Server-owned: the API stamps the current version on write and ignores
+          # any client-supplied value. readOnly ⇒ required on responses only, so a
+          # request anchor need not (and should not) carry it (OpenAPI 3.0 §readOnly).
+          readOnly: true
+        sectionIndex:
+          type: integer
+        questionGroupIndex:
+          type: integer
+          nullable: true
+        questionIndex:
+          type: integer
+          nullable: true
+        charStart:
+          type: integer
+          nullable: true
+        charEnd:
+          type: integer
+          nullable: true
+
+    Question:
+      type: object
+      # PROVISIONAL read shape (7-4b co-finalizes). All fields explicit (GO-5).
+      required:
+        - id
+        - exerciseId
+        - classId
+        - studentId
+        - anchorType
+        - anchorRef
+        - anchorExcerpt
+        - content
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        exerciseId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        anchorType:
+          $ref: '#/components/schemas/QuestionAnchorType'
+        anchorRef:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/QuestionAnchor'
+        anchorExcerpt:
+          type: string
+          nullable: true
+        content:
+          type: string
+        status:
+          $ref: '#/components/schemas/QuestionStatus'
+        createdAt:
+          type: string
+          format: date-time
+
+    QuestionReply:
+      type: object
+      # PROVISIONAL read shape (7-4b co-finalizes). All fields explicit (GO-5).
+      required: [id, questionId, authorId, content, visibility, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        questionId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        content:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/QuestionVisibility'
+        createdAt:
+          type: string
+          format: date-time
+
+    QuestionThread:
+      type: object
+      required: [question, replies]
+      properties:
+        question:
+          $ref: '#/components/schemas/Question'
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionReply'
+
+    # --- mutation bodies (stable) ---
+    AskQuestionRequest:
+      type: object
+      required: [assignmentId, anchorType, content]
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+        anchorType:
+          $ref: '#/components/schemas/QuestionAnchorType'
+        anchorRef:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/QuestionAnchor'
+        anchorExcerpt:
+          type: string
+          nullable: true
+          maxLength: 2000
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+
+    ReplyRequest:
+      type: object
+      required: [content, visibility]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        visibility:
+          $ref: '#/components/schemas/QuestionVisibility'
+        resolve:
+          type: boolean
+          default: false
+
+    ResolveQuestionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [resolved]
+
+    BatchReplyRequest:
+      type: object
+      required: [questionIds, content, visibility]
+      properties:
+        questionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 50
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        visibility:
+          $ref: '#/components/schemas/QuestionVisibility'
+        resolve:
+          type: boolean
+          default: false
+
+    # --- envelopes ---
+    EnvelopeQuestion:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Question'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeQuestionList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
+
+    EnvelopeQuestionThread:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/QuestionThread'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeQuestionReply:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/QuestionReply'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeQuestionReplyList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionReply'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    ResolveResult:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+
+    EnvelopeResolveResult:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ResolveResult'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
     # ---------------- Story 7.3a — Enrollment actions + history + attention ----------------
     EnrollmentActionType:

@@ -635,6 +635,27 @@ func main() {
 	mux.Handle("GET /api/enrollments/attention", enrollmentAdminChain(enrollmentHandler.Attention))
 	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
 
+	// Story 7.4a — Anchored Q&A (6 routes). Open chain — NO RequireRole: every
+	// role reaches the handler so Owner/Admin get the R25/R26 empty-list contract
+	// from the service (not a 403 at the edge). Role scoping + SEC-1 DB-role
+	// re-validation live in the service. eventBus publishes QuestionAsked
+	// (zero subscribers today — Epic 10 Inbox attaches later).
+	questionSvc := service.NewQuestionService(pool, clock.RealClock{}, eventBus)
+	questionHandler := handler.NewQuestionHandler(questionSvc, clock.RealClock{})
+	questionChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("POST /api/questions", questionChain(questionHandler.Ask))
+	mux.Handle("GET /api/questions", questionChain(questionHandler.List))
+	mux.Handle("GET /api/questions/{id}", questionChain(questionHandler.GetThread))
+	mux.Handle("POST /api/questions/{id}/replies", questionChain(questionHandler.Reply))
+	mux.Handle("PATCH /api/questions/{id}", questionChain(questionHandler.Resolve))
+	mux.Handle("POST /api/questions/batch-reply", questionChain(questionHandler.BatchReply))
+
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): List is
 	// role-scoped (owner/admin = all center exercises; teacher = own only); the

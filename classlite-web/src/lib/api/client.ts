@@ -1009,6 +1009,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List role-scoped questions (story 7.4a — AC6/AC7)
+         * @description Role-scoped against the DB-fetched role (SEC-1): Student → own questions;
+         *     Teacher → questions for classes they teach; Owner/Admin → empty list (never
+         *     null, never 403). Optional `exercise_id`, `class_id`, `status`, `unanswered`
+         *     filters; paginated (XL-2, page/page_size).
+         */
+        get: operations["listQuestions"];
+        put?: never;
+        /**
+         * Ask a class-anchored question from an attempt (story 7.4a — AC4)
+         * @description A student asks a question anchored to an exercise item (`anchorType='item'`
+         *     with a positional `anchorRef`) or the whole exercise (`anchorType='exercise'`,
+         *     `anchorRef` null). `class_id` + `exercise_id` are DERIVED server-side from the
+         *     `assignmentId` (SEC-7) — never trusted from the body. The caller must own an
+         *     attempt on the assignment AND be actively enrolled in the class, else 404
+         *     QUESTION_TARGET_NOT_FOUND (non-disclosure). Non-students → 403
+         *     INSUFFICIENT_ROLE. `event.question.asked` publishes post-commit.
+         */
+        post: operations["askQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one question thread + reader-scoped replies (story 7.4a — AC6)
+         * @description The question plus the replies the caller may see (per-reply visibility:
+         *     `shared` → class; `personal` → asker + author). A question the caller
+         *     cannot see → 404 QUESTION_NOT_FOUND (non-disclosure).
+         */
+        get: operations["getQuestionThread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Resolve a question (story 7.4a — AC11)
+         * @description One-way `open → resolved` (reopen deferred). Teacher-of-the-class only
+         *     (SEC-1 DB-role); Student/Owner/Admin/non-teaching-teacher → 404
+         *     QUESTION_NOT_FOUND. Only `{ status: 'resolved' }` is accepted.
+         */
+        patch: operations["resolveQuestion"];
+        trace?: never;
+    };
+    "/api/questions/{id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply to a question (story 7.4a — AC8)
+         * @description Teacher-of-the-class only (SEC-1 DB-role re-validated). `visibility` is
+         *     `personal` (UX "Private") or `shared` (UX "Shared with your class"). With
+         *     `resolve=true` the question is flipped resolved in the same transaction
+         *     ("Send & resolve"). Student → 403 INSUFFICIENT_ROLE; Owner/Admin/
+         *     non-teaching-teacher → 404 QUESTION_NOT_FOUND.
+         */
+        post: operations["replyToQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/batch-reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply to many questions at once (story 7.4a — AC12)
+         * @description One reply per listed question (and, if `resolve=true`, resolve each) — ALL
+         *     in one transaction. If the teacher does not teach the class of ANY listed
+         *     question, the whole request is 404 QUESTION_NOT_FOUND with zero writes
+         *     (partial success is impossible). Max 50 questions per batch (→ 422 above).
+         */
+        post: operations["batchReplyToQuestions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -3077,6 +3185,107 @@ export interface components {
         EnvelopeEnrollmentList: {
             data: components["schemas"]["Enrollment"][];
             meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        /** @enum {string} */
+        QuestionStatus: "open" | "resolved";
+        /** @enum {string} */
+        QuestionVisibility: "personal" | "shared";
+        /** @enum {string} */
+        QuestionAnchorType: "item" | "exercise";
+        QuestionAnchor: {
+            readonly schemaVersion: number;
+            sectionIndex: number;
+            questionGroupIndex: number | null;
+            questionIndex: number | null;
+            charStart: number | null;
+            charEnd: number | null;
+        };
+        Question: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            exerciseId: string;
+            /** Format: uuid */
+            classId: string;
+            /** Format: uuid */
+            studentId: string;
+            anchorType: components["schemas"]["QuestionAnchorType"];
+            anchorRef: components["schemas"]["QuestionAnchor"] | null;
+            anchorExcerpt: string | null;
+            content: string;
+            status: components["schemas"]["QuestionStatus"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        QuestionReply: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            questionId: string;
+            /** Format: uuid */
+            authorId: string;
+            content: string;
+            visibility: components["schemas"]["QuestionVisibility"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        QuestionThread: {
+            question: components["schemas"]["Question"];
+            replies: components["schemas"]["QuestionReply"][];
+        };
+        AskQuestionRequest: {
+            /** Format: uuid */
+            assignmentId: string;
+            anchorType: components["schemas"]["QuestionAnchorType"];
+            anchorRef?: components["schemas"]["QuestionAnchor"] | null;
+            anchorExcerpt?: string | null;
+            content: string;
+        };
+        ReplyRequest: {
+            content: string;
+            visibility: components["schemas"]["QuestionVisibility"];
+            /** @default false */
+            resolve: boolean;
+        };
+        ResolveQuestionRequest: {
+            /** @enum {string} */
+            status: "resolved";
+        };
+        BatchReplyRequest: {
+            questionIds: string[];
+            content: string;
+            visibility: components["schemas"]["QuestionVisibility"];
+            /** @default false */
+            resolve: boolean;
+        };
+        EnvelopeQuestion: {
+            data: components["schemas"]["Question"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeQuestionList: {
+            data: components["schemas"]["Question"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        EnvelopeQuestionThread: {
+            data: components["schemas"]["QuestionThread"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeQuestionReply: {
+            data: components["schemas"]["QuestionReply"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeQuestionReplyList: {
+            data: components["schemas"]["QuestionReply"][];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        ResolveResult: {
+            /** Format: uuid */
+            id: string;
+            status: string;
+        };
+        EnvelopeResolveResult: {
+            data: components["schemas"]["ResolveResult"];
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         /** @enum {string} */
         EnrollmentActionType: "add" | "transfer" | "withdraw";
@@ -7491,6 +7700,308 @@ export interface operations {
             };
             /** @description CLASS_NOT_FOUND (unknown class OR teacher not assigned to it) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listQuestions: {
+        parameters: {
+            query?: {
+                exercise_id?: string;
+                class_id?: string;
+                status?: components["schemas"]["QuestionStatus"];
+                unanswered?: boolean;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role-scoped questions (empty for owner/admin) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeQuestionList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    askQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created question (status=open) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeQuestion"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-student caller) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description QUESTION_TARGET_NOT_FOUND (not the attempt owner, or not enrolled) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing content/anchorType, or anchorRef mismatch) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getQuestionThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The question thread */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeQuestionThread"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description QUESTION_NOT_FOUND (not visible to the caller) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resolveQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeResolveResult"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description QUESTION_NOT_FOUND (not the teaching teacher) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (status other than 'resolved') */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replyToQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Created reply */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeQuestionReply"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (a student cannot reply) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description QUESTION_NOT_FOUND (Owner/Admin/non-teaching-teacher) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (missing content, or bad visibility) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    batchReplyToQuestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Created replies (one per question) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeQuestionReplyList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description QUESTION_NOT_FOUND (teacher does not teach one listed question's class) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (empty/oversized questionIds, or bad body) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
