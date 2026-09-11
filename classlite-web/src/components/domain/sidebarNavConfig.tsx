@@ -86,7 +86,7 @@ const TEACHER_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       { labelKey: 'sidebar.teacher.classes', icon: icon(BookOpen), href: '/classes' },
       { labelKey: 'sidebar.teacher.schedule', icon: icon(CalendarDays), href: '/schedule' },
       { labelKey: 'sidebar.teacher.exercises', icon: icon(ClipboardList), href: '/exercises' },
-      { labelKey: 'sidebar.teacher.questions', icon: icon(FileQuestion), href: '/exercises/active?questions=open' },
+      { labelKey: 'sidebar.teacher.questions', icon: icon(FileQuestion), href: '/questions' },
       { labelKey: 'sidebar.teacher.students', icon: icon(GraduationCap), href: '/students' },
       { labelKey: 'sidebar.teacher.analytics', icon: icon(BarChart3), href: '/analytics' },
       { labelKey: 'sidebar.teacher.inbox', icon: icon(Inbox), href: '/inbox' },
@@ -103,7 +103,12 @@ const STUDENT_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       { labelKey: 'sidebar.student.myClasses', icon: icon(BookOpen), href: '/my-classes' },
       { labelKey: 'sidebar.student.assignments', icon: icon(ClipboardList), href: '/assignments' },
       { labelKey: 'sidebar.student.mySchedule', icon: icon(CalendarDays), href: '/my-schedule' },
-      { labelKey: 'sidebar.student.questions', icon: icon(FileQuestion), href: '/exercises/active/attempt?questions=open' },
+      // Story 7.4b (AC17/D4): the student "Questions" sidebar link is PARKED —
+      // students ask only in-attempt via the `?questions=open` rail (FR-38); the
+      // former href pointed at a fictional `/exercises/active/attempt`. The
+      // standalone student "My questions" list is deferred to Epic 8 / Story 8.1
+      // (s29 dashboard card). The `sidebar.student.questions` key stays in the
+      // locales (parity) for that future surface.
       { labelKey: 'sidebar.student.myPerformance', icon: icon(BarChart3), href: '/my-performance' },
       { labelKey: 'sidebar.student.inbox', icon: icon(Inbox), href: '/inbox' },
     ],

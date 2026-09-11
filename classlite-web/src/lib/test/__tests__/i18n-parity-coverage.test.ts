@@ -2039,3 +2039,92 @@ describe('Story 3.5 i18n parity', () => {
     expect(ALLOWED_PREFIXES_3_5.some((p) => key.startsWith(p))).toBe(true)
   })
 })
+
+// Story 7.4b — anchored Q&A frontend (student rail s36 + teacher console s18).
+// New `questions.*` namespace + `anchoredQuestion.*` extensions (visibility /
+// pin / send-&-resolve) + the `questions` PermissionDenied section header.
+const STORY_7_4B_KEYS = [
+  'anchoredQuestion.visibility.label',
+  'anchoredQuestion.visibility.personal',
+  'anchoredQuestion.visibility.shared',
+  'anchoredQuestion.action.sendResolve',
+  'anchoredQuestion.pin.item',
+  'anchoredQuestion.pin.exercise',
+  'questions.anchor.wholeExercise',
+  'questions.anchor.passage',
+  'questions.anchor.item',
+  'questions.card.unknownAsker',
+  'questions.card.unknownAuthor',
+  'questions.panel.title',
+  'questions.panel.description',
+  'questions.panel.openCta',
+  'questions.composer.ariaLabel',
+  'questions.composer.scopeLabel',
+  'questions.composer.scope.item',
+  'questions.composer.scope.exercise',
+  'questions.composer.scope.passage',
+  'questions.composer.contentLabel',
+  'questions.composer.contentPlaceholder',
+  'questions.composer.submit',
+  'questions.composer.validation.contentRequired',
+  'questions.composer.validation.contentMax',
+  'questions.composer.validation.visibilityRequired',
+  'questions.composer.error.targetNotFound',
+  'questions.composer.error.forbidden',
+  'questions.composer.error.validation',
+  'questions.composer.error.generic',
+  'questions.list.loading',
+  'questions.list.error',
+  'questions.list.retry',
+  'questions.empty.student.title',
+  'questions.empty.student.body',
+  'questions.empty.teacher.title',
+  'questions.empty.teacher.body',
+  'questions.console.title',
+  'questions.console.openCount',
+  'questions.console.unansweredFilter',
+  'questions.console.selectQuestion',
+  'questions.console.resolve',
+  'questions.console.resolved',
+  'questions.console.pagination',
+  'questions.console.prev',
+  'questions.console.next',
+  'questions.console.pageOf',
+  'questions.reply.error.notFound',
+  'questions.reply.error.validation',
+  'questions.reply.error.generic',
+  'questions.resolve.error.notFound',
+  'questions.resolve.error.generic',
+  'questions.batch.label',
+  'questions.batch.summary',
+  'questions.batch.clear',
+  'questions.batch.contentLabel',
+  'questions.batch.contentPlaceholder',
+  'questions.batch.reply',
+  'questions.batch.replyResolve',
+  'questions.batch.error.notFound',
+  'questions.batch.error.validation',
+  'questions.batch.error.generic',
+  'questions.batch.error.tooMany',
+  'app.permissionDenied.section.questions.header',
+] as const
+
+describe('Story 7.4b i18n parity', () => {
+  test('every Story 7.4b key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_7_4B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 7.4b keys', () => {
+    assertI18nInterpolationParity(STORY_7_4B_KEYS)
+  })
+
+  const ALLOWED_PREFIXES_7_4B = [
+    'questions.',
+    'anchoredQuestion.',
+    'app.permissionDenied.section.questions.',
+  ] as const
+
+  test.each(STORY_7_4B_KEYS)('%s belongs to a 7.4b allowed prefix', (key) => {
+    expect(ALLOWED_PREFIXES_7_4B.some((p) => key.startsWith(p))).toBe(true)
+  })
+})

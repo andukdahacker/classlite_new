@@ -3209,6 +3209,8 @@ export interface components {
             classId: string;
             /** Format: uuid */
             studentId: string;
+            studentName: string | null;
+            studentAvatarUrl: string | null;
             anchorType: components["schemas"]["QuestionAnchorType"];
             anchorRef: components["schemas"]["QuestionAnchor"] | null;
             anchorExcerpt: string | null;
@@ -3224,6 +3226,8 @@ export interface components {
             questionId: string;
             /** Format: uuid */
             authorId: string;
+            authorName: string | null;
+            authorAvatarUrl: string | null;
             content: string;
             visibility: components["schemas"]["QuestionVisibility"];
             /** Format: date-time */

@@ -370,6 +370,37 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 7.4b — teacher anchored-Q&A console (s18). ACTIVATES the shipped
+      // DEAD teacher `/questions` sidebar link (sidebarNavConfig repointed off
+      // the fictional `/exercises/active?questions=open`). Teacher-only; the
+      // console is role-scoped in the service and absent from the DOM for
+      // non-teachers via this gate (AC12). Own Rolldown chunk.
+      {
+        path: '/questions',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['teacher']}
+                requiredRolesForCopy={['teacher']}
+                sectionNameKey="questions"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { QuestionsConsolePage } = await import('@/features/questions')
+              return { Component: QuestionsConsolePage }
+            },
+          },
+        ],
+      },
       // Story 7.2b — owner/admin center-wide student list + shared detail
       // (class-agnostic, D1). A NEW `/people/students` sub-nav entry points here
       // (sidebarNavConfig). Gated owner/admin; the detail page is the SAME

@@ -57,16 +57,35 @@ JOIN classes c ON c.id = q.class_id
 WHERE q.id = sqlc.arg('id');
 
 -- name: GetQuestionForReader :one
--- Single-thread read scope (AC6 GET /{id}). Role-scoped exactly like
--- ListQuestionsForReader: student ⇒ own only; teacher ⇒ own classes only;
--- owner/admin ⇒ 0 rows (ErrNoRows → 404 non-disclosure, R25/R26).
+-- Single-thread read scope (AC6 GET /{id}). Role-scoped:
+--   student ⇒ own questions, OR (7-4b AC5 widening, FU-7-4-E) a classmate with a
+--             CURRENT active enrollment in q.class_id when the thread carries at
+--             least one 'shared' reply — so a shared answer reaches the class,
+--             while a personal-only or unanswered thread still 404s the non-asker
+--             classmate (ListRepliesForReader then hands back the shared reply
+--             only, never the personal ones — non-disclosure preserved);
+--   teacher ⇒ own classes only;
+--   owner/admin ⇒ 0 rows (ErrNoRows → 404 non-disclosure, R25/R26).
+-- LEFT JOIN users denormalizes the asker's display name + avatar (D5).
 SELECT q.id AS question_id, q.exercise_id, q.class_id, q.student_id, q.anchor_type,
-       q.anchor_ref, q.anchor_excerpt, q.content, q.status, q.created_at
+       q.anchor_ref, q.anchor_excerpt, q.content, q.status, q.created_at,
+       su.full_name AS student_name, su.avatar_url AS student_avatar_url
 FROM questions q
+LEFT JOIN users su ON su.id = q.student_id
 WHERE q.center_id = sqlc.arg('center_id')
   AND q.id = sqlc.arg('question_id')
   AND (
-      (sqlc.arg('reader_role')::text = 'student' AND q.student_id = sqlc.arg('reader_id'))
+      (sqlc.arg('reader_role')::text = 'student' AND (
+          q.student_id = sqlc.arg('reader_id')
+          OR (
+              EXISTS (SELECT 1 FROM enrollments e
+                      WHERE e.class_id = q.class_id
+                        AND e.student_id = sqlc.arg('reader_id')
+                        AND e.status = 'active')
+              AND EXISTS (SELECT 1 FROM question_replies qr2
+                          WHERE qr2.question_id = q.id AND qr2.visibility = 'shared')
+          )
+      ))
       OR
       (sqlc.arg('reader_role')::text = 'teacher'
        AND q.class_id IN (SELECT id FROM classes WHERE teacher_id = sqlc.arg('reader_id')))
@@ -78,9 +97,12 @@ WHERE q.center_id = sqlc.arg('center_id')
 -- for classes they teach; owner/admin (any other role) ⇒ NEITHER branch matches
 -- ⇒ 0 rows (never null, never error — the caller reaches the handler and gets an
 -- empty envelope). exercise_id/class_id/status/unanswered are optional filters.
+-- LEFT JOIN users denormalizes the asker's display name + avatar (D5).
 SELECT q.id AS question_id, q.exercise_id, q.class_id, q.student_id, q.anchor_type,
-       q.anchor_ref, q.anchor_excerpt, q.content, q.status, q.created_at
+       q.anchor_ref, q.anchor_excerpt, q.content, q.status, q.created_at,
+       su.full_name AS student_name, su.avatar_url AS student_avatar_url
 FROM questions q
+LEFT JOIN users su ON su.id = q.student_id
 WHERE q.center_id = sqlc.arg('center_id')
   AND (
       (sqlc.arg('reader_role')::text = 'student' AND q.student_id = sqlc.arg('reader_id'))
@@ -137,9 +159,13 @@ WHERE id = sqlc.arg('id') AND status = 'open';
 --   'personal' ⇒ reader is the asker (q.student_id) OR the reply author
 --                (qr.author_id) — a per-thread binding independent of who
 --                currently teaches the class.
-SELECT qr.id AS reply_id, qr.question_id, qr.author_id, qr.content, qr.visibility, qr.created_at
+-- LEFT JOIN users denormalizes the reply author's display name + avatar (D5).
+-- (Visibility branches UNCHANGED — 7-4b Task 1: only the author enrichment is new.)
+SELECT qr.id AS reply_id, qr.question_id, qr.author_id, qr.content, qr.visibility, qr.created_at,
+       au.full_name AS author_name, au.avatar_url AS author_avatar_url
 FROM question_replies qr
 JOIN questions q ON q.id = qr.question_id
+LEFT JOIN users au ON au.id = qr.author_id
 WHERE qr.center_id = sqlc.arg('center_id')
   AND qr.question_id = sqlc.arg('question_id')
   AND (sqlc.arg('reader_role')::text = 'student' OR sqlc.arg('reader_role')::text = 'teacher')

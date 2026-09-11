@@ -9,9 +9,11 @@
  */
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { StudentQuestionPanel } from '@/features/questions'
 import { cn } from '@/lib/utils'
 import { useIsDesktop } from '@/hooks/useMediaQuery'
 import { Button } from '@/components/ui/button'
@@ -84,6 +86,15 @@ export function ExerciseAttemptShell({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { exercise, submission, assignment } = bundle
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Open the anchored-Q&A rail (s36, Story 7.4b) via the `?questions=open` param
+  // mirror — an overlay, never a route change, so the attempt state is preserved.
+  const openQuestions = useCallback(() => {
+    const next = new URLSearchParams(searchParams)
+    next.set('questions', 'open')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const serverNow = useMemo(
     () => createServerClock(serverTime, perfAtLoad),
@@ -283,7 +294,11 @@ export function ExerciseAttemptShell({
           {section.type === 'listening' ? (
             <AttemptAudioPlayer content={section.content} />
           ) : (
-            <div className="whitespace-pre-wrap text-[var(--cl-ink)]">
+            <div
+              className="whitespace-pre-wrap text-[var(--cl-ink)]"
+              data-qa-passage=""
+              data-section-index={si}
+            >
               {section.content}
             </div>
           )}
@@ -441,6 +456,15 @@ export function ExerciseAttemptShell({
             warningLevel={timer.warningLevel}
           />
           <SaveStatusIndicator />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={openQuestions}
+            data-testid="attempt-open-questions"
+          >
+            {t('questions.panel.openCta')}
+          </Button>
         </div>
         {!readOnly ? (
           <Button
@@ -533,6 +557,14 @@ export function ExerciseAttemptShell({
         onConfirm={() => void runFinalize(false)}
         submitting={submitting}
         retry={submitRetry}
+      />
+
+      {/* Anchored-Q&A rail (s36, Story 7.4b) — an overlay Sheet mirrored to
+          `?questions=open`; class/exercise/student are server-derived. */}
+      <StudentQuestionPanel
+        assignmentId={assignment.id}
+        exerciseId={assignment.exerciseId}
+        currentHandle={currentHandle}
       />
     </div>
   )

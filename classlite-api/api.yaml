@@ -2661,10 +2661,11 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
   # ---------------- Story 7.4a — Anchored Q&A ----------------
-  # Read shapes (Question, QuestionReply, QuestionThread) are PROVISIONAL — the
-  # 7-4b frontend co-finalizes them (mirror 7-2a D14 / 7-3a). Mutation bodies are
-  # stable. Q&A is teacher↔student only: Owner/Admin reach these endpoints and
-  # receive an empty list / 404 (never a 403 at the edge) — the R25/R26 elision.
+  # Read shapes (Question, QuestionReply, QuestionThread) were co-finalized by 7-4b
+  # (enriched with denormalized display name + avatar via LEFT JOIN users, D5).
+  # Mutation bodies are stable. Q&A is teacher↔student only: Owner/Admin reach
+  # these endpoints and receive an empty list / 404 (never a 403 at the edge) —
+  # the R25/R26 elision.
   /api/questions:
     post:
       operationId: askQuestion
@@ -8828,12 +8829,16 @@ components:
 
     Question:
       type: object
-      # PROVISIONAL read shape (7-4b co-finalizes). All fields explicit (GO-5).
+      # Read shape co-finalized by 7-4b: enriched with denormalized studentName +
+      # studentAvatarUrl (LEFT JOIN users, D5) so the console/rail can render "who
+      # asked" without a second round-trip. All fields explicit (GO-5).
       required:
         - id
         - exerciseId
         - classId
         - studentId
+        - studentName
+        - studentAvatarUrl
         - anchorType
         - anchorRef
         - anchorExcerpt
@@ -8853,6 +8858,14 @@ components:
         studentId:
           type: string
           format: uuid
+        studentName:
+          type: string
+          nullable: true
+          # Denormalized from users.full_name via LEFT JOIN; null on the ask 201
+          # (the asker is the current user — the list read re-populates it).
+        studentAvatarUrl:
+          type: string
+          nullable: true
         anchorType:
           $ref: '#/components/schemas/QuestionAnchorType'
         anchorRef:
@@ -8872,8 +8885,10 @@ components:
 
     QuestionReply:
       type: object
-      # PROVISIONAL read shape (7-4b co-finalizes). All fields explicit (GO-5).
-      required: [id, questionId, authorId, content, visibility, createdAt]
+      # Read shape co-finalized by 7-4b: enriched with denormalized authorName +
+      # authorAvatarUrl (LEFT JOIN users, D5) so the rail can render "who replied".
+      # All fields explicit (GO-5).
+      required: [id, questionId, authorId, authorName, authorAvatarUrl, content, visibility, createdAt]
       properties:
         id:
           type: string
@@ -8884,6 +8899,14 @@ components:
         authorId:
           type: string
           format: uuid
+        authorName:
+          type: string
+          nullable: true
+          # Denormalized from users.full_name via LEFT JOIN; null on the reply 201
+          # (the author is the current teacher — the thread read re-populates it).
+        authorAvatarUrl:
+          type: string
+          nullable: true
         content:
           type: string
         visibility:

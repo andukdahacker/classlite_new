@@ -87,32 +87,40 @@ func NewQuestionService(db AuthDB, clk clock.Clock, events *event.Bus) *Question
 	return &QuestionService{db: db, clk: clk, events: events}
 }
 
-// --- service-facing shapes (the handler renders these; read shapes PROVISIONAL) ---
+// --- service-facing shapes (the handler renders these) ---
 
-// Question is one question thread head.
+// Question is one question thread head. StudentName/StudentAvatarURL are the
+// denormalized asker display fields (7-4b D5, LEFT JOIN users) — nil on the ask
+// 201 (the asker is the current user; the list read re-populates them).
 type Question struct {
-	ID            string
-	CenterID      string
-	ExerciseID    string
-	ClassID       string
-	StudentID     string
-	AnchorType    string
-	AnchorRef     *QuestionAnchor
-	AnchorExcerpt *string
-	Content       string
-	Status        string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID               string
+	CenterID         string
+	ExerciseID       string
+	ClassID          string
+	StudentID        string
+	StudentName      *string
+	StudentAvatarURL *string
+	AnchorType       string
+	AnchorRef        *QuestionAnchor
+	AnchorExcerpt    *string
+	Content          string
+	Status           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-// QuestionReply is one reply on a thread.
+// QuestionReply is one reply on a thread. AuthorName/AuthorAvatarURL are the
+// denormalized reply-author display fields (7-4b D5, LEFT JOIN users) — nil on
+// the reply 201 (the author is the current teacher; the thread read re-populates).
 type QuestionReply struct {
-	ID         string
-	QuestionID string
-	AuthorID   string
-	Content    string
-	Visibility string
-	CreatedAt  time.Time
+	ID              string
+	QuestionID      string
+	AuthorID        string
+	AuthorName      *string
+	AuthorAvatarURL *string
+	Content         string
+	Visibility      string
+	CreatedAt       time.Time
 }
 
 // QuestionThread is a question plus its reader-scoped replies (AC6 GET /{id}).
@@ -708,31 +716,35 @@ func questionFromModel(q generated.Question) Question {
 
 func questionFromReaderRow(r generated.ListQuestionsForReaderRow) Question {
 	return Question{
-		ID:            uuid.UUID(r.QuestionID.Bytes).String(),
-		ExerciseID:    uuid.UUID(r.ExerciseID.Bytes).String(),
-		ClassID:       uuid.UUID(r.ClassID.Bytes).String(),
-		StudentID:     uuid.UUID(r.StudentID.Bytes).String(),
-		AnchorType:    r.AnchorType,
-		AnchorRef:     unmarshalAnchor(r.AnchorRef),
-		AnchorExcerpt: pgTextToPtr(r.AnchorExcerpt),
-		Content:       r.Content,
-		Status:        r.Status,
-		CreatedAt:     r.CreatedAt.Time,
+		ID:               uuid.UUID(r.QuestionID.Bytes).String(),
+		ExerciseID:       uuid.UUID(r.ExerciseID.Bytes).String(),
+		ClassID:          uuid.UUID(r.ClassID.Bytes).String(),
+		StudentID:        uuid.UUID(r.StudentID.Bytes).String(),
+		StudentName:      pgTextToPtr(r.StudentName),
+		StudentAvatarURL: pgTextToPtr(r.StudentAvatarUrl),
+		AnchorType:       r.AnchorType,
+		AnchorRef:        unmarshalAnchor(r.AnchorRef),
+		AnchorExcerpt:    pgTextToPtr(r.AnchorExcerpt),
+		Content:          r.Content,
+		Status:           r.Status,
+		CreatedAt:        r.CreatedAt.Time,
 	}
 }
 
 func questionFromSingleReaderRow(r generated.GetQuestionForReaderRow) Question {
 	return Question{
-		ID:            uuid.UUID(r.QuestionID.Bytes).String(),
-		ExerciseID:    uuid.UUID(r.ExerciseID.Bytes).String(),
-		ClassID:       uuid.UUID(r.ClassID.Bytes).String(),
-		StudentID:     uuid.UUID(r.StudentID.Bytes).String(),
-		AnchorType:    r.AnchorType,
-		AnchorRef:     unmarshalAnchor(r.AnchorRef),
-		AnchorExcerpt: pgTextToPtr(r.AnchorExcerpt),
-		Content:       r.Content,
-		Status:        r.Status,
-		CreatedAt:     r.CreatedAt.Time,
+		ID:               uuid.UUID(r.QuestionID.Bytes).String(),
+		ExerciseID:       uuid.UUID(r.ExerciseID.Bytes).String(),
+		ClassID:          uuid.UUID(r.ClassID.Bytes).String(),
+		StudentID:        uuid.UUID(r.StudentID.Bytes).String(),
+		StudentName:      pgTextToPtr(r.StudentName),
+		StudentAvatarURL: pgTextToPtr(r.StudentAvatarUrl),
+		AnchorType:       r.AnchorType,
+		AnchorRef:        unmarshalAnchor(r.AnchorRef),
+		AnchorExcerpt:    pgTextToPtr(r.AnchorExcerpt),
+		Content:          r.Content,
+		Status:           r.Status,
+		CreatedAt:        r.CreatedAt.Time,
 	}
 }
 
@@ -749,12 +761,14 @@ func replyFromModel(r generated.QuestionReply) QuestionReply {
 
 func replyFromReaderRow(r generated.ListRepliesForReaderRow) QuestionReply {
 	return QuestionReply{
-		ID:         uuid.UUID(r.ReplyID.Bytes).String(),
-		QuestionID: uuid.UUID(r.QuestionID.Bytes).String(),
-		AuthorID:   uuid.UUID(r.AuthorID.Bytes).String(),
-		Content:    r.Content,
-		Visibility: r.Visibility,
-		CreatedAt:  r.CreatedAt.Time,
+		ID:              uuid.UUID(r.ReplyID.Bytes).String(),
+		QuestionID:      uuid.UUID(r.QuestionID.Bytes).String(),
+		AuthorID:        uuid.UUID(r.AuthorID.Bytes).String(),
+		AuthorName:      pgTextToPtr(r.AuthorName),
+		AuthorAvatarURL: pgTextToPtr(r.AuthorAvatarUrl),
+		Content:         r.Content,
+		Visibility:      r.Visibility,
+		CreatedAt:       r.CreatedAt.Time,
 	}
 }
 

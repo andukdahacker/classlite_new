@@ -51,7 +51,8 @@ func requireQuestionTenant(r *http.Request) (model.TenantContext, error) {
 	return tc, nil
 }
 
-// --- response shapes (PROVISIONAL read shapes — co-finalized by 7-4b) ---
+// --- response shapes (read shapes co-finalized by 7-4b: enriched with the
+// denormalized display name + avatar of the asker/author, D5, GO-5 explicit nulls) ---
 
 type questionAnchorResponse struct {
 	SchemaVersion      int  `json:"schemaVersion"`
@@ -63,25 +64,29 @@ type questionAnchorResponse struct {
 }
 
 type questionResponse struct {
-	ID            string                  `json:"id"`
-	ExerciseID    string                  `json:"exerciseId"`
-	ClassID       string                  `json:"classId"`
-	StudentID     string                  `json:"studentId"`
-	AnchorType    string                  `json:"anchorType"`
-	AnchorRef     *questionAnchorResponse `json:"anchorRef"`
-	AnchorExcerpt *string                 `json:"anchorExcerpt"`
-	Content       string                  `json:"content"`
-	Status        string                  `json:"status"`
-	CreatedAt     string                  `json:"createdAt"`
+	ID               string                  `json:"id"`
+	ExerciseID       string                  `json:"exerciseId"`
+	ClassID          string                  `json:"classId"`
+	StudentID        string                  `json:"studentId"`
+	StudentName      *string                 `json:"studentName"`
+	StudentAvatarURL *string                 `json:"studentAvatarUrl"`
+	AnchorType       string                  `json:"anchorType"`
+	AnchorRef        *questionAnchorResponse `json:"anchorRef"`
+	AnchorExcerpt    *string                 `json:"anchorExcerpt"`
+	Content          string                  `json:"content"`
+	Status           string                  `json:"status"`
+	CreatedAt        string                  `json:"createdAt"`
 }
 
 type questionReplyResponse struct {
-	ID         string `json:"id"`
-	QuestionID string `json:"questionId"`
-	AuthorID   string `json:"authorId"`
-	Content    string `json:"content"`
-	Visibility string `json:"visibility"`
-	CreatedAt  string `json:"createdAt"`
+	ID              string  `json:"id"`
+	QuestionID      string  `json:"questionId"`
+	AuthorID        string  `json:"authorId"`
+	AuthorName      *string `json:"authorName"`
+	AuthorAvatarURL *string `json:"authorAvatarUrl"`
+	Content         string  `json:"content"`
+	Visibility      string  `json:"visibility"`
+	CreatedAt       string  `json:"createdAt"`
 }
 
 type questionThreadResponse struct {
@@ -105,27 +110,31 @@ func anchorToResponse(a *service.QuestionAnchor) *questionAnchorResponse {
 
 func (h *QuestionHandler) questionToResponse(q service.Question) questionResponse {
 	return questionResponse{
-		ID:            q.ID,
-		ExerciseID:    q.ExerciseID,
-		ClassID:       q.ClassID,
-		StudentID:     q.StudentID,
-		AnchorType:    q.AnchorType,
-		AnchorRef:     anchorToResponse(q.AnchorRef),
-		AnchorExcerpt: q.AnchorExcerpt,
-		Content:       q.Content,
-		Status:        q.Status,
-		CreatedAt:     wireTime(q.CreatedAt),
+		ID:               q.ID,
+		ExerciseID:       q.ExerciseID,
+		ClassID:          q.ClassID,
+		StudentID:        q.StudentID,
+		StudentName:      q.StudentName,
+		StudentAvatarURL: q.StudentAvatarURL,
+		AnchorType:       q.AnchorType,
+		AnchorRef:        anchorToResponse(q.AnchorRef),
+		AnchorExcerpt:    q.AnchorExcerpt,
+		Content:          q.Content,
+		Status:           q.Status,
+		CreatedAt:        wireTime(q.CreatedAt),
 	}
 }
 
 func (h *QuestionHandler) replyToResponse(r service.QuestionReply) questionReplyResponse {
 	return questionReplyResponse{
-		ID:         r.ID,
-		QuestionID: r.QuestionID,
-		AuthorID:   r.AuthorID,
-		Content:    r.Content,
-		Visibility: r.Visibility,
-		CreatedAt:  wireTime(r.CreatedAt),
+		ID:              r.ID,
+		QuestionID:      r.QuestionID,
+		AuthorID:        r.AuthorID,
+		AuthorName:      r.AuthorName,
+		AuthorAvatarURL: r.AuthorAvatarURL,
+		Content:         r.Content,
+		Visibility:      r.Visibility,
+		CreatedAt:       wireTime(r.CreatedAt),
 	}
 }
 
