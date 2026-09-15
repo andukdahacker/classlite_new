@@ -32,6 +32,19 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
+      // Honor the `_`-prefix convention for intentionally-unused bindings —
+      // placeholder params in skipped/stubbed specs (e.g. the Story 2.7 bulk-import
+      // e2e stub pending FU-2-5-N) document the real signature without tripping
+      // no-unused-vars. Standard typescript-eslint idiom; overrides the stricter
+      // default from tseslint.configs.recommended.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'no-restricted-syntax': [
         'error',
         {

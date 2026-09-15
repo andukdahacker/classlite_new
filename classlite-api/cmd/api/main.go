@@ -656,6 +656,22 @@ func main() {
 	mux.Handle("PATCH /api/questions/{id}", questionChain(questionHandler.Resolve))
 	mux.Handle("POST /api/questions/batch-reply", questionChain(questionHandler.BatchReply))
 
+	// Story 8.1a — Role-specific dashboards (backend). ONE endpoint on the SAME
+	// ungated Q&A-style chain (extractTenant → requireVerified → requireCenter →
+	// ErrorMapper, NO RequireRole — D2): every authenticated role reaches the
+	// handler and the service returns its own role-scoped payload (exactly one of
+	// teacher/owner/student non-null, D3). Reads only, one tx, no cache (D9/D11).
+	dashboardSvc := service.NewDashboardService(pool, clock.RealClock{})
+	dashboardHandler := handler.NewDashboardHandler(dashboardSvc, clock.RealClock{})
+	dashboardChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(http.HandlerFunc(middleware.ErrorMapper(h))),
+			),
+		)
+	}
+	mux.Handle("GET /api/dashboard", dashboardChain(dashboardHandler.Get))
+
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): List is
 	// role-scoped (owner/admin = all center exercises; teacher = own only); the

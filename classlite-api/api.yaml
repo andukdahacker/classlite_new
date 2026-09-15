@@ -2660,6 +2660,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 8.1a — Role-specific dashboards (backend) ----------------
+  # ⚠️ PROVISIONAL (D12): the Dashboard* schemas are marked provisional pending the
+  # 8-1b frontend co-finalize (which strips the markers + regenerates after the UI
+  # consumes every field). One role-branched read: the ungated Q&A-style chain (no
+  # RequireRole — every authenticated role reaches the handler, D2); the service
+  # returns exactly one of teacher/owner/student per the caller's DB role (D3).
+  /api/dashboard:
+    get:
+      operationId: getDashboard
+      summary: Role-scoped dashboard aggregate (story 8.1a — FR-51/52/53)
+      description: |
+        PROVISIONAL (D12 — 8-1b co-finalizes). Returns a single `DashboardData`
+        object carrying a `role` discriminator and three nullable role blocks
+        (`teacher`, `owner`, `student`) of which EXACTLY ONE is non-null, chosen by
+        the caller's DB-resolved role (`teacher → teacher`; `owner|admin → owner`;
+        `student → student`). Sourced from existing tables in one transaction with
+        no N+1 (PERF-2). Ungated chain — every authenticated, verified, center-scoped
+        role reaches the handler and gets its own payload (no 403 purely for role).
+        All day/week/"today" boundaries are bucketed in the center timezone (D8);
+        leaf items carry raw `*At` timestamps so the FE derives elapsed/countdown
+        from `meta.serverTime`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's role-scoped dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeDashboard'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ---------------- Story 7.4a — Anchored Q&A ----------------
   # Read shapes (Question, QuestionReply, QuestionThread) were co-finalized by 7-4b
   # (enriched with denormalized display name + avatar via LEFT JOIN users, D5).
@@ -6790,6 +6833,208 @@ paths:
 
 components:
   schemas:
+    # ---------------- Story 8.1a — Role dashboards (PROVISIONAL, D12) ----------------
+    # ⚠️ PROVISIONAL: 8-1b co-finalizes (strips this marker + regenerates after the
+    # UI consumes every field). "Exactly one of teacher/owner/student non-null" is a
+    # RUNTIME invariant OpenAPI cannot express (no oneOf, to avoid codegen pain, D3) —
+    # it is pinned by AC2 tests. All fields explicit, no omitempty on the Go side (GO-5);
+    # list fields are [] (never null); scalar-absent fields are nullable. camelCase JSON.
+    EnvelopeDashboard:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/DashboardData'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    DashboardData:
+      type: object
+      required: [role, teacher, owner, student]
+      properties:
+        role:
+          type: string
+          enum: [teacher, admin, owner, student]
+          description: The caller's DB-resolved role (SEC-1). owner|admin both populate the `owner` block.
+        teacher:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DashboardTeacher'
+        owner:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DashboardOwner'
+        student:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DashboardStudent'
+    DashboardSessionLite:
+      type: object
+      required: [sessionId, classId, className, color, topic, startsAt, endsAt, status, teacherName, enrolledCount]
+      properties:
+        sessionId: { type: string, format: uuid }
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        color: { type: string, nullable: true }
+        topic: { type: string, nullable: true }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { type: string }
+        teacherName:
+          type: string
+          nullable: true
+          description: Populated only for the owner `todaySessions` list (AC6); null on teacher/student session lists.
+        enrolledCount:
+          type: integer
+          nullable: true
+          description: Active-enrollment count; populated only for owner `todaySessions` (AC6); null elsewhere.
+    DashboardAtRiskItem:
+      type: object
+      required: [studentId, name, attendanceRate, overallBand, reasons]
+      properties:
+        studentId: { type: string, format: uuid }
+        name: { type: string }
+        attendanceRate: { type: number, format: float, nullable: true }
+        overallBand: { type: number, format: float, nullable: true }
+        reasons:
+          type: array
+          items: { type: string, enum: [attendance_below_floor, consecutive_missed, band_drop] }
+          description: Stable at-risk reason slugs (AtRiskDetector, D5) — the FE maps i18n without guessing.
+    DashboardAtRiskBlock:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardAtRiskItem' } }
+    DashboardGradingItem:
+      type: object
+      required: [submissionId, studentName, assignmentTitle, className, overdue]
+      properties:
+        submissionId: { type: string, format: uuid }
+        studentName: { type: string }
+        assignmentTitle: { type: string }
+        className: { type: string }
+        overdue: { type: boolean, description: Past the assignment hard_deadline_at (or deadline_at) vs serverTime. }
+    DashboardGradingBlock:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardGradingItem' } }
+    DashboardQuestionRailItem:
+      type: object
+      required: [questionId, content, anchorExcerpt, classId, createdAt]
+      properties:
+        questionId: { type: string, format: uuid }
+        content: { type: string }
+        anchorExcerpt: { type: string, nullable: true }
+        classId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time, description: FE computes elapsed via meta.serverTime. }
+    DashboardQuestionBlock:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardQuestionRailItem' } }
+    DashboardTeacher:
+      type: object
+      required: [weekSessions, needsGrading, unansweredQuestions, atRiskStudents]
+      properties:
+        weekSessions: { type: array, items: { $ref: '#/components/schemas/DashboardSessionLite' } }
+        needsGrading: { $ref: '#/components/schemas/DashboardGradingBlock' }
+        unansweredQuestions: { $ref: '#/components/schemas/DashboardQuestionBlock' }
+        atRiskStudents: { $ref: '#/components/schemas/DashboardAtRiskBlock' }
+    DashboardOwnerPulse:
+      type: object
+      required: [activeClasses, studentsEnrolled, staffActiveToday, sessionsThisWeek, sessionsToday]
+      properties:
+        activeClasses: { type: integer }
+        studentsEnrolled: { type: integer }
+        staffActiveToday:
+          type: integer
+          description: Center staff (admin/teacher) whose latest refresh-token creation (login/rotation — a proxy for "active", NOT true last-seen) falls within today per centers.timezone.
+        sessionsThisWeek: { type: integer }
+        sessionsToday: { type: integer }
+    DashboardUnassignedItem:
+      type: object
+      required: [studentId, name]
+      properties:
+        studentId: { type: string, format: uuid }
+        name: { type: string }
+    DashboardUnassignedBlock:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardUnassignedItem' } }
+    DashboardCapacity:
+      type: object
+      required: [storageUsedBytes, storageLimitBytes, percentUsed, approaching]
+      properties:
+        storageUsedBytes: { type: integer, format: int64 }
+        storageLimitBytes: { type: integer, format: int64 }
+        percentUsed: { type: number, format: float }
+        approaching:
+          type: boolean
+          description: percentUsed >= STORAGE_APPROACHING_THRESHOLD. Storage-% ONLY (D-CAP); no plan/seat capacity (FU-4-4-4/FU-4-4-1 → Epic 9).
+    DashboardPendingInvites:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer }
+    DashboardNeedsAttention:
+      type: object
+      required: [unassignedStudents, atRiskStudents, capacity, pendingInvites]
+      properties:
+        unassignedStudents: { $ref: '#/components/schemas/DashboardUnassignedBlock' }
+        atRiskStudents: { $ref: '#/components/schemas/DashboardAtRiskBlock' }
+        capacity: { $ref: '#/components/schemas/DashboardCapacity' }
+        pendingInvites: { $ref: '#/components/schemas/DashboardPendingInvites' }
+    DashboardOwner:
+      type: object
+      required: [pulse, todaySessions, needsAttention]
+      properties:
+        pulse: { $ref: '#/components/schemas/DashboardOwnerPulse' }
+        todaySessions: { type: array, items: { $ref: '#/components/schemas/DashboardSessionLite' } }
+        needsAttention: { $ref: '#/components/schemas/DashboardNeedsAttention' }
+    DashboardDueItem:
+      type: object
+      required: [assignmentId, title, skill, deadlineAt, submissionId, submissionStatus]
+      properties:
+        assignmentId: { type: string, format: uuid }
+        title: { type: string }
+        skill: { type: string }
+        deadlineAt: { type: string, format: date-time }
+        submissionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The in-progress draft's submission id (s74 "Continue writing" resume deep-link); null when not started.
+        submissionStatus: { type: string, nullable: true }
+    DashboardFeedbackItem:
+      type: object
+      required: [submissionId, assignmentTitle, overallBand, releasedAt]
+      properties:
+        submissionId: { type: string, format: uuid }
+        assignmentTitle: { type: string }
+        overallBand: { type: number, format: float, nullable: true }
+        releasedAt: { type: string, format: date-time }
+    DashboardQuestionThreadLite:
+      type: object
+      required: [questionId, content, status, createdAt]
+      properties:
+        questionId: { type: string, format: uuid }
+        content: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+    DashboardStudent:
+      type: object
+      required: [upcomingSessions, dueSoon, recentFeedback, myQuestions]
+      properties:
+        upcomingSessions: { type: array, items: { $ref: '#/components/schemas/DashboardSessionLite' } }
+        dueSoon: { type: array, items: { $ref: '#/components/schemas/DashboardDueItem' } }
+        recentFeedback: { type: array, items: { $ref: '#/components/schemas/DashboardFeedbackItem' } }
+        myQuestions: { type: array, items: { $ref: '#/components/schemas/DashboardQuestionThreadLite' } }
+
     # ---------------- Request bodies ----------------
     RegisterRequest:
       type: object

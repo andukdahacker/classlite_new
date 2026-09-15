@@ -30,12 +30,22 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ducdo/classlite-api/internal/test"
 )
+
+// spawnDate returns a valid Spawn start date (YYYY-MM-DD) `daysFromNow` from today.
+// Spawn rejects a start date more than 30 days in the past, so hardcoded literals
+// rot once the wall clock drifts past them (the 2026-08-01 date-bomb). The handler
+// tests run on the real clock, so start dates must be relative to today; distinct
+// offsets preserve the cohort ordering the tests assert on.
+func spawnDate(daysFromNow int) string {
+	return time.Now().UTC().AddDate(0, 0, daysFromNow).Format("2006-01-02")
+}
 
 // -----------------------------------------------------------------------------
 // AC1 — GET /api/templates
@@ -313,12 +323,12 @@ func TestSpawn_AC03_HappyMixedBranches_ReturnsFullResponseShape(t *testing.T) {
 
 	body := fmt.Sprintf(`{
 		"classes":[
-			{"cohortName":"Self",     "startDate":"2026-08-01","teacherEmail":"owner@example.com"},
-			{"cohortName":"Member",   "startDate":"2026-08-08","teacherEmail":"teacher@example.com"},
-			{"cohortName":"Invited",  "startDate":"2026-08-15","teacherEmail":"stranger@example.com"},
-			{"cohortName":"Unassigned","startDate":"2026-08-22","teacherEmail":null}
+			{"cohortName":"Self",     "startDate":%q,"teacherEmail":"owner@example.com"},
+			{"cohortName":"Member",   "startDate":%q,"teacherEmail":"teacher@example.com"},
+			{"cohortName":"Invited",  "startDate":%q,"teacherEmail":"stranger@example.com"},
+			{"cohortName":"Unassigned","startDate":%q,"teacherEmail":null}
 		]
-	}`)
+	}`, spawnDate(1), spawnDate(8), spawnDate(15), spawnDate(22))
 	spawnURL := "/api/templates/" + test.UUIDString(templateID) + "/spawn"
 	req := httptest.NewRequest(http.MethodPost, spawnURL, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -407,10 +417,10 @@ func TestSpawn_AC06_FounderAutoAssign_ClassesZeroTeacherIsFounder(t *testing.T) 
 
 	srv := test.NewTestServerFor2_2ForUser(t, pool, founder.ID)
 
-	body := `{"classes":[
-		{"cohortName":"First",  "startDate":"2026-08-01","teacherEmail":null},
-		{"cohortName":"Second", "startDate":"2026-08-08","teacherEmail":null}
-	]}`
+	body := fmt.Sprintf(`{"classes":[
+		{"cohortName":"First",  "startDate":%q,"teacherEmail":null},
+		{"cohortName":"Second", "startDate":%q,"teacherEmail":null}
+	]}`, spawnDate(1), spawnDate(8))
 	req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(templateID)+"/spawn", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -473,7 +483,7 @@ func TestSpawn_AC06_NonFounderPersonaDoesNotAutoAssign(t *testing.T) {
 
 			srv := test.NewTestServerFor2_2ForUser(t, pool, owner.ID)
 
-			body := `{"classes":[{"cohortName":"First","startDate":"2026-08-01","teacherEmail":null}]}`
+			body := fmt.Sprintf(`{"classes":[{"cohortName":"First","startDate":%q,"teacherEmail":null}]}`, spawnDate(1))
 			req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(templateID)+"/spawn", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -517,7 +527,7 @@ func TestSpawn_AC03_MalformedTeacherEmail_Returns422InvalidTeacherEmail(t *testi
 
 	srv := test.NewTestServerFor2_2ForUser(t, pool, owner.ID)
 
-	body := `{"classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":"not-an-email"}]}`
+	body := fmt.Sprintf(`{"classes":[{"cohortName":"X","startDate":%q,"teacherEmail":"not-an-email"}]}`, spawnDate(1))
 	req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(templateID)+"/spawn", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -611,7 +621,7 @@ func TestSpawn_AC11_AttackVectors(t *testing.T) {
 		fx := setup(t, "template")
 		// URL path uses the VICTIM's template ID — RLS makes it invisible
 		// to attacker → handler MUST return 404 TEMPLATE_NOT_FOUND.
-		body := `{"classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":null}]}`
+		body := fmt.Sprintf(`{"classes":[{"cohortName":"X","startDate":%q,"teacherEmail":null}]}`, spawnDate(1))
 		req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(fx.victimTemplate)+"/spawn",
 			strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -641,8 +651,8 @@ func TestSpawn_AC11_AttackVectors(t *testing.T) {
 		// This is strictly more secure than the previous "silently ignore
 		// and spawn 1 attacker class" behavior — no 201 misleadingly signals
 		// success on smuggling attempts.
-		body := fmt.Sprintf(`{"centerId":"%s","classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":null}]}`,
-			test.UUIDString(fx.victimCenter))
+		body := fmt.Sprintf(`{"centerId":"%s","classes":[{"cohortName":"X","startDate":%q,"teacherEmail":null}]}`,
+			test.UUIDString(fx.victimCenter), spawnDate(1))
 		req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(fx.attackerTemplate)+"/spawn",
 			strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -669,7 +679,7 @@ func TestSpawn_AC11_AttackVectors(t *testing.T) {
 
 	t.Run("attack_vector_header_center_spoof", func(t *testing.T) {
 		fx := setup(t, "header")
-		body := `{"classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":null}]}`
+		body := fmt.Sprintf(`{"classes":[{"cohortName":"X","startDate":%q,"teacherEmail":null}]}`, spawnDate(1))
 		req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(fx.attackerTemplate)+"/spawn",
 			strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -751,7 +761,7 @@ func TestSpawn_AC12_ErrorEnvelopeShape_AuthenticatedSpawnValidationError(t *test
 	srv := test.NewTestServerFor2_2ForUser(t, pool, owner.ID)
 
 	// Malformed teacherEmail → 422 INVALID_TEACHER_EMAIL per AC13.
-	body := `{"classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":"not-a-valid-email"}]}`
+	body := fmt.Sprintf(`{"classes":[{"cohortName":"X","startDate":%q,"teacherEmail":"not-a-valid-email"}]}`, spawnDate(1))
 	req := httptest.NewRequest(http.MethodPost, "/api/templates/"+test.UUIDString(ownerTemplate)+"/spawn",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -806,7 +816,7 @@ func TestSpawn_NonexistentTemplateID_Returns404(t *testing.T) {
 	// same 404 TEMPLATE_NOT_FOUND response (SEC-8: never leak existence of
 	// resources scoped to another tenant, and treat true-missing the same).
 	bogusID := uuid.New().String()
-	body := `{"classes":[{"cohortName":"X","startDate":"2026-08-01","teacherEmail":null}]}`
+	body := fmt.Sprintf(`{"classes":[{"cohortName":"X","startDate":%q,"teacherEmail":null}]}`, spawnDate(1))
 	req := httptest.NewRequest(http.MethodPost, "/api/templates/"+bogusID+"/spawn",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
@@ -31,6 +32,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+// spawnStartDate returns a valid Spawn start date (YYYY-MM-DD) `daysFromNow` from
+// today. Spawn rejects a start date more than spawnStartDateDrift (30 days) in the
+// past, so hardcoded literals rot once the wall clock drifts past them (the
+// 2026-08-01 date-bomb). These tests run on clock.RealClock, so the fixtures must
+// be relative to today; distinct offsets preserve the cohort ordering the tests rely on.
+func spawnStartDate(daysFromNow int) string {
+	return time.Now().UTC().AddDate(0, 0, daysFromNow).Format("2006-01-02")
+}
 
 // -----------------------------------------------------------------------------
 // Test doubles (declared in-file until Task 11.6's story_2_2_helpers.go lands)
@@ -110,7 +120,7 @@ func TestClassService_Spawn_AC04_BranchA_SelfAssignByEmail(t *testing.T) {
 
 	result, err := svc.Spawn(context.Background(), tc, ownerUUID, tmplUUID, service.SpawnInput{
 		Classes: []service.SpawnClassInput{
-			{CohortName: "Self Cohort", StartDate: "2026-08-01", TeacherEmail: strPtr("self-assign@example.com")},
+			{CohortName: "Self Cohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("self-assign@example.com")},
 		},
 	})
 	if err != nil {
@@ -167,7 +177,7 @@ func TestClassService_Spawn_AC04_BranchB_ExistingMemberAssigns(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "B Cohort", StartDate: "2026-08-01", TeacherEmail: strPtr("teacher@example.com")},
+				{CohortName: "B Cohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("teacher@example.com")},
 			},
 		})
 	if err != nil {
@@ -207,7 +217,7 @@ func TestClassService_Spawn_AC04_BranchC_NonMemberCreatesInvite(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "C Cohort", StartDate: "2026-08-01", TeacherEmail: strPtr("stranger@example.com")},
+				{CohortName: "C Cohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("stranger@example.com")},
 			},
 		})
 	if err != nil {
@@ -267,7 +277,7 @@ func TestClassService_Spawn_AC04_BranchD_NullEmailNonFounderIsUnassigned(t *test
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "D Cohort", StartDate: "2026-08-01", TeacherEmail: nil},
+				{CohortName: "D Cohort", StartDate: spawnStartDate(1), TeacherEmail: nil},
 			},
 		})
 	c := result.Classes[0]
@@ -304,8 +314,8 @@ func TestClassService_Spawn_AC06_FounderAutoAssignsFirstClass(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "First", StartDate: "2026-08-01", TeacherEmail: nil},  // ← should auto-assign
-				{CohortName: "Second", StartDate: "2026-08-08", TeacherEmail: nil}, // ← should stay Branch D
+				{CohortName: "First", StartDate: spawnStartDate(1), TeacherEmail: nil},  // ← should auto-assign
+				{CohortName: "Second", StartDate: spawnStartDate(8), TeacherEmail: nil}, // ← should stay Branch D
 			},
 		})
 	if err != nil {
@@ -359,7 +369,7 @@ func TestClassService_Spawn_AC04b_SelfInviteBlocked(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "SelfCohort", StartDate: "2026-08-01", TeacherEmail: strPtr("  USER@example.com  ")},
+				{CohortName: "SelfCohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("  USER@example.com  ")},
 			},
 		})
 
@@ -428,9 +438,9 @@ func TestClassService_Spawn_AC05_InviteDedupSameEmailAcrossClasses(t *testing.T)
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "Class 1", StartDate: "2026-08-01", TeacherEmail: strPtr("shared@example.com")},
-				{CohortName: "Class 2", StartDate: "2026-08-08", TeacherEmail: strPtr("SHARED@example.com")}, // case variant
-				{CohortName: "Class 3", StartDate: "2026-08-15", TeacherEmail: strPtr("other@example.com")},
+				{CohortName: "Class 1", StartDate: spawnStartDate(1), TeacherEmail: strPtr("shared@example.com")},
+				{CohortName: "Class 2", StartDate: spawnStartDate(8), TeacherEmail: strPtr("SHARED@example.com")}, // case variant
+				{CohortName: "Class 3", StartDate: spawnStartDate(15), TeacherEmail: strPtr("other@example.com")},
 			},
 		})
 	if err != nil {
@@ -493,7 +503,7 @@ func TestClassService_Spawn_AC05_RaceRetryReusesExistingInvite(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "Racy", StartDate: "2026-08-01", TeacherEmail: strPtr("raced@example.com")},
+				{CohortName: "Racy", StartDate: spawnStartDate(1), TeacherEmail: strPtr("raced@example.com")},
 			},
 		})
 	if err != nil {
@@ -540,9 +550,9 @@ func TestClassService_Spawn_AC09_BrokenAuditRollsBackWholeTx(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "A", StartDate: "2026-08-01", TeacherEmail: strPtr("t1@example.com")},
-				{CohortName: "B", StartDate: "2026-08-08", TeacherEmail: strPtr("t2@example.com")},
-				{CohortName: "C", StartDate: "2026-08-15", TeacherEmail: strPtr("t3@example.com")},
+				{CohortName: "A", StartDate: spawnStartDate(1), TeacherEmail: strPtr("t1@example.com")},
+				{CohortName: "B", StartDate: spawnStartDate(8), TeacherEmail: strPtr("t2@example.com")},
+				{CohortName: "C", StartDate: spawnStartDate(15), TeacherEmail: strPtr("t3@example.com")},
 			},
 		})
 	if err == nil {
@@ -590,7 +600,7 @@ func TestClassService_Spawn_InviteEnqueueBufferFullSucceedsBestEffort(t *testing
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "Cohort", StartDate: "2026-08-01", TeacherEmail: strPtr("pending@example.com")},
+				{CohortName: "Cohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("pending@example.com")},
 			},
 		})
 	if err != nil {
@@ -653,7 +663,7 @@ func TestClassService_Spawn_PostAcceptReInviteLandsInBranchB(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(templateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "Post-Accept Cohort", StartDate: "2026-08-01", TeacherEmail: strPtr("teacher@example.com")},
+				{CohortName: "Post-Accept Cohort", StartDate: spawnStartDate(1), TeacherEmail: strPtr("teacher@example.com")},
 			},
 		})
 	if err != nil {
@@ -699,7 +709,7 @@ func TestClassService_Spawn_TemplateFromOtherTenantReturns404(t *testing.T) {
 		test.MustParseUUID(t, test.UUIDString(otherTemplateID)),
 		service.SpawnInput{
 			Classes: []service.SpawnClassInput{
-				{CohortName: "X", StartDate: "2026-08-01", TeacherEmail: nil},
+				{CohortName: "X", StartDate: spawnStartDate(1), TeacherEmail: nil},
 			},
 		})
 	if err == nil {

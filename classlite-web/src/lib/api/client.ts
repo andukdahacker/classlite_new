@@ -1009,6 +1009,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Role-scoped dashboard aggregate (story 8.1a — FR-51/52/53)
+         * @description PROVISIONAL (D12 — 8-1b co-finalizes). Returns a single `DashboardData`
+         *     object carrying a `role` discriminator and three nullable role blocks
+         *     (`teacher`, `owner`, `student`) of which EXACTLY ONE is non-null, chosen by
+         *     the caller's DB-resolved role (`teacher → teacher`; `owner|admin → owner`;
+         *     `student → student`). Sourced from existing tables in one transaction with
+         *     no N+1 (PERF-2). Ungated chain — every authenticated, verified, center-scoped
+         *     role reaches the handler and gets its own payload (no 403 purely for role).
+         *     All day/week/"today" boundaries are bucketed in the center timezone (D8);
+         *     leaf items carry raw `*At` timestamps so the FE derives elapsed/countdown
+         *     from `meta.serverTime`.
+         */
+        get: operations["getDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -2242,6 +2271,167 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        EnvelopeDashboard: {
+            data: components["schemas"]["DashboardData"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        DashboardData: {
+            /**
+             * @description The caller's DB-resolved role (SEC-1). owner|admin both populate the `owner` block.
+             * @enum {string}
+             */
+            role: "teacher" | "admin" | "owner" | "student";
+            teacher: components["schemas"]["DashboardTeacher"] | null;
+            owner: components["schemas"]["DashboardOwner"] | null;
+            student: components["schemas"]["DashboardStudent"] | null;
+        };
+        DashboardSessionLite: {
+            /** Format: uuid */
+            sessionId: string;
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            color: string | null;
+            topic: string | null;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            status: string;
+            /** @description Populated only for the owner `todaySessions` list (AC6); null on teacher/student session lists. */
+            teacherName: string | null;
+            /** @description Active-enrollment count; populated only for owner `todaySessions` (AC6); null elsewhere. */
+            enrolledCount: number | null;
+        };
+        DashboardAtRiskItem: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+            /** Format: float */
+            attendanceRate: number | null;
+            /** Format: float */
+            overallBand: number | null;
+            /** @description Stable at-risk reason slugs (AtRiskDetector, D5) — the FE maps i18n without guessing. */
+            reasons: ("attendance_below_floor" | "consecutive_missed" | "band_drop")[];
+        };
+        DashboardAtRiskBlock: {
+            count: number;
+            items: components["schemas"]["DashboardAtRiskItem"][];
+        };
+        DashboardGradingItem: {
+            /** Format: uuid */
+            submissionId: string;
+            studentName: string;
+            assignmentTitle: string;
+            className: string;
+            /** @description Past the assignment hard_deadline_at (or deadline_at) vs serverTime. */
+            overdue: boolean;
+        };
+        DashboardGradingBlock: {
+            count: number;
+            items: components["schemas"]["DashboardGradingItem"][];
+        };
+        DashboardQuestionRailItem: {
+            /** Format: uuid */
+            questionId: string;
+            content: string;
+            anchorExcerpt: string | null;
+            /** Format: uuid */
+            classId: string;
+            /**
+             * Format: date-time
+             * @description FE computes elapsed via meta.serverTime.
+             */
+            createdAt: string;
+        };
+        DashboardQuestionBlock: {
+            count: number;
+            items: components["schemas"]["DashboardQuestionRailItem"][];
+        };
+        DashboardTeacher: {
+            weekSessions: components["schemas"]["DashboardSessionLite"][];
+            needsGrading: components["schemas"]["DashboardGradingBlock"];
+            unansweredQuestions: components["schemas"]["DashboardQuestionBlock"];
+            atRiskStudents: components["schemas"]["DashboardAtRiskBlock"];
+        };
+        DashboardOwnerPulse: {
+            activeClasses: number;
+            studentsEnrolled: number;
+            /** @description Center staff (admin/teacher) whose latest refresh-token creation (login/rotation — a proxy for "active", NOT true last-seen) falls within today per centers.timezone. */
+            staffActiveToday: number;
+            sessionsThisWeek: number;
+            sessionsToday: number;
+        };
+        DashboardUnassignedItem: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+        };
+        DashboardUnassignedBlock: {
+            count: number;
+            items: components["schemas"]["DashboardUnassignedItem"][];
+        };
+        DashboardCapacity: {
+            /** Format: int64 */
+            storageUsedBytes: number;
+            /** Format: int64 */
+            storageLimitBytes: number;
+            /** Format: float */
+            percentUsed: number;
+            /** @description percentUsed >= STORAGE_APPROACHING_THRESHOLD. Storage-% ONLY (D-CAP); no plan/seat capacity (FU-4-4-4/FU-4-4-1 → Epic 9). */
+            approaching: boolean;
+        };
+        DashboardPendingInvites: {
+            count: number;
+        };
+        DashboardNeedsAttention: {
+            unassignedStudents: components["schemas"]["DashboardUnassignedBlock"];
+            atRiskStudents: components["schemas"]["DashboardAtRiskBlock"];
+            capacity: components["schemas"]["DashboardCapacity"];
+            pendingInvites: components["schemas"]["DashboardPendingInvites"];
+        };
+        DashboardOwner: {
+            pulse: components["schemas"]["DashboardOwnerPulse"];
+            todaySessions: components["schemas"]["DashboardSessionLite"][];
+            needsAttention: components["schemas"]["DashboardNeedsAttention"];
+        };
+        DashboardDueItem: {
+            /** Format: uuid */
+            assignmentId: string;
+            title: string;
+            skill: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /**
+             * Format: uuid
+             * @description The in-progress draft's submission id (s74 "Continue writing" resume deep-link); null when not started.
+             */
+            submissionId: string | null;
+            submissionStatus: string | null;
+        };
+        DashboardFeedbackItem: {
+            /** Format: uuid */
+            submissionId: string;
+            assignmentTitle: string;
+            /** Format: float */
+            overallBand: number | null;
+            /** Format: date-time */
+            releasedAt: string;
+        };
+        DashboardQuestionThreadLite: {
+            /** Format: uuid */
+            questionId: string;
+            content: string;
+            status: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        DashboardStudent: {
+            upcomingSessions: components["schemas"]["DashboardSessionLite"][];
+            dueSoon: components["schemas"]["DashboardDueItem"][];
+            recentFeedback: components["schemas"]["DashboardFeedbackItem"][];
+            myQuestions: components["schemas"]["DashboardQuestionThreadLite"][];
+        };
         RegisterRequest: {
             /** Format: email */
             email: string;
@@ -7704,6 +7894,44 @@ export interface operations {
             };
             /** @description CLASS_NOT_FOUND (unknown class OR teacher not assigned to it) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's role-scoped dashboard payload. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeDashboard"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

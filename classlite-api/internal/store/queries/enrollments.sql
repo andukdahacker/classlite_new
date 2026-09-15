@@ -105,8 +105,10 @@ RETURNING id, center_id, student_id, class_id, enrolled_at, withdrawn_at,
 -- name: ListUnassignedStudents :many
 -- AC12 (D4) — `student` center-members with ZERO active enrollments. RLS
 -- tenant-scopes the enrollments NOT EXISTS; center_members carries an explicit
--- center_id (belt) matching IsStudentMemberOfCenter. Ordered by name for the s43
--- zone. Paginated (XL-2) — a large center never returns an unbounded payload.
+-- center_id (belt) matching IsStudentMemberOfCenter. Ordered by name with a stable
+-- `, id` tiebreak so LIMIT-slice membership is deterministic when names collide
+-- (AC11 — the 8-1a dashboard needsAttention rail depends on this; the s43 zone
+-- benefits too). Paginated (XL-2) — a large center never returns an unbounded payload.
 SELECT u.id AS student_id, u.full_name AS student_name, u.email AS student_email
 FROM center_members cm
 JOIN users u ON u.id = cm.user_id
@@ -115,7 +117,7 @@ WHERE cm.center_id = $1 AND cm.role = 'student'
       SELECT 1 FROM enrollments e
       WHERE e.student_id = cm.user_id AND e.status = 'active'
   )
-ORDER BY u.full_name ASC
+ORDER BY u.full_name ASC, u.id ASC
 LIMIT $2 OFFSET $3;
 
 -- name: CountUnassignedStudents :one

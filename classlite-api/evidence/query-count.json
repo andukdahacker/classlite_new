@@ -1,0 +1,19 @@
+{
+  "story": "8-1a",
+  "endpoint": "GET /api/dashboard",
+  "note": "Business queries per invocation (SET LOCAL + BEGIN/SAVEPOINT/RELEASE/COMMIT filtered by CountingDBTX). Counting boundary = the tx the service runs on, NOT the pool (D7(1)). O(1) in rows — proven to fail on a synthetic N+1 (TestDashboard_QueryCount_DetectsSyntheticNPlus1_ATDD).",
+  "perRole": {
+    "owner": {
+      "measured": 9,
+      "ceiling": 13
+    },
+    "student": {
+      "measured": 5,
+      "ceiling": 8
+    },
+    "teacher": {
+      "measured": 7,
+      "ceiling": 8
+    }
+  }
+}
