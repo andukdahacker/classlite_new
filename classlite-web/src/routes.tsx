@@ -190,26 +190,19 @@ const baseRoutes: RouteObject[] = [
       return { Component: AppLayout }
     },
     children: [
-      // Student boundary — only mounted for student users. Route-level
-      // role gating (block teachers, etc.) lands with Story 2-6.
-      {
-        path: '/student',
-        lazy: async () => {
-          const { default: StudentDashboard } = await import(
-            '@/features/dashboard/StudentDashboard'
-          )
-          return { Component: StudentDashboard }
-        },
-      },
-      // Teacher boundary — default landing for authenticated owner /
-      // teacher / admin sessions.
+      // Story 8-1b (D1) — the single role-branched landing for EVERY
+      // authenticated role. `DashboardRoute` reads `useRole()` and mounts the
+      // owner / teacher / student dashboard (each its own lazy chunk). No
+      // `RouteRoleGate` — the branch is content, not access. The former
+      // `/student` stub (a dead route nothing navigated to) is retired; the
+      // student sidebar "Dashboard" entry already resolves `/dashboard`.
       {
         path: '/dashboard',
         lazy: async () => {
-          const { default: TeacherDashboard } = await import(
-            '@/features/dashboard/TeacherDashboard'
+          const { DashboardRoute } = await import(
+            '@/features/dashboard/DashboardRoute'
           )
-          return { Component: TeacherDashboard }
+          return { Component: DashboardRoute }
         },
       },
       // Story 2-5a + 2.6 (AC6) — Owner-only Settings surface. The

@@ -1018,7 +1018,7 @@ export interface paths {
         };
         /**
          * Role-scoped dashboard aggregate (story 8.1a — FR-51/52/53)
-         * @description PROVISIONAL (D12 — 8-1b co-finalizes). Returns a single `DashboardData`
+         * @description Returns a single `DashboardData`
          *     object carrying a `role` discriminator and three nullable role blocks
          *     (`teacher`, `owner`, `student`) of which EXACTLY ONE is non-null, chosen by
          *     the caller's DB-resolved role (`teacher → teacher`; `owner|admin → owner`;
@@ -2313,6 +2313,8 @@ export interface components {
             overallBand: number | null;
             /** @description Stable at-risk reason slugs (AtRiskDetector, D5) — the FE maps i18n without guessing. */
             reasons: ("attendance_below_floor" | "consecutive_missed" | "band_drop")[];
+            /** @description The student's pending assignments (no valid submission, deadline in the future) — mirrors GetStudentSubmissionStats.pending_count (8-1b D13 gap co-finalized). */
+            pendingCount: number;
         };
         DashboardAtRiskBlock: {
             count: number;
@@ -2338,6 +2340,8 @@ export interface components {
             anchorExcerpt: string | null;
             /** Format: uuid */
             classId: string;
+            /** @description The question's class name (8-1b D13 gap co-finalized — resolved from classId). */
+            className: string;
             /**
              * Format: date-time
              * @description FE computes elapsed via meta.serverTime.
@@ -2384,9 +2388,24 @@ export interface components {
         DashboardPendingInvites: {
             count: number;
         };
+        DashboardOverCapacityItem: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            /** @description The class's configured capacity. */
+            capacity: number;
+            /** @description Active enrollments (exceeds capacity for an over-capacity class). */
+            activeCount: number;
+        };
+        DashboardOverCapacityBlock: {
+            count: number;
+            items: components["schemas"]["DashboardOverCapacityItem"][];
+        };
         DashboardNeedsAttention: {
             unassignedStudents: components["schemas"]["DashboardUnassignedBlock"];
             atRiskStudents: components["schemas"]["DashboardAtRiskBlock"];
+            /** @description Classes whose active enrollments exceed capacity (8-1b D13 gap co-finalized — reuses the 7-3a over-capacity aggregate; each an action link routing to the roster). */
+            overCapacityClasses: components["schemas"]["DashboardOverCapacityBlock"];
             capacity: components["schemas"]["DashboardCapacity"];
             pendingInvites: components["schemas"]["DashboardPendingInvites"];
         };
@@ -2402,6 +2421,13 @@ export interface components {
             skill: string;
             /** Format: date-time */
             deadlineAt: string;
+            /**
+             * Format: uuid
+             * @description The assignment's class (8-1b D13 gap co-finalized — genuinely new field
+             */
+            classId: string;
+            /** @description The assignment's class name (8-1b D13 gap co-finalized). */
+            className: string;
             /**
              * Format: uuid
              * @description The in-progress draft's submission id (s74 "Continue writing" resume deep-link); null when not started.

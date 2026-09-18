@@ -128,12 +128,14 @@ WHERE i.center_id = sqlc.arg('center_id')
 -- surface first (earliest deadline) as the most urgent — no future-only lower bound.
 -- Explicit center_id predicate keeps the tenant index usable (AC14). id tiebreak (AC11).
 SELECT a.id, a.deadline_at,
+       a.class_id, cls.name AS class_name,
        e.title AS exercise_title, e.skill AS exercise_skill,
        sub.id AS submission_id, sub.status AS submission_status
 FROM assignments a
 JOIN enrollments en ON en.class_id = a.class_id
     AND en.student_id = sqlc.arg('student_id')
     AND en.status = 'active'
+JOIN classes cls ON cls.id = a.class_id
 JOIN exercises e ON e.id = a.exercise_id
 LEFT JOIN submissions sub ON sub.assignment_id = a.id
     AND sub.student_id = sqlc.arg('student_id')
@@ -141,6 +143,35 @@ WHERE a.center_id = sqlc.arg('center_id')
   AND a.status = 'open'
 ORDER BY a.deadline_at ASC, a.id ASC
 LIMIT sqlc.arg('item_limit');
+
+-- name: ListAtRiskPendingCounts :many
+-- Pending-assignment count per student for the at-risk rail's ≤5 shown items (D13
+-- `pendingCount`). Mirrors GetStudentSubmissionStats.pending_count EXACTLY: an
+-- actively-enrolled assignment with NO valid submission (status NOT IN
+-- submitted/ai_processing/graded) and a future deadline. Set-based over the id
+-- array — ONE query, never an N+1 (PERF-2). Explicit center_id keeps the tenant
+-- index usable (AC14). RLS tenant-scopes assignments/enrollments/submissions.
+SELECT en.student_id,
+       count(*) FILTER (
+         WHERE NOT (sub.id IS NOT NULL AND sub.status IN ('submitted', 'ai_processing', 'graded'))
+           AND a.deadline_at > sqlc.arg('now')
+       )::bigint AS pending_count
+FROM assignments a
+JOIN enrollments en ON en.class_id = a.class_id
+    AND en.status = 'active'
+    AND en.student_id = ANY(sqlc.arg('student_ids')::uuid[])
+LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = en.student_id
+WHERE a.center_id = sqlc.arg('center_id')
+GROUP BY en.student_id;
+
+-- name: ListClassNamesByIDs :many
+-- Class id → name for the dashboard rails that carry a classId but need a label
+-- (D13 question-rail `className`). Set-based over the ≤5 ids — ONE query (PERF-2).
+-- Explicit center_id keeps the tenant index usable (AC14); classes is RLS-scoped.
+SELECT c.id AS class_id, c.name AS class_name
+FROM classes c
+WHERE c.center_id = sqlc.arg('center_id')
+  AND c.id = ANY(sqlc.arg('class_ids')::uuid[]);
 
 -- name: ListStudentUpcomingSessions :many
 -- Sessions for the student's actively-enrolled classes in [from_ts, to_ts) (a

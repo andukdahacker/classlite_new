@@ -53,15 +53,15 @@ const (
 	DashboardDefaultTimezone = "Asia/Ho_Chi_Minh"
 )
 
-// ---------------- Response DTOs (PROVISIONAL, D12; camelCase; GO-5 explicit null) ----------------
+// ---------------- Response DTOs (camelCase; GO-5 explicit null; D13 co-finalized in 8-1b) ----------------
 
 // DashboardData is the single role-branched payload. Exactly one of Teacher/Owner/
 // Student is non-null, chosen by Role (AC2 runtime invariant, D3).
 type DashboardData struct {
-	Role    string        `json:"role"`
-	Teacher *TeacherDash  `json:"teacher"`
-	Owner   *OwnerDash    `json:"owner"`
-	Student *StudentDash  `json:"student"`
+	Role    string       `json:"role"`
+	Teacher *TeacherDash `json:"teacher"`
+	Owner   *OwnerDash   `json:"owner"`
+	Student *StudentDash `json:"student"`
 }
 
 // DashboardSessionLite is one session in a rail. TeacherName/EnrolledCount are
@@ -79,15 +79,16 @@ type DashboardSessionLite struct {
 	EnrolledCount *int      `json:"enrolledCount"`
 }
 
-// DashboardAtRiskItem is one at-risk student (D5). PendingCount is intentionally
-// omitted from v1 (not cheaply derivable from ListStudents without an N+1 or a
-// shipped-query change) — a PROVISIONAL deferral for the 8-1b co-finalize.
+// DashboardAtRiskItem is one at-risk student (D5). PendingCount is the student's
+// pending assignments (no valid submission, deadline in the future) — sourced set-
+// based from ListAtRiskPendingCounts for the ≤5 shown items (8-1b D13 co-finalized).
 type DashboardAtRiskItem struct {
 	StudentID      string   `json:"studentId"`
 	Name           string   `json:"name"`
 	AttendanceRate *float64 `json:"attendanceRate"`
 	OverallBand    *float64 `json:"overallBand"`
 	Reasons        []string `json:"reasons"`
+	PendingCount   int      `json:"pendingCount"`
 }
 
 // DashboardAtRiskBlock is a count + top-N at-risk rail.
@@ -111,12 +112,14 @@ type DashboardGradingBlock struct {
 	Items []DashboardGradingItem `json:"items"`
 }
 
-// DashboardQuestionRailItem is one unanswered question (teacher rail).
+// DashboardQuestionRailItem is one unanswered question (teacher rail). ClassName is
+// resolved set-based from ListClassNamesByIDs for the ≤5 items (8-1b D13 co-finalized).
 type DashboardQuestionRailItem struct {
-	QuestionID    string  `json:"questionId"`
-	Content       string  `json:"content"`
-	AnchorExcerpt *string `json:"anchorExcerpt"`
-	ClassID       string  `json:"classId"`
+	QuestionID    string    `json:"questionId"`
+	Content       string    `json:"content"`
+	AnchorExcerpt *string   `json:"anchorExcerpt"`
+	ClassID       string    `json:"classId"`
+	ClassName     string    `json:"className"`
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
@@ -168,12 +171,28 @@ type DashboardPendingInvites struct {
 	Count int `json:"count"`
 }
 
+// DashboardOverCapacityItem is one class whose active enrollments exceed capacity
+// (8-1b D13 co-finalized — reuses the 7-3a over-capacity aggregate).
+type DashboardOverCapacityItem struct {
+	ClassID     string `json:"classId"`
+	ClassName   string `json:"className"`
+	Capacity    int    `json:"capacity"`
+	ActiveCount int    `json:"activeCount"`
+}
+
+// DashboardOverCapacityBlock is a count + top-N over-capacity-classes rail.
+type DashboardOverCapacityBlock struct {
+	Count int                         `json:"count"`
+	Items []DashboardOverCapacityItem `json:"items"`
+}
+
 // DashboardNeedsAttention is the owner needs-attention card (no Q&A, no plan/seat — D-QA/D-CAP).
 type DashboardNeedsAttention struct {
-	UnassignedStudents DashboardUnassignedBlock `json:"unassignedStudents"`
-	AtRiskStudents     DashboardAtRiskBlock     `json:"atRiskStudents"`
-	Capacity           DashboardCapacity        `json:"capacity"`
-	PendingInvites     DashboardPendingInvites  `json:"pendingInvites"`
+	UnassignedStudents  DashboardUnassignedBlock   `json:"unassignedStudents"`
+	AtRiskStudents      DashboardAtRiskBlock       `json:"atRiskStudents"`
+	OverCapacityClasses DashboardOverCapacityBlock `json:"overCapacityClasses"`
+	Capacity            DashboardCapacity          `json:"capacity"`
+	PendingInvites      DashboardPendingInvites    `json:"pendingInvites"`
 }
 
 // OwnerDash is the owner/admin payload (FR-51, s48).
@@ -191,6 +210,8 @@ type DashboardDueItem struct {
 	Title            string    `json:"title"`
 	Skill            string    `json:"skill"`
 	DeadlineAt       time.Time `json:"deadlineAt"`
+	ClassID          string    `json:"classId"`
+	ClassName        string    `json:"className"`
 	SubmissionID     *string   `json:"submissionId"`
 	SubmissionStatus *string   `json:"submissionStatus"`
 }
@@ -434,6 +455,29 @@ func (s *DashboardService) buildOwner(
 		return nil, err
 	}
 
+	// needsAttention.overCapacityClasses — classes whose active enrollments exceed
+	// capacity (D13 co-finalized; reuses the 7-3a aggregate, RLS-scoped, PERF-2).
+	overCapCount, err := q.CountOverCapacityClasses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("owner dashboard: over-capacity count: %w", err)
+	}
+	overCapRows, err := q.ListOverCapacityClasses(ctx, generated.ListOverCapacityClassesParams{
+		Limit:  DashboardRailLimit,
+		Offset: 0,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("owner dashboard: over-capacity list: %w", err)
+	}
+	overCapItems := make([]DashboardOverCapacityItem, 0, len(overCapRows))
+	for _, r := range overCapRows {
+		overCapItems = append(overCapItems, DashboardOverCapacityItem{
+			ClassID:     uuidFromPg(r.ClassID).String(),
+			ClassName:   r.ClassName,
+			Capacity:    int(r.Capacity.Int32),
+			ActiveCount: int(r.ActiveCount),
+		})
+	}
+
 	// needsAttention.capacity — storage-% ONLY (D-CAP)
 	usedBytes, err := q.SumFileSizeByCenter(ctx, centerPg)
 	if err != nil {
@@ -467,8 +511,9 @@ func (s *DashboardService) buildOwner(
 		},
 		TodaySessions: today,
 		NeedsAttention: DashboardNeedsAttention{
-			UnassignedStudents: DashboardUnassignedBlock{Count: int(unassignedCount), Items: unassignedItems},
-			AtRiskStudents:     atRisk,
+			UnassignedStudents:  DashboardUnassignedBlock{Count: int(unassignedCount), Items: unassignedItems},
+			AtRiskStudents:      atRisk,
+			OverCapacityClasses: DashboardOverCapacityBlock{Count: int(overCapCount), Items: overCapItems},
 			Capacity: DashboardCapacity{
 				StorageUsedBytes:  usedBytes,
 				StorageLimitBytes: limitBytes,
@@ -519,6 +564,8 @@ func (s *DashboardService) buildStudent(
 			Title:            r.ExerciseTitle,
 			Skill:            r.ExerciseSkill,
 			DeadlineAt:       r.DeadlineAt.Time,
+			ClassID:          uuidFromPg(r.ClassID).String(),
+			ClassName:        r.ClassName,
 			SubmissionID:     uuidPtrFromPg(r.SubmissionID),
 			SubmissionStatus: pgTextToPtr(r.SubmissionStatus),
 		})
@@ -637,6 +684,7 @@ func (s *DashboardService) unansweredQuestions(
 		return DashboardQuestionBlock{}, fmt.Errorf("dashboard: unanswered list: %w", err)
 	}
 	items := make([]DashboardQuestionRailItem, 0, len(rows))
+	classIDs := make([]pgtype.UUID, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, DashboardQuestionRailItem{
 			QuestionID:    uuidFromPg(r.QuestionID).String(),
@@ -645,6 +693,27 @@ func (s *DashboardService) unansweredQuestions(
 			ClassID:       uuidFromPg(r.ClassID).String(),
 			CreatedAt:     r.CreatedAt.Time,
 		})
+		classIDs = append(classIDs, r.ClassID)
+	}
+
+	// className for the ≤5 shown items — ONE set-based lookup, never an N+1 (D13,
+	// PERF-2). Resolved separately (not via the shared ListQuestionsForReader) to
+	// keep that query's blast radius unchanged across the questions feature.
+	if len(classIDs) > 0 {
+		nameRows, nerr := q.ListClassNamesByIDs(ctx, generated.ListClassNamesByIDsParams{
+			CenterID: centerPg,
+			ClassIds: classIDs,
+		})
+		if nerr != nil {
+			return DashboardQuestionBlock{}, fmt.Errorf("dashboard: question class names: %w", nerr)
+		}
+		nameByClass := make(map[string]string, len(nameRows))
+		for _, nr := range nameRows {
+			nameByClass[uuidFromPg(nr.ClassID).String()] = nr.ClassName
+		}
+		for i := range items {
+			items[i].ClassName = nameByClass[items[i].ClassID]
+		}
 	}
 	return DashboardQuestionBlock{Count: int(count), Items: items}, nil
 }
@@ -667,6 +736,7 @@ func (s *DashboardService) atRiskRail(
 		return DashboardAtRiskBlock{}, fmt.Errorf("dashboard: at-risk scan: %w", err)
 	}
 	items := make([]DashboardAtRiskItem, 0, DashboardRailLimit)
+	shownIDs := make([]pgtype.UUID, 0, DashboardRailLimit)
 	count := 0
 	for _, r := range rows {
 		result := s.detector.Classify(AtRiskInputs{
@@ -689,6 +759,27 @@ func (s *DashboardService) atRiskRail(
 				OverallBand:    numericToFloatPtr(r.OverallBand),
 				Reasons:        result.Reasons,
 			})
+			shownIDs = append(shownIDs, r.StudentID)
+		}
+	}
+
+	// pendingCount for the ≤5 shown items — ONE set-based query, never an N+1 (D13,
+	// PERF-2). A student with no pending assignments has no row (defaults to 0).
+	if len(shownIDs) > 0 {
+		pendingRows, perr := q.ListAtRiskPendingCounts(ctx, generated.ListAtRiskPendingCountsParams{
+			Now:        dashTS(now),
+			StudentIds: shownIDs,
+			CenterID:   centerPg,
+		})
+		if perr != nil {
+			return DashboardAtRiskBlock{}, fmt.Errorf("dashboard: at-risk pending counts: %w", perr)
+		}
+		pendingByStudent := make(map[string]int, len(pendingRows))
+		for _, pr := range pendingRows {
+			pendingByStudent[uuidFromPg(pr.StudentID).String()] = int(pr.PendingCount)
+		}
+		for i := range items {
+			items[i].PendingCount = pendingByStudent[items[i].StudentID]
 		}
 	}
 	return DashboardAtRiskBlock{Count: count, Items: items}, nil

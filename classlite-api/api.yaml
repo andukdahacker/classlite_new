@@ -2660,18 +2660,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
-  # ---------------- Story 8.1a — Role-specific dashboards (backend) ----------------
-  # ⚠️ PROVISIONAL (D12): the Dashboard* schemas are marked provisional pending the
-  # 8-1b frontend co-finalize (which strips the markers + regenerates after the UI
-  # consumes every field). One role-branched read: the ungated Q&A-style chain (no
-  # RequireRole — every authenticated role reaches the handler, D2); the service
-  # returns exactly one of teacher/owner/student per the caller's DB role (D3).
+  # ---------------- Story 8.1 — Role-specific dashboards ----------------
+  # One role-branched read: the ungated Q&A-style chain (no RequireRole — every
+  # authenticated role reaches the handler, D2); the service returns exactly one of
+  # teacher/owner/student per the caller's DB role (D3). Contract finalized in 8-1b
+  # (D13 — the frontend consumes every rendered field end-to-end).
   /api/dashboard:
     get:
       operationId: getDashboard
       summary: Role-scoped dashboard aggregate (story 8.1a — FR-51/52/53)
       description: |
-        PROVISIONAL (D12 — 8-1b co-finalizes). Returns a single `DashboardData`
+        Returns a single `DashboardData`
         object carrying a `role` discriminator and three nullable role blocks
         (`teacher`, `owner`, `student`) of which EXACTLY ONE is non-null, chosen by
         the caller's DB-resolved role (`teacher → teacher`; `owner|admin → owner`;
@@ -6833,12 +6832,11 @@ paths:
 
 components:
   schemas:
-    # ---------------- Story 8.1a — Role dashboards (PROVISIONAL, D12) ----------------
-    # ⚠️ PROVISIONAL: 8-1b co-finalizes (strips this marker + regenerates after the
-    # UI consumes every field). "Exactly one of teacher/owner/student non-null" is a
-    # RUNTIME invariant OpenAPI cannot express (no oneOf, to avoid codegen pain, D3) —
-    # it is pinned by AC2 tests. All fields explicit, no omitempty on the Go side (GO-5);
-    # list fields are [] (never null); scalar-absent fields are nullable. camelCase JSON.
+    # ---------------- Story 8.1 — Role dashboards ----------------
+    # "Exactly one of teacher/owner/student non-null" is a RUNTIME invariant OpenAPI
+    # cannot express (no oneOf, to avoid codegen pain, D3) — it is pinned by AC2 tests.
+    # All fields explicit, no omitempty on the Go side (GO-5); list fields are []
+    # (never null); scalar-absent fields are nullable. camelCase JSON. Finalized in 8-1b (D13).
     EnvelopeDashboard:
       type: object
       required: [data, meta]
@@ -6889,7 +6887,7 @@ components:
           description: Active-enrollment count; populated only for owner `todaySessions` (AC6); null elsewhere.
     DashboardAtRiskItem:
       type: object
-      required: [studentId, name, attendanceRate, overallBand, reasons]
+      required: [studentId, name, attendanceRate, overallBand, reasons, pendingCount]
       properties:
         studentId: { type: string, format: uuid }
         name: { type: string }
@@ -6899,6 +6897,9 @@ components:
           type: array
           items: { type: string, enum: [attendance_below_floor, consecutive_missed, band_drop] }
           description: Stable at-risk reason slugs (AtRiskDetector, D5) — the FE maps i18n without guessing.
+        pendingCount:
+          type: integer
+          description: The student's pending assignments (no valid submission, deadline in the future) — mirrors GetStudentSubmissionStats.pending_count (8-1b D13 gap co-finalized).
     DashboardAtRiskBlock:
       type: object
       required: [count, items]
@@ -6922,12 +6923,13 @@ components:
         items: { type: array, items: { $ref: '#/components/schemas/DashboardGradingItem' } }
     DashboardQuestionRailItem:
       type: object
-      required: [questionId, content, anchorExcerpt, classId, createdAt]
+      required: [questionId, content, anchorExcerpt, classId, className, createdAt]
       properties:
         questionId: { type: string, format: uuid }
         content: { type: string }
         anchorExcerpt: { type: string, nullable: true }
         classId: { type: string, format: uuid }
+        className: { type: string, description: The question's class name (8-1b D13 gap co-finalized — resolved from classId). }
         createdAt: { type: string, format: date-time, description: FE computes elapsed via meta.serverTime. }
     DashboardQuestionBlock:
       type: object
@@ -6981,12 +6983,30 @@ components:
       required: [count]
       properties:
         count: { type: integer }
+    DashboardOverCapacityItem:
+      type: object
+      required: [classId, className, capacity, activeCount]
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        capacity: { type: integer, description: The class's configured capacity. }
+        activeCount: { type: integer, description: Active enrollments (exceeds capacity for an over-capacity class). }
+    DashboardOverCapacityBlock:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardOverCapacityItem' } }
     DashboardNeedsAttention:
       type: object
-      required: [unassignedStudents, atRiskStudents, capacity, pendingInvites]
+      required: [unassignedStudents, atRiskStudents, overCapacityClasses, capacity, pendingInvites]
       properties:
         unassignedStudents: { $ref: '#/components/schemas/DashboardUnassignedBlock' }
         atRiskStudents: { $ref: '#/components/schemas/DashboardAtRiskBlock' }
+        overCapacityClasses:
+          allOf:
+            - $ref: '#/components/schemas/DashboardOverCapacityBlock'
+          description: Classes whose active enrollments exceed capacity (8-1b D13 gap co-finalized — reuses the 7-3a over-capacity aggregate; each an action link routing to the roster).
         capacity: { $ref: '#/components/schemas/DashboardCapacity' }
         pendingInvites: { $ref: '#/components/schemas/DashboardPendingInvites' }
     DashboardOwner:
@@ -6998,12 +7018,14 @@ components:
         needsAttention: { $ref: '#/components/schemas/DashboardNeedsAttention' }
     DashboardDueItem:
       type: object
-      required: [assignmentId, title, skill, deadlineAt, submissionId, submissionStatus]
+      required: [assignmentId, title, skill, deadlineAt, classId, className, submissionId, submissionStatus]
       properties:
         assignmentId: { type: string, format: uuid }
         title: { type: string }
         skill: { type: string }
         deadlineAt: { type: string, format: date-time }
+        classId: { type: string, format: uuid, description: The assignment's class (8-1b D13 gap co-finalized — genuinely new field, was absent). }
+        className: { type: string, description: The assignment's class name (8-1b D13 gap co-finalized). }
         submissionId:
           type: string
           format: uuid

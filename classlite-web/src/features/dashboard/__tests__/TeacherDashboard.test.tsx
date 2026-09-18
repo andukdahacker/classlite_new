@@ -30,7 +30,7 @@
  * imported transitively.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   createMemoryRouter,
@@ -49,10 +49,14 @@ import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { onboardingKeys } from '@/features/onboarding/api/onboardingKeys'
 import TeacherDashboard from '@/features/dashboard/TeacherDashboard'
 import i18n from '@/lib/i18n'
-import { createTestQueryClient } from '@/lib/query-client'
+import { createTestQueryClient, queryClient as singletonQueryClient } from '@/lib/query-client'
 import { server } from '@/test/msw-server'
 
 import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
+// Story 8-1b (D2): onboarding-COMPLETE now renders the real s06 dashboard over
+// this fetch; the onboarding-INCOMPLETE shell below is preserved. The
+// done-state → real-dashboard behavior is owned by TeacherDashboard.realDashboard.test.tsx.
+import { teacherHandlers } from '@/features/dashboard/api/__tests__/handlers'
 
 beforeEach(() => {
   server.use(...onboardingHandlers)
@@ -144,6 +148,11 @@ async function renderShell(opts: {
   const queryClient = createTestQueryClient()
   if (opts.session) {
     queryClient.setQueryData(authKeys.session(), opts.session)
+    // Story 8-1b: TeacherDashboard now reads the session user/center from the
+    // module-singleton cache (via useSessionUser/useSessionCenter, mirroring
+    // useRole) — production mounts it under the singleton provider. Seed both
+    // so the shell heading name + center gate resolve. Cleared by vitest-setup.
+    singletonQueryClient.setQueryData(authKeys.session(), opts.session)
   }
   if (opts.progressArgs) {
     seedProgress(queryClient, opts.progressArgs)
@@ -319,7 +328,10 @@ describe('TeacherDashboard — center-durability resume routing regression', () 
 // AC12 — welcome heading interpolation with user.displayName [A-BLOCKER-1]
 // ---------------------------------------------------------------------------
 describe('TeacherDashboard — welcome heading [AC12]', () => {
-  test('welcome heading interpolates user.displayName', async () => {
+  test('welcome heading interpolates user.displayName (on the real dashboard)', async () => {
+    // Story 8-1b (D2): onboarding-complete now renders the real s06 dashboard;
+    // the welcome heading moved onto it. Seed the dashboard fetch so it loads.
+    server.use(...teacherHandlers)
     await renderShell({
       session: makeSession(),
       progressArgs: { persona: 'operator', currentStep: 'done', spawnedClassIds: ['c1'] },
@@ -385,98 +397,13 @@ describe('TeacherDashboard — AC1 loading/error/state matrix (12-cell mutex)', 
     ).not.toBeInTheDocument()
   })
 
-  test('Cell 5: currentStep=done + persona=operator + snoozed → no card + no banner + sample preview visible', async () => {
-    window.localStorage.setItem(
-      `classlite_finish_setup_v1_${USER_ID}`,
-      JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
-    )
-    await renderShell({
-      session: makeSession(),
-      progressArgs: {
-        persona: 'operator',
-        currentStep: 'done',
-        spawnedClassIds: ['c1'],
-        classesDraft: [
-          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
-        ],
-      },
-    })
-    // Wait for the persona body to commit — asserting `.not.toBeInTheDocument()`
-    // BEFORE the dashboard has hydrated would pass because the card hasn't
-    // rendered yet, not because snooze suppressed it.
-    await screen.findByTestId('dashboard-sample-preview')
-    expect(
-      screen.queryByTestId('dashboard-checklist-card'),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByTestId('dashboard-finish-setup-banner'),
-    ).not.toBeInTheDocument()
-  })
-
-  test('Cell 6a Operator: currentStep=done + persona=operator + not snoozed → card + sample preview + YourClassesRow', async () => {
-    await renderShell({
-      session: makeSession(),
-      progressArgs: {
-        persona: 'operator',
-        currentStep: 'done',
-        spawnedClassIds: ['c1'],
-        classesDraft: [
-          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
-        ],
-      },
-    })
-    expect(
-      await screen.findByTestId('dashboard-checklist-card'),
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-sample-preview')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-your-classes-row')).toBeInTheDocument()
-    expect(
-      screen.queryByTestId('dashboard-first-ai-grade-card'),
-    ).not.toBeInTheDocument()
-  })
-
-  test('Cell 6b Founder: currentStep=done + persona=founder + not snoozed → card + AI grade + YourClassesRow', async () => {
-    await renderShell({
-      session: makeSession(),
-      progressArgs: {
-        persona: 'founder',
-        currentStep: 'done',
-        spawnedClassIds: ['c1'],
-        classesDraft: [
-          { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: null },
-        ],
-      },
-    })
-    expect(
-      await screen.findByTestId('dashboard-checklist-card'),
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-first-ai-grade-card')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-your-classes-row')).toBeInTheDocument()
-    expect(
-      screen.queryByTestId('dashboard-sample-preview'),
-    ).not.toBeInTheDocument()
-  })
-
-  test('Cell 6c Solo Teacher: currentStep=done + persona=solo_teacher → card (4 items) + AI grade + YourClassesRow', async () => {
-    await renderShell({
-      session: makeSession(),
-      progressArgs: {
-        persona: 'solo_teacher',
-        currentStep: 'done',
-        spawnedClassIds: ['c1'],
-        classesDraft: [
-          { cohortName: 'My first class', startDate: '2026-08-15', teacherEmail: USER_EMAIL },
-        ],
-      },
-    })
-    const card = await screen.findByTestId('dashboard-checklist-card')
-    expect(card).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-first-ai-grade-card')).toBeInTheDocument()
-    // Solo Teacher checklist = 4 items (scoped within the checklist card so
-    // the AI-grade card's criterion <li>s and YourClassesRow's card <li>s
-    // don't inflate the count).
-    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
-  })
+  // Story 8-1b (D2): the old Cells 5 & 6a/6b/6c asserted the Epic-2
+  // persona-preview bodies (SampleDashboardPreview / FirstAIGradeCard /
+  // YourClassesRow / FinishSetupCard) on currentStep='done'. Per the D2 ruling
+  // ("the real dashboard with UX-1 empty states, not the ghost preview"),
+  // onboarding-complete now renders the real s06 dashboard instead. That
+  // behavior is covered by TeacherDashboard.realDashboard.test.tsx; the persona
+  // body components remain in the repo with their own isolated stories/tests.
 
   test('Cell 7: progress.isError + session.center=null → banner (progressUnknownNoCenter); no card', async () => {
     // Explicitly seed a 500 handler so `useOnboardingProgress.isError` is
@@ -507,22 +434,11 @@ describe('TeacherDashboard — AC1 loading/error/state matrix (12-cell mutex)', 
 // AC12 3-way mutex assertion
 // ---------------------------------------------------------------------------
 describe('TeacherDashboard — AC12 3-way mutex', () => {
-  test('WelcomeBackBanner XOR FinishSetupCard — card present → banner absent', async () => {
-    await renderShell({
-      session: makeSession(),
-      progressArgs: {
-        persona: 'operator',
-        currentStep: 'done',
-        spawnedClassIds: ['c1'],
-      },
-    })
-    await screen.findByTestId('dashboard-checklist-card')
-    expect(
-      screen.queryByTestId('dashboard-finish-setup-banner'),
-    ).not.toBeInTheDocument()
-  })
-
-  test('WelcomeBackBanner XOR FinishSetupCard — banner present → card absent', async () => {
+  // Story 8-1b (D2): the done-state persona-body mutex assertions
+  // (card-present→banner-absent, FirstAIGradeCard XOR SampleDashboardPreview)
+  // are retired with the ghost preview. The onboarding-INCOMPLETE mutex
+  // (banner shows → checklist card absent) is preserved.
+  test('WelcomeBackBanner shown → FinishSetupCard (checklist card) absent', async () => {
     await renderShell({
       session: makeSession(),
       progressArgs: { persona: 'operator', currentStep: 'template' },
@@ -532,8 +448,17 @@ describe('TeacherDashboard — AC12 3-way mutex', () => {
       screen.queryByTestId('dashboard-checklist-card'),
     ).not.toBeInTheDocument()
   })
+})
 
-  test('FirstAIGradeCard XOR SampleDashboardPreview (persona-branch)', async () => {
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Story 8-1b (D2 + Ducdo 2026-09-16) — onboarding-COMPLETE renders the real s06
+// dashboard AND keeps the finish-setup checklist as a SECONDARY strip (rather
+// than the ghost preview, and rather than dropping the checklist entirely).
+// ---------------------------------------------------------------------------
+describe('TeacherDashboard — onboarding-complete: real dashboard + finish-setup strip', () => {
+  test('done + persona + not snoozed → real week-strip AND the checklist strip coexist', async () => {
+    server.use(...teacherHandlers)
     await renderShell({
       session: makeSession(),
       progressArgs: {
@@ -545,62 +470,47 @@ describe('TeacherDashboard — AC12 3-way mutex', () => {
         ],
       },
     })
-    expect(
-      await screen.findByTestId('dashboard-sample-preview'),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByTestId('dashboard-first-ai-grade-card'),
-    ).not.toBeInTheDocument()
+    // Primary: the real dashboard.
+    expect(await screen.findByTestId('dashboard-week-strip')).toBeInTheDocument()
+    expect(screen.getByTestId('rail-needs-grading')).toBeInTheDocument()
+    // Secondary strip: the finish-setup checklist coexists (not the ghost preview).
+    expect(await screen.findByTestId('dashboard-checklist-card')).toBeInTheDocument()
+    // The ghost-preview persona-value cards are NOT rendered.
+    expect(screen.queryByTestId('dashboard-sample-preview')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-first-ai-grade-card')).not.toBeInTheDocument()
+  })
+
+  test('done + snoozed → real dashboard renders, checklist strip suppressed', async () => {
+    window.localStorage.setItem(
+      `classlite_finish_setup_v1_${USER_ID}`,
+      JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
+    )
+    server.use(...teacherHandlers)
+    await renderShell({
+      session: makeSession(),
+      progressArgs: { persona: 'operator', currentStep: 'done', spawnedClassIds: ['c1'] },
+    })
+    await screen.findByTestId('dashboard-week-strip')
+    expect(screen.queryByTestId('dashboard-checklist-card')).not.toBeInTheDocument()
   })
 })
 
+// AC16 axe — the onboarding-INCOMPLETE shell (Story 8-1b: the done-state
+// persona-body axe matrix moved to the real-dashboard suites: OwnerDashboard /
+// StudentDashboard have axe, and RealTeacherDashboard renders over the same
+// primitives). This preserves accessibility coverage on the shell this file
+// still owns, across both co-primary locales (UX-2).
 // ---------------------------------------------------------------------------
-// AC16 axe matrix — 9 renders (3 personas × 2 locales at cell 6 + 3 snoozed)
-// ---------------------------------------------------------------------------
-describe('TeacherDashboard — AC16 axe zero-violations matrix', () => {
-  const PERSONAS: Persona[] = ['operator', 'founder', 'solo_teacher']
+describe('TeacherDashboard — AC16 axe (onboarding-incomplete shell)', () => {
   const LOCALES: Array<'en' | 'vi'> = ['en', 'vi']
 
-  test.each(PERSONAS.flatMap((persona) => LOCALES.map((locale) => [persona, locale] as const)))(
-    'cell 6 axe (%s × %s) — zero violations',
-    async (persona, locale) => {
-      const { container } = await renderShell({
-        session: makeSession(),
-        progressArgs: {
-          persona,
-          currentStep: 'done',
-          spawnedClassIds: ['c1'],
-          classesDraft: [
-            { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: 'bob@example.com' },
-          ],
-        },
-        locale,
-      })
-      await screen.findByTestId('dashboard-checklist-card')
-      expect(await axe(container)).toHaveNoViolations()
-    },
-  )
-
-  test.each(PERSONAS)(
-    'cell 5 axe (%s snoozed) — zero violations on shell + persona-value card + Your Classes',
-    async (persona) => {
-      window.localStorage.setItem(
-        `classlite_finish_setup_v1_${USER_ID}`,
-        JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
-      )
-      const { container } = await renderShell({
-        session: makeSession(),
-        progressArgs: {
-          persona,
-          currentStep: 'done',
-          spawnedClassIds: ['c1'],
-          classesDraft: [
-            { cohortName: 'Batch A', startDate: '2026-08-15', teacherEmail: null },
-          ],
-        },
-      })
-      await screen.findByTestId('dashboard-your-classes-row')
-      expect(await axe(container)).toHaveNoViolations()
-    },
-  )
+  test.each(LOCALES)('incomplete shell axe (%s) — zero violations', async (locale) => {
+    const { container } = await renderShell({
+      session: makeSession({ center: null }),
+      progressArgs: { persona: 'operator', currentStep: 'template' },
+      locale,
+    })
+    await screen.findByTestId('dashboard-finish-setup-banner')
+    expect(await axe(container)).toHaveNoViolations()
+  })
 })

@@ -22,21 +22,21 @@
 //
 // GREEN SEAMS (dev — Task 5 + Task 3):
 //
-//   internal/test/query_counter.go  (the reusable keystone — 8.2/8.4 import it):
-//     type CountingDBTX struct { ... }
-//     func NewCountingDBTX(inner <the db-interface DashboardService takes>) *CountingDBTX
-//        — `inner` is whatever *TxDB / *pgxpool.Pool satisfy AND NewDashboardService
-//          accepts; the counter must satisfy the SAME interface so it can stand in.
-//     func (c *CountingDBTX) Begin(ctx) (pgx.Tx, error)
-//        — returns a pgx.Tx wrapper; each Exec/Query/QueryRow on it increments the
-//          counter UNLESS the SQL is tx plumbing (BEGIN/SAVEPOINT/SET LOCAL/RELEASE/
-//          COMMIT/ROLLBACK) — filter by prefix, or bake the +1 SET LOCAL offset.
-//     func (c *CountingDBTX) Count() int   // business queries since last Reset
-//     func (c *CountingDBTX) Reset()
+//	internal/test/query_counter.go  (the reusable keystone — 8.2/8.4 import it):
+//	  type CountingDBTX struct { ... }
+//	  func NewCountingDBTX(inner <the db-interface DashboardService takes>) *CountingDBTX
+//	     — `inner` is whatever *TxDB / *pgxpool.Pool satisfy AND NewDashboardService
+//	       accepts; the counter must satisfy the SAME interface so it can stand in.
+//	  func (c *CountingDBTX) Begin(ctx) (pgx.Tx, error)
+//	     — returns a pgx.Tx wrapper; each Exec/Query/QueryRow on it increments the
+//	       counter UNLESS the SQL is tx plumbing (BEGIN/SAVEPOINT/SET LOCAL/RELEASE/
+//	       COMMIT/ROLLBACK) — filter by prefix, or bake the +1 SET LOCAL offset.
+//	  func (c *CountingDBTX) Count() int   // business queries since last Reset
+//	  func (c *CountingDBTX) Reset()
 //
-//   internal/service/dashboard_service.go:
-//     func NewDashboardService(db <interface>, clk clock.Clock) *DashboardService
-//     func (s *DashboardService) GetDashboard(ctx context.Context, tc model.TenantContext) (*<DashboardData>, error)
+//	internal/service/dashboard_service.go:
+//	  func NewDashboardService(db <interface>, clk clock.Clock) *DashboardService
+//	  func (s *DashboardService) GetDashboard(ctx context.Context, tc model.TenantContext) (*<DashboardData>, error)
 //
 // Evidence artifact (dev, green): evidence/query-count.json (P0, per D7).
 package test
@@ -53,8 +53,17 @@ import (
 // Per-role query ceilings. N = 1 (SET LOCAL) + k sqlc calls. These are UPPER
 // bounds asserting O(1)-in-rows; the dev tunes k to the exact composed query set
 // in green (CQ-3 named consts — the single source of truth the assertion reads).
+//
+// 8-1b D13 co-finalize added gap-field queries — every addition is a SET-BASED
+// batch (O(1)-in-rows), NOT an N+1:
+//
+//	teacher 8→9: +ListClassNamesByIDs (question-rail className) +ListAtRiskPendingCounts (measured 9).
+//	owner unchanged at 13: +ListAtRiskPendingCounts +CountOverCapacityClasses
+//	  +ListOverCapacityClasses lifted measured 9→12, still within the existing ceiling.
+//	student unchanged at 8: due-item classId/className folded into the existing
+//	  ListStudentDueSoon join (0 extra queries; measured 5).
 const (
-	maxDashboardQueriesTeacher = 8
+	maxDashboardQueriesTeacher = 9
 	maxDashboardQueriesOwner   = 13
 	maxDashboardQueriesStudent = 8
 )

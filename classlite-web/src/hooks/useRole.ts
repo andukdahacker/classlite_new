@@ -32,7 +32,13 @@ import {
   getBootProbeInFlight,
   subscribeBootProbe,
 } from '@/lib/auth-refresh'
-import { authKeys, type Role, type Session } from '@/features/auth/api/authKeys'
+import {
+  authKeys,
+  type CenterSummary,
+  type Role,
+  type Session,
+  type UserSummary,
+} from '@/features/auth/api/authKeys'
 
 // Re-export so shipped call sites `import type { Role } from '@/hooks/useRole'`
 // keep working without a rename sweep.
@@ -70,6 +76,23 @@ function useSessionCacheEntry(): Session | null {
     getSessionCacheSnapshot,
     getSessionCacheServerSnapshot,
   )
+}
+
+/**
+ * useSessionUser / useSessionCenter — the session's user + center read from the
+ * module-singleton cache, mirroring `useRole` (Story 8-1b). The role dashboards
+ * are mounted by `DashboardRoute` under the app's singleton `QueryClientProvider`
+ * (so context === singleton in production); reading the singleton here keeps the
+ * session-derived data (role · user · center) resolved from ONE source, and lets
+ * the singleton-seeded component-test harness (StaffListPage precedent) drive
+ * them without a second `<QueryClientProvider>` seeding.
+ */
+export function useSessionUser(): UserSummary | null {
+  return useSessionCacheEntry()?.user ?? null
+}
+
+export function useSessionCenter(): CenterSummary | null {
+  return useSessionCacheEntry()?.center ?? null
 }
 
 export function useRole(): Role | null {
