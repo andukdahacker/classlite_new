@@ -2702,6 +2702,93 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 8.2a — Analytics (backend) ----------------
+  # PROVISIONAL contract (D9) — Story 8-2b strips the marker at its create-story/dev,
+  # exactly as 8-1b co-finalized the dashboard D13. Two role-scoped read endpoints on
+  # the SAME ungated dashboardChain (no RequireRole); role/scope enforced IN the
+  # service (D4/D6/D7): teacher = own classes; owner|admin = center-wide; student =
+  # 403 at the home, 404 (non-disclosure) at the class endpoint.
+  /api/analytics:
+    get:
+      operationId: getAnalyticsHome
+      summary: Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47) [PROVISIONAL]
+      description: |
+        Returns an `AnalyticsHome`: the caller's `role` plus the list of classes the
+        caller may analyze, each with mini-stats (studentCount, avgBand, atRiskCount,
+        onTimeRate). Teacher = own classes only (`classes.teacher_id = caller`);
+        owner|admin = all center classes. A STUDENT is refused here with
+        403 `INSUFFICIENT_ROLE` (D4 — students have no analytics home; the FE
+        redirects them to /my-performance, Story 8.3). Bounded, set-based aggregates
+        in one transaction, no N+1 (PERF-2). Ungated chain (no pure role gate).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's role-scoped analytics home.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAnalyticsHome'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (student — D4) or CENTER_CONTEXT_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/analytics/classes/{id}:
+    get:
+      operationId: getAnalyticsClassPerformance
+      summary: Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48) [PROVISIONAL]
+      description: |
+        Returns a `ClassPerformance` for one class: cohort band-over-time (dense,
+        contiguous, center-tz Monday weeks), a Writing-criteria × week heatmap matrix
+        (numeric bands, empty cell = null, NEVER 0), repetitive-mistake patterns mined
+        from released `grades.comments` (Writing + Speaking; auto-graded excluded and
+        LABELED), the at-risk student list, and the class on-time submission rate — all
+        as bounded SQL aggregates from existing tables in one transaction, no N+1
+        (PERF-2). Access is gated at the endpoint (D4): a teacher who does not teach the
+        class, and a student, both get 404 `CLASS_NOT_FOUND` (non-disclosure — never
+        403, never leaking existence); owner|admin see any center class.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: The class id.
+      responses:
+        "200":
+          description: The class-performance payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeClassPerformance'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: CLASS_NOT_FOUND (not found, not owned by a teacher caller, or a student caller — non-disclosure, D4)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (id is not a valid UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ---------------- Story 7.4a — Anchored Q&A ----------------
   # Read shapes (Question, QuestionReply, QuestionThread) were co-finalized by 7-4b
   # (enriched with denormalized display name + avatar via LEFT JOIN users, D5).
@@ -7056,6 +7143,151 @@ components:
         dueSoon: { type: array, items: { $ref: '#/components/schemas/DashboardDueItem' } }
         recentFeedback: { type: array, items: { $ref: '#/components/schemas/DashboardFeedbackItem' } }
         myQuestions: { type: array, items: { $ref: '#/components/schemas/DashboardQuestionThreadLite' } }
+
+    # ---------------- Story 8.2a — Analytics (PROVISIONAL, D9; 8-2b co-finalizes) ----------------
+    # GO-5 explicit nulls: every nullable field is `nullable: true` (a pointer in Go)
+    # so the wire always carries `null`, never omits — the FE colours null vs 0
+    # differently (heatmap empty cell, on-time rate at totalDue=0). Fields most likely
+    # to churn at 8-2b co-finalize: heatmap cell shape, mistake-pattern trend enum,
+    # home mini-stat set.
+    EnvelopeAnalyticsHome:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AnalyticsHome'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    EnvelopeClassPerformance:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ClassPerformance'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    AnalyticsHome:
+      type: object
+      required: [role, classes]
+      properties:
+        role:
+          type: string
+          enum: [teacher, admin, owner]
+          description: The caller's DB-resolved role (SEC-1). A student never reaches this shape (403 INSUFFICIENT_ROLE, D4).
+        classes:
+          type: array
+          items: { $ref: '#/components/schemas/AnalyticsClassSummary' }
+    AnalyticsClassSummary:
+      type: object
+      required: [classId, className, studentCount, avgBand, atRiskCount, onTimeRate]
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        studentCount: { type: integer, description: Active (non-withdrawn) enrollments in the class. }
+        avgBand: { type: number, format: float, nullable: true, description: Cohort avg of released current_grades overall_band; null when the class has no released grades. }
+        atRiskCount: { type: integer, description: Students classified at_risk (AtRiskDetector, D5) within the documented scan scope. }
+        onTimeRate: { type: number, format: float, nullable: true, description: on-time / total-due over active-enrolled students; null when total-due is 0 (division guard). }
+    ClassPerformance:
+      type: object
+      required:
+        [classId, className, targetBand, cohortAvgBand, cohortAvgDelta, onTimeSubmissionRate,
+         atRiskCount, hasWritingContent, bandOverTime, skillHeatmap, mistakePatterns,
+         atRiskStudents, submissionRate]
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        targetBand: { type: number, format: float, nullable: true, description: classes.target_band; null when the class carries no target. }
+        cohortAvgBand: { type: number, format: float, nullable: true, description: Cohort avg band over the analytics window (submission-count-weighted); null when there are no released grades in range. }
+        cohortAvgDelta: { type: number, format: float, nullable: true, description: cohortAvgBand − the avg of the first non-empty week in range (DR-C); null when there is no baseline week. }
+        onTimeSubmissionRate: { type: number, format: float, nullable: true, description: Class-wide on-time / total-due; null when total-due is 0. }
+        atRiskCount: { type: integer }
+        hasWritingContent:
+          type: boolean
+          description: True when the class has any Writing assignment (DR-D) — distinguishes "Writing class, no grades yet" (empty heatmap) from "no Writing content" (a Speaking/Reading class).
+        bandOverTime:
+          type: array
+          items: { $ref: '#/components/schemas/BandOverTimePoint' }
+          description: DENSE, contiguous Monday-anchored (center tz) weekly cohort band; the weekStart set is IDENTICAL to skillHeatmap.weeks (D15b).
+        skillHeatmap: { $ref: '#/components/schemas/SkillHeatmap' }
+        mistakePatterns: { $ref: '#/components/schemas/MistakePatterns' }
+        atRiskStudents:
+          type: array
+          items: { $ref: '#/components/schemas/AnalyticsAtRiskItem' }
+        submissionRate: { $ref: '#/components/schemas/SubmissionRate' }
+    BandOverTimePoint:
+      type: object
+      required: [weekStart, avgBand, submissionCount]
+      properties:
+        weekStart: { type: string, format: date, description: Monday-anchored week start (center tz), YYYY-MM-DD. }
+        avgBand: { type: number, format: float, nullable: true, description: Cohort avg overall_band that week; null on an empty week (D15a — never 0). }
+        submissionCount: { type: integer, description: Released grades contributing to this week (0 on an empty week). }
+    SkillHeatmap:
+      type: object
+      required: [criteria, weeks, cells]
+      properties:
+        criteria:
+          type: array
+          items: { type: string }
+          description: The four Writing criteria (D2) — taskResponse, coherenceCohesion, lexicalResource, grammaticalRange.
+        weeks:
+          type: array
+          items: { type: string, format: date }
+          description: The SAME dense Monday-anchored week axis as bandOverTime (D15b).
+        cells:
+          type: array
+          items: { $ref: '#/components/schemas/SkillHeatmapCell' }
+          description: One cell per (criterion, week). NO colour in the payload — 8-2b chooses the colour model and MUST label every cell with the numeric band (WCAG 1.4.1).
+    SkillHeatmapCell:
+      type: object
+      required: [criterion, weekStart, avgBand, sampleCount]
+      properties:
+        criterion: { type: string }
+        weekStart: { type: string, format: date }
+        avgBand: { type: number, format: float, nullable: true, description: Type-guarded avg of the criterion band over released Writing grades that week; null on an empty/invalid cell (D13/D15a — never 0). }
+        sampleCount: { type: integer, description: Numeric-valued survivors contributing to this cell (0 on an empty cell). }
+    MistakePatterns:
+      type: object
+      required: [coveredSources, excludedSources, patterns]
+      properties:
+        coveredSources:
+          type: array
+          items: { type: string }
+          description: The mined sources (D16) — ["writing","speaking"] (released grades.comments).
+        excludedSources:
+          type: array
+          items: { type: string }
+          description: Sources NOT mined in v1 (D16) — ["auto_graded"] (FU-8-2-A); the FE renders "not yet available", never a blank that reads as "no problems".
+        patterns:
+          type: array
+          items: { $ref: '#/components/schemas/MistakePattern' }
+    MistakePattern:
+      type: object
+      required: [skillSource, criterion, type, instanceCount, affectedStudentCount, trend]
+      properties:
+        skillSource: { type: string, enum: [writing, speaking] }
+        criterion: { type: string }
+        type: { type: string, enum: [error, praise, suggestion] }
+        instanceCount: { type: integer, description: count(*) over unnested released comments (student identity from submissions.student_id, D14). }
+        affectedStudentCount: { type: integer, description: Distinct students (submissions.student_id) — a pattern surfaces only when >= 2 (DR-A). }
+        trend: { type: string, enum: [improving, worsening, stable], description: recent-4wk vs prior-4wk instance count (DR-B, clock-injected). }
+    AnalyticsAtRiskItem:
+      type: object
+      required: [studentId, name, attendanceRate, overallBand, reasons]
+      properties:
+        studentId: { type: string, format: uuid }
+        name: { type: string }
+        attendanceRate: { type: number, format: float, nullable: true }
+        overallBand: { type: number, format: float, nullable: true }
+        reasons:
+          type: array
+          items: { type: string, enum: [attendance_below_floor, consecutive_missed, band_drop] }
+    SubmissionRate:
+      type: object
+      required: [onTimeCount, totalDue, rate]
+      properties:
+        onTimeCount: { type: integer, description: Submitted AND submitted_at <= deadline_at (STRICT). }
+        totalDue: { type: integer, description: Assignments due to currently active-enrolled students. }
+        rate: { type: number, format: float, nullable: true, description: onTimeCount / totalDue; null when totalDue is 0 (division guard — never 0, never NaN). }
 
     # ---------------- Request bodies ----------------
     RegisterRequest:

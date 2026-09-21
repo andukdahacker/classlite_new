@@ -1005,3 +1005,8 @@ Implementation-note follow-ups (thinner-coverage areas to revisit at epic TEA / 
 - atRiskStudents[].pendingCount omitted (AC4/AC7) — deferred to 8-1b co-finalize per D12 (not cheaply derivable from ListStudents without an N+1). [Ducdo 2026-09-13]
 - className omitted on teacher unansweredQuestions (AC4) + student dueSoon (AC9) — deferred to 8-1b co-finalize per D12 (needs a classes JOIN). [Ducdo 2026-09-13]
 - dueSoon[].type (distinct exercise type) not surfaced (AC9) — deferred to 8-1b co-finalize per D12. [Ducdo 2026-09-13]
+
+## Deferred from: code review of 8-2a-analytics-home-and-class-performance-backend (2026-09-21)
+
+- **Duplicated LATERAL at-risk SQL blocks** [analytics.sql:109-154, 286-331] — the att/miss/ob/bands LATERAL subqueries are copy-pasted between `ListAnalyticsHomeAtRiskInputs` and `ListClassStudentsAtRiskInputs`. sqlc has no query-fragment reuse, so any future correctness fix to the at-risk input columns must be applied in both places or the two computations silently diverge.
+- **Home class list silently truncates at 200 with no hasMore/total** [analytics.sql:89; analytics_service.go:240 `AnalyticsHomeClassCap`] — a center with >200 classes drops the overflow from the analytics home with no indicator. Spec-sanctioned cap (D10); revisit alongside 8-2b pagination.

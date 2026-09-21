@@ -1038,6 +1038,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47) [PROVISIONAL]
+         * @description Returns an `AnalyticsHome`: the caller's `role` plus the list of classes the
+         *     caller may analyze, each with mini-stats (studentCount, avgBand, atRiskCount,
+         *     onTimeRate). Teacher = own classes only (`classes.teacher_id = caller`);
+         *     owner|admin = all center classes. A STUDENT is refused here with
+         *     403 `INSUFFICIENT_ROLE` (D4 — students have no analytics home; the FE
+         *     redirects them to /my-performance, Story 8.3). Bounded, set-based aggregates
+         *     in one transaction, no N+1 (PERF-2). Ungated chain (no pure role gate).
+         */
+        get: operations["getAnalyticsHome"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/classes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48) [PROVISIONAL]
+         * @description Returns a `ClassPerformance` for one class: cohort band-over-time (dense,
+         *     contiguous, center-tz Monday weeks), a Writing-criteria × week heatmap matrix
+         *     (numeric bands, empty cell = null, NEVER 0), repetitive-mistake patterns mined
+         *     from released `grades.comments` (Writing + Speaking; auto-graded excluded and
+         *     LABELED), the at-risk student list, and the class on-time submission rate — all
+         *     as bounded SQL aggregates from existing tables in one transaction, no N+1
+         *     (PERF-2). Access is gated at the endpoint (D4): a teacher who does not teach the
+         *     class, and a student, both get 404 `CLASS_NOT_FOUND` (non-disclosure — never
+         *     403, never leaking existence); owner|admin see any center class.
+         */
+        get: operations["getAnalyticsClassPerformance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -2457,6 +2511,153 @@ export interface components {
             dueSoon: components["schemas"]["DashboardDueItem"][];
             recentFeedback: components["schemas"]["DashboardFeedbackItem"][];
             myQuestions: components["schemas"]["DashboardQuestionThreadLite"][];
+        };
+        EnvelopeAnalyticsHome: {
+            data: components["schemas"]["AnalyticsHome"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeClassPerformance: {
+            data: components["schemas"]["ClassPerformance"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        AnalyticsHome: {
+            /**
+             * @description The caller's DB-resolved role (SEC-1). A student never reaches this shape (403 INSUFFICIENT_ROLE, D4).
+             * @enum {string}
+             */
+            role: "teacher" | "admin" | "owner";
+            classes: components["schemas"]["AnalyticsClassSummary"][];
+        };
+        AnalyticsClassSummary: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            /** @description Active (non-withdrawn) enrollments in the class. */
+            studentCount: number;
+            /**
+             * Format: float
+             * @description Cohort avg of released current_grades overall_band; null when the class has no released grades.
+             */
+            avgBand: number | null;
+            /** @description Students classified at_risk (AtRiskDetector */
+            atRiskCount: number;
+            /**
+             * Format: float
+             * @description on-time / total-due over active-enrolled students; null when total-due is 0 (division guard).
+             */
+            onTimeRate: number | null;
+        };
+        ClassPerformance: {
+            /** Format: uuid */
+            classId: string;
+            className: string;
+            /**
+             * Format: float
+             * @description classes.target_band; null when the class carries no target.
+             */
+            targetBand: number | null;
+            /**
+             * Format: float
+             * @description Cohort avg band over the analytics window (submission-count-weighted); null when there are no released grades in range.
+             */
+            cohortAvgBand: number | null;
+            /**
+             * Format: float
+             * @description cohortAvgBand − the avg of the first non-empty week in range (DR-C); null when there is no baseline week.
+             */
+            cohortAvgDelta: number | null;
+            /**
+             * Format: float
+             * @description Class-wide on-time / total-due; null when total-due is 0.
+             */
+            onTimeSubmissionRate: number | null;
+            atRiskCount: number;
+            /** @description True when the class has any Writing assignment (DR-D) — distinguishes "Writing class, no grades yet" (empty heatmap) from "no Writing content" (a Speaking/Reading class). */
+            hasWritingContent: boolean;
+            /** @description DENSE, contiguous Monday-anchored (center tz) weekly cohort band; the weekStart set is IDENTICAL to skillHeatmap.weeks (D15b). */
+            bandOverTime: components["schemas"]["BandOverTimePoint"][];
+            skillHeatmap: components["schemas"]["SkillHeatmap"];
+            mistakePatterns: components["schemas"]["MistakePatterns"];
+            atRiskStudents: components["schemas"]["AnalyticsAtRiskItem"][];
+            submissionRate: components["schemas"]["SubmissionRate"];
+        };
+        BandOverTimePoint: {
+            /**
+             * Format: date
+             * @description Monday-anchored week start (center tz)
+             */
+            weekStart: string;
+            /**
+             * Format: float
+             * @description Cohort avg overall_band that week; null on an empty week (D15a — never 0).
+             */
+            avgBand: number | null;
+            /** @description Released grades contributing to this week (0 on an empty week). */
+            submissionCount: number;
+        };
+        SkillHeatmap: {
+            /** @description The four Writing criteria (D2) — taskResponse, coherenceCohesion, lexicalResource, grammaticalRange. */
+            criteria: string[];
+            /** @description The SAME dense Monday-anchored week axis as bandOverTime (D15b). */
+            weeks: string[];
+            /** @description One cell per (criterion, week). NO colour in the payload — 8-2b chooses the colour model and MUST label every cell with the numeric band (WCAG 1.4.1). */
+            cells: components["schemas"]["SkillHeatmapCell"][];
+        };
+        SkillHeatmapCell: {
+            criterion: string;
+            /** Format: date */
+            weekStart: string;
+            /**
+             * Format: float
+             * @description Type-guarded avg of the criterion band over released Writing grades that week; null on an empty/invalid cell (D13/D15a — never 0).
+             */
+            avgBand: number | null;
+            /** @description Numeric-valued survivors contributing to this cell (0 on an empty cell). */
+            sampleCount: number;
+        };
+        MistakePatterns: {
+            /** @description The mined sources (D16) — ["writing","speaking"] (released grades.comments). */
+            coveredSources: string[];
+            /** @description Sources NOT mined in v1 (D16) — ["auto_graded"] (FU-8-2-A); the FE renders "not yet available", never a blank that reads as "no problems". */
+            excludedSources: string[];
+            patterns: components["schemas"]["MistakePattern"][];
+        };
+        MistakePattern: {
+            /** @enum {string} */
+            skillSource: "writing" | "speaking";
+            criterion: string;
+            /** @enum {string} */
+            type: "error" | "praise" | "suggestion";
+            /** @description count(*) over unnested released comments (student identity from submissions.student_id */
+            instanceCount: number;
+            /** @description Distinct students (submissions.student_id) — a pattern surfaces only when >= 2 (DR-A). */
+            affectedStudentCount: number;
+            /**
+             * @description recent-4wk vs prior-4wk instance count (DR-B
+             * @enum {string}
+             */
+            trend: "improving" | "worsening" | "stable";
+        };
+        AnalyticsAtRiskItem: {
+            /** Format: uuid */
+            studentId: string;
+            name: string;
+            /** Format: float */
+            attendanceRate: number | null;
+            /** Format: float */
+            overallBand: number | null;
+            reasons: ("attendance_below_floor" | "consecutive_missed" | "band_drop")[];
+        };
+        SubmissionRate: {
+            /** @description Submitted AND submitted_at <= deadline_at (STRICT). */
+            onTimeCount: number;
+            /** @description Assignments due to currently active-enrolled students. */
+            totalDue: number;
+            /**
+             * Format: float
+             * @description onTimeCount / totalDue; null when totalDue is 0 (division guard — never 0
+             */
+            rate: number | null;
         };
         RegisterRequest: {
             /** Format: email */
@@ -7958,6 +8159,94 @@ export interface operations {
             };
             /** @description CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getAnalyticsHome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's role-scoped analytics home. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeAnalyticsHome"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (student — D4) or CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getAnalyticsClassPerformance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The class id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The class-performance payload. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeClassPerformance"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CLASS_NOT_FOUND (not found, not owned by a teacher caller, or a student caller — non-disclosure, D4) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (id is not a valid UUID) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

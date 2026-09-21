@@ -1,0 +1,65 @@
+{
+  "story": "8-2a",
+  "note": "Business queries per invocation on the tx the AnalyticsService runs (SET LOCAL + BEGIN/SAVEPOINT/RELEASE/COMMIT filtered by the reused 8-1a CountingDBTX). Counting boundary = the tx the service runs on, NOT the pool (W1). SIZE-INVARIANT: count(cohort=small) == count(cohort=large) — proven O(1)-in-rows, with 3 synthetic-N+1 counter proofs (per-student at-risk / per-week heatmap / per-grade comment) in TestAnalyticsClass_QueryCount_DetectsSyntheticNPlus1_ATDD. Ceilings are TIGHT (the exact composed set) so any future per-row fan-out trips the gate.",
+  "endpoints": {
+    "GET /api/analytics": {
+      "perRole": {
+        "teacher": {
+          "measured": 2,
+          "ceiling": 2,
+          "itemized": [
+            "ListAnalyticsHomeClasses",
+            "ListAnalyticsHomeAtRiskInputs"
+          ]
+        },
+        "owner": {
+          "measured": 2,
+          "ceiling": 2,
+          "itemized": [
+            "ListAnalyticsHomeClasses",
+            "ListAnalyticsHomeAtRiskInputs"
+          ]
+        },
+        "admin": {
+          "measured": 2,
+          "ceiling": 2,
+          "note": "admin uses the same center-wide (NULL teacher_id) scope as owner"
+        },
+        "student": {
+          "measured": 0,
+          "note": "403 INSUFFICIENT_ROLE before any DB touch (D4)"
+        }
+      }
+    },
+    "GET /api/analytics/classes/{id}": {
+      "perRole": {
+        "teacher": {
+          "measured": 7,
+          "ceiling": 7,
+          "itemized": [
+            "GetClassForAnalytics",
+            "GetCenterTimezone",
+            "ListClassBandOverTime",
+            "ListClassSkillHeatmap",
+            "ListClassMistakePatterns",
+            "GetClassSubmissionRate",
+            "ListClassStudentsAtRiskInputs"
+          ]
+        },
+        "owner": {
+          "measured": 7,
+          "ceiling": 7,
+          "note": "identical composed set; access gated at the endpoint, not by shape"
+        },
+        "admin": {
+          "measured": 7,
+          "ceiling": 7
+        },
+        "student": {
+          "measured": 0,
+          "note": "404 CLASS_NOT_FOUND (non-disclosure) before any DB touch (D4)"
+        }
+      }
+    }
+  }
+}

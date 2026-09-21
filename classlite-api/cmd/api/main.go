@@ -672,6 +672,16 @@ func main() {
 	}
 	mux.Handle("GET /api/dashboard", dashboardChain(dashboardHandler.Get))
 
+	// Story 8.2a — Analytics (backend). Two role-scoped read endpoints on the SAME
+	// ungated dashboardChain shape (no RequireRole — D6a): role/scope is enforced IN
+	// the service (D4) — teacher = own classes, owner|admin = center-wide, student =
+	// 403 at the home / 404 (non-disclosure) at the class endpoint. Reads only, one
+	// tx, no cache; the SECOND consumer of the 8-1a R31/PERF-2 harness.
+	analyticsSvc := service.NewAnalyticsService(pool, clock.RealClock{})
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsSvc, clock.RealClock{})
+	mux.Handle("GET /api/analytics", dashboardChain(analyticsHandler.Home))
+	mux.Handle("GET /api/analytics/classes/{id}", dashboardChain(analyticsHandler.GetClass))
+
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): List is
 	// role-scoped (owner/admin = all center exercises; teacher = own only); the
