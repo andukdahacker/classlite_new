@@ -15,12 +15,14 @@ import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { AnalyticsHomeShell } from './AnalyticsHomeShell'
 
+// Literal class names (user data) — ScopeBar renders `label` verbatim, never
+// through i18n, so a name with a ':' or '.' cannot be mangled.
 const CLASS_OPTIONS = [
-  { id: 'cls-65a', nameKey: 'analyticsHome.classOption.ielts65SecA' },
-  { id: 'cls-65b', nameKey: 'analyticsHome.classOption.ielts65SecB' },
-  { id: 'cls-70a', nameKey: 'analyticsHome.classOption.ielts70SecA' },
-  { id: 'cls-70b', nameKey: 'analyticsHome.classOption.ielts70SecB' },
-  { id: 'cls-60c', nameKey: 'analyticsHome.classOption.ielts60SecC' },
+  { id: 'cls-65a', label: 'IELTS 6.5 — Section A' },
+  { id: 'cls-65b', label: 'IELTS 6.5 — Section B' },
+  { id: 'cls-70a', label: 'IELTS 7.0 — Section A' },
+  { id: 'cls-70b', label: 'IELTS 7.0 — Section B' },
+  { id: 'cls-60c', label: 'IELTS 6.0 — Section C' },
 ] as const
 
 const DEFAULT_RANGE = {

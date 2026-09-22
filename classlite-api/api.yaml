@@ -2703,15 +2703,14 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
   # ---------------- Story 8.2a — Analytics (backend) ----------------
-  # PROVISIONAL contract (D9) — Story 8-2b strips the marker at its create-story/dev,
-  # exactly as 8-1b co-finalized the dashboard D13. Two role-scoped read endpoints on
+  # Two role-scoped read endpoints on
   # the SAME ungated dashboardChain (no RequireRole); role/scope enforced IN the
   # service (D4/D6/D7): teacher = own classes; owner|admin = center-wide; student =
   # 403 at the home, 404 (non-disclosure) at the class endpoint.
   /api/analytics:
     get:
       operationId: getAnalyticsHome
-      summary: Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47) [PROVISIONAL]
+      summary: Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47)
       description: |
         Returns an `AnalyticsHome`: the caller's `role` plus the list of classes the
         caller may analyze, each with mini-stats (studentCount, avgBand, atRiskCount,
@@ -2744,7 +2743,7 @@ paths:
   /api/analytics/classes/{id}:
     get:
       operationId: getAnalyticsClassPerformance
-      summary: Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48) [PROVISIONAL]
+      summary: Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48)
       description: |
         Returns a `ClassPerformance` for one class: cohort band-over-time (dense,
         contiguous, center-tz Monday weeks), a Writing-criteria × week heatmap matrix
@@ -7144,7 +7143,7 @@ components:
         recentFeedback: { type: array, items: { $ref: '#/components/schemas/DashboardFeedbackItem' } }
         myQuestions: { type: array, items: { $ref: '#/components/schemas/DashboardQuestionThreadLite' } }
 
-    # ---------------- Story 8.2a — Analytics (PROVISIONAL, D9; 8-2b co-finalizes) ----------------
+    # ---------------- Story 8.2a — Analytics ----------------
     # GO-5 explicit nulls: every nullable field is `nullable: true` (a pointer in Go)
     # so the wire always carries `null`, never omits — the FE colours null vs 0
     # differently (heatmap empty cell, on-time rate at totalDue=0). Fields most likely

@@ -62,6 +62,25 @@ const TARGETS = [
     pattern: /^LoginPage-[\w-]+\.js$/,
     maxGzippedBytes: 10 * KB,
   },
+  {
+    // Story 8-2b AC25 / NFR-3 — the analytics home route chunk. Ships the
+    // pre-built AnalyticsHomeShell + ScopeBar (Radix Select) + the role-branch
+    // dispatcher; ~12.8 KB gzipped at ship. Ceiling at 16 KB absorbs near-term
+    // polish while still catching an accidental heavy import.
+    name: 'AnalyticsRoute',
+    pattern: /^AnalyticsRoute-[\w-]+\.js$/,
+    maxGzippedBytes: 16 * KB,
+  },
+  {
+    // Story 8-2b AC25 / NFR-3 — the class-performance view chunk carries the
+    // TWO net-new HAND-BUILT SVG/CSS charts (SkillWeekHeatmap + BandTrendChart,
+    // D4 — no chart library). ~3.8 KB gzipped at ship. The 8 KB ceiling is the
+    // falsifiable guard: any charting lib "just for the axis math" (recharts,
+    // visx, chart.js, d3-scale) blows it instantly.
+    name: 'ClassPerformanceView',
+    pattern: /^ClassPerformanceView-[\w-]+\.js$/,
+    maxGzippedBytes: 8 * KB,
+  },
 ]
 
 if (!existsSync(DIST_DIR)) {

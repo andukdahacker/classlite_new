@@ -30,6 +30,10 @@ import {
   assertI18nInterpolationParity,
   assertI18nParity,
 } from '@/lib/test/i18n-parity'
+import {
+  STORY_8_2B_KEYS,
+  STORY_8_2B_REUSED_KEYS,
+} from '@/features/analytics/__tests__/analyticsI18nKeys'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -2126,5 +2130,23 @@ describe('Story 7.4b i18n parity', () => {
 
   test.each(STORY_7_4B_KEYS)('%s belongs to a 7.4b allowed prefix', (key) => {
     expect(ALLOWED_PREFIXES_7_4B.some((p) => key.startsWith(p))).toBe(true)
+  })
+})
+
+describe('Story 8.2b i18n parity (master ratchet)', () => {
+  test('every new Story 8.2b analytics.* key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_8_2B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 8.2b keys', () => {
+    assertI18nInterpolationParity(STORY_8_2B_KEYS)
+  })
+
+  test('the reused scopeBar / people / at-risk-reason keys resolve in both locales', () => {
+    assertI18nParity(STORY_8_2B_REUSED_KEYS)
+  })
+
+  test.each(STORY_8_2B_KEYS)('%s belongs to the analytics.* namespace', (key) => {
+    expect(key.startsWith('analytics.')).toBe(true)
   })
 })

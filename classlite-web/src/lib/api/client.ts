@@ -1046,7 +1046,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47) [PROVISIONAL]
+         * Role-scoped analytics home — analyzable class list + mini-stats (story 8.2a — FR-47)
          * @description Returns an `AnalyticsHome`: the caller's `role` plus the list of classes the
          *     caller may analyze, each with mini-stats (studentCount, avgBand, atRiskCount,
          *     onTimeRate). Teacher = own classes only (`classes.teacher_id = caller`);
@@ -1072,7 +1072,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48) [PROVISIONAL]
+         * Class-performance analytics — cohort band-over-time, Writing heatmap, mistakes, at-risk, on-time (story 8.2a — FR-48)
          * @description Returns a `ClassPerformance` for one class: cohort band-over-time (dense,
          *     contiguous, center-tz Monday weeks), a Writing-criteria × week heatmap matrix
          *     (numeric bands, empty cell = null, NEVER 0), repetitive-mistake patterns mined

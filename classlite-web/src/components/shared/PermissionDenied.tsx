@@ -56,6 +56,7 @@ export type SectionNameKey =
   | 'assignments'
   | 'grading'
   | 'questions'
+  | 'analytics'
 
 export interface PermissionDeniedProps {
   requiredRoles: PermissionDeniedRoles

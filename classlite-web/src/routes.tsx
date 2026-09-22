@@ -886,6 +886,67 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 8-2b — /analytics role-branched home (teacher/owner/admin → home;
+      // student → <Navigate to="/my-performance">). Its OWN deep-imported lazy
+      // chunk (Rolldown emits `AnalyticsRoute-*.js` carrying the home-shell +
+      // the two hand-built charts — AC25 forbids a chart lib in it). No
+      // `RouteRoleGate` — the branch is content, not access (the 8-2a endpoint
+      // self-scopes). Activates the previously-dead `sidebarNavConfig`
+      // owner/admin/teacher `/analytics` links.
+      {
+        path: '/analytics',
+        lazy: async () => {
+          const { AnalyticsRoute } = await import(
+            '@/features/analytics/AnalyticsRoute'
+          )
+          return { Component: AnalyticsRoute }
+        },
+      },
+      // Story 8-2b — /analytics/class/:id class-performance view. Its OWN lazy
+      // chunk. Ungated (the endpoint 404s a caller who may not view the class,
+      // non-disclosure D4). DISTINCT from the existing `/classes/:id/analytics`
+      // TAB — do not collide.
+      {
+        path: '/analytics/class/:id',
+        lazy: async () => {
+          const { ClassPerformanceView } = await import(
+            '@/features/analytics/components/ClassPerformanceView'
+          )
+          return { Component: ClassPerformanceView }
+        },
+      },
+      // Story 8-2b — /my-performance student placeholder (D8). Own tiny chunk,
+      // student-gated (mirrors /my-schedule) so the /analytics student redirect
+      // and the pre-existing student sidebar link never 404. The real page +
+      // GET /api/analytics/me = Story 8.3.
+      {
+        path: '/my-performance',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['student']}
+                requiredRolesForCopy={['owner', 'admin']}
+                sectionNameKey="analytics"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { MyPerformancePage } = await import(
+                '@/features/analytics/MyPerformancePage'
+              )
+              return { Component: MyPerformancePage }
+            },
+          },
+        ],
+      },
     ],
   },
   // Story 5.2b — /assignments/:assignmentId/attempt quiz-attempt screen (s33).
