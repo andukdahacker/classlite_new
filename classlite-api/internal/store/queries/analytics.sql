@@ -221,21 +221,28 @@ GROUP BY crit.criterion, week_start
 ORDER BY crit.criterion ASC, week_start ASC;
 
 -- name: ListClassMistakePatterns :many
--- Repetitive-mistake patterns mined from released grades.comments ONLY (D3/D11),
--- Writing (Comment) + Speaking (TimestampedComment) — both carry type + criterion in
--- the same comments JSONB. jsonb_array_elements is guarded to an array input (a
--- malformed non-array comments blob never errors). instanceCount = count(*) over
--- unnested comments; student identity from submissions.student_id, NO enrollment
--- inner join (D14). recent/prior window counts drive the trend (DR-B). The service
+-- Repetitive-mistake patterns mined from released grades over a class (D3/D11 + D12).
+-- ONE UNION ALL of two sources (mirrors ListStudentMistakePatterns — both Mistakes
+-- surfaces are symmetric, no two-truths asymmetry):
+--   * comments (writing/speaking) → patternSource 'human_comment', criterion = the IELTS
+--     criterion, type in {error,praise,suggestion};
+--   * answer_errors (reading/listening) → patternSource 'auto_graded', type 'error',
+--     criterion = the questionType (FU-8-2-A / D12). skillSource from the ex.skill JOIN.
+-- BOTH jsonb_array_elements are ARRAY-GUARDED (CASE → '[]' on a non-array; R-4/B-2).
+-- student identity from submissions.student_id, NO enrollment inner join (D14). The
+-- recent/prior trend windows are per-row 0/1 FLAGS SUMmed in the outer query (an
+-- aggregate FILTER over a UNION'd CTE column cannot be resolved by sqlc). The service
 -- applies the co-gate (instanceCount >= MIN AND affectedStudentCount >= MIN, DR-A).
 -- Ordered by a TOTAL order (instanceCount DESC, skillSource, criterion, type).
 WITH unnested AS (
     SELECT
-        ex.skill::text          AS skill_source,
-        (elem.value->>'criterion')::text AS criterion,
-        (elem.value->>'type')::text      AS type,
-        s.student_id            AS student_id,
-        cg.released_at          AS released_at
+        ex.skill::text                    AS skill_source,
+        (elem.value->>'criterion')::text  AS criterion,
+        (elem.value->>'type')::text       AS type,
+        'human_comment'::text             AS pattern_source,
+        s.student_id                      AS student_id,
+        (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
+        (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
     FROM current_grades cg
     JOIN submissions s ON s.id = cg.submission_id
     JOIN assignments a ON a.id = s.assignment_id
@@ -249,17 +256,41 @@ WITH unnested AS (
       AND ex.skill IN ('writing','speaking')
       AND (elem.value->>'type') IN ('error','praise','suggestion')
       AND (elem.value->>'criterion') IS NOT NULL
+      AND (elem.value->>'criterion') <> ''
+    UNION ALL
+    SELECT
+        ex.skill::text                      AS skill_source,
+        (ae.value->>'questionType')::text   AS criterion,
+        'error'::text                       AS type,
+        'auto_graded'::text                 AS pattern_source,
+        s.student_id                        AS student_id,
+        (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
+        (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
+    FROM current_grades cg
+    JOIN submissions s ON s.id = cg.submission_id
+    JOIN assignments a ON a.id = s.assignment_id
+    JOIN exercises ex ON ex.id = a.exercise_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(cg.answer_errors) = 'array' THEN cg.answer_errors ELSE '[]'::jsonb END
+    ) AS ae(value)
+    WHERE a.class_id = sqlc.arg('class_id')
+      AND cg.released_at IS NOT NULL
+      AND cg.released_at >= sqlc.arg('range_start')
+      AND ex.skill IN ('reading','listening')
+      AND (ae.value->>'questionType') IS NOT NULL
+      AND (ae.value->>'questionType') <> ''
 )
 SELECT
     skill_source,
     criterion,
     type,
+    pattern_source,
     count(*)::bigint AS instance_count,
     count(DISTINCT student_id)::bigint AS affected_student_count,
-    count(*) FILTER (WHERE released_at >= sqlc.arg('recent_start'))::bigint AS recent_count,
-    count(*) FILTER (WHERE released_at >= sqlc.arg('prior_start') AND released_at < sqlc.arg('recent_start'))::bigint AS prior_count
+    sum(recent_flag)::bigint AS recent_count,
+    sum(prior_flag)::bigint AS prior_count
 FROM unnested
-GROUP BY skill_source, criterion, type
+GROUP BY skill_source, criterion, type, pattern_source
 ORDER BY count(*) DESC, skill_source ASC, criterion ASC, type ASC;
 
 -- name: GetClassSubmissionRate :one
@@ -353,3 +384,265 @@ LEFT JOIN LATERAL (
 WHERE enr.class_id = sqlc.arg('class_id') AND enr.status = 'active'
 ORDER BY u.full_name ASC, u.id ASC
 LIMIT sqlc.arg('scan_limit');
+
+-- ============================================================================
+-- Story 8.3a — per-student analytics (D6/D11/D3). Reads only; the student slice
+-- over the 8.2a spine. Same seams: RLS tenant-scopes every table (SET LOCAL by the
+-- service before the first current_grades touch); student identity is
+-- submissions.student_id, NOT an enrollment inner join (D14/7.3 transfer-safe); every
+-- range filter stays SARGABLE on the raw released_at column; every list carries a
+-- total-order tiebreak. The query BUDGET is exactly 6 (size-invariant, R31): the tz is
+-- folded into GetStudentForAnalytics so there is no separate GetCenterTimezone call.
+-- ============================================================================
+
+-- name: GetStudentForAnalytics :one
+-- Auth + display + the resolved class (for classAvgBand/targetBand, D11) + the center
+-- tz (folded in — one fewer query, keeps the ≤6 budget). The caller's role scope is the
+-- teacher_id narg: NULL ⇒ owner/admin (any center student); set ⇒ teacher (the student
+-- must have an active enrollment in a class THIS teacher teaches, else NO ROW → 404
+-- STUDENT_NOT_FOUND non-disclosure, D4). center_members.role='student' both scopes the
+-- target to a real student AND (RLS) to the caller's center, so a cross-tenant/unknown/
+-- non-student id is ErrNoRows → 404. The resolved class = the caller-scoped active
+-- enrollment's class (teacher: their class containing the student; owner/admin: the
+-- student's most-recent active enrollment); NULL when none. centers is a global table.
+SELECT
+    u.id                    AS student_id,
+    u.full_name             AS student_name,
+    cls.class_id            AS class_id,
+    cls.target_band         AS target_band,
+    ct.timezone             AS timezone
+FROM users u
+JOIN center_members cm ON cm.user_id = u.id AND cm.role = 'student'
+JOIN centers ct ON ct.id = cm.center_id
+LEFT JOIN LATERAL (
+    SELECT c.id AS class_id, c.target_band
+    FROM enrollments e
+    JOIN classes c ON c.id = e.class_id
+    WHERE e.student_id = u.id AND e.status = 'active'
+      AND (sqlc.narg('teacher_id')::uuid IS NULL OR c.teacher_id = sqlc.narg('teacher_id'))
+    ORDER BY e.enrolled_at DESC, c.id ASC
+    LIMIT 1
+) cls ON true
+WHERE u.id = sqlc.arg('student_id')
+  AND (
+      sqlc.narg('teacher_id')::uuid IS NULL
+      OR EXISTS (
+          SELECT 1 FROM enrollments e2
+          JOIN classes c2 ON c2.id = e2.class_id
+          WHERE e2.student_id = u.id AND e2.status = 'active'
+            AND c2.teacher_id = sqlc.narg('teacher_id')
+      )
+  );
+
+-- name: ListStudentBandProgression :many
+-- Per-skill weekly avg(overall_band) over released grades (AC8), one row per
+-- (skill, populated week). The service densifies each skill onto the shared dense
+-- center-tz 12-week axis (empty week → avgBand null, never 0; a skill with no released
+-- grades never appears → omitted, not a zero series). Week key = the absolute instant of
+-- local Monday-midnight (matches the Go axis). Range filter sargable on released_at.
+SELECT
+    ex.skill::text AS skill,
+    (date_trunc('week', cg.released_at AT TIME ZONE sqlc.arg('tz')::text) AT TIME ZONE sqlc.arg('tz')::text)::timestamptz AS week_start,
+    avg(cg.overall_band)::numeric AS avg_band,
+    count(*)::bigint AS submission_count
+FROM current_grades cg
+JOIN submissions s ON s.id = cg.submission_id
+JOIN assignments a ON a.id = s.assignment_id
+JOIN exercises ex ON ex.id = a.exercise_id
+WHERE s.student_id = sqlc.arg('student_id')
+  AND cg.released_at IS NOT NULL
+  AND cg.released_at >= sqlc.arg('range_start')
+  AND cg.released_at < sqlc.arg('range_end')
+GROUP BY ex.skill, week_start
+ORDER BY ex.skill ASC, week_start ASC;
+
+-- name: ListStudentSkillBreakdown :many
+-- Per skill (that has released grades): the LATEST released overall band + the avg of
+-- each of the 6 distinct IELTS criteria (type-guarded like the 8.2a heatmap — a
+-- present-but-non-numeric value NEVER throws 22P02). The service picks each skill's own
+-- criterion subset (writing: taskResponse/coherenceCohesion/lexicalResource/
+-- grammaticalRange; speaking: fluencyCoherence/lexicalResource/grammaticalRange/
+-- pronunciation; reading/listening: none → empty criteria). ONE query, one row per skill.
+WITH skill_grades AS (
+    SELECT ex.skill::text AS skill, cg.overall_band, cg.criterion_scores, cg.released_at, cg.id
+    FROM current_grades cg
+    JOIN submissions s ON s.id = cg.submission_id
+    JOIN assignments a ON a.id = s.assignment_id
+    JOIN exercises ex ON ex.id = a.exercise_id
+    WHERE s.student_id = sqlc.arg('student_id')
+      AND cg.released_at IS NOT NULL
+),
+latest_overall AS (
+    SELECT DISTINCT ON (skill) skill, overall_band
+    FROM skill_grades
+    ORDER BY skill, released_at DESC, id DESC
+),
+crit_avgs AS (
+    SELECT
+        skill,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'taskResponse') = 'number' THEN (criterion_scores->>'taskResponse')::numeric END)::numeric      AS task_response_avg,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'coherenceCohesion') = 'number' THEN (criterion_scores->>'coherenceCohesion')::numeric END)::numeric AS coherence_cohesion_avg,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'lexicalResource') = 'number' THEN (criterion_scores->>'lexicalResource')::numeric END)::numeric  AS lexical_resource_avg,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'grammaticalRange') = 'number' THEN (criterion_scores->>'grammaticalRange')::numeric END)::numeric AS grammatical_range_avg,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'fluencyCoherence') = 'number' THEN (criterion_scores->>'fluencyCoherence')::numeric END)::numeric AS fluency_coherence_avg,
+        avg(CASE WHEN jsonb_typeof(criterion_scores->'pronunciation') = 'number' THEN (criterion_scores->>'pronunciation')::numeric END)::numeric      AS pronunciation_avg
+    FROM skill_grades
+    GROUP BY skill
+)
+SELECT
+    lo.skill                    AS skill,
+    lo.overall_band             AS overall_band,
+    ca.task_response_avg        AS task_response_avg,
+    ca.coherence_cohesion_avg   AS coherence_cohesion_avg,
+    ca.lexical_resource_avg     AS lexical_resource_avg,
+    ca.grammatical_range_avg    AS grammatical_range_avg,
+    ca.fluency_coherence_avg    AS fluency_coherence_avg,
+    ca.pronunciation_avg        AS pronunciation_avg
+FROM latest_overall lo
+JOIN crit_avgs ca ON ca.skill = lo.skill
+ORDER BY lo.skill ASC;
+
+-- name: ListClassCohortSkillAvg :many
+-- D11 — the per-skill cohort avg(overall_band) for the student's RESOLVED class (the
+-- teacher-only classAvgBand comparison). ONE set-based aggregate (size-invariant, +1 to
+-- the budget). class_id narg NULL (student in no class) ⇒ no rows ⇒ classAvgBand null
+-- for every skill. Released grades only; whole-class cohort (includes the subject).
+SELECT
+    ex.skill::text AS skill,
+    avg(cg.overall_band)::numeric AS class_avg_band
+FROM current_grades cg
+JOIN submissions s ON s.id = cg.submission_id
+JOIN assignments a ON a.id = s.assignment_id
+JOIN exercises ex ON ex.id = a.exercise_id
+WHERE a.class_id = sqlc.narg('class_id')
+  AND cg.released_at IS NOT NULL
+GROUP BY ex.skill
+ORDER BY ex.skill ASC;
+
+-- name: GetStudentAnalyticsSubmissionStats :one
+-- The student's own submission zone (AC10): on-time rate (mirrors GetClassSubmissionRate,
+-- student-scoped over CURRENTLY-active enrollments, 7.3 withdrawn excluded, past-due
+-- only, since-enrolled), total submission count, gradedSubmissionCount (released grades —
+-- the s37 "≥3 graded" threshold, DISTINCT from submission count, Sally), and praise/error
+-- pin counts (unnested released-grade comments, array-guarded). ONE query via 1-row CTEs.
+WITH due AS (
+    SELECT a.id AS assignment_id, a.deadline_at
+    FROM assignments a
+    JOIN enrollments e ON e.class_id = a.class_id AND e.status = 'active' AND e.student_id = sqlc.arg('student_id')
+    WHERE a.deadline_at <= sqlc.arg('now')      -- past-due only
+      AND a.deadline_at >= e.enrolled_at        -- since the student enrolled (7.3 transfer-safe)
+),
+rate AS (
+    SELECT
+        count(*) FILTER (
+            WHERE sub.id IS NOT NULL
+              AND sub.status IN ('submitted','ai_processing','graded')
+              AND sub.submitted_at IS NOT NULL
+              AND sub.submitted_at <= due.deadline_at
+        )::bigint AS on_time_count,
+        count(*)::bigint AS total_due
+    FROM due
+    LEFT JOIN submissions sub ON sub.assignment_id = due.assignment_id AND sub.student_id = sqlc.arg('student_id')
+),
+counts AS (
+    SELECT
+        (SELECT count(*) FROM submissions s
+         WHERE s.student_id = sqlc.arg('student_id') AND s.submitted_at IS NOT NULL)::bigint AS total_submission_count,
+        (SELECT count(*) FROM current_grades cg
+         JOIN submissions s ON s.id = cg.submission_id
+         WHERE s.student_id = sqlc.arg('student_id') AND cg.released_at IS NOT NULL)::bigint AS graded_submission_count
+),
+pins AS (
+    SELECT
+        count(*) FILTER (WHERE elem.value->>'type' = 'praise')::bigint AS praise_pin_count,
+        count(*) FILTER (WHERE elem.value->>'type' = 'error')::bigint  AS error_pin_count
+    FROM current_grades cg
+    JOIN submissions s ON s.id = cg.submission_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(cg.comments) = 'array' THEN cg.comments ELSE '[]'::jsonb END
+    ) AS elem(value)
+    WHERE s.student_id = sqlc.arg('student_id') AND cg.released_at IS NOT NULL
+)
+SELECT
+    rate.on_time_count              AS on_time_count,
+    rate.total_due                  AS total_due,
+    counts.total_submission_count   AS total_submission_count,
+    counts.graded_submission_count  AS graded_submission_count,
+    pins.praise_pin_count           AS praise_pin_count,
+    pins.error_pin_count            AS error_pin_count
+FROM rate, counts, pins;
+
+-- name: ListStudentMistakePatterns :many
+-- The student's 4-skill repetitive-mistake mining (AC11-13, D3/D7), ONE UNION ALL:
+--   * comments source (writing/speaking) → patternSource 'human_comment', criterion =
+--     the IELTS criterion, type in {error,praise,suggestion} (the 8.2a class idiom,
+--     student-scoped on s.student_id);
+--   * answer_errors source (reading/listening) → patternSource 'auto_graded', type
+--     'error', criterion = the questionType (FU-8-2-A). skillSource is derived from the
+--     ex.skill JOIN, NOT the JSONB (Winston C2).
+-- BOTH unnests are ARRAY-GUARDED in the jsonb_array_elements argument (CASE → '[]' on a
+-- non-array): jsonb_array_elements over a scalar/object/null would 500 the endpoint
+-- (R-4/B-2). The service applies the co-gate (instanceCount>=MIN AND
+-- affectedStudentCount>=MIN) + trend; total-ordered here.
+-- The recent/prior trend windows are computed as per-row 0/1 FLAGS inside each branch
+-- (where released_at is unambiguously cg.released_at) and SUMmed in the outer query.
+-- An aggregate FILTER referencing a UNION'd CTE column cannot be resolved by sqlc's
+-- analyzer, so the flag-then-sum form is used instead of count(*) FILTER (...).
+WITH unnested AS (
+    SELECT
+        ex.skill::text                    AS skill_source,
+        (elem.value->>'criterion')::text  AS criterion,
+        (elem.value->>'type')::text       AS type,
+        'human_comment'::text             AS pattern_source,
+        s.student_id                      AS student_id,
+        (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
+        (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
+    FROM current_grades cg
+    JOIN submissions s ON s.id = cg.submission_id
+    JOIN assignments a ON a.id = s.assignment_id
+    JOIN exercises ex ON ex.id = a.exercise_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(cg.comments) = 'array' THEN cg.comments ELSE '[]'::jsonb END
+    ) AS elem(value)
+    WHERE s.student_id = sqlc.arg('student_id')
+      AND cg.released_at IS NOT NULL
+      AND cg.released_at >= sqlc.arg('range_start')
+      AND ex.skill IN ('writing','speaking')
+      AND (elem.value->>'type') IN ('error','praise','suggestion')
+      AND (elem.value->>'criterion') IS NOT NULL
+      AND (elem.value->>'criterion') <> ''
+    UNION ALL
+    SELECT
+        ex.skill::text                      AS skill_source,
+        (ae.value->>'questionType')::text   AS criterion,
+        'error'::text                       AS type,
+        'auto_graded'::text                 AS pattern_source,
+        s.student_id                        AS student_id,
+        (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
+        (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
+    FROM current_grades cg
+    JOIN submissions s ON s.id = cg.submission_id
+    JOIN assignments a ON a.id = s.assignment_id
+    JOIN exercises ex ON ex.id = a.exercise_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(cg.answer_errors) = 'array' THEN cg.answer_errors ELSE '[]'::jsonb END
+    ) AS ae(value)
+    WHERE s.student_id = sqlc.arg('student_id')
+      AND cg.released_at IS NOT NULL
+      AND cg.released_at >= sqlc.arg('range_start')
+      AND ex.skill IN ('reading','listening')
+      AND (ae.value->>'questionType') IS NOT NULL
+      AND (ae.value->>'questionType') <> ''
+)
+SELECT
+    skill_source,
+    criterion,
+    type,
+    pattern_source,
+    count(*)::bigint AS instance_count,
+    count(DISTINCT student_id)::bigint AS affected_student_count,
+    sum(recent_flag)::bigint AS recent_count,
+    sum(prior_flag)::bigint AS prior_count
+FROM unnested
+GROUP BY skill_source, criterion, type, pattern_source
+ORDER BY count(*) DESC, skill_source ASC, criterion ASC, type ASC;

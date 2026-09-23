@@ -2787,6 +2787,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /api/analytics/students/{id}:
+    get:
+      operationId: getStudentPerformance
+      summary: Per-student performance — band progression, skill breakdown, mistakes (story 8-3a — FR-49; PROVISIONAL)
+      description: |
+        PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for one student
+        (framing "teacher"): per-skill dense band progression, per-skill breakdown (latest
+        overall + per-criterion averages for W/S, + the teacher-only cohort `classAvgBand`,
+        D11), submission/graded/pin stats + per-zone `hasData`, and 4-skill repetitive-
+        mistake patterns (comments ∪ auto-graded answer_errors). Access is resolved IN the
+        service (D4): owner|admin → any student in the center; teacher → only students in
+        their OWN classes, an out-of-scope/unknown student → 404 `STUDENT_NOT_FOUND`
+        (non-disclosure); a STUDENT caller → 403 `INSUFFICIENT_ROLE` (they use /me — even
+        for their own id). Bounded set-based aggregates in one transaction, no N+1 (PERF-2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: The student's user id.
+      responses:
+        "200":
+          description: The student-performance payload (framing "teacher").
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentPerformance'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (a student caller — even for their own id, D4) or CENTER_CONTEXT_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: STUDENT_NOT_FOUND (unknown, out-of-scope for a teacher caller, or cross-tenant — non-disclosure, D4)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: VALIDATION_ERROR (id is not a valid UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/analytics/me:
+    get:
+      operationId: getMyPerformance
+      summary: The calling student's own performance — peer data stripped (story 8-3a — FR-50; PROVISIONAL)
+      description: |
+        PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for the calling
+        student (framing "student", studentId := the caller). The SAME shape as
+        /students/{id} EXCEPT every teacher-only peer field is STRIPPED as a DATA guarantee
+        (FR-50): skillBreakdown[].classAvgBand and mistakePatterns[].affectedStudentCount
+        are null, and NO class average is present — only the student's own bands, own
+        mistakes, own on-time rate, and the class-level targetBand reference. A non-student
+        caller → 403 `INSUFFICIENT_ROLE` (they use /students/{id}).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's own performance (framing "student", peer fields stripped).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeStudentPerformance'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (a non-student caller — D4/D5) or CENTER_CONTEXT_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   # ---------------- Story 7.4a — Anchored Q&A ----------------
   # Read shapes (Question, QuestionReply, QuestionThread) were co-finalized by 7-4b
@@ -7251,24 +7337,37 @@ components:
         coveredSources:
           type: array
           items: { type: string }
-          description: The mined sources (D16) — ["writing","speaking"] (released grades.comments).
+          description: 'The mined skills — ["writing","speaking","reading","listening"]. As of D12 BOTH the class endpoint and the student endpoints union the auto_graded answer_errors source, so all four skills are covered.'
         excludedSources:
           type: array
           items: { type: string }
-          description: Sources NOT mined in v1 (D16) — ["auto_graded"] (FU-8-2-A); the FE renders "not yet available", never a blank that reads as "no problems".
+          description: 'Sources NOT mined — now EMPTY [] on BOTH the class and the student Mistakes surfaces (D12 — auto_graded answer_errors is mined via FU-8-2-A; no two-truths asymmetry).'
         patterns:
           type: array
           items: { $ref: '#/components/schemas/MistakePattern' }
     MistakePattern:
       type: object
       required: [skillSource, criterion, type, instanceCount, affectedStudentCount, trend]
+      description: |
+        PROVISIONAL (8-3b co-finalizes). Reused by the class endpoint (8-2a) AND the
+        per-student endpoints (8-3a). skillSource widened to all four skills and a
+        patternSource discriminator added (D7/D12). patternSource is ADDITIVE/optional in
+        the schema so 8-2a/8-2b's shipped FE keeps compiling (the backend ALWAYS emits it);
+        8-3b promotes it to required at co-finalize.
       properties:
-        skillSource: { type: string, enum: [writing, speaking] }
-        criterion: { type: string }
+        skillSource: { type: string, enum: [writing, speaking, reading, listening], description: 'Widened to all four skills (D7/D12) — reading|listening patterns are mined from answer_errors.' }
+        criterion: { type: string, description: 'For patternSource human_comment: the IELTS criterion. For auto_graded: the questionType (8-3b may split this into a dedicated field at co-finalize).' }
         type: { type: string, enum: [error, praise, suggestion] }
-        instanceCount: { type: integer, description: count(*) over unnested released comments (student identity from submissions.student_id, D14). }
-        affectedStudentCount: { type: integer, description: Distinct students (submissions.student_id) — a pattern surfaces only when >= 2 (DR-A). }
+        instanceCount: { type: integer, description: count(*) over unnested released comments/answer_errors (student identity from submissions.student_id, D14). }
+        affectedStudentCount:
+          type: integer
+          nullable: true
+          description: 'Distinct students (submissions.student_id). A teacher-only peer field — present on the class endpoint and the teacher /students/{id} view, STRIPPED (null) on /me (FR-50, D5/D11).'
         trend: { type: string, enum: [improving, worsening, stable], description: recent-4wk vs prior-4wk instance count (DR-B, clock-injected). }
+        patternSource:
+          type: string
+          enum: [human_comment, auto_graded]
+          description: 'PROVISIONAL — the mining basis (D7). human_comment = writing/speaking teacher comments (carries a quote); auto_graded = reading/listening answer_errors (quote-less → the FE renders warm generic coaching copy).'
     AnalyticsAtRiskItem:
       type: object
       required: [studentId, name, attendanceRate, overallBand, reasons]
@@ -7287,6 +7386,90 @@ components:
         onTimeCount: { type: integer, description: Submitted AND submitted_at <= deadline_at (STRICT). }
         totalDue: { type: integer, description: Assignments due to currently active-enrolled students. }
         rate: { type: number, format: float, nullable: true, description: onTimeCount / totalDue; null when totalDue is 0 (division guard — never 0, never NaN). }
+
+    # ---------------- Student performance (Story 8-3a — FR-49/FR-50; PROVISIONAL, 8-3b co-finalizes) ----------------
+    EnvelopeStudentPerformance:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/StudentPerformance'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    StudentPerformance:
+      type: object
+      description: |
+        PROVISIONAL (8-3b co-finalizes). One student's performance. The teacher
+        /students/{id} view and the student /me view share this shape; /me sets framing
+        "student" and STRIPS every teacher-only peer field (skillBreakdown[].classAvgBand,
+        mistakePatterns[].affectedStudentCount) as a DATA guarantee (FR-50, D5/D11). NO
+        recommendations field (deferred to 8-3c, D2).
+      required:
+        [studentId, studentName, framing, classId, targetBand, submissionStats,
+         skillBreakdown, bandProgression, mistakePatterns]
+      properties:
+        studentId: { type: string, format: uuid }
+        studentName: { type: string }
+        framing: { type: string, enum: [teacher, student], description: 'Discriminates the two views over one builder — "student" (/me) strips the peer fields; 8-3b keys the softened Patterns i18n off it.' }
+        classId: { type: string, format: uuid, nullable: true, description: 'The student''s resolved class (teacher: their class containing the student; owner/admin: the student''s active enrollment); null when the student is in no class.' }
+        targetBand: { type: number, format: float, nullable: true, description: 'The resolved class''s target band (classes.target_band) — an aspiration/trajectory reference, NOT a peer average (so FR-50 holds); null when the class carries no target or the student is in no class.' }
+        submissionStats: { $ref: '#/components/schemas/StudentSubmissionStats' }
+        skillBreakdown:
+          type: array
+          items: { $ref: '#/components/schemas/SkillBreakdown' }
+        bandProgression:
+          type: array
+          items: { $ref: '#/components/schemas/SkillBandSeries' }
+          description: One dense per-skill weekly overall-band series per skill with released grades (a skill with no released grades is omitted).
+        mistakePatterns: { $ref: '#/components/schemas/MistakePatterns' }
+    SkillBandSeries:
+      type: object
+      description: PROVISIONAL — one skill's dense weekly overall-band progression (points reuse BandOverTimePoint).
+      required: [skill, points]
+      properties:
+        skill: { type: string, enum: [writing, speaking, reading, listening] }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/BandOverTimePoint' }
+          description: Dense, contiguous Monday-anchored (center tz) weekly avg overall band; avgBand null on an empty week (never 0).
+    SkillBreakdown:
+      type: object
+      description: PROVISIONAL — one skill's current standing.
+      required: [skill, overallBand, classAvgBand, criteria]
+      properties:
+        skill: { type: string, enum: [writing, speaking, reading, listening] }
+        overallBand: { type: number, format: float, nullable: true, description: The student's latest released overall band for the skill; null when the skill has no released grades. }
+        classAvgBand:
+          type: number
+          format: float
+          nullable: true
+          description: 'Teacher-only peer field (D11) — the cohort average for the student''s resolved class; null when the student is in no class or the cohort has no released grades for the skill. STRIPPED (null) on /me (FR-50).'
+        criteria:
+          type: array
+          items: { $ref: '#/components/schemas/SkillCriterionAvg' }
+          description: Per-criterion averages for Writing/Speaking only (reading/listening → empty).
+    SkillCriterionAvg:
+      type: object
+      description: PROVISIONAL — one IELTS criterion's average band for a skill.
+      required: [criterion, avgBand]
+      properties:
+        criterion: { type: string }
+        avgBand: { type: number, format: float, nullable: true, description: Type-guarded avg of the criterion band over the student's released grades for the skill; null when no numeric value was recorded. }
+    StudentSubmissionStats:
+      type: object
+      description: PROVISIONAL — the student's own submission zone.
+      required:
+        [submissionRate, totalSubmissionCount, gradedSubmissionCount, praisePinCount, errorPinCount, hasData]
+      properties:
+        submissionRate: { $ref: '#/components/schemas/SubmissionRate' }
+        totalSubmissionCount: { type: integer, description: The student's submitted submissions (submitted_at IS NOT NULL). }
+        gradedSubmissionCount: { type: integer, description: 'Released grades — the s37 ghosted-frame "≥3 graded" threshold quantity, DISTINCT from totalSubmissionCount.' }
+        praisePinCount: { type: integer, description: type="praise" comments across the student's released grades. }
+        errorPinCount: { type: integer, description: type="error" comments across the student's released grades. }
+        hasData:
+          type: object
+          additionalProperties: { type: boolean }
+          description: 'Per-zone has-data flags (bandProgression, skillBreakdown, mistakePatterns, submissionStats) so the FE dims each ghosted zone independently rather than inferring emptiness.'
 
     # ---------------- Request bodies ----------------
     RegisterRequest:

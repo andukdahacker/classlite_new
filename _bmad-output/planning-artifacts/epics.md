@@ -334,8 +334,8 @@ UX-DR25: Progress Sharing — defines how performance data can be shared outside
 | FR-46 | 7 | 7.3 (enrollment management) |
 | FR-47 | 8 | 8.2 (analytics home) |
 | FR-48 | 8 | 8.2 (class performance) |
-| FR-49 | 8 | 8.3 (student performance — teacher view) |
-| FR-50 | 8 | 8.3 (student performance — student view) |
+| FR-49 | 8 | 8.3 (student performance — teacher view) — **PARTIAL**: Overview + Mistakes backend BUILT in 8-3a / frontend in 8-3b; the **Recommendations** tab (assign/edit/dismiss + teacher-overrides-AI) is DEFERRED to Story 8-3c (D2, John J4). Full FR-49 closes with 8-3c. |
+| FR-50 | 8 | 8.3 (student performance — student view) — backend BUILT in 8-3a (`/api/analytics/me`, peer-strip DATA guarantee); frontend in 8-3b |
 | FR-51 | 8 | 8.1 (admin/owner dashboard) |
 | FR-52 | 8 | 8.1 (teacher dashboard) |
 | FR-53 | 8 | 8.1 (student dashboard) |

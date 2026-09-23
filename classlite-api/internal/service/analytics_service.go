@@ -71,12 +71,15 @@ const (
 	MistakeTrendStable    = "stable"
 )
 
-// analyticsCoveredSources / analyticsExcludedSources label the mistake basis (D16) so
-// the FE renders "not yet available" for the dropped source rather than a blank that
-// reads as "no problems".
+// analyticsCoveredSources / analyticsExcludedSources label the mistake basis (D16/D12)
+// so the FE knows which skills the Mistakes surface mines. Since D12 both endpoints now
+// UNION the auto_graded answer_errors source (reading/listening) alongside the
+// human-comment source (writing/speaking), so ALL four skills are covered and NOTHING
+// is excluded — both Mistakes surfaces report identical coverage (AC14, no two-truths
+// asymmetry). excludedSources is a non-nil empty slice so it marshals to `[]`, not null.
 var (
-	analyticsCoveredSources  = []string{"writing", "speaking"}
-	analyticsExcludedSources = []string{"auto_graded"}
+	analyticsCoveredSources  = []string{"writing", "speaking", "reading", "listening"}
+	analyticsExcludedSources = []string{}
 )
 
 // analyticsWritingCriteria is the four Writing criterion keys, in the heatmap row
@@ -86,6 +89,16 @@ var analyticsWritingCriteria = []string{
 	grading.CriterionCoherenceCohesion,
 	grading.CriterionLexicalResource,
 	grading.CriterionGrammaticalRange,
+}
+
+// analyticsSpeakingCriteria is the four Speaking criterion keys (8-3a skill breakdown).
+// Single-sourced from the grading domain (LexicalResource/GrammaticalRange are shared
+// with Writing; FluencyCoherence/Pronunciation are Speaking-only).
+var analyticsSpeakingCriteria = []string{
+	grading.CriterionFluencyCoherence,
+	grading.CriterionLexicalResource,
+	grading.CriterionGrammaticalRange,
+	grading.CriterionPronunciation,
 }
 
 // ---------------- Response DTOs (camelCase; GO-5 explicit null; D9 PROVISIONAL) ----------------
@@ -155,14 +168,21 @@ type MistakePatterns struct {
 	Patterns        []MistakePattern `json:"patterns"`
 }
 
-// MistakePattern is one repetitive-mistake group past the co-gate (DR-A).
+// MistakePattern is one repetitive-mistake group past the co-gate (DR-A). Reused by the
+// class endpoint (8-2a) AND the per-student endpoints (8-3a). SkillSource widens to
+// writing|speaking|reading|listening (D7/D12). PatternSource discriminates the mining
+// basis: "human_comment" (writing/speaking teacher comments) vs "auto_graded"
+// (reading/listening answer_errors — quote-less, so the FE renders warm generic copy).
+// AffectedStudentCount is a teacher-only peer field: present on the class endpoint and
+// the teacher /students/{id} view, STRIPPED (nil) on /me (FR-50 — D5/D11).
 type MistakePattern struct {
 	SkillSource          string `json:"skillSource"`
 	Criterion            string `json:"criterion"`
 	Type                 string `json:"type"`
 	InstanceCount        int    `json:"instanceCount"`
-	AffectedStudentCount int    `json:"affectedStudentCount"`
+	AffectedStudentCount *int   `json:"affectedStudentCount"`
 	Trend                string `json:"trend"`
+	PatternSource        string `json:"patternSource"`
 }
 
 // AnalyticsAtRiskItem is one at-risk student in the class (D5).
@@ -179,6 +199,70 @@ type SubmissionRate struct {
 	OnTimeCount int      `json:"onTimeCount"`
 	TotalDue    int      `json:"totalDue"`
 	Rate        *float64 `json:"rate"`
+}
+
+// ---------------- Student performance DTOs (8-3a; camelCase; GO-5 null; D7 PROVISIONAL) ----------------
+
+// Framing discriminates the two views over the SAME builder (D5): "teacher" carries the
+// peer fields (classAvgBand, affectedStudentCount); "student" (/me) STRIPS them (FR-50).
+const (
+	framingTeacher = "teacher"
+	framingStudent = "student"
+)
+
+// StudentPerformance is the per-student analytics payload (FR-49/FR-50, D7 PROVISIONAL).
+// The teacher /students/{id} and the student /me views share this shape; /me sets
+// framing "student" and strips every peer/class-average field (a DATA guarantee, not a
+// UI concern). NO recommendations field (deferred to 8-3c, D2).
+type StudentPerformance struct {
+	StudentID       string                 `json:"studentId"`
+	StudentName     string                 `json:"studentName"`
+	Framing         string                 `json:"framing"`
+	ClassID         *string                `json:"classId"`
+	TargetBand      *float64               `json:"targetBand"`
+	SubmissionStats StudentSubmissionStats `json:"submissionStats"`
+	SkillBreakdown  []SkillBreakdown       `json:"skillBreakdown"`
+	BandProgression []SkillBandSeries      `json:"bandProgression"`
+	MistakePatterns MistakePatterns        `json:"mistakePatterns"`
+}
+
+// SkillBandSeries is one skill's dense weekly overall-band progression (AC8). Points
+// reuse BandOverTimePoint (dense weeks, avgBand null on an empty week). A skill with no
+// released grades is omitted entirely (not a zero series).
+type SkillBandSeries struct {
+	Skill  string              `json:"skill"`
+	Points []BandOverTimePoint `json:"points"`
+}
+
+// SkillBreakdown is one skill's current standing (AC9). OverallBand = the latest released
+// overall band for the skill. ClassAvgBand = the cohort average for the student's resolved
+// class (D11) — a teacher-only peer field, STRIPPED (nil) on /me. Criteria = per-criterion
+// averages for Writing/Speaking only (reading/listening → empty).
+type SkillBreakdown struct {
+	Skill        string              `json:"skill"`
+	OverallBand  *float64            `json:"overallBand"`
+	ClassAvgBand *float64            `json:"classAvgBand"`
+	Criteria     []SkillCriterionAvg `json:"criteria"`
+}
+
+// SkillCriterionAvg is one IELTS criterion's average band for a skill (AC9). AvgBand null
+// when no numeric criterion value was recorded.
+type SkillCriterionAvg struct {
+	Criterion string   `json:"criterion"`
+	AvgBand   *float64 `json:"avgBand"`
+}
+
+// StudentSubmissionStats is the student's own submission zone (AC10). GradedSubmissionCount
+// (released grades) is the s37 ghosted-frame "≥3 graded" threshold quantity — DISTINCT from
+// TotalSubmissionCount (Sally). HasData carries per-zone flags so the FE dims each ghosted
+// zone independently rather than inferring emptiness.
+type StudentSubmissionStats struct {
+	SubmissionRate        SubmissionRate  `json:"submissionRate"`
+	TotalSubmissionCount  int             `json:"totalSubmissionCount"`
+	GradedSubmissionCount int             `json:"gradedSubmissionCount"`
+	PraisePinCount        int             `json:"praisePinCount"`
+	ErrorPinCount         int             `json:"errorPinCount"`
+	HasData               map[string]bool `json:"hasData"`
 }
 
 // ---------------- Service ----------------
@@ -429,6 +513,341 @@ func (s *AnalyticsService) GetClassPerformance(ctx context.Context, tc model.Ten
 	}, nil
 }
 
+// ---------------- student performance (8-3a) ----------------
+
+// GetStudentPerformance returns one student's performance for a teacher/owner/admin
+// (AC1-4, D4). owner/admin → any student in the center; teacher → only students in their
+// OWN classes (analyticsTeacherScope), an out-of-scope/unknown student → 404
+// STUDENT_NOT_FOUND (non-disclosure); a student caller → 403 INSUFFICIENT_ROLE (they use
+// /me — this endpoint never returns a body to a student, even for their own id). The
+// framing is always "teacher": the peer fields (classAvgBand, affectedStudentCount) are
+// present.
+func (s *AnalyticsService) GetStudentPerformance(ctx context.Context, tc model.TenantContext, studentID uuid.UUID) (*StudentPerformance, error) {
+	switch tc.Role {
+	case model.RoleOwner, model.RoleAdmin, model.RoleTeacher:
+		// proceed — the SERVICE resolves scope (owner/admin center-wide, teacher own-class).
+	default:
+		// Student (and any unknown role) → 403 INSUFFICIENT_ROLE, even for their OWN id
+		// (they must use /me). No DB touch, no body (D4/AC3).
+		return nil, &ForbiddenError{Reason: "insufficient role"}
+	}
+
+	_, callerUUID, err := parseTenant(tc)
+	if err != nil {
+		return nil, err
+	}
+	teacherScope := analyticsTeacherScope(tc.Role, callerUUID)
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("student perf: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := store.SetTenantContext(ctx, tx, tc); err != nil {
+		return nil, fmt.Errorf("student perf: %w", err)
+	}
+	q := generated.New(tx)
+
+	perf, err := s.buildStudentPerformance(ctx, q, studentID, teacherScope, framingTeacher)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("student perf: commit: %w", err)
+	}
+	return perf, nil
+}
+
+// GetMyPerformance returns the calling student's OWN performance (AC5-7, D4/D5). A
+// non-student caller → 403 INSUFFICIENT_ROLE. framing is "student": the peer fields
+// (classAvgBand, affectedStudentCount) are STRIPPED (FR-50 — a DATA guarantee). The
+// student can only ever be themselves (studentID := tc.UserID), so no other student's row
+// is reachable by any path.
+func (s *AnalyticsService) GetMyPerformance(ctx context.Context, tc model.TenantContext) (*StudentPerformance, error) {
+	if tc.Role != model.RoleStudent {
+		// teacher/owner/admin → 403 INSUFFICIENT_ROLE (they use /students/{id}).
+		return nil, &ForbiddenError{Reason: "insufficient role"}
+	}
+
+	_, callerUUID, err := parseTenant(tc)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("my perf: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := store.SetTenantContext(ctx, tx, tc); err != nil {
+		return nil, fmt.Errorf("my perf: %w", err)
+	}
+	q := generated.New(tx)
+
+	// teacherScope NULL: the student's own resolved class is their active enrollment.
+	perf, err := s.buildStudentPerformance(ctx, q, callerUUID, pgtype.UUID{Valid: false}, framingStudent)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("my perf: commit: %w", err)
+	}
+	return perf, nil
+}
+
+// buildStudentPerformance is the SHARED assembler for both endpoints (AC7). It runs the
+// exact 6-query budget (GetStudentForAnalytics → band → skill breakdown → cohort → stats
+// → mistakes) — size-invariant, no per-skill/per-week/per-grade N+1 (R31). framing
+// "student" STRIPS the peer fields inside buildStudentSkillBreakdown/
+// buildStudentMistakePatterns (FR-50/D5/D11). A missing student (teacher-out-of-scope,
+// unknown, non-student, or cross-tenant) → GetStudentForAnalytics ErrNoRows → 404
+// STUDENT_NOT_FOUND (non-disclosure).
+func (s *AnalyticsService) buildStudentPerformance(
+	ctx context.Context, q *generated.Queries, studentID uuid.UUID, teacherScope pgtype.UUID, framing string,
+) (*StudentPerformance, error) {
+	meta, err := q.GetStudentForAnalytics(ctx, generated.GetStudentForAnalyticsParams{
+		TeacherID: teacherScope,
+		StudentID: pgUUID(studentID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, model.NotFoundError{Resource: "student", ID: studentID.String(), Code: "STUDENT_NOT_FOUND"}
+		}
+		return nil, fmt.Errorf("student perf: load student: %w", err)
+	}
+
+	axis := s.weekAxis(meta.Timezone)
+	studentPg := pgUUID(studentID)
+
+	// 1. per-skill band progression, densified per skill onto the shared axis (AC8).
+	botRows, err := q.ListStudentBandProgression(ctx, generated.ListStudentBandProgressionParams{
+		Tz:         axis.tz,
+		StudentID:  studentPg,
+		RangeStart: dashTS(axis.rangeStart),
+		RangeEnd:   dashTS(axis.rangeEnd),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("student perf: band progression: %w", err)
+	}
+	bandProgression := s.densifyStudentBandProgression(axis, botRows)
+
+	// 2. per-skill breakdown (latest overall + per-criterion avgs, W/S only) (AC9).
+	sbRows, err := q.ListStudentSkillBreakdown(ctx, studentPg)
+	if err != nil {
+		return nil, fmt.Errorf("student perf: skill breakdown: %w", err)
+	}
+	// 3. cohort classAvgBand for the resolved class (D11) — ALWAYS issued (size-invariance);
+	// meta.ClassID invalid (student in no class) ⇒ no rows ⇒ classAvgBand null everywhere.
+	cohortRows, err := q.ListClassCohortSkillAvg(ctx, meta.ClassID)
+	if err != nil {
+		return nil, fmt.Errorf("student perf: cohort skill avg: %w", err)
+	}
+	skillBreakdown := buildStudentSkillBreakdown(sbRows, cohortRows, framing)
+
+	// 4. submission/graded/pin stats + per-zone hasData (AC10).
+	statRow, err := q.GetStudentAnalyticsSubmissionStats(ctx, generated.GetStudentAnalyticsSubmissionStatsParams{
+		StudentID: studentPg,
+		Now:       dashTS(s.clk.Now()),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("student perf: submission stats: %w", err)
+	}
+	submissionStats := buildStudentSubmissionStats(statRow)
+
+	// 5. 4-skill mistake patterns (comments ∪ answer_errors), student-gated + framed (AC11-13).
+	mistakeRows, err := q.ListStudentMistakePatterns(ctx, generated.ListStudentMistakePatternsParams{
+		StudentID:   studentPg,
+		RangeStart:  dashTS(axis.rangeStart),
+		RecentStart: dashTS(axis.recentStart),
+		PriorStart:  dashTS(axis.priorStart),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("student perf: mistakes: %w", err)
+	}
+	mistakes := buildStudentMistakePatterns(mistakeRows, framing)
+
+	// [Review P6] The two 12-week-windowed zones flag hasData from RENDERABLE content
+	// (a non-empty per-skill series / a surfaced pattern), NOT the all-time graded count —
+	// else an inactive student whose only released grades predate the window would un-ghost
+	// an empty chart. densifyStudentBandProgression only emits a series for a skill with an
+	// in-window grade, so len>0 ⟺ there is in-window band data. skillBreakdown/submissionStats
+	// stay count-driven (grain-consistent — their queries are all-time).
+	submissionStats.HasData["bandProgression"] = len(bandProgression) > 0
+	submissionStats.HasData["mistakePatterns"] = len(mistakes.Patterns) > 0
+
+	var classID *string
+	if meta.ClassID.Valid {
+		cs := uuidFromPg(meta.ClassID).String()
+		classID = &cs
+	}
+
+	return &StudentPerformance{
+		StudentID:       studentID.String(),
+		StudentName:     meta.StudentName,
+		Framing:         framing,
+		ClassID:         classID,
+		TargetBand:      numericToFloatPtr(meta.TargetBand),
+		SubmissionStats: submissionStats,
+		SkillBreakdown:  skillBreakdown,
+		BandProgression: bandProgression,
+		MistakePatterns: mistakes,
+	}, nil
+}
+
+// densifyStudentBandProgression groups the per-(skill,week) rows by skill and densifies
+// each skill onto the shared dense axis (AC8): an empty week → avgBand null (never 0); a
+// skill with no released grades never appears in the rows → omitted (not a zero series).
+// Skill order follows the SQL's skill-ASC ordering (deterministic).
+func (s *AnalyticsService) densifyStudentBandProgression(
+	axis analyticsAxis, rows []generated.ListStudentBandProgressionRow,
+) []SkillBandSeries {
+	type weekAgg struct {
+		avg   *float64
+		count int64
+	}
+	bySkill := make(map[string]map[string]weekAgg)
+	skillOrder := make([]string, 0)
+	for _, r := range rows {
+		if _, ok := bySkill[r.Skill]; !ok {
+			bySkill[r.Skill] = make(map[string]weekAgg)
+			skillOrder = append(skillOrder, r.Skill)
+		}
+		bySkill[r.Skill][axis.weekKey(r.WeekStart.Time)] = weekAgg{avg: numericToFloatPtr(r.AvgBand), count: r.SubmissionCount}
+	}
+
+	series := make([]SkillBandSeries, 0, len(skillOrder))
+	for _, skill := range skillOrder {
+		weekMap := bySkill[skill]
+		points := make([]BandOverTimePoint, 0, len(axis.weeks))
+		for _, w := range axis.weeks {
+			key := axis.weekKey(w)
+			agg := weekMap[key]
+			points = append(points, BandOverTimePoint{
+				WeekStart:       key,
+				AvgBand:         agg.avg,
+				SubmissionCount: int(agg.count),
+			})
+		}
+		series = append(series, SkillBandSeries{Skill: skill, Points: points})
+	}
+	return series
+}
+
+// buildStudentSkillBreakdown maps the per-skill rows + the cohort avgs into the breakdown
+// (AC9). classAvgBand comes from the cohort map (null when the skill has no cohort grades)
+// and is STRIPPED (nil) when framing is "student" (FR-50/D11).
+func buildStudentSkillBreakdown(
+	rows []generated.ListStudentSkillBreakdownRow, cohortRows []generated.ListClassCohortSkillAvgRow, framing string,
+) []SkillBreakdown {
+	cohortBySkill := make(map[string]*float64, len(cohortRows))
+	for _, cr := range cohortRows {
+		cohortBySkill[cr.Skill] = numericToFloatPtr(cr.ClassAvgBand)
+	}
+
+	out := make([]SkillBreakdown, 0, len(rows))
+	for _, r := range rows {
+		var classAvg *float64
+		if framing != framingStudent {
+			classAvg = cohortBySkill[r.Skill] // teacher-only peer field
+		}
+		out = append(out, SkillBreakdown{
+			Skill:        r.Skill,
+			OverallBand:  numericToFloatPtr(r.OverallBand),
+			ClassAvgBand: classAvg,
+			Criteria:     studentSkillCriteria(r),
+		})
+	}
+	return out
+}
+
+// studentSkillCriteria returns a skill's per-criterion averages from the flat row: the
+// Writing subset for writing, the Speaking subset for speaking, empty for the objective
+// reading/listening skills (no IELTS criteria). Criterion keys single-sourced from the
+// grading domain (analyticsWritingCriteria / analyticsSpeakingCriteria).
+func studentSkillCriteria(r generated.ListStudentSkillBreakdownRow) []SkillCriterionAvg {
+	avgByCriterion := map[string]*float64{
+		grading.CriterionTaskResponse:      numericToFloatPtr(r.TaskResponseAvg),
+		grading.CriterionCoherenceCohesion: numericToFloatPtr(r.CoherenceCohesionAvg),
+		grading.CriterionLexicalResource:   numericToFloatPtr(r.LexicalResourceAvg),
+		grading.CriterionGrammaticalRange:  numericToFloatPtr(r.GrammaticalRangeAvg),
+		grading.CriterionFluencyCoherence:  numericToFloatPtr(r.FluencyCoherenceAvg),
+		grading.CriterionPronunciation:     numericToFloatPtr(r.PronunciationAvg),
+	}
+	var keys []string
+	switch r.Skill {
+	case "writing":
+		keys = analyticsWritingCriteria
+	case "speaking":
+		keys = analyticsSpeakingCriteria
+	default:
+		return []SkillCriterionAvg{} // reading/listening: objective, no criteria
+	}
+	criteria := make([]SkillCriterionAvg, 0, len(keys))
+	for _, k := range keys {
+		criteria = append(criteria, SkillCriterionAvg{Criterion: k, AvgBand: avgByCriterion[k]})
+	}
+	return criteria
+}
+
+// buildStudentSubmissionStats maps the stats row + derives the per-zone hasData flags
+// (AC10). The band/skill/mistake zones all gate on released grades (gradedSubmissionCount);
+// the submission zone gates on any submission or any past-due assignment.
+func buildStudentSubmissionStats(r generated.GetStudentAnalyticsSubmissionStatsRow) StudentSubmissionStats {
+	graded := int(r.GradedSubmissionCount)
+	totalSub := int(r.TotalSubmissionCount)
+	totalDue := int(r.TotalDue)
+	return StudentSubmissionStats{
+		SubmissionRate: SubmissionRate{
+			OnTimeCount: int(r.OnTimeCount),
+			TotalDue:    totalDue,
+			Rate:        safeRate(r.OnTimeCount, r.TotalDue),
+		},
+		TotalSubmissionCount:  totalSub,
+		GradedSubmissionCount: graded,
+		PraisePinCount:        int(r.PraisePinCount),
+		ErrorPinCount:         int(r.ErrorPinCount),
+		HasData: map[string]bool{
+			"bandProgression": graded > 0,
+			"skillBreakdown":  graded > 0,
+			"mistakePatterns": graded > 0,
+			"submissionStats": totalSub > 0 || totalDue > 0,
+		},
+	}
+}
+
+// buildStudentMistakePatterns applies the STUDENT gate (instanceCount >= MIN only — the
+// multi-student co-gate is meaningless for one student's own mistakes, where
+// affectedStudentCount is trivially 1) + the trend, and sets patternSource from the SQL.
+// affectedStudentCount is STRIPPED (nil) when framing is "student" (FR-50/D5/D11).
+// coveredSources/excludedSources match the class endpoint (D12 symmetry — excluded is []).
+func buildStudentMistakePatterns(rows []generated.ListStudentMistakePatternsRow, framing string) MistakePatterns {
+	patterns := make([]MistakePattern, 0, len(rows))
+	for _, r := range rows {
+		if r.InstanceCount < MinPatternInstances {
+			continue
+		}
+		var affected *int
+		if framing != framingStudent {
+			a := int(r.AffectedStudentCount)
+			affected = &a
+		}
+		patterns = append(patterns, MistakePattern{
+			SkillSource:          r.SkillSource,
+			Criterion:            r.Criterion,
+			Type:                 r.Type,
+			InstanceCount:        int(r.InstanceCount),
+			AffectedStudentCount: affected,
+			Trend:                mistakeTrend(r.RecentCount, r.PriorCount),
+			PatternSource:        r.PatternSource,
+		})
+	}
+	return MistakePatterns{
+		CoveredSources:  append([]string{}, analyticsCoveredSources...),
+		ExcludedSources: append([]string{}, analyticsExcludedSources...),
+		Patterns:        patterns,
+	}
+}
+
 // ---------------- week axis (D8) ----------------
 
 // analyticsAxis holds the dense Monday-anchored week axis (center tz) plus the
@@ -570,7 +989,7 @@ func (s *AnalyticsService) densifyHeatmap(
 		}
 	}
 	return SkillHeatmap{
-		Criteria: append([]string(nil), analyticsWritingCriteria...),
+		Criteria: append([]string{}, analyticsWritingCriteria...),
 		Weeks:    weeks,
 		Cells:    cells,
 	}
@@ -587,18 +1006,20 @@ func buildMistakePatterns(rows []generated.ListClassMistakePatternsRow) MistakeP
 		if r.InstanceCount < MinPatternInstances || r.AffectedStudentCount < MinPatternStudents {
 			continue
 		}
+		affected := int(r.AffectedStudentCount)
 		patterns = append(patterns, MistakePattern{
 			SkillSource:          r.SkillSource,
 			Criterion:            r.Criterion,
 			Type:                 r.Type,
 			InstanceCount:        int(r.InstanceCount),
-			AffectedStudentCount: int(r.AffectedStudentCount),
+			AffectedStudentCount: &affected, // class endpoint always exposes the peer count
 			Trend:                mistakeTrend(r.RecentCount, r.PriorCount),
+			PatternSource:        r.PatternSource,
 		})
 	}
 	return MistakePatterns{
-		CoveredSources:  append([]string(nil), analyticsCoveredSources...),
-		ExcludedSources: append([]string(nil), analyticsExcludedSources...),
+		CoveredSources:  append([]string{}, analyticsCoveredSources...),
+		ExcludedSources: append([]string{}, analyticsExcludedSources...),
 		Patterns:        patterns,
 	}
 }

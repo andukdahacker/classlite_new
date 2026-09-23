@@ -841,8 +841,12 @@ func (s *GradingService) insertGradeRow(
 		OverallBand:     overall,
 		Comments:        commentsJSON,
 		Feedback:        pgTextFromPtr(in.Feedback),
-		ReleasedAt:      pgTimestamptz(now),
-		CreatedAt:       pgTimestamptz(now),
+		// Writing release writes answer_errors = SQL NULL (nil []byte) — the FU-8-2-A
+		// snapshot is objective-only; SQL NULL (not '[]'/'null') keeps the R-4 union guard
+		// trivially satisfied (T6).
+		AnswerErrors: nil,
+		ReleasedAt:   pgTimestamptz(now),
+		CreatedAt:    pgTimestamptz(now),
 	})
 }
 
@@ -885,8 +889,10 @@ func (s *GradingService) insertSpeakingGradeRow(
 		OverallBand:     overall,
 		Comments:        commentsJSON,
 		Feedback:        pgTextFromPtr(in.Feedback),
-		ReleasedAt:      pgTimestamptz(now),
-		CreatedAt:       pgTimestamptz(now),
+		// Speaking release writes answer_errors = SQL NULL (objective-only snapshot, T6).
+		AnswerErrors: nil,
+		ReleasedAt:   pgTimestamptz(now),
+		CreatedAt:    pgTimestamptz(now),
 	})
 }
 

@@ -1,6 +1,6 @@
 {
-  "story": "8-2a",
-  "note": "Business queries per invocation on the tx the AnalyticsService runs (SET LOCAL + BEGIN/SAVEPOINT/RELEASE/COMMIT filtered by the reused 8-1a CountingDBTX). Counting boundary = the tx the service runs on, NOT the pool (W1). SIZE-INVARIANT: count(cohort=small) == count(cohort=large) — proven O(1)-in-rows, with 3 synthetic-N+1 counter proofs (per-student at-risk / per-week heatmap / per-grade comment) in TestAnalyticsClass_QueryCount_DetectsSyntheticNPlus1_ATDD. Ceilings are TIGHT (the exact composed set) so any future per-row fan-out trips the gate.",
+  "story": "8-2a + 8-3a",
+  "note": "Business queries per invocation on the tx the AnalyticsService runs (SET LOCAL + BEGIN/SAVEPOINT/RELEASE/COMMIT filtered by the reused 8-1a CountingDBTX). Counting boundary = the tx the service runs on, NOT the pool (W1). SIZE-INVARIANT: count(small) == count(large) — proven O(1)-in-rows. 8-2a proofs in TestAnalyticsClass_QueryCount_DetectsSyntheticNPlus1_ATDD; 8-3a proofs in TestStudentPerf_QueryCount_SizeInvariant_BothEndpoints_ATDD (small=1 skill/2 grades/1 week vs large=4 skills/40 grades/12 gapped weeks, BOTH endpoints) + TestStudentPerf_QueryCount_DetectsSyntheticNPlus1_ATDD (4 per-axis probes: per-skill band loop / per-week densify / comments unnest / answer_errors unnest). Ceilings are TIGHT (the exact composed set) so any future per-row fan-out trips the gate. 8-3a folds the center tz into GetStudentForAnalytics (no separate GetCenterTimezone), keeping the student budget at 6.",
   "endpoints": {
     "GET /api/analytics": {
       "perRole": {
@@ -58,6 +58,65 @@
         "student": {
           "measured": 0,
           "note": "404 CLASS_NOT_FOUND (non-disclosure) before any DB touch (D4)"
+        }
+      }
+    },
+    "GET /api/analytics/students/{id}": {
+      "perRole": {
+        "owner": {
+          "measured": 6,
+          "ceiling": 6,
+          "itemized": [
+            "GetStudentForAnalytics (auth + name + resolved class + targetBand + center tz, folded)",
+            "ListStudentBandProgression (per-skill weekly avg, densified in Go)",
+            "ListStudentSkillBreakdown (latest overall + per-criterion avgs, one row per skill)",
+            "ListClassCohortSkillAvg (D11 classAvgBand — one set-based aggregate)",
+            "GetStudentAnalyticsSubmissionStats (on-time/total/graded/pins via 1-row CTEs)",
+            "ListStudentMistakePatterns (comments UNION ALL answer_errors — single UNION ALL)"
+          ]
+        },
+        "admin": {
+          "measured": 6,
+          "ceiling": 6,
+          "note": "identical composed set (center-wide scope, teacher_id NULL)"
+        },
+        "teacher": {
+          "measured": 6,
+          "ceiling": 6,
+          "note": "identical composed set; GetStudentForAnalytics carries the analyticsTeacherScope narg (own-class-only, 404 non-disclosure)"
+        },
+        "student": {
+          "measured": 0,
+          "note": "403 INSUFFICIENT_ROLE before any DB touch (D4/AC3) — even for their own id"
+        }
+      }
+    },
+    "GET /api/analytics/me": {
+      "perRole": {
+        "student": {
+          "measured": 6,
+          "ceiling": 6,
+          "note": "SAME composed set + framing 'student' (peer fields stripped in Go); studentId := tc.UserID, teacher_id NULL resolves the student's own active enrollment class",
+          "itemized": [
+            "GetStudentForAnalytics",
+            "ListStudentBandProgression",
+            "ListStudentSkillBreakdown",
+            "ListClassCohortSkillAvg",
+            "GetStudentAnalyticsSubmissionStats",
+            "ListStudentMistakePatterns"
+          ]
+        },
+        "teacher": {
+          "measured": 0,
+          "note": "403 INSUFFICIENT_ROLE before any DB touch (D4/D5) — non-students use /students/{id}"
+        },
+        "owner": {
+          "measured": 0,
+          "note": "403 INSUFFICIENT_ROLE before any DB touch (D4/D5)"
+        },
+        "admin": {
+          "measured": 0,
+          "note": "403 INSUFFICIENT_ROLE before any DB touch (D4/D5)"
         }
       }
     }

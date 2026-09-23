@@ -11,30 +11,36 @@
 -- a future 6.4 deferred-release would insert with released_at = NULL. The
 -- UNIQUE(submission_id, version) index makes concurrent version-N+1 writes
 -- race-safe: the loser hits 23505 → the service maps it to a 409 retry (B3).
+-- Story 8-3a / FU-8-2-A: @answer_errors is the immutable snapshot of definitive-
+-- incorrect objective answers written at objective Release; Writing/Speaking releases
+-- pass SQL NULL (keeps the R-4 mine-time union safe by construction). Written at INSERT
+-- only — the ledger stays append-only.
+-- Column order mirrors the physical grades table (answer_errors was ADDed last), so the
+-- RETURNING list maps to the generated.Grade table struct rather than a per-query row.
 INSERT INTO grades (
     id, submission_id, center_id, graded_by, version,
-    criterion_scores, overall_band, comments, feedback, released_at, created_at
+    criterion_scores, overall_band, comments, feedback, released_at, created_at, answer_errors
 )
 VALUES (
     gen_random_uuid(), @submission_id, @center_id, @graded_by, @version,
-    @criterion_scores, @overall_band, @comments, @feedback, @released_at, @created_at
+    @criterion_scores, @overall_band, @comments, @feedback, @released_at, @created_at, @answer_errors
 )
 RETURNING id, submission_id, center_id, graded_by, version, criterion_scores,
-          overall_band, comments, feedback, released_at, created_at;
+          overall_band, comments, feedback, released_at, created_at, answer_errors;
 
 -- name: GetCurrentGrade :one
 -- Latest grade version for a submission via the current_grades view (DISTINCT ON
 -- (submission_id) ORDER BY version DESC). The view is security_invoker, so RLS is
 -- evaluated as the querying role under its tenant GUC. pgx.ErrNoRows → ungraded.
 SELECT id, submission_id, center_id, graded_by, version, criterion_scores,
-       overall_band, comments, feedback, released_at, created_at
+       overall_band, comments, feedback, released_at, created_at, answer_errors
 FROM current_grades
 WHERE submission_id = @submission_id;
 
 -- name: ListGradeVersions :many
 -- Full version history for a submission, newest first (audit / revise UI).
 SELECT id, submission_id, center_id, graded_by, version, criterion_scores,
-       overall_band, comments, feedback, released_at, created_at
+       overall_band, comments, feedback, released_at, created_at, answer_errors
 FROM grades
 WHERE submission_id = @submission_id
 ORDER BY version DESC;

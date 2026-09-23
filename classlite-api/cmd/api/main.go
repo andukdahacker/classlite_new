@@ -681,6 +681,11 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsSvc, clock.RealClock{})
 	mux.Handle("GET /api/analytics", dashboardChain(analyticsHandler.Home))
 	mux.Handle("GET /api/analytics/classes/{id}", dashboardChain(analyticsHandler.GetClass))
+	// Story 8-3a — per-student performance (FR-49/FR-50). Same ungated dashboardChain;
+	// the service decides access (owner/admin center-wide, teacher own-class-only → 404
+	// non-disclosure, student → 403 at /students/{id}; /me = student self, non-student 403).
+	mux.Handle("GET /api/analytics/students/{id}", dashboardChain(analyticsHandler.GetStudent))
+	mux.Handle("GET /api/analytics/me", dashboardChain(analyticsHandler.Me))
 
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): List is

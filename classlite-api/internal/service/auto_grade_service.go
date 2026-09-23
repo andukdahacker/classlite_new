@@ -400,6 +400,18 @@ func (s *AutoGradeService) Release(
 		if verr != nil {
 			return fmt.Errorf("release: max grade version: %w", verr)
 		}
+		// FU-8-2-A (AC16): snapshot the definitive-INCORRECT answers into the immutable
+		// grades.answer_errors column so Reading/Listening mistakes become mineable.
+		// "Definitive-incorrect" == effectiveMark != correct — the SAME predicate
+		// definitiveScore uses, so unresolved needs_review counts as wrong here too
+		// (Winston C3). questionType is resolved from the live content via the shared
+		// grading resolver (NO `skill` stored — derived by JOIN at mine-time, Winston C2).
+		// Order follows objCtx.answers (question order) → deterministic. Marshals to a
+		// non-null jsonb array ('[]' when all-correct); Writing/Speaking write SQL NULL.
+		answerErrorsJSON, aeErr := marshalObjectiveAnswerErrors(objCtx.content, objCtx.answers)
+		if aeErr != nil {
+			return aeErr
+		}
 		now := s.clk.Now()
 		gradeRow, ierr := q.InsertGrade(ctx, generated.InsertGradeParams{
 			SubmissionID:    objCtx.submission.ID,
@@ -410,6 +422,7 @@ func (s *AutoGradeService) Release(
 			OverallBand:     bandNum,
 			Comments:        []byte("[]"),
 			Feedback:        pgTextFromPtr(nil),
+			AnswerErrors:    answerErrorsJSON,
 			ReleasedAt:      pgTimestamptz(now),
 			CreatedAt:       pgTimestamptz(now),
 		})
@@ -545,6 +558,38 @@ func definitiveScore(answers []store.AutoGradeAnswer) (raw, max int, pct, band f
 	}
 	band = grading.PercentageToBand(pct)
 	return raw, max, pct, band
+}
+
+// answerErrorSchemaVersion versions the grades.answer_errors JSONB element shape (GO-7).
+const answerErrorSchemaVersion = 1
+
+// marshalObjectiveAnswerErrors builds the FU-8-2-A grades.answer_errors snapshot: the
+// definitive-incorrect answers (effectiveMark != correct, so unresolved needs_review is
+// INCLUDED — the same predicate definitiveScore counts as wrong, Winston C3) as a typed
+// []store.AnswerError. questionType is resolved from the live content via the shared
+// grading resolver (single source of truth; NO skill baked in — derived by JOIN at
+// mine-time, Winston C2). Always returns a non-null jsonb array ('[]' when all answers are
+// correct) so the R-4 mine-time UNION stays safe by construction; the order follows the
+// answers slice (question order) → deterministic. Writing/Speaking releases bypass this and
+// write SQL NULL (keeping the union guard's non-array skip trivially satisfied, T6).
+func marshalObjectiveAnswerErrors(content store.ExerciseContent, answers []store.AutoGradeAnswer) ([]byte, error) {
+	refTypes := grading.QuestionTypesByRef(content)
+	errs := make([]store.AnswerError, 0, len(answers))
+	for _, a := range answers {
+		if effectiveMark(a) == string(grading.MarkCorrect) {
+			continue // only definitive-incorrect (wrong + unresolved needs_review)
+		}
+		errs = append(errs, store.AnswerError{
+			QuestionRef:   a.QuestionRef,
+			QuestionType:  refTypes[a.QuestionRef],
+			SchemaVersion: answerErrorSchemaVersion,
+		})
+	}
+	blob, err := json.Marshal(errs)
+	if err != nil {
+		return nil, fmt.Errorf("release: marshal answer errors: %w", err)
+	}
+	return blob, nil
 }
 
 // buildAutoGradeView joins the stored per-answer state with the live answer key (D14) into

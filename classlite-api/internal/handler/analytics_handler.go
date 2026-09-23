@@ -69,3 +69,43 @@ func (h *AnalyticsHandler) GetClass(w http.ResponseWriter, r *http.Request) erro
 	WriteEnvelope(w, http.StatusOK, h.clk, data)
 	return nil
 }
+
+// GetStudent handles GET /api/analytics/students/{id} (8-3a). A non-UUID id is 422
+// VALIDATION_ERROR; role/scope (owner/admin center-wide, teacher own-class-only → 404
+// STUDENT_NOT_FOUND non-disclosure, student → 403 INSUFFICIENT_ROLE) lives in the
+// service (D4) — a student reaches here and never gets a body.
+func (h *AnalyticsHandler) GetStudent(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok || tc.UserID == "" || tc.CenterID == "" {
+		return ErrTenantContextMissing
+	}
+	studentID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		return model.ValidationError{Fields: []model.FieldError{{
+			Field:   "id",
+			Message: "must be a valid UUID",
+		}}}
+	}
+	data, err := h.svc.GetStudentPerformance(r.Context(), tc, studentID)
+	if err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, data)
+	return nil
+}
+
+// Me handles GET /api/analytics/me (8-3a). The student self is derived from the tenant
+// context inside the service (studentID := tc.UserID); a non-student caller gets 403
+// INSUFFICIENT_ROLE (D4/D5). No path param — /me can only ever be the caller.
+func (h *AnalyticsHandler) Me(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok || tc.UserID == "" || tc.CenterID == "" {
+		return ErrTenantContextMissing
+	}
+	data, err := h.svc.GetMyPerformance(r.Context(), tc)
+	if err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, data)
+	return nil
+}

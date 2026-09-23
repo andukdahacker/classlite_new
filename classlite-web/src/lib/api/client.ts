@@ -1092,6 +1092,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/students/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-student performance — band progression, skill breakdown, mistakes (story 8-3a — FR-49; PROVISIONAL)
+         * @description PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for one student
+         *     (framing "teacher"): per-skill dense band progression, per-skill breakdown (latest
+         *     overall + per-criterion averages for W/S, + the teacher-only cohort `classAvgBand`,
+         *     D11), submission/graded/pin stats + per-zone `hasData`, and 4-skill repetitive-
+         *     mistake patterns (comments ∪ auto-graded answer_errors). Access is resolved IN the
+         *     service (D4): owner|admin → any student in the center; teacher → only students in
+         *     their OWN classes, an out-of-scope/unknown student → 404 `STUDENT_NOT_FOUND`
+         *     (non-disclosure); a STUDENT caller → 403 `INSUFFICIENT_ROLE` (they use /me — even
+         *     for their own id). Bounded set-based aggregates in one transaction, no N+1 (PERF-2).
+         */
+        get: operations["getStudentPerformance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The calling student's own performance — peer data stripped (story 8-3a — FR-50; PROVISIONAL)
+         * @description PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for the calling
+         *     student (framing "student", studentId := the caller). The SAME shape as
+         *     /students/{id} EXCEPT every teacher-only peer field is STRIPPED as a DATA guarantee
+         *     (FR-50): skillBreakdown[].classAvgBand and mistakePatterns[].affectedStudentCount
+         *     are null, and NO class average is present — only the student's own bands, own
+         *     mistakes, own on-time rate, and the class-level targetBand reference. A non-student
+         *     caller → 403 `INSUFFICIENT_ROLE` (they use /students/{id}).
+         */
+        get: operations["getMyPerformance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -2616,27 +2670,43 @@ export interface components {
             sampleCount: number;
         };
         MistakePatterns: {
-            /** @description The mined sources (D16) — ["writing","speaking"] (released grades.comments). */
+            /** @description The mined skills — ["writing","speaking","reading","listening"]. As of D12 BOTH the class endpoint and the student endpoints union the auto_graded answer_errors source, so all four skills are covered. */
             coveredSources: string[];
-            /** @description Sources NOT mined in v1 (D16) — ["auto_graded"] (FU-8-2-A); the FE renders "not yet available", never a blank that reads as "no problems". */
+            /** @description Sources NOT mined — now EMPTY [] on BOTH the class and the student Mistakes surfaces (D12 — auto_graded answer_errors is mined via FU-8-2-A; no two-truths asymmetry). */
             excludedSources: string[];
             patterns: components["schemas"]["MistakePattern"][];
         };
+        /**
+         * @description PROVISIONAL (8-3b co-finalizes). Reused by the class endpoint (8-2a) AND the
+         *     per-student endpoints (8-3a). skillSource widened to all four skills and a
+         *     patternSource discriminator added (D7/D12). patternSource is ADDITIVE/optional in
+         *     the schema so 8-2a/8-2b's shipped FE keeps compiling (the backend ALWAYS emits it);
+         *     8-3b promotes it to required at co-finalize.
+         */
         MistakePattern: {
-            /** @enum {string} */
-            skillSource: "writing" | "speaking";
+            /**
+             * @description Widened to all four skills (D7/D12) — reading|listening patterns are mined from answer_errors.
+             * @enum {string}
+             */
+            skillSource: "writing" | "speaking" | "reading" | "listening";
+            /** @description For patternSource human_comment: the IELTS criterion. For auto_graded: the questionType (8-3b may split this into a dedicated field at co-finalize). */
             criterion: string;
             /** @enum {string} */
             type: "error" | "praise" | "suggestion";
-            /** @description count(*) over unnested released comments (student identity from submissions.student_id */
+            /** @description count(*) over unnested released comments/answer_errors (student identity from submissions.student_id */
             instanceCount: number;
-            /** @description Distinct students (submissions.student_id) — a pattern surfaces only when >= 2 (DR-A). */
-            affectedStudentCount: number;
+            /** @description Distinct students (submissions.student_id). A teacher-only peer field — present on the class endpoint and the teacher /students/{id} view, STRIPPED (null) on /me (FR-50, D5/D11). */
+            affectedStudentCount: number | null;
             /**
              * @description recent-4wk vs prior-4wk instance count (DR-B
              * @enum {string}
              */
             trend: "improving" | "worsening" | "stable";
+            /**
+             * @description PROVISIONAL — the mining basis (D7). human_comment = writing/speaking teacher comments (carries a quote); auto_graded = reading/listening answer_errors (quote-less → the FE renders warm generic coaching copy).
+             * @enum {string}
+             */
+            patternSource?: "human_comment" | "auto_graded";
         };
         AnalyticsAtRiskItem: {
             /** Format: uuid */
@@ -2658,6 +2728,91 @@ export interface components {
              * @description onTimeCount / totalDue; null when totalDue is 0 (division guard — never 0
              */
             rate: number | null;
+        };
+        EnvelopeStudentPerformance: {
+            data: components["schemas"]["StudentPerformance"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description PROVISIONAL (8-3b co-finalizes). One student's performance. The teacher
+         *     /students/{id} view and the student /me view share this shape; /me sets framing
+         *     "student" and STRIPS every teacher-only peer field (skillBreakdown[].classAvgBand,
+         *     mistakePatterns[].affectedStudentCount) as a DATA guarantee (FR-50, D5/D11). NO
+         *     recommendations field (deferred to 8-3c, D2).
+         */
+        StudentPerformance: {
+            /** Format: uuid */
+            studentId: string;
+            studentName: string;
+            /**
+             * @description Discriminates the two views over one builder — "student" (/me) strips the peer fields; 8-3b keys the softened Patterns i18n off it.
+             * @enum {string}
+             */
+            framing: "teacher" | "student";
+            /**
+             * Format: uuid
+             * @description The student's resolved class (teacher: their class containing the student; owner/admin: the student's active enrollment); null when the student is in no class.
+             */
+            classId: string | null;
+            /**
+             * Format: float
+             * @description The resolved class's target band (classes.target_band) — an aspiration/trajectory reference, NOT a peer average (so FR-50 holds); null when the class carries no target or the student is in no class.
+             */
+            targetBand: number | null;
+            submissionStats: components["schemas"]["StudentSubmissionStats"];
+            skillBreakdown: components["schemas"]["SkillBreakdown"][];
+            /** @description One dense per-skill weekly overall-band series per skill with released grades (a skill with no released grades is omitted). */
+            bandProgression: components["schemas"]["SkillBandSeries"][];
+            mistakePatterns: components["schemas"]["MistakePatterns"];
+        };
+        /** @description PROVISIONAL — one skill's dense weekly overall-band progression (points reuse BandOverTimePoint). */
+        SkillBandSeries: {
+            /** @enum {string} */
+            skill: "writing" | "speaking" | "reading" | "listening";
+            /** @description Dense, contiguous Monday-anchored (center tz) weekly avg overall band; avgBand null on an empty week (never 0). */
+            points: components["schemas"]["BandOverTimePoint"][];
+        };
+        /** @description PROVISIONAL — one skill's current standing. */
+        SkillBreakdown: {
+            /** @enum {string} */
+            skill: "writing" | "speaking" | "reading" | "listening";
+            /**
+             * Format: float
+             * @description The student's latest released overall band for the skill; null when the skill has no released grades.
+             */
+            overallBand: number | null;
+            /**
+             * Format: float
+             * @description Teacher-only peer field (D11) — the cohort average for the student's resolved class; null when the student is in no class or the cohort has no released grades for the skill. STRIPPED (null) on /me (FR-50).
+             */
+            classAvgBand: number | null;
+            /** @description Per-criterion averages for Writing/Speaking only (reading/listening → empty). */
+            criteria: components["schemas"]["SkillCriterionAvg"][];
+        };
+        /** @description PROVISIONAL — one IELTS criterion's average band for a skill. */
+        SkillCriterionAvg: {
+            criterion: string;
+            /**
+             * Format: float
+             * @description Type-guarded avg of the criterion band over the student's released grades for the skill; null when no numeric value was recorded.
+             */
+            avgBand: number | null;
+        };
+        /** @description PROVISIONAL — the student's own submission zone. */
+        StudentSubmissionStats: {
+            submissionRate: components["schemas"]["SubmissionRate"];
+            /** @description The student's submitted submissions (submitted_at IS NOT NULL). */
+            totalSubmissionCount: number;
+            /** @description Released grades — the s37 ghosted-frame "≥3 graded" threshold quantity, DISTINCT from totalSubmissionCount. */
+            gradedSubmissionCount: number;
+            /** @description type="praise" comments across the student's released grades. */
+            praisePinCount: number;
+            /** @description type="error" comments across the student's released grades. */
+            errorPinCount: number;
+            /** @description Per-zone has-data flags (bandProgression, skillBreakdown, mistakePatterns, submissionStats) so the FE dims each ghosted zone independently rather than inferring emptiness. */
+            hasData: {
+                [key: string]: boolean;
+            };
         };
         RegisterRequest: {
             /** Format: email */
@@ -8247,6 +8402,103 @@ export interface operations {
             };
             /** @description VALIDATION_ERROR (id is not a valid UUID) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getStudentPerformance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The student's user id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The student-performance payload (framing "teacher"). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentPerformance"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (a student caller — even for their own id, D4) or CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description STUDENT_NOT_FOUND (unknown, out-of-scope for a teacher caller, or cross-tenant — non-disclosure, D4) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (id is not a valid UUID) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getMyPerformance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's own performance (framing "student", peer fields stripped). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStudentPerformance"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (a non-student caller — D4/D5) or CENTER_CONTEXT_REQUIRED */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

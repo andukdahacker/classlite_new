@@ -154,9 +154,13 @@ func TestAnalyticsClass_SerializedNullShape(t *testing.T) {
 	if cp.CohortAvgBand != nil {
 		t.Errorf("cohortAvgBand must be nil with no grades, got %v", *cp.CohortAvgBand)
 	}
-	// mistakePatterns block labeled even when empty (D16).
-	if len(cp.MistakePatterns.CoveredSources) == 0 || len(cp.MistakePatterns.ExcludedSources) == 0 {
-		t.Errorf("mistakePatterns must always label covered/excluded sources (D16)")
+	// mistakePatterns block always labels covered sources (D16); D12 — auto_graded is now
+	// mined too, so excludedSources is EMPTY (both Mistakes surfaces symmetric, AC14).
+	if len(cp.MistakePatterns.CoveredSources) == 0 {
+		t.Errorf("mistakePatterns must always label covered sources (D16)")
+	}
+	if len(cp.MistakePatterns.ExcludedSources) != 0 {
+		t.Errorf("D12: class endpoint excludedSources must be [] now that auto_graded is mined, got %v", cp.MistakePatterns.ExcludedSources)
 	}
 }
 
@@ -255,8 +259,17 @@ func TestAnalyticsClass_MistakeCoGateBoundary(t *testing.T) {
 	if p.Criterion != "grammaticalRange" || p.Type != "error" || p.SkillSource != "writing" {
 		t.Errorf("surfaced pattern should be writing/grammaticalRange/error, got %+v", p)
 	}
-	if p.InstanceCount != 4 || p.AffectedStudentCount != 2 {
-		t.Errorf("group C counts: want instance4/students2, got instance%d/students%d", p.InstanceCount, p.AffectedStudentCount)
+	// AffectedStudentCount is now a *int (teacher-only peer field, stripped on /me — D5/D11);
+	// the class endpoint always populates it.
+	if p.AffectedStudentCount == nil {
+		t.Fatalf("class endpoint must expose affectedStudentCount (teacher peer field), got nil")
+	}
+	if p.InstanceCount != 4 || *p.AffectedStudentCount != 2 {
+		t.Errorf("group C counts: want instance4/students2, got instance%d/students%d", p.InstanceCount, *p.AffectedStudentCount)
+	}
+	// D12 — the human-comment source is tagged patternSource.
+	if p.PatternSource != "human_comment" {
+		t.Errorf("writing/comment pattern patternSource = %q, want human_comment", p.PatternSource)
 	}
 }
 

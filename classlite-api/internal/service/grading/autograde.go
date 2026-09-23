@@ -303,6 +303,28 @@ func questionType(group store.QuestionGroup, q store.Question) string {
 	return group.Type
 }
 
+// QuestionTypesByRef walks content and maps each gradable question's "{sec}:{grp}:{q}"
+// ref to its effective question type (question type, group-type fallback) — the SAME
+// walk + ref format Grade uses, so the two never drift. It is the single source of truth
+// for ref→type resolution, shared by the auto-grade pipeline and the FU-8-2-A
+// answer-error snapshot (auto_grade_service.go: AutoGradeService.Release). Prompt-only
+// (writing/speaking) sections are skipped — they are never auto-graded (D3).
+func QuestionTypesByRef(content store.ExerciseContent) map[string]string {
+	types := make(map[string]string)
+	for sectionIndex, section := range content.Sections {
+		if isPromptOnlySection(section.Type) {
+			continue
+		}
+		for groupIndex, group := range section.QuestionGroups {
+			for questionIndex, question := range group.Questions {
+				ref := fmt.Sprintf("%d:%d:%d", sectionIndex, groupIndex, questionIndex)
+				types[ref] = questionType(group, question)
+			}
+		}
+	}
+	return types
+}
+
 // Grade runs the full objective pipeline. Returns nil (never an error, D13) when the
 // content has no gradable question. Percentage = resolvedCorrect / (maxScore −
 // unresolvedNeedsReview) × 100 (guard denom ≤ 0 → 0%); ProvisionalBand = PercentageToBand.
