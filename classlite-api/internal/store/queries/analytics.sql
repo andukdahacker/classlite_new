@@ -240,6 +240,7 @@ WITH unnested AS (
         (elem.value->>'criterion')::text  AS criterion,
         (elem.value->>'type')::text       AS type,
         'human_comment'::text             AS pattern_source,
+        (elem.value->>'text')::text       AS example_quote,
         s.student_id                      AS student_id,
         (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
         (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
@@ -263,6 +264,7 @@ WITH unnested AS (
         (ae.value->>'questionType')::text   AS criterion,
         'error'::text                       AS type,
         'auto_graded'::text                 AS pattern_source,
+        NULL::text                          AS example_quote,
         s.student_id                        AS student_id,
         (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
         (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
@@ -288,7 +290,8 @@ SELECT
     count(*)::bigint AS instance_count,
     count(DISTINCT student_id)::bigint AS affected_student_count,
     sum(recent_flag)::bigint AS recent_count,
-    sum(prior_flag)::bigint AS prior_count
+    sum(prior_flag)::bigint AS prior_count,
+    max(example_quote) AS example_quote
 FROM unnested
 GROUP BY skill_source, criterion, type, pattern_source
 ORDER BY count(*) DESC, skill_source ASC, criterion ASC, type ASC;
@@ -594,6 +597,7 @@ WITH unnested AS (
         (elem.value->>'criterion')::text  AS criterion,
         (elem.value->>'type')::text       AS type,
         'human_comment'::text             AS pattern_source,
+        (elem.value->>'text')::text       AS example_quote,
         s.student_id                      AS student_id,
         (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
         (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
@@ -617,6 +621,7 @@ WITH unnested AS (
         (ae.value->>'questionType')::text   AS criterion,
         'error'::text                       AS type,
         'auto_graded'::text                 AS pattern_source,
+        NULL::text                          AS example_quote,
         s.student_id                        AS student_id,
         (CASE WHEN cg.released_at >= sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS recent_flag,
         (CASE WHEN cg.released_at >= sqlc.arg('prior_start') AND cg.released_at < sqlc.arg('recent_start') THEN 1 ELSE 0 END) AS prior_flag
@@ -642,7 +647,8 @@ SELECT
     count(*)::bigint AS instance_count,
     count(DISTINCT student_id)::bigint AS affected_student_count,
     sum(recent_flag)::bigint AS recent_count,
-    sum(prior_flag)::bigint AS prior_count
+    sum(prior_flag)::bigint AS prior_count,
+    max(example_quote) AS example_quote
 FROM unnested
 GROUP BY skill_source, criterion, type, pattern_source
 ORDER BY count(*) DESC, skill_source ASC, criterion ASC, type ASC;

@@ -915,6 +915,18 @@ const baseRoutes: RouteObject[] = [
           return { Component: ClassPerformanceView }
         },
       },
+      // Story 8-3b — /analytics/student/:id teacher/owner/admin student-performance
+      // detail. Its OWN lazy chunk, ungated (the 8-3a backend decides access —
+      // teacher out-of-scope → 404 non-disclosure, student → 403).
+      {
+        path: '/analytics/student/:id',
+        lazy: async () => {
+          const { StudentPerformanceDetail } = await import(
+            '@/features/analytics/components/StudentPerformanceDetail'
+          )
+          return { Component: StudentPerformanceDetail }
+        },
+      },
       // Story 8-2b — /my-performance student placeholder (D8). Own tiny chunk,
       // student-gated (mirrors /my-schedule) so the /analytics student redirect
       // and the pre-existing student sidebar link never 404. The real page +

@@ -51,6 +51,8 @@ import { ClassPerformanceView } from '@/features/analytics/components/ClassPerfo
 import {
   CLASS_A_ID,
   AT_RISK_STUDENT_ID,
+  classPerformance,
+  mistakePatterns,
   classPerfHandlers,
   classPerfDefaultHandlers,
   classPerf500Handlers,
@@ -129,7 +131,15 @@ describe('ClassPerformanceView — targetBand null D11 fallback (AC13a, AC22f, P
 
 describe('ClassPerformanceView — mistake rows text-not-glyph (AC17/18, D16, P1)', () => {
   test('P1 rows carry an EXPLICIT textual type + a TEXT trend label; the excluded-source note is inline info', async () => {
-    server.use(...classPerfDefaultHandlers)
+    // D12: the default excludedSources is now [] (auto_graded is mined) — this test
+    // exercises the note-render branch with an EXPLICIT non-empty excludedSources.
+    server.use(
+      ...classPerfHandlers(
+        classPerformance({
+          mistakePatterns: mistakePatterns({ excludedSources: ['auto_graded'] }),
+        }),
+      ),
+    )
     renderView()
     const mistakes = await screen.findByTestId('analytics-zone-mistakes')
     // Explicit textual types — "Recurring mistake" (error) and "Strength" (praise).
@@ -142,7 +152,14 @@ describe('ClassPerformanceView — mistake rows text-not-glyph (AC17/18, D16, P1
   })
 
   test('P1 empty patterns (non-empty coveredSources) → a per-zone "no repeating patterns" empty state, distinct from the excluded note', async () => {
-    server.use(...classPerfHandlers(classPerformanceEmptyZones))
+    server.use(
+      ...classPerfHandlers(
+        classPerformance({
+          mistakePatterns: mistakePatterns({ patterns: [], excludedSources: ['auto_graded'] }),
+          atRiskStudents: [],
+        }),
+      ),
+    )
     renderView()
     const mistakes = await screen.findByTestId('analytics-zone-mistakes')
     expect(within(mistakes).getByTestId('analytics-mistakes-empty')).toBeInTheDocument()

@@ -1100,8 +1100,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Per-student performance — band progression, skill breakdown, mistakes (story 8-3a — FR-49; PROVISIONAL)
-         * @description PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for one student
+         * Per-student performance — band progression, skill breakdown, mistakes (story 8-3a — FR-49)
+         * @description Returns a `StudentPerformance` for one student
          *     (framing "teacher"): per-skill dense band progression, per-skill breakdown (latest
          *     overall + per-criterion averages for W/S, + the teacher-only cohort `classAvgBand`,
          *     D11), submission/graded/pin stats + per-zone `hasData`, and 4-skill repetitive-
@@ -1128,8 +1128,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The calling student's own performance — peer data stripped (story 8-3a — FR-50; PROVISIONAL)
-         * @description PROVISIONAL (8-3b co-finalizes). Returns a `StudentPerformance` for the calling
+         * The calling student's own performance — peer data stripped (story 8-3a — FR-50)
+         * @description Returns a `StudentPerformance` for the calling
          *     student (framing "student", studentId := the caller). The SAME shape as
          *     /students/{id} EXCEPT every teacher-only peer field is STRIPPED as a DATA guarantee
          *     (FR-50): skillBreakdown[].classAvgBand and mistakePatterns[].affectedStudentCount
@@ -2677,25 +2677,27 @@ export interface components {
             patterns: components["schemas"]["MistakePattern"][];
         };
         /**
-         * @description PROVISIONAL (8-3b co-finalizes). Reused by the class endpoint (8-2a) AND the
-         *     per-student endpoints (8-3a). skillSource widened to all four skills and a
-         *     patternSource discriminator added (D7/D12). patternSource is ADDITIVE/optional in
-         *     the schema so 8-2a/8-2b's shipped FE keeps compiling (the backend ALWAYS emits it);
-         *     8-3b promotes it to required at co-finalize.
+         * @description Reused by the class endpoint (8-2a) AND the per-student endpoints (8-3a).
+         *     skillSource covers all four skills; patternSource discriminates the mining basis.
+         *     criterion vs questionType is source-split (D-COFINAL): human_comment rows carry the
+         *     IELTS criterion in `criterion` (questionType empty), auto_graded rows carry the
+         *     question type in `questionType` (criterion "").
          */
         MistakePattern: {
             /**
-             * @description Widened to all four skills (D7/D12) — reading|listening patterns are mined from answer_errors.
+             * @description All four skills (D7/D12) — reading|listening patterns are mined from answer_errors.
              * @enum {string}
              */
             skillSource: "writing" | "speaking" | "reading" | "listening";
-            /** @description For patternSource human_comment: the IELTS criterion. For auto_graded: the questionType (8-3b may split this into a dedicated field at co-finalize). */
+            /** @description The IELTS criterion for human_comment rows; "" (empty) for auto_graded rows, whose type lives in questionType (D-COFINAL — the FE label falls back to questionType when criterion is ""). */
             criterion: string;
+            /** @description The objective question type for auto_graded (reading/listening) rows; empty/null for human_comment rows (D-COFINAL). */
+            questionType: string | null;
             /** @enum {string} */
             type: "error" | "praise" | "suggestion";
             /** @description count(*) over unnested released comments/answer_errors (student identity from submissions.student_id */
             instanceCount: number;
-            /** @description Distinct students (submissions.student_id). A teacher-only peer field — present on the class endpoint and the teacher /students/{id} view, STRIPPED (null) on /me (FR-50, D5/D11). */
+            /** @description Distinct students (submissions.student_id). A teacher-only peer field — present on the class endpoint, STRIPPED (null) on /me and suppressed on the single-student detail view (FR-50, D5/D11, Winston #7). */
             affectedStudentCount: number | null;
             /**
              * @description recent-4wk vs prior-4wk instance count (DR-B
@@ -2703,10 +2705,14 @@ export interface components {
              */
             trend: "improving" | "worsening" | "stable";
             /**
-             * @description PROVISIONAL — the mining basis (D7). human_comment = writing/speaking teacher comments (carries a quote); auto_graded = reading/listening answer_errors (quote-less → the FE renders warm generic coaching copy).
+             * @description The mining basis (D7). human_comment = writing/speaking teacher comments (carries a quote); auto_graded = reading/listening answer_errors (quote-less → the FE renders warm generic coaching copy).
              * @enum {string}
              */
-            patternSource?: "human_comment" | "auto_graded";
+            patternSource: "human_comment" | "auto_graded";
+            /** @description One representative teacher-comment body mined per human_comment pattern (D-COFINAL); null on auto_graded (quote-less). */
+            exampleQuote: string | null;
+            /** @description A representative teacher note for the pattern where one exists; null otherwise (D-COFINAL). */
+            exampleNote: string | null;
         };
         AnalyticsAtRiskItem: {
             /** Format: uuid */
@@ -2734,7 +2740,7 @@ export interface components {
             meta: components["schemas"]["EnvelopeMeta"];
         };
         /**
-         * @description PROVISIONAL (8-3b co-finalizes). One student's performance. The teacher
+         * @description One student's performance. The teacher
          *     /students/{id} view and the student /me view share this shape; /me sets framing
          *     "student" and STRIPS every teacher-only peer field (skillBreakdown[].classAvgBand,
          *     mistakePatterns[].affectedStudentCount) as a DATA guarantee (FR-50, D5/D11). NO
@@ -2765,14 +2771,14 @@ export interface components {
             bandProgression: components["schemas"]["SkillBandSeries"][];
             mistakePatterns: components["schemas"]["MistakePatterns"];
         };
-        /** @description PROVISIONAL — one skill's dense weekly overall-band progression (points reuse BandOverTimePoint). */
+        /** @description One skill's dense weekly overall-band progression (points reuse BandOverTimePoint). */
         SkillBandSeries: {
             /** @enum {string} */
             skill: "writing" | "speaking" | "reading" | "listening";
             /** @description Dense, contiguous Monday-anchored (center tz) weekly avg overall band; avgBand null on an empty week (never 0). */
             points: components["schemas"]["BandOverTimePoint"][];
         };
-        /** @description PROVISIONAL — one skill's current standing. */
+        /** @description One skill's current standing. */
         SkillBreakdown: {
             /** @enum {string} */
             skill: "writing" | "speaking" | "reading" | "listening";
@@ -2789,7 +2795,7 @@ export interface components {
             /** @description Per-criterion averages for Writing/Speaking only (reading/listening → empty). */
             criteria: components["schemas"]["SkillCriterionAvg"][];
         };
-        /** @description PROVISIONAL — one IELTS criterion's average band for a skill. */
+        /** @description One IELTS criterion's average band for a skill. */
         SkillCriterionAvg: {
             criterion: string;
             /**
@@ -2798,7 +2804,7 @@ export interface components {
              */
             avgBand: number | null;
         };
-        /** @description PROVISIONAL — the student's own submission zone. */
+        /** @description The student's own submission zone. */
         StudentSubmissionStats: {
             submissionRate: components["schemas"]["SubmissionRate"];
             /** @description The student's submitted submissions (submitted_at IS NOT NULL). */

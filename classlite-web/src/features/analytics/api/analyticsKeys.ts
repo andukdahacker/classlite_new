@@ -14,4 +14,8 @@ export const analyticsKeys = {
   home: () => [...analyticsKeys.all, 'home'] as const,
   classPerf: (id: string, params: Readonly<Record<string, unknown>> = {}) =>
     [...analyticsKeys.all, 'classPerf', id, params] as const,
+  // Story 8-3b — the per-student teacher detail (GET /api/analytics/students/{id})
+  // and the calling student's own view (GET /api/analytics/me).
+  student: (id: string) => [...analyticsKeys.all, 'student', id] as const,
+  me: () => [...analyticsKeys.all, 'me'] as const,
 } as const

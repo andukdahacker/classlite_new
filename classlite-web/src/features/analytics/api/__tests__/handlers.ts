@@ -30,6 +30,8 @@ type MistakePattern = components['schemas']['MistakePattern']
 type AnalyticsAtRiskItem = components['schemas']['AnalyticsAtRiskItem']
 type SubmissionRate = components['schemas']['SubmissionRate']
 type EnvelopeMeta = components['schemas']['EnvelopeMeta']
+type StudentPerformance = components['schemas']['StudentPerformance']
+type StudentSubmissionStats = components['schemas']['StudentSubmissionStats']
 
 // ---------------------------------------------------------------------------
 // The injected clock (D-notes: analytics reads meta.serverTime like 8-1b — no
@@ -159,10 +161,14 @@ export function mistakePattern(overrides: Partial<MistakePattern> = {}): Mistake
   return {
     skillSource: 'writing',
     criterion: 'coherenceCohesion',
+    questionType: null,
     type: 'error',
     instanceCount: 23,
     affectedStudentCount: 9,
     trend: 'worsening',
+    patternSource: 'human_comment',
+    exampleQuote: null,
+    exampleNote: null,
     ...overrides,
   }
 }
@@ -170,8 +176,10 @@ export function mistakePattern(overrides: Partial<MistakePattern> = {}): Mistake
 export function mistakePatterns(overrides: Partial<MistakePatterns> = {}): MistakePatterns {
   return {
     coveredSources: ['writing', 'speaking'],
-    // D16b — excluded auto-graded source must render a VISIBLE inline info note.
-    excludedSources: ['auto_graded'],
+    // D12 (8-3b) — auto_graded answer_errors are now mined on BOTH surfaces, so the
+    // real backend returns []; tests that exercise the excluded-note branch pass an
+    // explicit ['auto_graded'] override.
+    excludedSources: [],
     patterns: [
       mistakePattern(),
       // The calm `type='praise'` variant → "Strength" row (D16a).
@@ -307,6 +315,150 @@ export const classPerf404Handlers = [
     HttpResponse.json(
       { error: { code: 'CLASS_NOT_FOUND', message: 'not found', requestId: 'req-cp-404', details: null } },
       { status: 404 },
+    ),
+  ),
+]
+
+// ---------------------------------------------------------------------------
+// Student-performance builders (Story 8-3b) — GET /api/analytics/students/:id
+// (teacher framing) + GET /api/analytics/me (student framing, peer fields
+// stripped). The `framing` discriminator drives ALL softening (D5).
+// ---------------------------------------------------------------------------
+export const STUDENT_ID = 'stu-analytics-1'
+
+export function studentSubmissionStats(
+  overrides: Partial<StudentSubmissionStats> = {},
+): StudentSubmissionStats {
+  return {
+    submissionRate: { onTimeCount: 8, totalDue: 10, rate: 0.8 },
+    totalSubmissionCount: 12,
+    gradedSubmissionCount: 9,
+    praisePinCount: 4,
+    errorPinCount: 6,
+    hasData: {
+      bandProgression: true,
+      skillBreakdown: true,
+      mistakePatterns: true,
+      submissionStats: true,
+    },
+    ...overrides,
+  }
+}
+
+/** Teacher `/students/{id}` — carries the peer fields (classAvgBand,
+ *  affectedStudentCount). A middle-week null band → the trend GAPs (never 0). */
+export function studentPerformance(
+  overrides: Partial<StudentPerformance> = {},
+): StudentPerformance {
+  return {
+    studentId: STUDENT_ID,
+    studentName: 'Nguyen An',
+    framing: 'teacher',
+    classId: CLASS_A_ID,
+    targetBand: TARGET_BAND,
+    submissionStats: studentSubmissionStats(),
+    skillBreakdown: [
+      {
+        skill: 'writing',
+        overallBand: 5.5,
+        classAvgBand: 6.0,
+        criteria: [{ criterion: 'coherenceCohesion', avgBand: 5.5 }],
+      },
+      { skill: 'reading', overallBand: 6.5, classAvgBand: 6.0, criteria: [] },
+    ],
+    bandProgression: [
+      {
+        skill: 'writing',
+        points: [
+          { weekStart: WEEKS[0], avgBand: 5.0, submissionCount: 2 },
+          { weekStart: WEEKS[1], avgBand: null, submissionCount: 0 }, // GAP
+          { weekStart: WEEKS[2], avgBand: 5.5, submissionCount: 3 },
+        ],
+      },
+    ],
+    mistakePatterns: mistakePatterns(),
+    ...overrides,
+  }
+}
+
+/** Student `/me` — the backend STRIPS peer fields service-side (classAvgBand
+ *  null, affectedStudentCount null) and sets framing "student" (FR-50, D5). */
+export function myPerformance(
+  overrides: Partial<StudentPerformance> = {},
+): StudentPerformance {
+  return studentPerformance({
+    framing: 'student',
+    skillBreakdown: [
+      { skill: 'writing', overallBand: 5.5, classAvgBand: null, criteria: [] },
+      { skill: 'reading', overallBand: 6.5, classAvgBand: null, criteria: [] },
+    ],
+    mistakePatterns: mistakePatterns({
+      patterns: [
+        mistakePattern({
+          affectedStudentCount: null,
+          exampleQuote: 'Your conclusion restates the intro.',
+          exampleNote: 'Try a forward-looking final sentence.',
+        }),
+      ],
+    }),
+    ...overrides,
+  })
+}
+
+export function studentPerfHandlers(
+  data: StudentPerformance,
+  serverTime: string = FIXED_SERVER_TIME,
+) {
+  return [
+    http.get('/api/analytics/students/:id', () =>
+      HttpResponse.json(envelope(data, serverTime)),
+    ),
+  ]
+}
+
+export function myPerfHandlers(
+  data: StudentPerformance,
+  serverTime: string = FIXED_SERVER_TIME,
+) {
+  return [http.get('/api/analytics/me', () => HttpResponse.json(envelope(data, serverTime)))]
+}
+
+/** 500 on the student read → the single-aggregate view blanks + inline retry. */
+export const studentPerf500Handlers = [
+  http.get('/api/analytics/students/:id', () =>
+    HttpResponse.json(
+      { error: { code: 'INTERNAL_ERROR', message: 'boom', requestId: 'req-sp-500', details: null } },
+      { status: 500 },
+    ),
+  ),
+]
+
+/** 404 STUDENT_NOT_FOUND — teacher out of scope (non-disclosure D4/D5). */
+export const studentPerf404Handlers = [
+  http.get('/api/analytics/students/:id', () =>
+    HttpResponse.json(
+      { error: { code: 'STUDENT_NOT_FOUND', message: 'not found', requestId: 'req-sp-404', details: null } },
+      { status: 404 },
+    ),
+  ),
+]
+
+/** 403 INSUFFICIENT_ROLE — a student who somehow reaches the teacher route. */
+export const studentPerf403Handlers = [
+  http.get('/api/analytics/students/:id', () =>
+    HttpResponse.json(
+      { error: { code: 'INSUFFICIENT_ROLE', message: 'forbidden', requestId: 'req-sp-403', details: null } },
+      { status: 403 },
+    ),
+  ),
+]
+
+/** 500 on /me → the student view blanks + inline retry. */
+export const myPerf500Handlers = [
+  http.get('/api/analytics/me', () =>
+    HttpResponse.json(
+      { error: { code: 'INTERNAL_ERROR', message: 'boom', requestId: 'req-me-500', details: null } },
+      { status: 500 },
     ),
   ),
 ]

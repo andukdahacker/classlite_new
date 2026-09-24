@@ -59,6 +59,9 @@ const (
 	// surface — "class-wide" means genuinely multi-student, not one chatty student
 	// (DR-A).
 	MinPatternStudents = 2
+	// mistakeSourceAutoGraded is the patternSource value for objective (reading/listening)
+	// answer_errors rows; the criterion alias carries the questionType for these (D-COFINAL).
+	mistakeSourceAutoGraded = "auto_graded"
 	// AnalyticsTrendWindowWeeks is the recent/prior window size for the mistake trend
 	// (DR-B): recent = [now-4wk, now), prior = [now-8wk, now-4wk).
 	AnalyticsTrendWindowWeeks = 4
@@ -176,13 +179,38 @@ type MistakePatterns struct {
 // AffectedStudentCount is a teacher-only peer field: present on the class endpoint and
 // the teacher /students/{id} view, STRIPPED (nil) on /me (FR-50 — D5/D11).
 type MistakePattern struct {
-	SkillSource          string `json:"skillSource"`
-	Criterion            string `json:"criterion"`
-	Type                 string `json:"type"`
-	InstanceCount        int    `json:"instanceCount"`
-	AffectedStudentCount *int   `json:"affectedStudentCount"`
-	Trend                string `json:"trend"`
-	PatternSource        string `json:"patternSource"`
+	SkillSource          string  `json:"skillSource"`
+	Criterion            string  `json:"criterion"`
+	QuestionType         string  `json:"questionType"`
+	Type                 string  `json:"type"`
+	InstanceCount        int     `json:"instanceCount"`
+	AffectedStudentCount *int    `json:"affectedStudentCount"`
+	Trend                string  `json:"trend"`
+	PatternSource        string  `json:"patternSource"`
+	ExampleQuote         *string `json:"exampleQuote"`
+	ExampleNote          *string `json:"exampleNote"`
+}
+
+// mistakeCriterionSplit reinterprets the SQL `criterion` alias per patternSource
+// (D-COFINAL). The SQL puts the IELTS criterion there for human_comment rows and the
+// objective questionType there for auto_graded rows; the wire contract splits them into
+// two fields so the FE label falls back to questionType when criterion is "" (Winston #2).
+// Go-only — no SQL/sqlc change to the alias.
+func mistakeCriterionSplit(patternSource, aliasCriterion string) (criterion, questionType string) {
+	if patternSource == mistakeSourceAutoGraded {
+		return "", aliasCriterion
+	}
+	return aliasCriterion, ""
+}
+
+// mistakeExampleQuote converts the sqlc-untyped example_quote aggregate (interface{} —
+// max() over a UNION-derived text column; a string for a mined human_comment body, nil for
+// the all-NULL auto_graded group) into a nullable string pointer (GO-5 null on absence).
+func mistakeExampleQuote(raw interface{}) *string {
+	if s, ok := raw.(string); ok && s != "" {
+		return &s
+	}
+	return nil
 }
 
 // AnalyticsAtRiskItem is one at-risk student in the class (D5).
@@ -831,14 +859,18 @@ func buildStudentMistakePatterns(rows []generated.ListStudentMistakePatternsRow,
 			a := int(r.AffectedStudentCount)
 			affected = &a
 		}
+		criterion, questionType := mistakeCriterionSplit(r.PatternSource, r.Criterion)
 		patterns = append(patterns, MistakePattern{
 			SkillSource:          r.SkillSource,
-			Criterion:            r.Criterion,
+			Criterion:            criterion,
+			QuestionType:         questionType,
 			Type:                 r.Type,
 			InstanceCount:        int(r.InstanceCount),
 			AffectedStudentCount: affected,
 			Trend:                mistakeTrend(r.RecentCount, r.PriorCount),
 			PatternSource:        r.PatternSource,
+			ExampleQuote:         mistakeExampleQuote(r.ExampleQuote),
+			ExampleNote:          nil, // no per-comment note field in the v1 grade comment shape
 		})
 	}
 	return MistakePatterns{
@@ -1007,14 +1039,18 @@ func buildMistakePatterns(rows []generated.ListClassMistakePatternsRow) MistakeP
 			continue
 		}
 		affected := int(r.AffectedStudentCount)
+		criterion, questionType := mistakeCriterionSplit(r.PatternSource, r.Criterion)
 		patterns = append(patterns, MistakePattern{
 			SkillSource:          r.SkillSource,
-			Criterion:            r.Criterion,
+			Criterion:            criterion,
+			QuestionType:         questionType,
 			Type:                 r.Type,
 			InstanceCount:        int(r.InstanceCount),
 			AffectedStudentCount: &affected, // class endpoint always exposes the peer count
 			Trend:                mistakeTrend(r.RecentCount, r.PriorCount),
 			PatternSource:        r.PatternSource,
+			ExampleQuote:         mistakeExampleQuote(r.ExampleQuote),
+			ExampleNote:          nil, // no per-comment note field in the v1 grade comment shape
 		})
 	}
 	return MistakePatterns{

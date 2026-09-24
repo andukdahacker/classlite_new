@@ -24,6 +24,7 @@ import { useClassPerformance } from '../api/useClassPerformance'
 import { formatBandOrDash, formatOrDash } from '@/lib/analytics/formatBand'
 import { ClassAtRiskRow } from './ClassAtRiskRow'
 import { MistakePatternRow } from './MistakePatternRow'
+import { patternRowKey } from '../lib/patternRowKey'
 
 const NOT_FOUND_STATUS = 404
 
@@ -253,7 +254,12 @@ export function ClassPerformanceView(): ReactElement {
           <ul className="flex flex-col gap-2">
             {mistakePatterns.patterns.map((pattern, index) => (
               <MistakePatternRow
-                key={`${pattern.skillSource}-${pattern.criterion}-${pattern.type}-${index}`}
+                // Stable identity key (code-review P4) — the (patternSource,
+                // skillSource, criterion|questionType, type) composite from the
+                // backend GROUP BY, NO array index. Incorporating questionType is
+                // what keeps two auto_graded rows that BOTH emit criterion "" from
+                // colliding (Winston #1, AC22).
+                key={patternRowKey(pattern)}
                 pattern={pattern}
                 index={index}
               />

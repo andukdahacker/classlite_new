@@ -33,6 +33,7 @@ import {
 import {
   STORY_8_2B_KEYS,
   STORY_8_2B_REUSED_KEYS,
+  STORY_8_3B_KEYS,
 } from '@/features/analytics/__tests__/analyticsI18nKeys'
 
 /**
@@ -2147,6 +2148,20 @@ describe('Story 8.2b i18n parity (master ratchet)', () => {
   })
 
   test.each(STORY_8_2B_KEYS)('%s belongs to the analytics.* namespace', (key) => {
+    expect(key.startsWith('analytics.')).toBe(true)
+  })
+})
+
+describe('Story 8.3b i18n parity (master ratchet)', () => {
+  test('every new Story 8.3b analytics.* key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_8_3B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 8.3b keys', () => {
+    assertI18nInterpolationParity(STORY_8_3B_KEYS)
+  })
+
+  test.each(STORY_8_3B_KEYS)('%s belongs to the analytics.* namespace', (key) => {
     expect(key.startsWith('analytics.')).toBe(true)
   })
 })
