@@ -148,7 +148,9 @@
 | ------------ | ------------------ |
 | Size         | M                  |
 | Audience     | Full-stack         |
-| Dependencies | 3.1, 4.1, 7.2     |
+| Dependencies | 3.1, 4.1, 4.4a, 5.1, 7.2a, 8.1a |
+
+> **Implementation note (2026-09-24, Amelia — Ducdo-ruled split D1).** 8.4 was split 2-way like 8.1/8.2/8.3: **8-4a** (backend keystone — the `GET /api/search` endpoint + PROVISIONAL contract + the pg_trgm/unaccent trigram layer + role×type scope + J15 grid + WF-8 ATDD gate) is **done→review**; **8-4b** (the Cmd+K palette frontend) is backlog, blocked on 8-4a. The dependency list above was corrected: it named `3.1, 4.1, 7.2` but the story searches Knowledge Hub files (4.4a) and assignments (5.1) and reuses the 8-1a query-count/EXPLAIN keystones (8.1a); `7.2`→`7.2a` (the student-roster backend that owns the student scope). (John #4.)
 
 **As a** user, **I want** a Cmd+K (or Ctrl+K) command palette accessible from any screen, **so that** I can quickly find classes, students, exercises, assignments, and Knowledge Hub files without navigating menus.
 
@@ -169,12 +171,15 @@
 **Then** Teachers see results from their own data only (their classes, their students, their exercises)
 **And** Admin/Owner see center-wide results
 **And** Students see only their classes, assignments, and performance
+> _[8-4a note] "performance" here is the student's own-scope descriptor, NOT a search category — it is not a name-searchable entity. 8-4a ships exactly 5 categories (classes/students/exercises/assignments/files); for a student only classes + assignments are non-empty. (John #5.)_
 
 **Given** the search API
 **When** GET `/api/search?q={query}` is called
-**Then** the response returns categorized results with a maximum of 5 per category
+**Then** the response returns categorized results with a maximum of 5 per category (plus a per-category `hasMore` flag — 8-4a D6)
 **And** search uses PostgreSQL full-text search across relevant tables
+> _[8-4a note — D2/D9 pragmatic reading of [[feedback_pragmatic_interpretation_of_spec_absolutes]]] "PostgreSQL full-text search" is implemented as **pg_trgm trigram matching + unaccent** (accent-insensitive `gin_trgm_ops` functional GIN indexes + ILIKE, ordered by `similarity()`), NOT tsvector. The searched entities are short labels (names/titles), where tsvector word-stemming fails partial/prefix matching ("Ali"→"Alice") and is not accent-insensitive ("Nguyen"≠"Nguyễn", a VN-co-primary UX-2 hole). Trigram+unaccent is the correct mechanism for the stated intent._
 **And** results are returned within 500ms p95 under 50 concurrent users sustained (k6 nightly assertion against the locked SLO)
+> _[8-4a note — PARTIAL] The k6-p95-under-50-users assertion is DEFERRED → **FU-8-4-PERF** (scheduled Epic 9 perf-hardening / pre-GA gate; no k6 harness exists — net-new perf-CI infra). 8-4a ships the SLO's structural proxy in-story: EXPLAIN-no-SeqScan on every trigram path + a `CountingDBTX` O(1)-in-rows size-invariance proof + the query-count evidence artifact. Load-verification (pool/lock contention under concurrency) is a different claim and remains pending. (John #2/D4.)_
 **And** the endpoint enforces role-based scoping via RLS and middleware
 
 **Given** role-scoping per role × per result type

@@ -1,0 +1,52 @@
+{
+  "story": "8-4a",
+  "endpoint": "GET /api/search",
+  "note": "Business queries per invocation on the tx the SearchService runs (SET LOCAL + BEGIN/SAVEPOINT/RELEASE/COMMIT filtered by the reused 8-1a CountingDBTX). Counting boundary = the tx the service runs on, NOT the pool (D8). SIZE-INVARIANT: count(small=1/category) == count(large=6/category + a student-in-many-classes) for an owner — proven O(1)-in-rows (the D11 per-student scalar subtitle is a set-based aggregate, no N+1). A <3-rune query issues ZERO category queries (short-circuit before the tx, AC2). Proofs: TestSearch_QueryCount_SizeInvariant_ATDD, TestSearch_QueryCount_ZeroOnShortQuery_ATDD, TestSearch_QueryCount_StudentTwoQueries_ATDD, TestSearch_QueryCount_DetectsSyntheticNPlus1_ATDD (synthetic N+1 exceeds the ceiling — proves the counter is not a no-op). Ceilings are TIGHT (the exact composed set) so any future per-hit subtitle lookup or per-row fan-out trips the gate.",
+  "perRole": {
+    "owner": {
+      "measured": 5,
+      "ceiling": 5,
+      "itemized": [
+        "SearchClasses",
+        "SearchAssignments",
+        "SearchStudents",
+        "SearchExercises",
+        "SearchFiles"
+      ]
+    },
+    "admin": {
+      "measured": 5,
+      "ceiling": 5,
+      "note": "admin uses the same center-wide (NULL/NULL scope) branch as owner — all 5 categories"
+    },
+    "teacher": {
+      "measured": 5,
+      "ceiling": 5,
+      "itemized": [
+        "SearchClasses",
+        "SearchAssignments",
+        "SearchStudents",
+        "SearchExercises",
+        "SearchFiles"
+      ],
+      "note": "teacher runs all 5 with the teacher_narg (own-resource) scope applied inside each query"
+    },
+    "student": {
+      "measured": 2,
+      "ceiling": 2,
+      "itemized": [
+        "SearchClasses",
+        "SearchAssignments"
+      ],
+      "note": "the student branch NEVER runs the students/exercises/files queries (D5 hard scope guarantee); those categories return empty without a DB touch"
+    },
+    "shortQuery": {
+      "measured": 0,
+      "note": "q < 3 trimmed runes short-circuits to all-empty BEFORE opening the tx (AC2) — zero category queries for any role"
+    }
+  },
+  "explain": {
+    "note": "GREEN-PHASE structural SLO proxy for the deferred k6 rig (D4 / FU-8-4-PERF). TestSearch_ExplainNoSeqScan_ATDD asserts NO Seq Scan on each of the 4 trigram label paths (classes.name / users.full_name / exercises.title / files.name) under enable_seqscan=off at realistic cardinality, incl. exercises.title THROUGH the assignments join (Murat C3). A specific index name is intentionally NOT pinned (planner brittleness — 8-1a N1; under RLS the injected center_id predicate lets the planner pick an equally-index-backed path at low cardinality); the trigram index existence + usability is verified by the Task-1 migration round-trip.",
+    "deferred": "k6 p95 < 500ms under 50 concurrent users — FU-8-4-PERF (Epic 9 perf-hardening / pre-GA), NOT verified in-story (a different claim than structural no-SeqScan: pool/lock contention)."
+  }
+}

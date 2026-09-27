@@ -850,8 +850,10 @@ Invoice history with filter, download PDF, retry failed payment. CSV export and 
 
 **Description:** A global search accessible via the top bar (⌘K shortcut). Searches across classes, students, exercises, assignments, and Knowledge Hub files.
 
-#### FR-67: Global search
+#### FR-67: Global search — PARTIAL (backend done in 8-4a; frontend 8-4b backlog; Q&A category → FU-8-4-QA)
 User can search from any screen. Results are scoped to the user's role permissions.
+
+> **Status (2026-09-24, 8-4a):** Backend `GET /api/search` shipped for **5 of the 6** searchable types — Classes, Students, Exercises, Assignments, Knowledge Hub files (accent-insensitive pg_trgm+unaccent trigram matching, role×type scope, cross-tenant J15 isolation). The **6th type, Q&A threads, is DEFERRED → FU-8-4-QA** (a privacy/security item — it must carry the Story 7.4 R25/R26 owner/admin exclusion). The Cmd+K palette UI is **8-4b** (backlog). FR-67 is PARTIAL until 8-4b (UI) + FU-8-4-QA (Q&A category) land.
 
 **Consequences (testable):**
 - Teachers see results from their own data only.

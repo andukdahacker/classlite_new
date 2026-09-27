@@ -687,6 +687,16 @@ func main() {
 	mux.Handle("GET /api/analytics/students/{id}", dashboardChain(analyticsHandler.GetStudent))
 	mux.Handle("GET /api/analytics/me", dashboardChain(analyticsHandler.Me))
 
+	// Story 8.4a — Global search (backend). Net-new GET /api/search on the SAME
+	// ungated dashboardChain (no RequireRole — D5): role/scope enforced IN the
+	// service — owner|admin center-wide, teacher own resources, student enrolled
+	// classes + their assignments only (students/exercises/files empty). Accent-
+	// insensitive pg_trgm+unaccent trigram matching across 5 RLS tables, grouped +
+	// capped at 5/category with hasMore. Read-only, one tx (PERF-1), no cache.
+	searchSvc := service.NewSearchService(pool, clock.RealClock{})
+	searchHandler := handler.NewSearchHandler(searchSvc, clock.RealClock{})
+	mux.Handle("GET /api/search", dashboardChain(searchHandler.Search))
+
 	// Story 4.1 — Exercise library & CRUD (6 routes). Same open chain shape as
 	// classChain/sessionChain (role + teacher-scope enforced in-service): List is
 	// role-scoped (owner/admin = all center exercises; teacher = own only); the

@@ -1146,6 +1146,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global command-palette search across 5 categories (story 8.4a — FR-67, PROVISIONAL)
+         * @description Returns `SearchResults`: matches grouped into `classes`, `students`,
+         *     `exercises`, `assignments`, and `files`, each a `SearchCategory` of up to 5
+         *     `SearchResultItem`s plus a `hasMore` flag. Matching is accent-insensitive
+         *     (`"Nguyen"` matches `"Nguyễn"`) trigram ILIKE (pg_trgm + unaccent), ordered by
+         *     similarity. Scope is enforced in the service (D5): owner|admin see center-wide
+         *     results; a teacher sees only own classes/students/exercises/assignments/files;
+         *     a student sees ONLY enrolled classes + their assignments (the other three
+         *     categories are always empty). The `q` query is trimmed and requires a MINIMUM
+         *     of 3 runes — a shorter or blank `q` returns 200 with every category empty
+         *     (`{items: [], hasMore: false}`) and issues zero category queries (the palette
+         *     polls per keystroke; "type more" is not an error). Backend returns entity keys
+         *     only — NO href (the FE composes routes): `slug` is non-null ONLY for a file,
+         *     `classId` is non-null ONLY for an assignment. PROVISIONAL — 8-4b co-finalizes.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -2392,6 +2424,57 @@ export interface components {
             teacher: components["schemas"]["DashboardTeacher"] | null;
             owner: components["schemas"]["DashboardOwner"] | null;
             student: components["schemas"]["DashboardStudent"] | null;
+        };
+        EnvelopeSearchResults: {
+            data: components["schemas"]["SearchResults"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description Matches grouped by category; every category is always present (a category with
+         *     no matches is `{items: [], hasMore: false}`, never null/omitted). PROVISIONAL —
+         *     8-4b (frontend) co-finalizes this shape.
+         */
+        SearchResults: {
+            classes: components["schemas"]["SearchCategory"];
+            students: components["schemas"]["SearchCategory"];
+            exercises: components["schemas"]["SearchCategory"];
+            assignments: components["schemas"]["SearchCategory"];
+            files: components["schemas"]["SearchCategory"];
+        };
+        /** @description One grouped result set — up to 5 items plus a hasMore flag (LIMIT 6 fetch). */
+        SearchCategory: {
+            items: components["schemas"]["SearchResultItem"][];
+            /** @description True when the underlying match set exceeded 5 (more results exist beyond those shown). */
+            hasMore: boolean;
+        };
+        /**
+         * @description One search hit. GO-5 explicit nulls (no omitempty). Backend returns entity keys
+         *     only — there is NO href (the FE composes routes). `slug` is non-null ONLY for a
+         *     file (its route key); `classId` is non-null ONLY for an assignment (its parent
+         *     class → the FE deep-link). PROVISIONAL — 8-4b co-finalizes.
+         */
+        SearchResultItem: {
+            /**
+             * Format: uuid
+             * @description The entity's own UUID.
+             */
+            id: string;
+            /**
+             * @description The entity kind; matches the category array the item appears in.
+             * @enum {string}
+             */
+            type: "class" | "student" | "exercise" | "assignment" | "file";
+            /** @description The primary label (class name, student full name, exercise/assignment title, file name). */
+            title: string;
+            /** @description The secondary line (student → class name(s), exercise → skill, assignment → skill + class, class → primary skill/status, file → folder/content-type). */
+            subtitle: string | null;
+            /** @description The file route key — non-null ONLY for a file item. */
+            slug: string | null;
+            /**
+             * Format: uuid
+             * @description The parent class id for the FE deep-link — non-null ONLY for an assignment item.
+             */
+            classId: string | null;
         };
         DashboardSessionLite: {
             /** Format: uuid */
@@ -8504,6 +8587,52 @@ export interface operations {
                 };
             };
             /** @description INSUFFICIENT_ROLE (a non-student caller — D4/D5) or CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The search query. Trimmed server-side; requires a minimum of 3 runes to
+                 *     match (a shorter/blank/missing value yields all-empty categories, never a
+                 *     422). This 3-rune floor is the canonical threshold the FE empty-state gate
+                 *     must mirror (a 2-char '%q%' extracts zero trigrams → an unusable index).
+                 */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's role-scoped grouped search results (all five categories always present). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSearchResults"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate) */
             403: {
                 headers: {
                     [name: string]: unknown;

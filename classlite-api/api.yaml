@@ -2874,6 +2874,63 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 8.4a — Global search (Cmd+K backend) ----------------
+  # PROVISIONAL contract — 8-4b (frontend) co-finalizes. One net-new endpoint on the
+  # SAME ungated dashboardChain (no RequireRole); role/scope enforced IN the service
+  # (D5): owner|admin = center-wide, teacher = own resources, student = own classes +
+  # assignments only (students/exercises/files empty). Accent-insensitive trigram
+  # matching (pg_trgm + unaccent); results grouped by category, each capped at 5 with
+  # a hasMore flag. Backend returns entity keys, NOT hrefs — the FE composes routes.
+  /api/search:
+    get:
+      operationId: search
+      summary: Global command-palette search across 5 categories (story 8.4a — FR-67, PROVISIONAL)
+      description: |
+        Returns `SearchResults`: matches grouped into `classes`, `students`,
+        `exercises`, `assignments`, and `files`, each a `SearchCategory` of up to 5
+        `SearchResultItem`s plus a `hasMore` flag. Matching is accent-insensitive
+        (`"Nguyen"` matches `"Nguyễn"`) trigram ILIKE (pg_trgm + unaccent), ordered by
+        similarity. Scope is enforced in the service (D5): owner|admin see center-wide
+        results; a teacher sees only own classes/students/exercises/assignments/files;
+        a student sees ONLY enrolled classes + their assignments (the other three
+        categories are always empty). The `q` query is trimmed and requires a MINIMUM
+        of 3 runes — a shorter or blank `q` returns 200 with every category empty
+        (`{items: [], hasMore: false}`) and issues zero category queries (the palette
+        polls per keystroke; "type more" is not an error). Backend returns entity keys
+        only — NO href (the FE composes routes): `slug` is non-null ONLY for a file,
+        `classId` is non-null ONLY for an assignment. PROVISIONAL — 8-4b co-finalizes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            The search query. Trimmed server-side; requires a minimum of 3 runes to
+            match (a shorter/blank/missing value yields all-empty categories, never a
+            422). This 3-rune floor is the canonical threshold the FE empty-state gate
+            must mirror (a 2-char '%q%' extracts zero trigrams → an unusable index).
+      responses:
+        "200":
+          description: The caller's role-scoped grouped search results (all five categories always present).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSearchResults'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   # ---------------- Story 7.4a — Anchored Q&A ----------------
   # Read shapes (Question, QuestionReply, QuestionThread) were co-finalized by 7-4b
   # (enriched with denormalized display name + avatar via LEFT JOIN users, D5).
@@ -7037,6 +7094,79 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/DashboardStudent'
+
+    # ---------------- Story 8.4a — Global search (PROVISIONAL, 8-4b co-finalizes) ----------------
+    EnvelopeSearchResults:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SearchResults'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    SearchResults:
+      type: object
+      description: |
+        Matches grouped by category; every category is always present (a category with
+        no matches is `{items: [], hasMore: false}`, never null/omitted). PROVISIONAL —
+        8-4b (frontend) co-finalizes this shape.
+      required: [classes, students, exercises, assignments, files]
+      properties:
+        classes:
+          $ref: '#/components/schemas/SearchCategory'
+        students:
+          $ref: '#/components/schemas/SearchCategory'
+        exercises:
+          $ref: '#/components/schemas/SearchCategory'
+        assignments:
+          $ref: '#/components/schemas/SearchCategory'
+        files:
+          $ref: '#/components/schemas/SearchCategory'
+    SearchCategory:
+      type: object
+      description: One grouped result set — up to 5 items plus a hasMore flag (LIMIT 6 fetch).
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+        hasMore:
+          type: boolean
+          description: True when the underlying match set exceeded 5 (more results exist beyond those shown).
+    SearchResultItem:
+      type: object
+      description: |
+        One search hit. GO-5 explicit nulls (no omitempty). Backend returns entity keys
+        only — there is NO href (the FE composes routes). `slug` is non-null ONLY for a
+        file (its route key); `classId` is non-null ONLY for an assignment (its parent
+        class → the FE deep-link). PROVISIONAL — 8-4b co-finalizes.
+      required: [id, type, title, subtitle, slug, classId]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The entity's own UUID.
+        type:
+          type: string
+          enum: [class, student, exercise, assignment, file]
+          description: The entity kind; matches the category array the item appears in.
+        title:
+          type: string
+          description: The primary label (class name, student full name, exercise/assignment title, file name).
+        subtitle:
+          type: string
+          nullable: true
+          description: The secondary line (student → class name(s), exercise → skill, assignment → skill + class, class → primary skill/status, file → folder/content-type).
+        slug:
+          type: string
+          nullable: true
+          description: The file route key — non-null ONLY for a file item.
+        classId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The parent class id for the FE deep-link — non-null ONLY for an assignment item.
     DashboardSessionLite:
       type: object
       required: [sessionId, classId, className, color, topic, startsAt, endsAt, status, teacherName, enrolledCount]
