@@ -2409,5 +2409,21 @@
   "analytics.share.line.skill": "{{skill}}: {{band}}",
   "analytics.share.line.onTime": "On-time: {{value}}",
   "analytics.share.line.graded": "Graded: {{count}}",
-  "analytics.share.line.goal": "Goal: {{band}}"
+  "analytics.share.line.goal": "Goal: {{band}}",
+  "search.dialog.title": "Global search",
+  "search.dialog.description": "Search your classes, students, exercises, assignments, and Knowledge-Hub files.",
+  "search.input.placeholder": "Search classes, students, exercises…",
+  "search.idle.prompt": "Search classes, students, exercises, assignments, and files. Type at least {{min}} characters to start.",
+  "search.error.message": "Something went wrong while searching. Please try again.",
+  "search.error.retry": "Try again",
+  "search.empty": "No matches for “{{query}}”. Check spelling or try fewer words.",
+  "search.results.count": "{{count}} results",
+  "search.seeAll": "See all matches for “{{query}}” →",
+  "search.category.classes": "Classes",
+  "search.category.students": "Students",
+  "search.category.exercises": "Exercises",
+  "search.category.assignments": "Assignments",
+  "search.category.files": "Knowledge-Hub files",
+  "search.hint.mac": "⌘K",
+  "search.hint.other": "Ctrl K"
 }

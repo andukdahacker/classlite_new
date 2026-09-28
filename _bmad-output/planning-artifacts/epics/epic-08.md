@@ -151,6 +151,8 @@
 | Dependencies | 3.1, 4.1, 4.4a, 5.1, 7.2a, 8.1a |
 
 > **Implementation note (2026-09-24, Amelia — Ducdo-ruled split D1).** 8.4 was split 2-way like 8.1/8.2/8.3: **8-4a** (backend keystone — the `GET /api/search` endpoint + PROVISIONAL contract + the pg_trgm/unaccent trigram layer + role×type scope + J15 grid + WF-8 ATDD gate) is **done→review**; **8-4b** (the Cmd+K palette frontend) is backlog, blocked on 8-4a. The dependency list above was corrected: it named `3.1, 4.1, 7.2` but the story searches Knowledge Hub files (4.4a) and assignments (5.1) and reuses the 8-1a query-count/EXPLAIN keystones (8.1a); `7.2`→`7.2a` (the student-roster backend that owns the student scope). (John #4.)
+>
+> **Update (2026-09-28, Amelia — 8-4b done).** **8-4b** (the Cmd+K palette frontend) is **done**: global ⌘K/Ctrl+K + `SearchPill` trigger, capped platform glyph swap, a net-new `useDebouncedValue` (~300ms) + `useSearch` (3-rune floor · `keepPreviousData` · Query-`signal` stale-guard), 5 grouped categories with role-composed deep-links + a per-category "See all" doorway, the idle/loading/empty/error state machine, `role="combobox"`/`aria-expanded`/`aria-live`/dialog-name a11y, and `search.*` en+vi parity. The PROVISIONAL contract marker was stripped doc-only (WF-4 atomic api+web commit; `git diff --exit-code` on `client.ts` proved comment-only). **FR-67 = PARTIAL (5-of-6)** — only the Q&A category (**FU-8-4-QA**, blocked on 7.4 R25/R26) remains. New follow-ups: FU-8-4-MOBILE, FU-8-4-SEEALL-PREFILL, FU-8-4-RECENTS, FU-8-4-SEEALL.
 
 **As a** user, **I want** a Cmd+K (or Ctrl+K) command palette accessible from any screen, **so that** I can quickly find classes, students, exercises, assignments, and Knowledge Hub files without navigating menus.
 

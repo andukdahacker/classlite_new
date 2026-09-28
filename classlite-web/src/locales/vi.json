@@ -2409,5 +2409,21 @@
   "analytics.share.line.skill": "{{skill}}: {{band}}",
   "analytics.share.line.onTime": "Đúng hạn: {{value}}",
   "analytics.share.line.graded": "Đã chấm: {{count}}",
-  "analytics.share.line.goal": "Mục tiêu: {{band}}"
+  "analytics.share.line.goal": "Mục tiêu: {{band}}",
+  "search.dialog.title": "Tìm kiếm toàn hệ thống",
+  "search.dialog.description": "Tìm lớp học, học viên, bài tập, bài giao và tệp trong Kho kiến thức của bạn.",
+  "search.input.placeholder": "Tìm lớp học, học viên, bài tập…",
+  "search.idle.prompt": "Tìm lớp học, học viên, bài tập, bài giao và tệp. Nhập ít nhất {{min}} ký tự để bắt đầu.",
+  "search.error.message": "Đã xảy ra lỗi khi tìm kiếm. Vui lòng thử lại.",
+  "search.error.retry": "Thử lại",
+  "search.empty": "Không có kết quả cho “{{query}}”. Kiểm tra chính tả hoặc thử ít từ hơn.",
+  "search.results.count": "{{count}} kết quả",
+  "search.seeAll": "Xem tất cả kết quả cho “{{query}}” →",
+  "search.category.classes": "Lớp học",
+  "search.category.students": "Học viên",
+  "search.category.exercises": "Bài tập",
+  "search.category.assignments": "Bài giao",
+  "search.category.files": "Tệp Kho kiến thức",
+  "search.hint.mac": "⌘K",
+  "search.hint.other": "Ctrl K"
 }

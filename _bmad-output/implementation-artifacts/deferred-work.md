@@ -1,5 +1,97 @@
 # Deferred Work
 
+## FU-11-* — Pulled forward from Epic 11 (2026-09-27, Epic 11 planning + party-mode review, Ducdo)
+
+Three items are Epic 11 prerequisites that should **not** wait for Epic 11's Wave B. Epic doc:
+`_bmad-output/planning-artifacts/epics/epic-11.md` (v0.2).
+
+**v0.3 status (2026-09-28):** `FU-11-SENTRY` is **PROMOTED to Story 11-0a** — Murat's point that a
+prerequisite with no story never gets sequenced. `FU-11-CI` is **SUPERSEDED by Story 11-5a**
+(money-path smoke + CI gate), which lands the real gate rather than an interim allow-list; keep
+the interim gate only if 11-5a slips. `FU-11-DEPLOY` is **Story 11-8a**. They are retained below
+as the record of why each was pulled forward. `FU-11-CREDITCAP` is new and still unowned.
+
+*Naming note:* these use a bare-epic `FU-<epic>-<WORD>` form rather than the usual
+`FU-<epic>-<story>-<suffix>` (cf. `FU-8-2-A`, `FU-8-4-QA`, `FU-8-4-PERF`). That is deliberate —
+they are epic-level pull-forwards that precede their owning story. Each becomes story-scoped
+once its Epic 11 story exists. Do not invent a fourth form.
+
+- **FU-11-CREDITCAP (→ before any external user touches the product; belongs to Epic 9 but must
+  not wait for it)** — **`ai_credit_ledger` records spend but does not enforce a ceiling.**
+  Verified in code 2026-09-28: `internal/service/ai_grade_service.go:62` states outright *"There
+  is NO 402 balance gate (Story 6.5)"*, and `ai_credit_ledger.sql.go`'s insert only computes
+  `balance_after` from `COALESCE((SELECT SUM(change) …))` — there is no `InsufficientCredit`
+  error, no 402, and no pre-enqueue balance check anywhere in `internal/service/`. **Storage, by
+  contrast, does enforce**: `internal/service/file_service.go:249` serializes a per-center
+  read-then-insert quota check against the `storage_limit_bytes` ceiling shipped in 4.4a. So the
+  disk is protected and the Gemini spend is not. Today that is harmless — the only user is
+  Ducdo. The moment the L1 design-partner cohort lands, other people's students are generating
+  content and grading requests against an uncapped API key on Ducdo's card, with `ai_credit_ledger`
+  faithfully recording the damage. Full plan tiers, upgrade/downgrade and credit add-ons stay in
+  Epic 9; this is **one hard per-center ceiling with a 402** and nothing more — do not let it drag
+  the billing epic forward. Priority: **P1.**
+  [`classlite-api/internal/service/ai_grade_service.go:62`, `classlite-api/internal/store/generated/ai_credit_ledger.sql.go`, cf. `internal/service/file_service.go:249`]
+
+- **FU-11-DEPLOY (→ do FIRST, ahead of the other two; becomes Story 11-8a)** — **`deploy.yml`
+  has no migration step and no gate.** 130 migrations exist; nothing runs `migrate up` in CI/CD
+  and nothing runs it on API boot, so the first real deploy meets an empty schema. Worse, the
+  workflow triggers on *any* successful CI run on `main` and goes straight to production — no
+  staging, no approval, no post-deploy smoke test, no rollback path. **This is not a missing
+  feature of a future staging story; it is a latent guaranteed-failure defect that exists
+  today**, and the only reason it has not fired is that nothing has ever been deployed (every
+  Staging and Prod box in `docs/manual-setup.md` is unchecked). It is also cheaper than either
+  item below. Architectural decision folded in (Winston, ratifiable): `migrate up` runs as a
+  **dedicated privileged migrator credential in a CI step** — NOT as `classlite_app` (deliberately
+  a non-superuser so RLS is enforced) and **not on API boot**, which would place DDL privilege
+  inside the long-running app process and quietly dissolve the property the 228-file Go suite
+  exists to protect. Fail-closed: non-zero `migrate` exit aborts the deploy before any image
+  takes traffic. Priority: **P0.**
+  [`.github/workflows/deploy.yml`, `classlite-api/migrations/`, `docs/manual-setup.md`]
+
+- **FU-11-TSC (→ do now; one line)** — **`ci-web.yml` type-checks with `npx tsc --noEmit`, which
+  false-greens.** This project has already ruled `tsc -b` the real gate: `--noEmit` resolves
+  against the solution-style root config and does not check test files. `tsc -b` passes today so
+  there is no live damage, but every story in Epics 9–11 ships under a typecheck gate that is not
+  checking what it claims to, and the "tsc clean" evidence in Epic 11's own baseline is therefore
+  not true *of CI*. Independent of Epic 11 entirely. Priority: **P1.**
+  [`.github/workflows/ci-web.yml`]
+
+- **FU-11-SENTRY (→ do now, ahead of Epic 11)** — **Backend error tracking does not exist.**
+  `SentryDSN` in `classlite-api/internal/config/config.go` is a **decorative field**: read at
+  ~line 92, logged at ~line 300 (`"sentry_dsn_set"`), and nothing else — no `sentry-go` in
+  `go.mod`, no `init`, no capture anywhere. Backend errors go to stdout and evaporate. The
+  frontend by contrast is genuinely instrumented (`classlite-web/src/lib/sentry.ts` calls
+  `Sentry.init()` + `browserTracingIntegration()` from `main.tsx`, with `captureException`
+  threaded through `ErrorBoundary`, all four `api-fetch` failure branches, `useLanguageInit`
+  and `usePolling`) — but **no DSN is set in any environment**, so it no-ops by design.
+  `.env.example` ships `SENTRY_DSN=` and `VITE_SENTRY_DSN=` empty and the `docs/manual-setup.md`
+  box is unchecked for dev/staging/prod. Two reasons this is worth pulling forward: (1) it is the
+  only quality signal that survives launch — manual and automated testing both stop at ship;
+  (2) it makes the Epic 11 loop's app-wrong/test-wrong triage **evidential instead of
+  inferential**, since today a Playwright failure yields a UI symptom with zero server-side
+  cause. Minimum viable needs no Sentry at all: the API already emits `request_id` per request,
+  so a failing call can be joined to server logs — Sentry is the durable, searchable version.
+  Landing correctly has none (0-JS CI budget guard). **Caution:** Sentry *session replay* over
+  student submissions and grades needs PII masking before pointing at anything but seeded data —
+  education product, minors possible. Priority: **P1.**
+  [`classlite-api/internal/config/config.go`, `classlite-api/go.mod`, `docs/manual-setup.md`]
+
+- **FU-11-CI (→ interim gate; Story 11.5 supersedes)** — **Playwright never runs in CI for the
+  dashboard.** `ci-web.yml` runs eslint, stylelint, `tsc --noEmit`, vitest, build, Lighthouse and
+  the Storybook a11y job, but never `playwright test`. (`ci-landing.yml` *does* run its specs.)
+  That absence is the direct cause of the current rot — measured 2026-09-27 on the
+  `design-system` project: **13 failed / 21 skipped / 44 passed**, and the failures are decay not
+  defects (`onboarding-persona-center.spec.ts` strict-mode violation from an `sr-only` duplicate
+  of "Auto-save on" added by a later story; `bilingual-smoke.spec.ts` passes 14/14 in isolation
+  and fails 2 under 4 parallel workers). Leaving it unguarded for two more epics means more decay
+  to clean up inside Story 11.5. Interim shape: run the suite in CI with the known failures
+  quarantined into an allow-list that can only shrink — a suite nobody runs is worse than no
+  suite, because it reads as coverage you do not have. Story 11.5 replaces this with the real
+  full-stack gate. Related: `ci-web.yml` type-checks with `npx tsc --noEmit` rather than
+  `tsc -b`, which false-greens against the solution-style root config (`tsc -b` passes today, so
+  no live damage — but the gate is wrong). Priority: **P1.**
+  [`.github/workflows/ci-web.yml`, `classlite-web/e2e/`, `classlite-web/tests/e2e/`]
+
 ## Deferred from: code review of story-7-4b (2026-09-11)
 
 - **Per-thread N+1 fetch in the student rail** — each `StudentQuestionThread` independently calls `GET /api/questions/{id}` (via `useQuestionThread`) to load its replies, so N own-questions trigger N extra round-trips on rail open plus re-fetches after every ask/invalidate. Avoiding it needs the list endpoint to embed the latest/visible replies — a contract change out of scope for 7-4b ("no new endpoint or mutation-body change"; the list read shape is stable). Student own-question counts are small so impact is low today. Revisit when the list can return embedded replies, or if a heavy-thread center surfaces the request storm. Priority: **P3.** [`classlite-web/src/features/questions/components/StudentQuestionThread.tsx:16`]
@@ -1051,3 +1143,20 @@ Implementation-note follow-ups (thinner-coverage areas to revisit at epic TEA / 
 ## Deferred from: code review of 8-4a-global-search-backend (2026-09-26)
 
 - **EXPLAIN harness does not prove the trigram GIN index is actually used (test-fidelity gap under an accepted relaxation).** `TestSearch_ExplainNoSeqScan_ATDD` sets `SET LOCAL enable_seqscan = off` and asserts only that the plan contains no `Seq Scan` — on a ~12-row fixture any index/bitmap satisfies that, so the trigram GIN is never actually confirmed as the chosen path; the assignments case explicitly declines to assert a specific index name, and the students EXPLAIN SQL is hand-written as a **scalar subquery** that diverges from the shipped `LEFT JOIN LATERAL` (and omits the teacher-scope `EXISTS`/aggregate filter), so the proven plan is not the shipped query's plan. This is a RATIFIED relaxation per D4/D8 (planner heuristics are brittle at test cardinality — the 8-1a N1 precedent), and the genuine index/load proof is owned by **FU-8-4-PERF** (k6 at realistic cardinality). Accepted-by-decision, not a blocker. Cheap improvement available when FU-8-4-PERF lands: replace the hand-written EXPLAIN SQL with the codegen'd query text so the LATERAL/teacher-scope shape is the one measured. Priority: **P3** (fold into FU-8-4-PERF). [`classlite-api/internal/test/search_explain_plan_atdd_test.go`]
+
+## Deferred from: dev of story 8-4b Global Search — Frontend (2026-09-28, Amelia /bmad-dev-story)
+
+- **FU-8-4-MOBILE — a net-new mobile search entry point (Sally/John, Ducdo 2026-09-27: desktop-only v1, NAMED). Priority: P2 — BLOCKED on a `MobileTopbar` successor.** 8-4b wires ⌘K/Ctrl+K + the topbar `SearchPill` only; the shipped mobile chrome is `MobileTabBar` + a responsive `TopbarShell` with no dedicated search affordance, and `MobileTopbar` is a component-inventory aspiration, not shipped code. The `CommandDialog` DOES degrade gracefully on a narrow viewport (AC16 — it renders, scrolls, and is keyboard-reachable), so mobile users are not blocked, but there is no touch-first way to *open* the palette on a phone. When built: add a search icon/affordance to the mobile top chrome that calls `useCommandPalette().openPalette()` (the imperative seam already exists — D1) and confirm ≥44px touch targets + no viewport-zoom on input focus (TEST-UX-4). [`classlite-web/src/components/domain/MobileTabBar.tsx`, `TopbarShell.tsx`; open trigger seam `features/search/hooks/useCommandPalette.ts`]
+- **FU-8-4-SEEALL-PREFILL — per-list `?q=` text-filter prefill for the D12 "See all" doorway (Ducdo 2026-09-27). Priority: P3.** The doorway (`seeAllHref`) navigates to each category's existing list view (`/classes`, `/students`|`/people/students`, `/exercises`, `/assignments`, `/knowledge-hub`) as a BARE list — a browsable doorway, not a wall (pragmatic interpretation per [[feedback_pragmatic_interpretation_of_spec_absolutes]]). Most target lists lack a text-filter `?q=` param today (the `StaffListPage` param is an invite deep-link, not a text filter), so there is nothing to prefill against yet. When built: add a `?q=` text-filter read to each list surface, then have `seeAllHref` pass `?q=${encodeURIComponent(query)}` so the destination opens pre-filtered. Do NOT expand 8-4b into 5 list-surface features. [`classlite-web/src/features/search/lib/resultHref.ts` `seeAllHref`; the 5 list features under `features/{classes,people,exercises,assignments,knowledge-hub}`]
+- **FU-8-4-RECENTS — recent-search history / recent jumps in the empty/idle palette (Sally, Ducdo 2026-09-27). Priority: P3.** Explicitly NOT built in v1: no last-query recall (the palette clears its query on every close — privacy on shared machines) and no persisted recents list. When built: a bounded, per-user, client-side (or server-side) recents store surfaced in the idle state as quick re-jump rows, with an explicit clear affordance and a shared-machine privacy stance. [`classlite-web/src/features/search/SearchPalette.tsx` idle branch]
+- **FU-8-4-SEEALL — a dedicated `/search` results page (Sally, Ducdo 2026-09-27). Priority: P3 — the long-term fix D12's doorway stands in for.** The palette caps each category at 5 (`hasMore` signals overflow). A full results page with pagination, per-category filtering, and the full result set is the eventual home for "See all"; until it exists, the D12 doorway into the existing list views is the pragmatic stand-in. [net-new route `/search` + `features/search/`]
+
+### FR-67 status after 8-4b (traceability)
+
+- **FR-67 = PARTIAL (5-of-6 categories shipped).** After 8-4a (backend) + 8-4b (frontend) the Cmd+K palette searches classes, students, exercises, assignments, and Knowledge-Hub files. The 6th category — Q&A thread search — is **FU-8-4-QA**, blocked BOTH ways on the Story 7.4 R25/R26 owner/admin privacy exclusion (owner/admin must get an EMPTY questions category, never a 403). FR-67 stays PARTIAL until FU-8-4-QA lands. [`_bmad-output/planning-artifacts/epics/epic-08.md` Story 8.4; `prd.md` FR-67]
+
+## Deferred from: code review of 8-4b-global-search-frontend (2026-09-28)
+
+- **AC16 narrow-viewport degrade / ≥44px touch targets — untested.** The a11y suite (`features/search/__tests__/SearchPalette.a11y.test.tsx`) covers dialog-name, combobox, aria-live, axe-floor, and keyboard flow, but nothing exercises a narrow/tablet viewport or asserts touch-target size. AC16/DoD claim "narrow-viewport degrade"; today it relies entirely on cmdk/`DialogContent` defaults with no regression guard. Coverage gap only (no code defect). Relates to FU-8-4-MOBILE.
+
+- **FU-8-4-STUDENT-ROUTES — a student-facing class (and per-class assignment) destination for search results.** Code review 2026-09-28 found students receive non-empty `classes`+`assignments` search categories (8-4a D5) but the only class routes (`/classes/:id`, `/classes/:id/assignments`) are staff-gated — no student class-detail route exists. Interim (Ducdo "pragmatic audience-aware resolver"): a student's class result is NON-navigable (`resultHref`/`seeAllHref` return `null`, the palette no-ops the select); a student's assignment result → their own `/assignments` list. When a student class-detail surface ships, point `resultHref('class','student')` and `seeAllHref('classes','student')` at it and re-enable the deep-link. Related: FU-8-4-SEEALL-PREFILL, FU-8-4-MOBILE.

@@ -1154,7 +1154,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Global command-palette search across 5 categories (story 8.4a — FR-67, PROVISIONAL)
+         * Global command-palette search across 5 categories (story 8.4 — FR-67)
          * @description Returns `SearchResults`: matches grouped into `classes`, `students`,
          *     `exercises`, `assignments`, and `files`, each a `SearchCategory` of up to 5
          *     `SearchResultItem`s plus a `hasMore` flag. Matching is accent-insensitive
@@ -1167,7 +1167,7 @@ export interface paths {
          *     (`{items: [], hasMore: false}`) and issues zero category queries (the palette
          *     polls per keystroke; "type more" is not an error). Backend returns entity keys
          *     only — NO href (the FE composes routes): `slug` is non-null ONLY for a file,
-         *     `classId` is non-null ONLY for an assignment. PROVISIONAL — 8-4b co-finalizes.
+         *     `classId` is non-null ONLY for an assignment.
          */
         get: operations["search"];
         put?: never;
@@ -2431,8 +2431,7 @@ export interface components {
         };
         /**
          * @description Matches grouped by category; every category is always present (a category with
-         *     no matches is `{items: [], hasMore: false}`, never null/omitted). PROVISIONAL —
-         *     8-4b (frontend) co-finalizes this shape.
+         *     no matches is `{items: [], hasMore: false}`, never null/omitted).
          */
         SearchResults: {
             classes: components["schemas"]["SearchCategory"];
@@ -2451,7 +2450,7 @@ export interface components {
          * @description One search hit. GO-5 explicit nulls (no omitempty). Backend returns entity keys
          *     only — there is NO href (the FE composes routes). `slug` is non-null ONLY for a
          *     file (its route key); `classId` is non-null ONLY for an assignment (its parent
-         *     class → the FE deep-link). PROVISIONAL — 8-4b co-finalizes.
+         *     class → the FE deep-link).
          */
         SearchResultItem: {
             /**

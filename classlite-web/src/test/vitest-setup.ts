@@ -58,6 +58,12 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof Element !== 'undefined' && typeof Element.prototype.getAnimations !== 'function') {
   Element.prototype.getAnimations = () => []
 }
+// `Element.scrollIntoView` is unimplemented in jsdom; cmdk (the command palette
+// primitive behind Story 8-4b's SearchPalette) calls it in a layout effect to
+// keep the active item in view. Stub it to a no-op so cmdk consumers mount.
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {}
+}
 if (typeof globalThis.matchMedia === 'undefined') {
   // Default the attempt UI to its DESKTOP tree in jsdom: `min-width` queries
   // match, coarse-pointer / other queries don't. A test that needs the mobile

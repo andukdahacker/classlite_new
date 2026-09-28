@@ -850,10 +850,12 @@ Invoice history with filter, download PDF, retry failed payment. CSV export and 
 
 **Description:** A global search accessible via the top bar (⌘K shortcut). Searches across classes, students, exercises, assignments, and Knowledge Hub files.
 
-#### FR-67: Global search — PARTIAL (backend done in 8-4a; frontend 8-4b backlog; Q&A category → FU-8-4-QA)
+#### FR-67: Global search — PARTIAL (backend done in 8-4a; Cmd+K palette done in 8-4b; only Q&A category → FU-8-4-QA remains)
 User can search from any screen. Results are scoped to the user's role permissions.
 
-> **Status (2026-09-24, 8-4a):** Backend `GET /api/search` shipped for **5 of the 6** searchable types — Classes, Students, Exercises, Assignments, Knowledge Hub files (accent-insensitive pg_trgm+unaccent trigram matching, role×type scope, cross-tenant J15 isolation). The **6th type, Q&A threads, is DEFERRED → FU-8-4-QA** (a privacy/security item — it must carry the Story 7.4 R25/R26 owner/admin exclusion). The Cmd+K palette UI is **8-4b** (backlog). FR-67 is PARTIAL until 8-4b (UI) + FU-8-4-QA (Q&A category) land.
+> **Status (2026-09-24, 8-4a):** Backend `GET /api/search` shipped for **5 of the 6** searchable types — Classes, Students, Exercises, Assignments, Knowledge Hub files (accent-insensitive pg_trgm+unaccent trigram matching, role×type scope, cross-tenant J15 isolation). The **6th type, Q&A threads, is DEFERRED → FU-8-4-QA** (a privacy/security item — it must carry the Story 7.4 R25/R26 owner/admin exclusion).
+>
+> **Status (2026-09-28, 8-4b):** The Cmd+K/Ctrl+K command-palette UI is **DONE** — a global hotkey + topbar `SearchPill` trigger, a ~300ms-debounced query with a 3-rune floor + `keepPreviousData` + Query-`signal` stale-guard, 5 grouped result categories with role-composed deep-links + a per-category "See all" doorway, the idle/loading/empty/error state machine, and full keyboard-nav a11y. FR-67 remains **PARTIAL** ONLY because of the deferred Q&A category (**FU-8-4-QA**); the 5-of-6 experience is fully shipped end-to-end.
 
 **Consequences (testable):**
 - Teachers see results from their own data only.

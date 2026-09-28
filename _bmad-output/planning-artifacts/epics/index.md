@@ -78,7 +78,16 @@ Each story includes:
 
 ## Screen Reference Legend
 
-Screen codes (sNN) reference the UX Design Specification wireframes:
+Screen codes (sNN) reference the UX Design Specification wireframes.
+
+> **Epic 11 / R2 note.** `s00`–`s87` are carried forward VERBATIM into `docs/product/`, whose
+> `screens.yaml` manifest becomes the authoritative registry (id, route, roles,
+> `implementation_status`, `provenance`, `last-verified`). `docs/classlite-entry/classlite-ia.md`
+> becomes a pointer; the 13 HTML prototypes move to `docs/archive/classlite-entry-prototypes/`
+> (Chapters 1–5 and 8 SUPERSEDED, Chapters 6–7 FROZEN-AND-BINDING until Epics 10 and 9 ship).
+> The table below stays valid — IDs never renumber — but the manifest wins on status. A CI lint
+> (Story 11-1a) fails on any `sNN` token with no manifest entry. Do NOT rewrite `sNN`
+> references in existing story files; they stay valid because the IDs carry verbatim.
 
 | Code | Screen |
 |------|--------|
@@ -487,6 +496,15 @@ Role-scoped inbox with polling notifications, archive with duplicate/edit-a-copy
 **Stories:** 10.1–10.4 (4 stories)
 **FRs:** FR-56 through FR-60, FR-69, FR-70
 
+### Epic 11: Product Documentation as Source of Truth & Self-Correcting QA Loop
+Promote `docs/product/` (the `s00`–`s87` screen inventory, reconciled against shipped reality) into the verified source of truth, then drive a self-correcting test loop off it — Playwright against the real stack plus guided human sessions, with failures classified against the doc and recorded back by screen-ID + control slug + assertion id. Verification infrastructure: owns no FRs, builds the apparatus that proves Epics 2–10 work and keeps proving it.
+**Stories:** 11-0a/b, 11-1a/b, 11-2, 11-3a/b/c, 11-4, 11-5a/b, 11-6a/b, 11-7, 11-8a/b, 11-9 (17 stories, 4 waves + an L1 pilot milestone)
+**FRs:** none owned — verifies NFR-1, NFR-3, NFR-4, NFR-5 (NFR-2 and NFR-6 already well verified by the 228-file Go suite; explicitly out of scope)
+**Rulings:** 6 recorded in `epic-11.md` with rationale — R1 loop autonomy (6 structural guardrails) · R2 classlite-entry SPLIT + addressability · R3 two-phase manual testing · R4 xlsx-as-transport · R5 machine/human split (binding) · R6 the loop may never write the oracle
+**v0.2 (2026-09-27):** party-mode round 1 (Murat/Winston/Paige/Amelia as independent subagents) found 5 defects, all fixed. Wave A freed of any Epic 9/10 dependency; v0.1 had the gating story itself gated on Epic 10. `FU-11-DEPLOY` pulled out at P0 — `deploy.yml`'s missing migration step is a live defect, not a future story.
+**v0.3 (2026-09-28):** party-mode round 2 (John/Mary) settled OQ-11-4 — **Epic 11 does not gate launch; Wave A *constitutes* it**, since 11-8a is the only story in the backlog that can deploy v2. Waves re-named by what they gate (exposure vs paid GA) with an explicit **L1 design-partner milestone**. Ducdo ruled **v1 effectively empty** → greenfield launch, cutover moot, Epic 9 = revenue only, Epic 10 gates nothing and should be re-scoped after L1. Two artifacts missing from EVERY epic in the project added as `11-0a` (backend telemetry — if tenant A sees tenant B in prod, you will not find out) and `11-0b` (**AI grading calibration gold set** — the product's entire value claim had zero coverage, and it is product evidence, not QA). `11-5` split: money-path smoke + CI gate ships pre-exposure, the 87-screen rebuild and the loop move behind L1 (payback scales with cost-of-escaped-defect, which is near zero at zero users). `11-9` reframed from "recruit testers" to **guided sessions with prospective centers** — the only story that touches the demand gap, which round 2 named the dominant risk to the venture.
+**v0.4 (2026-09-28):** all five open questions RULED — the epic has none outstanding. Loop holds **no git identity** (capability, not permission — a deny rule is the weakest layer); **3 diffs/cycle** and **2-cycle** quarantine expiry, sized to a single reviewer; write authority gated on ≥90% triage agreement **AND zero false-confident classifications** (the classes are not symmetric in consequence, so an overall percentage hides the one error that ships a bad patch); grading gold set = **published Cambridge/IDP anchors + the center's own banded work** for bands 4–6. One item inherited unratified: Winston's migration privilege model in 11-8a.
+
 ---
 
 ## Dependency Graph (High-Level)
@@ -507,13 +525,36 @@ Epic 1A (Foundation)
 ├── Epic 1C (Frontend) ──→ Epic 1D (Component Library Buildout — Path B) ──→ feeds Epic 2-10 frontend stories
 │                                                                            (DoD amendment: feature stories ship Storybook coverage alongside)
 └── Epic 10 (Inbox/Notifications/Polish) ← depends on events from Epics 3-9
+
+Epic 11 (Docs as Source of Truth & QA Loop) — THREE WAVES, split on the shipped/unshipped
+                                                chapter boundary so most of it starts NOW
+  Wave A — gates EXPOSURE, and CONSTITUTES launch (11-8a is the only story that can deploy v2):
+    11-0a backend telemetry (deps none — promoted from FU-11-SENTRY; blindness is the gate)
+    11-0b AI grading calibration gold set (deps none — product evidence, the value claim)
+    11-8a deploy pipeline: migrations/gate/smoke/rollback (deps none — FU-11-DEPLOY, P0)
+    11-1a seed + tenant isolation + screens.yaml manifest + s-ID lint (deps none)
+      ├── 11-2 real-auth harness ──┐
+      └── 11-3a doc schema + Ch1 pilot (schema FROZEN here; gates nothing for exposure)
+                                   └── 11-5a MONEY-PATH SMOKE + CI gate
+                                       (login→class→assignment→4 attempt types→grade→result;
+                                        no full-stack path has EVER been exercised)
+  ══ L1 MILESTONE: design-partner cohort — 2-3 centers, free, hand-held, v1 left running ══
+       (get Polar credentials during this window; Wave B is built against what L1 asks for)
+  Wave B — gates PAID GA, built AFTER L1 tells you which flows matter:
+    11-3b shipped chapters 2-5,8 · 11-4 scenarios+rubric · 11-5b remaining journeys
+      └── 11-6a loop READ-ONLY ──(measured precision gate)──> 11-6b loop WRITE
+    11-7 manual session runner (CLI + workbook)
+  Wave C — genuinely gated on the unbuilt epics (s50–s67 = Epic 10, s68–s73 = Epic 9):
+    11-1b seed extension · 11-3c reconcile Chapters 6-7
+  Wave D — tester-facing + GA provisioning:
+    11-8b staging (+ k6/FU-8-4-PERF, PROVEN backup-restore) ──> 11-9 guided sessions w/ prospective centers
 ```
 
 Note (Paige's flag): Epic 1D was previously missing from this graph. Under Path B, 1D consumes Epic 1C (design tokens, app shell baseline, i18n setup) and produces the Storybook foundation + primitive coverage + app-shell + Phase 4 visual bridge that Epic 2–10 frontend stories consume. Epic 1D runs after 1C; backend Epic 2 API stories (2-1, 2-2) and Epic 1B remainder can run in parallel.
 
 ---
 
-**Total: 13 epic files, 72 active stories (Path B: down from 76 — 4 active 1d-N stories + 5 legacy 1d-N deferred to feature epics as input artifacts), 81 FRs fully covered, 32 UX-DRs.**
+**Total: 14 epic files, 89 active stories (Path B: down from 76 — 4 active 1d-N stories + 5 legacy 1d-N deferred to feature epics as input artifacts), 81 FRs fully covered, 32 UX-DRs. Epic 11 adds 17 stories owning no FRs (14 verification-infrastructure + 11-0a telemetry and 11-0b grading calibration, which are launch prerequisites rather than QA); Story 8.5 stays keyed as SUPERSEDED-BY-11-1a (not deleted), so Epic 8's roll-call and retrospective remain intact.**
 
 _Path B re-scope summary (2026-06-07):_ Epic 1D trimmed from 8 to 4 active stories after party-mode convergent critique (Winston + Sally + Mary). Active scope: foundation + primitives + app-shell + Phase 4 visual bridge (Sally synthesis). Legacy story content (visual/status, shells+states, DataListTable, drawers/modals/forms, tabs+calendar) ships with consuming feature epics — story files retained at `_bmad-output/implementation-artifacts/1d-{4,5,6,7,8}-*.md` with `Status: deferred-to-feature-epic` and target-epic header notes. Component inventory at [`../component-inventory.md`](../component-inventory.md) tagged with Path B deferrals._
 

@@ -2874,8 +2874,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
-  # ---------------- Story 8.4a — Global search (Cmd+K backend) ----------------
-  # PROVISIONAL contract — 8-4b (frontend) co-finalizes. One net-new endpoint on the
+  # ---------------- Story 8.4 — Global search (Cmd+K) ----------------
+  # One net-new endpoint on the
   # SAME ungated dashboardChain (no RequireRole); role/scope enforced IN the service
   # (D5): owner|admin = center-wide, teacher = own resources, student = own classes +
   # assignments only (students/exercises/files empty). Accent-insensitive trigram
@@ -2884,7 +2884,7 @@ paths:
   /api/search:
     get:
       operationId: search
-      summary: Global command-palette search across 5 categories (story 8.4a — FR-67, PROVISIONAL)
+      summary: Global command-palette search across 5 categories (story 8.4 — FR-67)
       description: |
         Returns `SearchResults`: matches grouped into `classes`, `students`,
         `exercises`, `assignments`, and `files`, each a `SearchCategory` of up to 5
@@ -2898,7 +2898,7 @@ paths:
         (`{items: [], hasMore: false}`) and issues zero category queries (the palette
         polls per keystroke; "type more" is not an error). Backend returns entity keys
         only — NO href (the FE composes routes): `slug` is non-null ONLY for a file,
-        `classId` is non-null ONLY for an assignment. PROVISIONAL — 8-4b co-finalizes.
+        `classId` is non-null ONLY for an assignment.
       security:
         - bearerAuth: []
       parameters:
@@ -7095,7 +7095,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/DashboardStudent'
 
-    # ---------------- Story 8.4a — Global search (PROVISIONAL, 8-4b co-finalizes) ----------------
+    # ---------------- Story 8.4 — Global search ----------------
     EnvelopeSearchResults:
       type: object
       required: [data, meta]
@@ -7108,8 +7108,7 @@ components:
       type: object
       description: |
         Matches grouped by category; every category is always present (a category with
-        no matches is `{items: [], hasMore: false}`, never null/omitted). PROVISIONAL —
-        8-4b (frontend) co-finalizes this shape.
+        no matches is `{items: [], hasMore: false}`, never null/omitted).
       required: [classes, students, exercises, assignments, files]
       properties:
         classes:
@@ -7140,7 +7139,7 @@ components:
         One search hit. GO-5 explicit nulls (no omitempty). Backend returns entity keys
         only — there is NO href (the FE composes routes). `slug` is non-null ONLY for a
         file (its route key); `classId` is non-null ONLY for an assignment (its parent
-        class → the FE deep-link). PROVISIONAL — 8-4b co-finalizes.
+        class → the FE deep-link).
       required: [id, type, title, subtitle, slug, classId]
       properties:
         id:

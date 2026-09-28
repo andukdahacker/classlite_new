@@ -58,6 +58,8 @@ import { SearchPill } from '@/components/domain/SearchPill'
 import { SidebarShell } from '@/components/domain/SidebarShell'
 import { SIDEBAR_NAV_BY_ROLE } from '@/components/domain/sidebarNavConfig'
 import { TopbarShell } from '@/components/domain/TopbarShell'
+import { SearchPalette } from '@/features/search/SearchPalette'
+import { useCommandPalette } from '@/features/search/hooks/useCommandPalette'
 import { Button } from '@/components/ui/button'
 import { warnIfFirstNoRoleResolution } from './AppLayout-warn-tracking'
 import LanguageToggle from './LanguageToggle'
@@ -74,6 +76,13 @@ export default function AppLayout() {
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
   const role = useRole()
   const location = useLocation()
+  // ⌘K/Ctrl+K palette open-state + global keydown (Story 8-4b, D1). The hook is
+  // called unconditionally (rules of hooks); the listener is ENABLED only for an
+  // authenticated role so a no-role shell doesn't swallow the native ⌘K with no
+  // palette to open (code review 2026-09-28). The palette itself also mounts only
+  // for an authenticated role — the search endpoint is auth-scoped.
+  const { open: searchOpen, setOpen: setSearchOpen, openPalette } =
+    useCommandPalette(role !== null)
 
   useEffect(() => {
     if (role === null && import.meta.env.DEV) {
@@ -134,7 +143,12 @@ export default function AppLayout() {
         topbar={
           <TopbarShell
             breadcrumb={<BreadcrumbBar items={[]} />}
-            search={<SearchPill placeholderKey="topbar.search.placeholder" />}
+            search={
+              <SearchPill
+                placeholderKey="topbar.search.placeholder"
+                onActivate={openPalette}
+              />
+            }
             cta={<LanguageToggle />}
             collapseToggle={role !== null ? collapseToggle : null}
           />
@@ -147,6 +161,9 @@ export default function AppLayout() {
       >
         <Outlet />
       </AppShell>
+      {role !== null && (
+        <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      )}
     </>
   )
 }
