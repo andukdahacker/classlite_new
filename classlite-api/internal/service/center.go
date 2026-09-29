@@ -80,7 +80,16 @@ type CenterService struct {
 	audit       AuditLogger
 	tokenIssuer accessTokenIssuer
 	clk         clock.Clock
+
+	// billing seeds the Story 9.1a subscription + ai_credits rows for a NEW center in
+	// the SAME tx (D7/D26a) — a center must never exist without them. Optional; set via
+	// SetBillingService in main.go. UNLIKE the gates, this is NOT flag-guarded (the rows
+	// always exist; enforcement is what's dark-launched).
+	billing *BillingService
 }
+
+// SetBillingService wires the on-center-create billing-row provisioning (D7).
+func (s *CenterService) SetBillingService(b *BillingService) { s.billing = b }
 
 // NewCenterService constructs a CenterService with its collaborators
 // injected as interfaces so tests can substitute a broken audit or a mock
@@ -193,6 +202,17 @@ func (s *CenterService) CreateCenter(ctx context.Context, userID uuid.UUID, in C
 			}
 		}
 		return nil, fmt.Errorf("create center: insert member: %w", err)
+	}
+
+	// Story 9.1a (D7/D26a) — provision the Free subscription + 0/0/0 ai_credits row in
+	// THIS tx so the new center can never divide by a missing row. reset_at is the
+	// VN-local (center timezone) start of next month. Ships BEFORE the genesis backfill
+	// (D26b) so a center created in the deploy gap is not orphaned.
+	if s.billing != nil {
+		resetAt := StartOfNextMonthInTZ(s.clk.Now(), insertedCenter.Timezone)
+		if err := s.billing.EnsureBillingRows(ctx, q, tc, resetAt); err != nil {
+			return nil, fmt.Errorf("create center: billing rows: %w", err)
+		}
 	}
 
 	// Audit inside the SAME tx (AC6). LogWithinTx trusts our SET LOCAL —

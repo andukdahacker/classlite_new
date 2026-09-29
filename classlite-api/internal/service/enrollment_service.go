@@ -70,7 +70,15 @@ type EnrollmentService struct {
 	clk        clock.Clock
 	events     *event.Bus
 	emailQueue EmailRetryQueue
+	// billing is the Story 9.1a plan-limit gate (D3). Optional (nil-tolerant for lean
+	// harnesses); set via SetBillingService in main.go. The students-per-class cap runs
+	// INSIDE the enrollment tx (dark-launched behind BILLING_ENFORCEMENT_ENABLED, D19).
+	billing *BillingService
 }
+
+// SetBillingService wires the plan-limit gate after construction (avoids churning the
+// NewEnrollmentService signature + its callers). Nil leaves enforcement disabled.
+func (s *EnrollmentService) SetBillingService(b *BillingService) { s.billing = b }
 
 // NewEnrollmentService constructs an EnrollmentService bound to the given seams.
 // events + emailQueue are the post-commit notify seams (AC14/AC15); both are
@@ -117,6 +125,15 @@ func (s *EnrollmentService) AddEnrollment(
 	}
 	if !isStudent {
 		return EnrolledStudent{}, &NotAStudentMemberError{StudentID: studentID.String()}
+	}
+
+	// Story 9.1a (D3/D19) — the students-per-class plan cap, enforced INSIDE this tx so
+	// the live COUNT + the enrolment INSERT are atomic under the (center,enrollment)
+	// advisory lock (R22/AC10). Dark-launched: no-op unless BILLING_ENFORCEMENT_ENABLED.
+	if s.billing != nil && billingEnforcementEnabled() {
+		if err := s.billing.CheckStudentPerClass(ctx, txQ, tc, toClassID); err != nil {
+			return EnrolledStudent{}, err
+		}
 	}
 
 	enrollment, err := insertActiveEnrollment(ctx, txQ, centerUUID, studentID, toClassID)

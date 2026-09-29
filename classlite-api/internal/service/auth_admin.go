@@ -190,6 +190,16 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 		return nil, &RoleAssignmentForbiddenError{}
 	}
 
+	// Story 9.1a (D3/D19/AC7) — the teacher-seat plan cap, inside this tx under the
+	// (center,seat) advisory lock, before the invite is written. Dark-launched: no-op
+	// unless BILLING_ENFORCEMENT_ENABLED. owner/admin/teacher all consume a seat.
+	if s.billing != nil && billingEnforcementEnabled() {
+		if err := s.billing.CheckTeacherSeat(ctx, txQ, tc); err != nil {
+			_ = tx.Rollback(context.WithoutCancel(ctx))
+			return nil, err
+		}
+	}
+
 	// Story 7.1a (D7) — re-validate the optional target class IN-TENANT.
 	// GetClassByID is RLS-scoped, so a class not in the caller's center →
 	// pgx.ErrNoRows → 404 CLASS_NOT_FOUND (never a cross-tenant reference).

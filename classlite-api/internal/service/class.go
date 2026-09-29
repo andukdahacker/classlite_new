@@ -128,7 +128,14 @@ type ClassService struct {
 	// acceptURLBase is the invite accept URL base — production wires it
 	// from Config.AcceptURLBase; tests default to a localhost value.
 	acceptURLBase string
+
+	// billing is the Story 9.1a class-limit gate (optional, dark-launched — D19).
+	billing *BillingService
 }
+
+// SetBillingService wires the Story 9.1a class-count plan gate (D3/AC8). Nil leaves
+// enforcement off.
+func (s *ClassService) SetBillingService(b *BillingService) { s.billing = b }
 
 // NewClassService constructs a ClassService bound to the given seams. clk
 // is used for expires_at + audit timestamps + startDate drift check.

@@ -192,3 +192,19 @@ The API runtime now **requires `ffmpeg`**. The AI speaking-grade worker (Epic 6)
 - Google Drive integration (FU-2-5-D)
 - Zoom integration (FU-2-5-E)
 - Encryption key rotation runbook (FU-2-5-L)
+
+## Billing — Plan Tiers & Enforcement (Story 9.1a)
+
+The plan-limit + AI-credit **enforcement gates are DARK-LAUNCHED** behind a flag (D19). The
+schema (`subscriptions`/`ai_credits`), the credit accounting, and the Owner-only read API all
+ship LIVE regardless; only the hard-block (409 `PLAN_LIMIT_EXCEEDED` / 402 `INSUFFICIENT_CREDITS`)
+is gated. It stays **OFF in prod for 9-1a** and is turned ON by the 9.2 story that delivers the
+upgrade exit — arming it earlier would brick a genesis-Free center with no way to upgrade.
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| `BILLING_ENFORCEMENT_ENABLED` env var (unset/false = gates are no-ops; `true` = enforce) | [-] | [ ] | [ ] |
+| Set specific pilot/dogfood centers to Studio via the override seam (`SetPlan` / `scripts/seed.sh`) — for testing enforcement before 9.2 | [ ] | [ ] | [ ] |
+
+- Leave `BILLING_ENFORCEMENT_ENABLED` **unset** (or `false`) in prod until Story 9.2 ships. Flip to `true` only alongside the upgrade path.
+- No new third-party service in 9-1a (Polar arrives in 9.2). No new secret. No new DNS record.

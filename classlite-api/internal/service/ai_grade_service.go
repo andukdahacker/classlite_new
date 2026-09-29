@@ -41,13 +41,19 @@ const maxAIGradeAudioDurationMs = 20 * 60 * 1000
 
 // AIGradeService enqueues ai_grade_writing jobs.
 type AIGradeService struct {
-	db AuthDB
+	db      AuthDB
+	billing *BillingService // Story 9.1a credit gate (optional, dark-launched — D19)
 }
 
 // NewAIGradeService constructs the service bound to the DB pool.
 func NewAIGradeService(db AuthDB) *AIGradeService {
 	return &AIGradeService{db: db}
 }
+
+// SetBillingService wires the Story 9.1a AI-credit gate (D-CREDIT/D16). When set AND
+// BILLING_ENFORCEMENT_ENABLED, the pre-enqueue balance gate replaces the legacy
+// accounting-only deduction — closing FU-11-CREDITCAP. Nil leaves the 4.3a path.
+func (s *AIGradeService) SetBillingService(b *BillingService) { s.billing = b }
 
 // EnqueueAIGrade gate-checks the submission (teacher-of-class authz + Writing +
 // gradable status, all BEFORE the job insert — D9), then in a SINGLE tenant tx
@@ -179,6 +185,18 @@ func (s *AIGradeService) EnqueueAIGrade(
 		}
 		jobID = uuidFromPg(job.ID)
 
+		// Story 9.1a (D-CREDIT/D16) — the pre-enqueue balance gate. When armed, consume
+		// runs in THIS tx (lock + ai_credits update + -1 job_deduction ledger row): an
+		// exhausted balance returns InsufficientCreditsError (402) and rolls the whole tx
+		// back (no job, no charge). The Gemini call happens later in the worker, after
+		// this tx commits (never under the lock). When dark-launched (flag off) the legacy
+		// 4.3a accounting-only deduction runs — no 402 gate (D19).
+		if s.billing != nil && billingEnforcementEnabled() {
+			if cerr := s.billing.consumeCreditTx(ctx, q, tc, jobID); cerr != nil {
+				return cerr
+			}
+			return nil
+		}
 		if derr := q.InsertJobDeduction(ctx, generated.InsertJobDeductionParams{
 			CenterID: pgUUID(centerUUID),
 			UserID:   pgUUID(userID),

@@ -162,6 +162,12 @@ func main() {
 	// the speaking grader below (the dispatcher/4.3a spine stays media-agnostic, D17).
 	audioTranscoder := media.NewFFmpegTranscoder(media.FFmpegConfig{FFmpegPath: cfg.FFmpegPath})
 
+	// Story 9.1a — the billing/plan-limit service (Epic 9 keystone). Constructed HERE (before
+	// the dispatcher) so the worker's terminal-fail refund can reverse an armed ai_credits
+	// spend, not just the legacy ledger row (D19, code-review F1). Shared across every resource
+	// service that enforces a plan cap + the on-center-create row provisioning (D7).
+	billingSvc := service.NewBillingService(pool)
+
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
 		worker.NewGenerateQuestionsHandler(pool, geminiClient, clock.RealClock{}),
@@ -185,6 +191,7 @@ func main() {
 		// the dispatcher stays storage/media-agnostic (D6/D17).
 		worker.NewGradeSpeakingHandler(pool, geminiClient, clock.RealClock{}, uploadStorage, audioTranscoder),
 	)
+	aiDispatcher.SetBilling(billingSvc) // Story 9.1a — armed credit refund on terminal fail (D19/F1); before Start
 	go aiDispatcher.Start(workerCtx)
 
 	mux := http.NewServeMux()
@@ -300,7 +307,13 @@ func main() {
 	//   ExtractTenant → RequireVerifiedEmail → per-route rate limit → handler
 	auditSvc := service.NewAuditService(pool)
 	onboardingSvc := service.NewOnboardingService(pool)
+	// Story 9.1a — billingSvc is constructed earlier (before the dispatcher, so the worker's
+	// terminal-fail refund can reverse an armed spend — D19/F1). Wire it into every resource
+	// service that enforces a plan cap (dark-launched behind BILLING_ENFORCEMENT_ENABLED, D19)
+	// + the on-center-create row provisioning (D7).
+	authSvc.SetBillingService(billingSvc) // teacher-seat gate on AdminInviteStaff (AC7)
 	centerSvc := service.NewCenterService(pool, auditSvc, authSvc, clock.RealClock{})
+	centerSvc.SetBillingService(billingSvc) // subscription + ai_credits rows on center create (AC4)
 	onboardingHandler := handler.NewOnboardingHandler(onboardingSvc, clock.RealClock{})
 	centerHandler := handler.NewCenterHandler(centerSvc, clock.RealClock{})
 
@@ -338,6 +351,7 @@ func main() {
 	// defaults this to a localhost URL; Validate() rejects an empty
 	// AppInviteURLBase in non-dev so a missing wiring cannot ship silently.
 	classSvc.SetAcceptURLBase(cfg.AppInviteURLBase)
+	classSvc.SetBillingService(billingSvc) // class-count gate (AC8)
 	templateHandler := handler.NewTemplateHandler(templateSvc, classSvc, clock.RealClock{})
 	requireCenter := middleware.RequireCenterContext()
 
@@ -456,6 +470,9 @@ func main() {
 	// mutating actions are RequireRole("owner") at the edge PLUS a service-layer
 	// SEC-1 DB role re-fetch. Force-logout is NOT re-mounted — it already ships
 	// at POST /api/admin/users/{userId}/force-logout (D8); 7-1b wires that button.
+	// NOTE (Story 9.1a): the teacher-seat gate lives on AuthService.AdminInviteStaff
+	// (the invite-creation path), wired via authSvc.SetBillingService above — StaffService
+	// itself needs no billing dependency.
 	staffSvc := service.NewStaffService(pool, authAudit, retryQ, clock.RealClock{})
 	if cfg.AppResetURLBase != "" {
 		staffSvc.SetResetURLBase(cfg.AppResetURLBase)
@@ -613,6 +630,7 @@ func main() {
 	// "admin") at the edge (defense-in-depth) PLUS the authoritative SEC-1 DB role
 	// re-fetch inside the service (the mutating action) / assertAdminOrOwner (reads).
 	enrollmentSvc := service.NewEnrollmentService(pool, auditSvc, clock.RealClock{}, eventBus, retryQ)
+	enrollmentSvc.SetBillingService(billingSvc) // students-per-class gate (D3/AC9)
 	enrollmentHandler := handler.NewEnrollmentHandler(enrollmentSvc, clock.RealClock{})
 	enrollmentChain := func(h middleware.HandlerWithError) http.Handler {
 		return extractTenant(
@@ -634,6 +652,23 @@ func main() {
 	mux.Handle("GET /api/enrollments/history", enrollmentAdminChain(enrollmentHandler.ListHistory))
 	mux.Handle("GET /api/enrollments/attention", enrollmentAdminChain(enrollmentHandler.Attention))
 	mux.Handle("GET /api/classes/{classId}/enrollments", enrollmentChain(enrollmentHandler.ListByClass))
+
+	// Story 9.1a — Owner-only billing reads (D9). RequireRole("owner") at the edge:
+	// admin/teacher/student → 403 INSUFFICIENT_ROLE (the non-disclosure edge — a teacher
+	// who hits a plan wall cannot see billing, which is why the 409 carries
+	// canManageBilling). Billing*/PlanCatalog* schemas are PROVISIONAL (9-1b co-finalizes).
+	billingHandler := handler.NewBillingHandler(billingSvc, clock.RealClock{})
+	billingChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					middleware.RequireRole("owner")(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
+	mux.Handle("GET /api/billing", billingChain(billingHandler.GetSummary))
+	mux.Handle("GET /api/billing/plans", billingChain(billingHandler.GetPlans))
 
 	// Story 7.4a — Anchored Q&A (6 routes). Open chain — NO RequireRole: every
 	// role reaches the handler so Owner/Admin get the R25/R26 empty-list contract
@@ -832,6 +867,7 @@ func main() {
 	// sits after requireCenter so the user id is in context, and emits Retry-After
 	// (the 429 documented in api.yaml).
 	aiGenerationSvc := service.NewAIGenerationService(pool)
+	aiGenerationSvc.SetBillingService(billingSvc) // AI-credit gate (AC11/AC12, closes FU-11-CREDITCAP)
 	aiGenerationHandler := handler.NewAIGenerationHandler(aiGenerationSvc, clock.RealClock{})
 	aiLimit := middleware.RateLimitByKey(
 		"ai-generate",
@@ -857,6 +893,7 @@ func main() {
 	// produces a reviewable suggestion; the teacher commits the grade via the 6.1
 	// POST /grade path. Poll reuses GET /api/jobs/{jobId}.
 	aiGradeSvc := service.NewAIGradeService(pool)
+	aiGradeSvc.SetBillingService(billingSvc) // AI-credit gate (AC11/AC12, closes FU-11-CREDITCAP)
 	aiGradeHandler := handler.NewAIGradeHandler(aiGradeSvc, clock.RealClock{})
 	mux.Handle("POST /api/submissions/{submissionId}/ai-grade", aiChain(aiGradeHandler.Enqueue))
 

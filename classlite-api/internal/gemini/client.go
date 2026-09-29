@@ -45,7 +45,20 @@ type GenerateRequest struct {
 	Prompt        string
 	AudioData     []byte
 	AudioMimeType string
+	// MaxOutputTokens caps the model's output for this call (Story 9.1a, D18). Since 1
+	// AI credit == 1 job, binding a per-job output ceiling makes 1 credit == a BOUNDED
+	// spend (not merely a job count) — the piece that truly closes FU-11-CREDITCAP.
+	// Zero means "unset" (no cap sent), but every credit-consuming caller sets it.
+	MaxOutputTokens int
 }
+
+// Per-feature output ceilings (D18) — named so 1 credit maps to a bounded Gemini spend.
+// Grade suggestions are compact structured JSON; generation (sections/questions) can be
+// longer. Sized generously above real outputs while still capping a runaway response.
+const (
+	MaxOutputTokensGrade    = 2048
+	MaxOutputTokensGenerate = 4096
+)
 
 // Client is the worker's dependency seam for AI generation. Generate returns the
 // raw JSON body the model produced (the worker unmarshals it into a typed
@@ -110,6 +123,9 @@ type geminiInlineData struct {
 
 type geminiGenerationConfig struct {
 	ResponseMimeType string `json:"responseMimeType"`
+	// MaxOutputTokens is the Gemini maxOutputTokens cap (D18). omitempty so a zero
+	// (unset) caller keeps the wire byte-for-byte unchanged.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
 // geminiResponseBody is the slice of the generateContent response we consume:
@@ -143,7 +159,7 @@ func (c *httpClient) Generate(ctx context.Context, req GenerateRequest) (json.Ra
 	}
 	body := geminiRequestBody{
 		Contents:         []geminiContent{{Parts: parts}},
-		GenerationConfig: geminiGenerationConfig{ResponseMimeType: "application/json"},
+		GenerationConfig: geminiGenerationConfig{ResponseMimeType: "application/json", MaxOutputTokens: req.MaxOutputTokens},
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

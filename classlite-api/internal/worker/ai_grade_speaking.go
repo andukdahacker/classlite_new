@@ -182,10 +182,11 @@ func (h *GradeSpeakingHandler) generate(
 
 	start := h.clk.Now()
 	raw, err := gem.Generate(ctx, gemini.GenerateRequest{
-		Mode:          "speaking_grade",
-		Prompt:        buildSpeakingGradePrompt(),
-		AudioData:     oggBytes,
-		AudioMimeType: media.OutputMIME, // the 6-3b0 output-MIME constant, never a literal (D17)
+		Mode:            "speaking_grade",
+		Prompt:          buildSpeakingGradePrompt(),
+		AudioData:       oggBytes,
+		AudioMimeType:   media.OutputMIME,            // the 6-3b0 output-MIME constant, never a literal (D17)
+		MaxOutputTokens: gemini.MaxOutputTokensGrade, // D18 — bounded spend per credit
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: gemini", ErrTransientGeneration)

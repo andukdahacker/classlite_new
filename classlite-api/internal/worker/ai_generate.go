@@ -82,7 +82,7 @@ func (h *GenerateSectionHandler) generate(ctx context.Context, db generated.DBTX
 	if err := readExerciseForTenant(ctx, db, params.ExerciseID); err != nil {
 		return nil, err
 	}
-	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "section", Prompt: buildSectionPrompt(params.Topic)})
+	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "section", Prompt: buildSectionPrompt(params.Topic), MaxOutputTokens: gemini.MaxOutputTokensGenerate})
 	if err != nil {
 		return nil, fmt.Errorf("%w: gemini", ErrTransientGeneration)
 	}
@@ -124,7 +124,7 @@ func (h *GenerateQuestionsHandler) generate(ctx context.Context, db generated.DB
 	if err := readExerciseForTenant(ctx, db, params.ExerciseID); err != nil {
 		return nil, err
 	}
-	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "questions", Prompt: buildQuestionsPrompt(params.Count)})
+	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "questions", Prompt: buildQuestionsPrompt(params.Count), MaxOutputTokens: gemini.MaxOutputTokensGenerate})
 	if err != nil {
 		return nil, fmt.Errorf("%w: gemini", ErrTransientGeneration)
 	}
@@ -168,7 +168,7 @@ func (h *GenerateDistractorsHandler) generate(ctx context.Context, db generated.
 	if err := readExerciseForTenant(ctx, db, params.ExerciseID); err != nil {
 		return nil, err
 	}
-	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "distractors", Prompt: buildDistractorsPrompt(params.Count)})
+	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "distractors", Prompt: buildDistractorsPrompt(params.Count), MaxOutputTokens: gemini.MaxOutputTokensGenerate})
 	if err != nil {
 		return nil, fmt.Errorf("%w: gemini", ErrTransientGeneration)
 	}

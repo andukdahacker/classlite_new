@@ -7059,6 +7059,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 9.1a — Billing (Owner-only reads; PROVISIONAL) ----------------
+  # Two Owner-gated reads (RequireRole "owner"); admin/teacher/student → 403
+  # INSUFFICIENT_ROLE. The Billing*/PlanCatalog* schemas are PROVISIONAL — 9-1b
+  # co-finalizes (strips this marker + regens) once the UI consumes every field, mirroring
+  # the 8-1a D12 precedent to avoid a breaking mid-epic contract churn. NO next-invoice /
+  # payment-method (D-DASH → 9.2). Write paths (upgrade/downgrade/add-ons) are 9.2/9.3.
+  /api/billing:
+    get:
+      operationId: getBilling
+      summary: Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62; PROVISIONAL)
+      description: |
+        Returns the caller center's current plan, its limits, and live usage meters
+        (teacher seats, classes, AI credits, storage). Owner-only (RequireRole "owner",
+        D9): admin/teacher/student → 403 INSUFFICIENT_ROLE (the non-disclosure edge). NO
+        `nextInvoice` / `paymentMethod` (D-DASH → 9.2). `limits.*` and `usage.*.max` are
+        null when the plan grants an unlimited amount (GO-5 explicit nulls). The
+        `approaching` booleans are SERVER-computed (D22) — the FE renders, never recomputes.
+        `resetAt` is VN-local (center timezone) midnight of the next period (D24).
+        PROVISIONAL — 9-1b co-finalizes.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller center's plan + limits + live usage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingSummary'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID (no/expired token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/billing/plans:
+    get:
+      operationId: getBillingPlans
+      summary: Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61; PROVISIONAL)
+      description: |
+        Returns the static three-tier catalog (Free / Pro / Studio) with each tier's
+        limits, monthly/annual VND prices, and the 10%-inclusive VAT split. Display-only
+        (D25 — Polar is authoritative for amounts actually charged; invoices snapshot their
+        own amount in 9.2). Owner-only (RequireRole "owner", D9). VND integers, never float
+        money. PROVISIONAL — 9-1b co-finalizes.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The static plan catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopePlanCatalog'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   schemas:
     # ---------------- Story 8.1 — Role dashboards ----------------
@@ -7094,6 +7167,116 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/DashboardStudent'
+
+    # ---------------- Story 9.1a — Billing (PROVISIONAL — 9-1b co-finalizes) ----------------
+    # GO-5 explicit nulls (no omitempty on the Go side). An unlimited limit / meter max is
+    # serialized as JSON null (never a magic -1). Money is integer VND. All camelCase.
+    EnvelopeBillingSummary:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/BillingSummary'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    BillingSummary:
+      type: object
+      description: Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). PROVISIONAL.
+      required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage]
+      properties:
+        plan: { type: string, enum: [free, pro, studio] }
+        billingCycle: { type: string, enum: [monthly, annual] }
+        status: { type: string, description: "Subscription status (active|past_due|cancelled today; 9.3 grows it — do not assume a closed set)." }
+        isFree: { type: boolean, description: "True on the Free tier (D24 — the FE renders 'AI grading not included' instead of an alarming 0/0 meter)." }
+        creditsApplicable: { type: boolean, description: "False on Free (no AI credits) — D24." }
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time, nullable: true, description: "Null on Free (no billing period)." }
+        limits:
+          $ref: '#/components/schemas/BillingLimits'
+        usage:
+          $ref: '#/components/schemas/BillingUsage'
+    BillingLimits:
+      type: object
+      description: The plan's caps. A null field means unlimited (no ceiling).
+      required: [teachers, classes, studentsPerClass, aiCreditsPerMonth, storageBytes]
+      properties:
+        teachers: { type: integer, nullable: true }
+        classes: { type: integer, nullable: true }
+        studentsPerClass: { type: integer, nullable: true }
+        aiCreditsPerMonth: { type: integer, nullable: true }
+        storageBytes: { type: integer, format: int64 }
+    BillingUsage:
+      type: object
+      required: [teacherSeats, classes, aiCredits, storage]
+      properties:
+        teacherSeats:
+          $ref: '#/components/schemas/BillingCountMeter'
+        classes:
+          $ref: '#/components/schemas/BillingCountMeter'
+        aiCredits:
+          $ref: '#/components/schemas/BillingCreditMeter'
+        storage:
+          $ref: '#/components/schemas/BillingStorageMeter'
+    BillingCountMeter:
+      type: object
+      description: A current/max meter. `max` null = unlimited. `approaching` is server-computed (D22).
+      required: [current, max, approaching]
+      properties:
+        current: { type: integer }
+        max: { type: integer, nullable: true }
+        approaching: { type: boolean }
+    BillingCreditMeter:
+      type: object
+      required: [monthlyAllocation, monthlyUsed, addonRemaining, available, resetAt]
+      properties:
+        monthlyAllocation: { type: integer }
+        monthlyUsed: { type: integer }
+        addonRemaining: { type: integer }
+        available: { type: integer, description: "(monthlyAllocation - monthlyUsed) + addonRemaining." }
+        resetAt: { type: string, format: date-time, description: "VN-local (center timezone) midnight of the next period start (D24)." }
+    BillingStorageMeter:
+      type: object
+      required: [usedBytes, limitBytes, percentUsed, approaching]
+      properties:
+        usedBytes: { type: integer, format: int64 }
+        limitBytes: { type: integer, format: int64 }
+        percentUsed: { type: integer }
+        approaching: { type: boolean }
+    EnvelopePlanCatalog:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [plans]
+          properties:
+            plans:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlanCatalogEntry'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    PlanCatalogEntry:
+      type: object
+      description: One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only). PROVISIONAL.
+      required: [plan, limits, priceMonthlyVnd, priceAnnualVnd, vat]
+      properties:
+        plan: { type: string, enum: [free, pro, studio] }
+        limits:
+          $ref: '#/components/schemas/BillingLimits'
+        priceMonthlyVnd: { type: integer, description: VND integer (never float money). }
+        priceAnnualVnd: { type: integer }
+        vat:
+          $ref: '#/components/schemas/PlanVATBreakdown'
+    PlanVATBreakdown:
+      type: object
+      description: 10%-inclusive split, round-half-up integer VND — subtotal + vat re-sum to the price (D25).
+      required: [monthlySubtotal, monthlyVat, annualSubtotal, annualVat]
+      properties:
+        monthlySubtotal: { type: integer }
+        monthlyVat: { type: integer }
+        annualSubtotal: { type: integer }
+        annualVat: { type: integer }
 
     # ---------------- Story 8.4 — Global search ----------------
     EnvelopeSearchResults:

@@ -2407,6 +2407,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62; PROVISIONAL)
+         * @description Returns the caller center's current plan, its limits, and live usage meters
+         *     (teacher seats, classes, AI credits, storage). Owner-only (RequireRole "owner",
+         *     D9): admin/teacher/student → 403 INSUFFICIENT_ROLE (the non-disclosure edge). NO
+         *     `nextInvoice` / `paymentMethod` (D-DASH → 9.2). `limits.*` and `usage.*.max` are
+         *     null when the plan grants an unlimited amount (GO-5 explicit nulls). The
+         *     `approaching` booleans are SERVER-computed (D22) — the FE renders, never recomputes.
+         *     `resetAt` is VN-local (center timezone) midnight of the next period (D24).
+         *     PROVISIONAL — 9-1b co-finalizes.
+         */
+        get: operations["getBilling"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61; PROVISIONAL)
+         * @description Returns the static three-tier catalog (Free / Pro / Studio) with each tier's
+         *     limits, monthly/annual VND prices, and the 10%-inclusive VAT split. Display-only
+         *     (D25 — Polar is authoritative for amounts actually charged; invoices snapshot their
+         *     own amount in 9.2). Owner-only (RequireRole "owner", D9). VND integers, never float
+         *     money. PROVISIONAL — 9-1b co-finalizes.
+         */
+        get: operations["getBillingPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2424,6 +2475,96 @@ export interface components {
             teacher: components["schemas"]["DashboardTeacher"] | null;
             owner: components["schemas"]["DashboardOwner"] | null;
             student: components["schemas"]["DashboardStudent"] | null;
+        };
+        EnvelopeBillingSummary: {
+            data: components["schemas"]["BillingSummary"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @description Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). PROVISIONAL. */
+        BillingSummary: {
+            /** @enum {string} */
+            plan: "free" | "pro" | "studio";
+            /** @enum {string} */
+            billingCycle: "monthly" | "annual";
+            /** @description Subscription status (active|past_due|cancelled today; 9.3 grows it — do not assume a closed set). */
+            status: string;
+            /** @description True on the Free tier (D24 — the FE renders 'AI grading not included' instead of an alarming 0/0 meter). */
+            isFree: boolean;
+            /** @description False on Free (no AI credits) — D24. */
+            creditsApplicable: boolean;
+            /** Format: date-time */
+            currentPeriodStart: string;
+            /**
+             * Format: date-time
+             * @description Null on Free (no billing period).
+             */
+            currentPeriodEnd: string | null;
+            limits: components["schemas"]["BillingLimits"];
+            usage: components["schemas"]["BillingUsage"];
+        };
+        /** @description The plan's caps. A null field means unlimited (no ceiling). */
+        BillingLimits: {
+            teachers: number | null;
+            classes: number | null;
+            studentsPerClass: number | null;
+            aiCreditsPerMonth: number | null;
+            /** Format: int64 */
+            storageBytes: number;
+        };
+        BillingUsage: {
+            teacherSeats: components["schemas"]["BillingCountMeter"];
+            classes: components["schemas"]["BillingCountMeter"];
+            aiCredits: components["schemas"]["BillingCreditMeter"];
+            storage: components["schemas"]["BillingStorageMeter"];
+        };
+        /** @description A current/max meter. `max` null = unlimited. `approaching` is server-computed (D22). */
+        BillingCountMeter: {
+            current: number;
+            max: number | null;
+            approaching: boolean;
+        };
+        BillingCreditMeter: {
+            monthlyAllocation: number;
+            monthlyUsed: number;
+            addonRemaining: number;
+            /** @description (monthlyAllocation - monthlyUsed) + addonRemaining. */
+            available: number;
+            /**
+             * Format: date-time
+             * @description VN-local (center timezone) midnight of the next period start (D24).
+             */
+            resetAt: string;
+        };
+        BillingStorageMeter: {
+            /** Format: int64 */
+            usedBytes: number;
+            /** Format: int64 */
+            limitBytes: number;
+            percentUsed: number;
+            approaching: boolean;
+        };
+        EnvelopePlanCatalog: {
+            data: {
+                plans: components["schemas"]["PlanCatalogEntry"][];
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @description One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only). PROVISIONAL. */
+        PlanCatalogEntry: {
+            /** @enum {string} */
+            plan: "free" | "pro" | "studio";
+            limits: components["schemas"]["BillingLimits"];
+            /** @description VND integer (never float money). */
+            priceMonthlyVnd: number;
+            priceAnnualVnd: number;
+            vat: components["schemas"]["PlanVATBreakdown"];
+        };
+        /** @description 10%-inclusive split, round-half-up integer VND — subtotal + vat re-sum to the price (D25). */
+        PlanVATBreakdown: {
+            monthlySubtotal: number;
+            monthlyVat: number;
+            annualSubtotal: number;
+            annualVat: number;
         };
         EnvelopeSearchResults: {
             data: components["schemas"]["SearchResults"];
@@ -13421,6 +13562,82 @@ export interface operations {
             };
             /** @description SUBMISSION_NOT_FOUND (absent, cross-tenant, or no audio for a non-speaking submission) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getBilling: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller center's plan + limits + live usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingSummary"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID (no/expired token) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getBillingPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The static plan catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopePlanCatalog"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

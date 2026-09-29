@@ -33,6 +33,43 @@ type inviteEmailMismatchDetails struct {
 	OAuthEmail   string `json:"oauthEmail"`
 }
 
+// Story 9.1a (D23) — the 409 PLAN_LIMIT_EXCEEDED details. `limit` is a STABLE machine
+// enum (distinct from the display message); `canManageBilling` tells the FE whether THIS
+// caller can upgrade (owner) or must ask the owner (teacher — the enrolment-blocked
+// teacher is not the owner who sees billing).
+type planLimitExceededDetails struct {
+	Limit            string `json:"limit"`
+	Current          int    `json:"current"`
+	Max              int    `json:"max"`
+	CanManageBilling bool   `json:"canManageBilling"`
+}
+
+// planLimitEnum maps the service error's camelCase limit key to the stable UPPER_SNAKE
+// wire enum (AC26).
+func planLimitEnum(limit string) string {
+	switch limit {
+	case "teachers":
+		return "TEACHER_SEATS"
+	case "classes":
+		return "CLASSES"
+	case "studentsPerClass":
+		return "STUDENTS_PER_CLASS"
+	case "storage":
+		return "STORAGE"
+	case "aiCredits":
+		return "AI_CREDITS"
+	default:
+		return "PLAN_LIMIT"
+	}
+}
+
+// insufficientCreditsDetails — the 402 INSUFFICIENT_CREDITS details (D23). `required`
+// names the gap alongside the current `available` balance.
+type insufficientCreditsDetails struct {
+	Available int `json:"available"`
+	Required  int `json:"required"`
+}
+
 // ErrorMapper wraps a HandlerWithError, mapping domain errors to HTTP responses.
 // It also recovers from panics and returns 500 without leaking internals.
 func ErrorMapper(h HandlerWithError) http.HandlerFunc {
@@ -388,7 +425,28 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var keyPrefixMismatch service.KeyPrefixMismatchError
 		var folderCycle service.FolderCycleError
 		var folderMaxDepth service.FolderMaxDepthError
+		// Story 9.1a billing gates (value-typed, errors.As with a value target).
+		var planLimitExceeded service.PlanLimitExceededError
+		var insufficientCredits service.InsufficientCreditsError
 		switch {
+		case errors.As(err, &planLimitExceeded):
+			handler.WriteError(w, r, http.StatusConflict,
+				"PLAN_LIMIT_EXCEEDED", "You've reached your plan limit — upgrade to add more.",
+				planLimitExceededDetails{
+					Limit:            planLimitEnum(planLimitExceeded.Limit),
+					Current:          planLimitExceeded.Current,
+					Max:              planLimitExceeded.Max,
+					CanManageBilling: planLimitExceeded.CanManageBilling,
+				})
+			return
+		case errors.As(err, &insufficientCredits):
+			handler.WriteError(w, r, http.StatusPaymentRequired,
+				"INSUFFICIENT_CREDITS", "Not enough AI credits — upgrade or buy an add-on.",
+				insufficientCreditsDetails{
+					Available: insufficientCredits.Available,
+					Required:  insufficientCredits.Required,
+				})
+			return
 		case errors.As(err, &fileTooLarge):
 			handler.WriteError(w, r, http.StatusRequestEntityTooLarge,
 				"FILE_TOO_LARGE", fileTooLarge.Error(), nil)

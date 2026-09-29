@@ -1,0 +1,15 @@
+-- Migration: add_ai_credit_ledger_period_end
+-- Story 9.1a (D17) — a nullable period marker on the credit ledger so a refund can
+-- tell whether the deduction it reverses belongs to the CURRENT monthly period
+-- (→ give back to monthly_used) or a PRIOR one already reset+forfeited (→ credit
+-- addon_remaining, never underflow monthly_used). It records the ai_credits.reset_at
+-- in effect when a MONTHLY-bucket credit was consumed; NULL for an addon-bucket spend
+-- and for the legacy 4.3a (center,user) job_deduction rows (which refund treats as a
+-- prior/unknown period → addon, a safe fallback).
+--
+-- Wall-clock created_at cannot serve this role: it is real now() (not the injected
+-- Clock), so two consumes a MockClock-month apart carry near-identical created_at.
+--
+-- Additive + nullable: no RLS/REVOKE change, no default backfill needed. Safe to
+-- regenerate sqlc against (the AiCreditLedger struct gains one field).
+ALTER TABLE ai_credit_ledger ADD COLUMN period_end timestamptz;

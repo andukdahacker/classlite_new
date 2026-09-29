@@ -21,13 +21,17 @@ import (
 
 // AIGenerationService enqueues generation jobs and reads job state.
 type AIGenerationService struct {
-	db AuthDB
+	db      AuthDB
+	billing *BillingService // Story 9.1a credit gate (optional, dark-launched — D19)
 }
 
 // NewAIGenerationService constructs the service bound to the DB pool.
 func NewAIGenerationService(db AuthDB) *AIGenerationService {
 	return &AIGenerationService{db: db}
 }
+
+// SetBillingService wires the Story 9.1a AI-credit gate (D-CREDIT/D16). See AIGradeService.
+func (s *AIGenerationService) SetBillingService(b *BillingService) { s.billing = b }
 
 func jobNotFound(id uuid.UUID) error {
 	return model.NotFoundError{Resource: "job", ID: id.String(), Code: "JOB_NOT_FOUND"}
@@ -79,6 +83,15 @@ func (s *AIGenerationService) EnqueueGeneration(
 		}
 		jobID = uuidFromPg(job.ID)
 
+		// Story 9.1a (D-CREDIT/D16) — pre-enqueue balance gate (see AIGradeService). When
+		// armed, consume runs in this tx; a 402 rolls back the job. Dark-launched off →
+		// legacy accounting-only deduction.
+		if s.billing != nil && billingEnforcementEnabled() {
+			if cerr := s.billing.consumeCreditTx(ctx, q, tc, jobID); cerr != nil {
+				return cerr
+			}
+			return nil
+		}
 		if err := q.InsertJobDeduction(ctx, generated.InsertJobDeductionParams{
 			CenterID: pgUUID(centerUUID),
 			UserID:   pgUUID(userUUID),

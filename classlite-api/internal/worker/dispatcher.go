@@ -21,9 +21,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/google/uuid"
+
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 )
 
@@ -52,7 +55,16 @@ type Dispatcher struct {
 	gem      gemini.Client
 	clk      clock.Clock
 	handlers map[model.JobType]GenerationHandler
+	// billing reverses an armed AI-credit spend on terminal failure (Story 9.1a, D19).
+	// nil in the unit/harness path and until SetBilling is called — the refund then uses
+	// the legacy 4.3a ledger reversal (code-review 2026-09-29 F1).
+	billing *service.BillingService
 }
+
+// SetBilling wires the credit gate so terminal-fail reverses the armed ai_credits spend
+// (not just the legacy ledger row). MUST be called before Start (Start launches the claim
+// loops that can terminal-fail a job). No-op-safe: nil billing keeps the legacy path.
+func (d *Dispatcher) SetBilling(b *service.BillingService) { d.billing = b }
 
 // NewDispatcher builds a dispatcher over a single DBTX for the unit/harness path
 // (ProcessOnce / SweepStuckJobs run against it directly). The caller is expected
@@ -240,13 +252,28 @@ func (d *Dispatcher) terminalFail(ctx context.Context, q *generated.Queries, job
 			"error_details", detail)
 		return nil
 	}
-	if err := q.RefundJob(ctx, job.ID); err != nil {
+	if err := d.refundCredit(ctx, q, job); err != nil {
 		return fmt.Errorf("refund: %w", err)
 	}
 	slog.Info("ai_generation_failed",
 		"center_id", pgUUIDToString(job.CenterID), "job_id", pgUUIDToString(job.ID),
 		"error_details", detail)
 	return nil
+}
+
+// refundCredit reverses the credit a terminally-failed job consumed, on the SAME tx as
+// the terminal transition (idempotent via the unique (ref_job_id, reason) index). When the
+// 9.1a credit gate is armed (D19), the credit was consumed via the billing engine into
+// ai_credits at enqueue — reverse it THERE (restores the bucket + writes a chain-consistent
+// center-scoped job_failed_refund ledger row, AC12/AC25/D14/D17). When dark-launched (the
+// prod default, or the unit path with no billing wired), the legacy 4.3a per-(center,user)
+// ledger deduction is what was written — reverse THAT with RefundJob (code-review F1).
+func (d *Dispatcher) refundCredit(ctx context.Context, q *generated.Queries, job generated.Job) error {
+	if d.billing != nil && service.BillingEnforcementEnabled() {
+		tc := model.TenantContext{CenterID: pgUUIDToString(job.CenterID)}
+		return d.billing.RefundCreditTx(ctx, q, tc, uuid.UUID(job.ID.Bytes))
+	}
+	return q.RefundJob(ctx, job.ID)
 }
 
 // logCenterDiscrepancy compares the UNTRUSTED payload center_id against the

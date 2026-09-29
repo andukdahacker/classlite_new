@@ -16,7 +16,18 @@ as the record of why each was pulled forward. `FU-11-CREDITCAP` is new and still
 they are epic-level pull-forwards that precede their owning story. Each becomes story-scoped
 once its Epic 11 story exists. Do not invent a fourth form.
 
-- **FU-11-CREDITCAP (→ before any external user touches the product; belongs to Epic 9 but must
+- **FU-11-CREDITCAP — ✅ CLOSED-by-9-1a (2026-09-29, Amelia /bmad-dev-story 9-1a).**
+  Shipped: `billing_service.CheckAndConsumeCredit` — a pre-enqueue balance gate returning 402
+  `INSUFFICIENT_CREDITS` when a center's available credits are exhausted (Free = 0/mo → every AI
+  job 402s), wired into `ai_grade_service` + `ai_generation_service` (flag-guarded by
+  `BILLING_ENFORCEMENT_ENABLED`, dark-launched OFF for 9-1a — arms at 9.2). Token-bound (D18):
+  each of the 5 credit-consuming Gemini calls now sets `gemini.MaxOutputTokens{Grade,Generate}`, so
+  1 credit == a BOUNDED spend, not just a job count (Murat's token-hole concern). The consume runs
+  under a center-only `pg_advisory_xact_lock(hashtext(center), 4)` (D13) so the money race yields
+  exactly one spend (no-lock control proves it). `ai_credit_ledger.go:62`'s "There is NO 402
+  balance gate" comment is superseded. Covered by credit_gate/credit_gate_race/credit_reset_reconcile/
+  credit_refund reds + ai_max_tokens + error_mapper 402 tests. Original context retained below.
+  **(→ before any external user touches the product; belongs to Epic 9 but must
   not wait for it)** — **`ai_credit_ledger` records spend but does not enforce a ceiling.**
   Verified in code 2026-09-28: `internal/service/ai_grade_service.go:62` states outright *"There
   is NO 402 balance gate (Story 6.5)"*, and `ai_credit_ledger.sql.go`'s insert only computes
@@ -31,6 +42,16 @@ once its Epic 11 story exists. Do not invent a fourth form.
   Epic 9; this is **one hard per-center ceiling with a 402** and nothing more — do not let it drag
   the billing epic forward. Priority: **P1.**
   [`classlite-api/internal/service/ai_grade_service.go:62`, `classlite-api/internal/store/generated/ai_credit_ledger.sql.go`, cf. `internal/service/file_service.go:249`]
+
+- **FU-9-1-GRANDFATHER (→ Story 9.2, the enforcement-arming story). Minted at 9-1a party-mode 2026-09-28 (Ducdo D20).**
+  9-1a implements the plain grandfather gate — a counted-resource create is blocked iff
+  `currentCount >= planMax`, existing over-cap rows stay fully usable (D11). Ducdo's ruled intent
+  also allows the SOFTER "remove some, then re-add up to the prior high-water level" behavior for a
+  grandfathered (post-downgrade) center. That needs a stored per-`(center,resource)` high-water
+  baseline captured **at the moment enforcement arms** — which is 9.2 (9-1a dark-launches
+  enforcement behind `BILLING_ENFORCEMENT_ENABLED`, default OFF, so no live center hits the gate
+  here). Build the high-water column + capture + re-add logic when 9.2 turns the flag on. Priority: **P2.**
+  [`classlite-api/internal/service/billing_service.go` (Check* gates), 9.2 arming story]
 
 - **FU-11-DEPLOY (→ do FIRST, ahead of the other two; becomes Story 11-8a)** — **`deploy.yml`
   has no migration step and no gate.** 130 migrations exist; nothing runs `migrate up` in CI/CD
@@ -1160,3 +1181,7 @@ Implementation-note follow-ups (thinner-coverage areas to revisit at epic TEA / 
 - **AC16 narrow-viewport degrade / ≥44px touch targets — untested.** The a11y suite (`features/search/__tests__/SearchPalette.a11y.test.tsx`) covers dialog-name, combobox, aria-live, axe-floor, and keyboard flow, but nothing exercises a narrow/tablet viewport or asserts touch-target size. AC16/DoD claim "narrow-viewport degrade"; today it relies entirely on cmdk/`DialogContent` defaults with no regression guard. Coverage gap only (no code defect). Relates to FU-8-4-MOBILE.
 
 - **FU-8-4-STUDENT-ROUTES — a student-facing class (and per-class assignment) destination for search results.** Code review 2026-09-28 found students receive non-empty `classes`+`assignments` search categories (8-4a D5) but the only class routes (`/classes/:id`, `/classes/:id/assignments`) are staff-gated — no student class-detail route exists. Interim (Ducdo "pragmatic audience-aware resolver"): a student's class result is NON-navigable (`resultHref`/`seeAllHref` return `null`, the palette no-ops the select); a student's assignment result → their own `/assignments` list. When a student class-detail surface ships, point `resultHref('class','student')` and `seeAllHref('classes','student')` at it and re-enable the deep-link. Related: FU-8-4-SEEALL-PREFILL, FU-8-4-MOBILE.
+
+## Deferred from: code review of 9-1a-plan-tiers-and-limit-enforcement-backend (2026-09-29)
+
+- **i18n error messages** — `PLAN_LIMIT_EXCEEDED` / `INSUFFICIENT_CREDITS` (and every other `error_mapper.go` case) emit raw English strings rather than server-side-resolved i18n keys (AC26 / CQ-5). Repo-wide pre-existing convention, not introduced by 9-1a. Per the ratified "pragmatic interpretation of spec absolutes", fix is a conventions-doc decision + one sweep of `error_mapper.go`, not a per-story blocker. Owner: whoever does the i18n error-message sweep.

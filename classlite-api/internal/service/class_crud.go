@@ -158,6 +158,14 @@ func (s *ClassService) Create(
 	}
 	txQ := generated.New(tx)
 
+	// Story 9.1a (D3/D19/AC8) — the class-count plan cap, inside this tx under the
+	// (center,class) advisory lock. Dark-launched: no-op unless BILLING_ENFORCEMENT_ENABLED.
+	if s.billing != nil && billingEnforcementEnabled() {
+		if err := s.billing.CheckClassLimit(ctx, txQ, tc); err != nil {
+			return generated.Class{}, err
+		}
+	}
+
 	row, err := txQ.CreateClass(ctx, params)
 	if err != nil {
 		if verr := classFKViolationError(err); verr != nil {

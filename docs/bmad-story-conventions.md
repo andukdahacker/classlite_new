@@ -88,3 +88,13 @@ Stories 1d-1, 1d-2, 1d-3 are **NOT** migrated. The convention applies to 1d-4 an
 - Status `done`: should the sibling file be archived (move to `archive/`) once the story is closed? Currently: no, stays adjacent for git-grep discovery.
 
 Revisit these at the Epic 1D retrospective.
+
+## Money boundary — the billing price model (Story 9-1a, D25; ratified Ducdo 2026-09-28)
+
+The `internal/plan` Go catalog (Free/Pro/Studio limits + VND prices + VAT) is **DISPLAY-ONLY**. Nothing persisted references these price constants as historical truth.
+
+- **Polar is authoritative** for amounts actually charged.
+- Story 9.2 invoices **snapshot** their own `amount`/`vat`/`currency` at charge time — they never re-read the Go catalog.
+- The VAT split is **10% inclusive, round-half-up on the integer VND**: `subtotal = round(price / 1.1)`, `vat = price - subtotal`, so the two always re-sum to the price exactly. This rule is identical in Go (`internal/plan.Subtotal`/`VAT`), the FE, and Polar.
+- Money is **integer VND** everywhere — never a float.
+- A documented reconcile follow-up (catalog vs Polar-charged) belongs to Epic 9's payment stories, not here.

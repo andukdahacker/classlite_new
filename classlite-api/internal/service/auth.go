@@ -140,7 +140,15 @@ type AuthService struct {
 	appApexHost          string // e.g. "my.classlite.app" — host that skips AC3 tenant binding
 	appPostLoginURL      string // dev: http://localhost:5173/  — successful OAuth lands here
 	appLoginErrorURLBase string // dev: http://localhost:5173/login — failure-redirect base
+
+	// billing is the Story 9.1a teacher-seat plan gate (optional, dark-launched — D19).
+	// Set via SetBillingService in main.go; nil leaves seat enforcement off.
+	billing *BillingService
 }
+
+// SetBillingService wires the Story 9.1a teacher-seat plan gate onto AdminInviteStaff
+// (D3/AC7). Nil leaves enforcement disabled.
+func (s *AuthService) SetBillingService(b *BillingService) { s.billing = b }
 
 // NewAuthService wires AuthService for production. verifyURL must NOT end with
 // a slash; the service appends ?token=<value>. retry must be non-nil — the

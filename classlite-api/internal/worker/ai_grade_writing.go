@@ -98,7 +98,7 @@ func (h *GradeWritingHandler) generate(
 	}
 
 	start := h.clk.Now()
-	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "writing_grade", Prompt: buildWritingGradePrompt(essayText)})
+	raw, err := gem.Generate(ctx, gemini.GenerateRequest{Mode: "writing_grade", Prompt: buildWritingGradePrompt(essayText), MaxOutputTokens: gemini.MaxOutputTokensGrade})
 	if err != nil {
 		return nil, fmt.Errorf("%w: gemini", ErrTransientGeneration)
 	}
