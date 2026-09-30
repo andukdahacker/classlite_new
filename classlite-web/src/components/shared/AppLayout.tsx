@@ -60,6 +60,7 @@ import { SIDEBAR_NAV_BY_ROLE } from '@/components/domain/sidebarNavConfig'
 import { TopbarShell } from '@/components/domain/TopbarShell'
 import { SearchPalette } from '@/features/search/SearchPalette'
 import { useCommandPalette } from '@/features/search/hooks/useCommandPalette'
+import { BillingErrorDialogHost } from '@/features/billing'
 import { Button } from '@/components/ui/button'
 import { warnIfFirstNoRoleResolution } from './AppLayout-warn-tracking'
 import LanguageToggle from './LanguageToggle'
@@ -164,6 +165,10 @@ export default function AppLayout() {
       {role !== null && (
         <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       )}
+      {/* Global ApiError seam (Story 9-1b, D-9-1b-3): the latent 409/402 billing
+          hard-block dialogs mount here so any mutation surfaces them without
+          owning dialog markup. Renders null unless a billing error is queued. */}
+      <BillingErrorDialogHost />
     </>
   )
 }

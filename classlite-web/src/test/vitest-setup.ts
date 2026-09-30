@@ -39,6 +39,76 @@ import { server } from './msw-server'
 // `Assertion<T>` interface.
 expect.extend({ toHaveNoViolations })
 
+// Web Storage polyfill — Node 22.4+/26 ships a global `localStorage` /
+// `sessionStorage` (WebStorage) that returns `undefined` and warns
+// "localStorage is not available because --localstorage-file was not provided"
+// unless launched with that flag. Because vitest's jsdom environment makes
+// `window === globalThis`, that broken Node global SHADOWS jsdom's own
+// localStorage, so `window.localStorage` is `undefined` — every test that does
+// `window.localStorage.clear()` (attempt/grading drafts, lockout, resultSeen,
+// dashboard welcome, auth-refresh-locks, …) throws `Cannot read properties of
+// undefined`.
+//
+// The PRIMARY fix is the `--no-experimental-webstorage` node flag passed to the
+// test workers (see vitest.config.ts `poolOptions.*.execArgv`), which disables
+// Node's WebStorage global so jsdom's NATIVE localStorage takes over — a
+// brand-valid `Storage` that also satisfies `new StorageEvent({ storageArea })`.
+// This block is a FALLBACK for any invocation where that flag didn't apply: if
+// `localStorage` is still missing, we install spec-compliant methods ON the
+// jsdom `Storage.prototype` (backed per-instance via a WeakMap) and mint the
+// globals with `Object.create`. Going through the real prototype is load-bearing
+// — `resultSeen.test.ts` does `vi.spyOn(Storage.prototype, 'getItem')` to
+// simulate a throwing/quota store, which a stub off the prototype chain would
+// ignore. When the flag worked and real localStorage is present, the whole
+// block is skipped (jsdom's native store + `StorageEvent` are used as-is).
+const storageProto = (globalThis as { Storage?: { prototype: object } }).Storage
+  ?.prototype
+const storageBacking = new WeakMap<object, Map<string, string>>()
+function storageDataFor(self: object): Map<string, string> {
+  let data = storageBacking.get(self)
+  if (!data) {
+    data = new Map()
+    storageBacking.set(self, data)
+  }
+  return data
+}
+
+if (
+  (globalThis as Record<string, unknown>).localStorage == null &&
+  storageProto
+) {
+  const proto = storageProto as Record<string, unknown>
+  proto.getItem = function (this: object, key: string): string | null {
+    const data = storageDataFor(this)
+    return data.has(key) ? (data.get(key) as string) : null
+  }
+  proto.setItem = function (this: object, key: string, value: string): void {
+    storageDataFor(this).set(key, String(value))
+  }
+  proto.removeItem = function (this: object, key: string): void {
+    storageDataFor(this).delete(key)
+  }
+  proto.clear = function (this: object): void {
+    storageDataFor(this).clear()
+  }
+  proto.key = function (this: object, index: number): string | null {
+    return Array.from(storageDataFor(this).keys())[index] ?? null
+  }
+  Object.defineProperty(storageProto, 'length', {
+    configurable: true,
+    get(this: object): number {
+      return storageDataFor(this).size
+    },
+  })
+
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      value: Object.create(storageProto) as Storage,
+    })
+  }
+}
+
 // jsdom polyfills for layout-observing components (Story 5.2b: the
 // `react-resizable-panels` split-pane constructs a `ResizeObserver` and reads
 // `matchMedia` for coarse-pointer detection — neither exists in jsdom, and the

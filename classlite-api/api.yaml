@@ -7059,16 +7059,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
-  # ---------------- Story 9.1a — Billing (Owner-only reads; PROVISIONAL) ----------------
+  # ---------------- Story 9.1a — Billing (Owner-only reads) ----------------
   # Two Owner-gated reads (RequireRole "owner"); admin/teacher/student → 403
-  # INSUFFICIENT_ROLE. The Billing*/PlanCatalog* schemas are PROVISIONAL — 9-1b
-  # co-finalizes (strips this marker + regens) once the UI consumes every field, mirroring
-  # the 8-1a D12 precedent to avoid a breaking mid-epic contract churn. NO next-invoice /
-  # payment-method (D-DASH → 9.2). Write paths (upgrade/downgrade/add-ons) are 9.2/9.3.
+  # INSUFFICIENT_ROLE. The Billing*/PlanCatalog* schemas were finalized by 9-1b
+  # once the UI consumed every field (the PROVISIONAL marker is retired). NO
+  # next-invoice / payment-method (D-DASH → 9.2). Write paths
+  # (upgrade/downgrade/add-ons) are 9.2/9.3.
   /api/billing:
     get:
       operationId: getBilling
-      summary: Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62; PROVISIONAL)
+      summary: Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62)
       description: |
         Returns the caller center's current plan, its limits, and live usage meters
         (teacher seats, classes, AI credits, storage). Owner-only (RequireRole "owner",
@@ -7077,7 +7077,6 @@ paths:
         null when the plan grants an unlimited amount (GO-5 explicit nulls). The
         `approaching` booleans are SERVER-computed (D22) — the FE renders, never recomputes.
         `resetAt` is VN-local (center timezone) midnight of the next period (D24).
-        PROVISIONAL — 9-1b co-finalizes.
       security:
         - bearerAuth: []
       responses:
@@ -7103,13 +7102,13 @@ paths:
   /api/billing/plans:
     get:
       operationId: getBillingPlans
-      summary: Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61; PROVISIONAL)
+      summary: Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61)
       description: |
         Returns the static three-tier catalog (Free / Pro / Studio) with each tier's
         limits, monthly/annual VND prices, and the 10%-inclusive VAT split. Display-only
         (D25 — Polar is authoritative for amounts actually charged; invoices snapshot their
         own amount in 9.2). Owner-only (RequireRole "owner", D9). VND integers, never float
-        money. PROVISIONAL — 9-1b co-finalizes.
+        money.
       security:
         - bearerAuth: []
       responses:
@@ -7168,7 +7167,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/DashboardStudent'
 
-    # ---------------- Story 9.1a — Billing (PROVISIONAL — 9-1b co-finalizes) ----------------
+    # ---------------- Story 9.1a — Billing (finalized by 9-1b) ----------------
     # GO-5 explicit nulls (no omitempty on the Go side). An unlimited limit / meter max is
     # serialized as JSON null (never a magic -1). Money is integer VND. All camelCase.
     EnvelopeBillingSummary:
@@ -7181,7 +7180,7 @@ components:
           $ref: '#/components/schemas/EnvelopeMeta'
     BillingSummary:
       type: object
-      description: Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). PROVISIONAL.
+      description: Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2).
       required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage]
       properties:
         plan: { type: string, enum: [free, pro, studio] }
@@ -7258,7 +7257,7 @@ components:
           $ref: '#/components/schemas/EnvelopeMeta'
     PlanCatalogEntry:
       type: object
-      description: One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only). PROVISIONAL.
+      description: One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only).
       required: [plan, limits, priceMonthlyVnd, priceAnnualVnd, vat]
       properties:
         plan: { type: string, enum: [free, pro, studio] }

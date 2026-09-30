@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next'
 import en from '@/locales/en.json'
 import vi from '@/locales/vi.json'
 import { readLanguageCookie } from '@/lib/language-cookie'
+import { formatVnDate } from '@/lib/formatVnDate'
 
 // Story 1-7c AC6 — seed the initial language from the `lang` cookie. If
 // the cookie is absent or malformed, fall back to English. Reading at
@@ -20,5 +21,13 @@ i18n.use(initReactI18next).init({
     escapeValue: false,
   },
 })
+
+// TS-6 — the i18n layer owns date formatting. Register a `vnDate` formatter so
+// a `{{val, vnDate}}` token (e.g. `billing.meter.resetAt`) routes the raw ISO
+// string through `formatVnDate`. Components pass the raw wire string to `t(...)`
+// and never call `new Date().toLocaleDateString()` in a render path.
+i18n.services.formatter?.add('vnDate', (value, lng) =>
+  typeof value === 'string' ? formatVnDate(value, lng ?? 'en') : String(value),
+)
 
 export default i18n

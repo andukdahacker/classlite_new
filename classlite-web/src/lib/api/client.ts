@@ -2415,7 +2415,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62; PROVISIONAL)
+         * Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62)
          * @description Returns the caller center's current plan, its limits, and live usage meters
          *     (teacher seats, classes, AI credits, storage). Owner-only (RequireRole "owner",
          *     D9): admin/teacher/student → 403 INSUFFICIENT_ROLE (the non-disclosure edge). NO
@@ -2423,7 +2423,6 @@ export interface paths {
          *     null when the plan grants an unlimited amount (GO-5 explicit nulls). The
          *     `approaching` booleans are SERVER-computed (D22) — the FE renders, never recomputes.
          *     `resetAt` is VN-local (center timezone) midnight of the next period (D24).
-         *     PROVISIONAL — 9-1b co-finalizes.
          */
         get: operations["getBilling"];
         put?: never;
@@ -2442,12 +2441,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61; PROVISIONAL)
+         * Owner-only plan catalog — the three tiers with VND prices + VAT (story 9.1a — FR-61)
          * @description Returns the static three-tier catalog (Free / Pro / Studio) with each tier's
          *     limits, monthly/annual VND prices, and the 10%-inclusive VAT split. Display-only
          *     (D25 — Polar is authoritative for amounts actually charged; invoices snapshot their
          *     own amount in 9.2). Owner-only (RequireRole "owner", D9). VND integers, never float
-         *     money. PROVISIONAL — 9-1b co-finalizes.
+         *     money.
          */
         get: operations["getBillingPlans"];
         put?: never;
@@ -2480,7 +2479,7 @@ export interface components {
             data: components["schemas"]["BillingSummary"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
-        /** @description Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). PROVISIONAL. */
+        /** @description Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). */
         BillingSummary: {
             /** @enum {string} */
             plan: "free" | "pro" | "studio";
@@ -2549,7 +2548,7 @@ export interface components {
             };
             meta: components["schemas"]["EnvelopeMeta"];
         };
-        /** @description One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only). PROVISIONAL. */
+        /** @description One tier's limits + VND prices + 10%-inclusive VAT split (D25, display-only). */
         PlanCatalogEntry: {
             /** @enum {string} */
             plan: "free" | "pro" | "studio";

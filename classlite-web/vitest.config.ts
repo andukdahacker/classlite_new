@@ -21,6 +21,15 @@ export default defineConfig({
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     setupFiles: ['src/test/vitest-setup.ts'],
+    // Node 22.4+/26 ships a global WebStorage `localStorage`/`sessionStorage`
+    // that returns `undefined` (+ warns) unless `--localstorage-file` is set,
+    // and — because vitest's jsdom env makes `window === globalThis` — it
+    // SHADOWS jsdom's own localStorage. `--no-experimental-webstorage` disables
+    // the Node global so jsdom's native, brand-valid `Storage` is used instead
+    // (fixes ~26 storage-dependent files, incl. `new StorageEvent({ storageArea })`).
+    // Passed to the worker `node` process (top-level `execArgv` in vitest v4).
+    // A fallback polyfill in vitest-setup.ts covers any invocation that misses it.
+    execArgv: ['--no-experimental-webstorage'],
     // Serialize file execution: parity-script.test.ts mutates the canonical
     // tokens.css on disk, which races with tokens-presence.test.ts reading
     // the same file from a parallel worker. The whole suite is ~2.5s;

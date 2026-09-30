@@ -111,7 +111,7 @@ export const strings = {
       priceAnnual: '0',
       vatNote: 'Giá đã bao gồm VAT 10%',
       description:
-        'Tối đa 1 giáo viên + 20 học viên. Đầy đủ tính năng AI chấm bài. Không cần thẻ tín dụng.',
+        '1 giáo viên, 1 lớp, tối đa 5 học viên. 500 MB lưu trữ. Không bao gồm AI chấm bài. Không cần thẻ tín dụng.',
       cta: 'Bắt đầu miễn phí',
     },
     pro: {
@@ -120,7 +120,7 @@ export const strings = {
       priceAnnual: '3.990.000',
       vatNote: 'Giá đã bao gồm VAT 10%',
       description:
-        'Tối đa 10 giáo viên + 200 học viên. AI chấm Writing & Speaking không giới hạn. Phân tích nâng cao.',
+        'Tối đa 10 giáo viên, không giới hạn lớp, 20 học viên mỗi lớp. 500 tín dụng AI chấm bài/tháng. 5 GB lưu trữ. Phân tích nâng cao.',
       cta: 'Chọn gói Pro',
     },
     studio: {
@@ -129,7 +129,7 @@ export const strings = {
       priceAnnual: '9.990.000',
       vatNote: 'Giá đã bao gồm VAT 10%',
       description:
-        'Không giới hạn giáo viên & học viên. Thương hiệu riêng (white-label). Hỗ trợ ưu tiên qua Zalo.',
+        'Không giới hạn giáo viên & lớp, 60 học viên mỗi lớp. 2.000 tín dụng AI chấm bài/tháng. 50 GB lưu trữ. Hỗ trợ ưu tiên qua Zalo.',
       cta: 'Chọn gói Studio',
     },
     belowCta: 'Bắt đầu miễn phí — không cần thẻ tín dụng',

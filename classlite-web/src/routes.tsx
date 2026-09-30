@@ -239,6 +239,69 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 9-1b — billing dashboard (s69) + plan picker (s68), Owner-only.
+      // Standalone routes (the `/settings` tab union is closed — a Zustand
+      // `useSettingsTab` invariant), each behind its own RouteRoleGate with the
+      // pre-wired `billing` PermissionDenied section. Each page is deep-imported
+      // (NOT the barrel) so Rolldown emits its own chunk (staff/students never
+      // download billing). The picker route is registered AFTER the dashboard so
+      // `/settings/billing/plans` matches the more-specific path (RR v7).
+      {
+        path: '/settings/billing',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner']}
+                requiredRolesForCopy={['owner']}
+                sectionNameKey="billing"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { BillingDashboardPage } = await import(
+                '@/features/billing/BillingDashboardPage'
+              )
+              return { Component: BillingDashboardPage }
+            },
+          },
+        ],
+      },
+      {
+        path: '/settings/billing/plans',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner']}
+                requiredRolesForCopy={['owner']}
+                sectionNameKey="billing"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { PlanPickerPage } = await import(
+                '@/features/billing/PlanPickerPage'
+              )
+              return { Component: PlanPickerPage }
+            },
+          },
+        ],
+      },
       // Story 3.1 — /classes index. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). The create/edit form is a
       // Dialog (not a /classes/new child route), so this single boundary

@@ -92,7 +92,7 @@ export const strings = {
       priceAnnual: '0',
       vatNote: 'Prices include 10% VAT',
       description:
-        'Up to 1 teacher + 20 students. All AI grading features. No credit card required.',
+        '1 teacher, 1 class, up to 5 students. 500 MB storage. AI grading not included. No credit card required.',
       cta: 'Get started free',
     },
     pro: {
@@ -101,7 +101,7 @@ export const strings = {
       priceAnnual: '3.990.000',
       vatNote: 'Prices include 10% VAT',
       description:
-        'Up to 10 teachers + 200 students. Unlimited AI Writing & Speaking grading. Advanced analytics.',
+        'Up to 10 teachers, unlimited classes, 20 students per class. 500 AI grading credits/month. 5 GB storage. Advanced analytics.',
       cta: 'Choose Pro',
     },
     studio: {
@@ -110,7 +110,7 @@ export const strings = {
       priceAnnual: '9.990.000',
       vatNote: 'Prices include 10% VAT',
       description:
-        'Unlimited teachers and students. White-label branding. Priority support via Zalo.',
+        'Unlimited teachers and classes, 60 students per class. 2,000 AI grading credits/month. 50 GB storage. Priority support via Zalo.',
       cta: 'Choose Studio',
     },
     belowCta: 'Start free — no credit card required',

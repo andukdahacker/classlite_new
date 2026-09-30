@@ -50,6 +50,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useClasses } from '@/features/classes'
+import { reportBillingError } from '@/features/billing'
 import type { ApiError } from '@/lib/api-fetch'
 import { useStudentRoster, type StudentListItem } from '../api/useStudents'
 import {
@@ -250,7 +251,12 @@ export function EnrolmentComposer({
         setAppliedNonce(prefillNonce)
       },
       onError: (error) => {
-        // Keep the form so the Admin can correct it (no reset).
+        // Keep the form so the Admin can correct it (no reset). A billing
+        // hard-block (409 PLAN_LIMIT_EXCEEDED / 402 INSUFFICIENT_CREDITS) is
+        // surfaced through the global ApiError seam's dialog (D-9-1b-3);
+        // everything else stays an inline i18n toast (CQ-5). Enforcement is
+        // dark-launched OFF (D19), so this fires only once 9.2 arms it.
+        if (reportBillingError(error)) return
         toast.error(t(errorKey(error)))
       },
     })
