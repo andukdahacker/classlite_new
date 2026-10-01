@@ -35,3 +35,17 @@ type InsufficientCreditsError struct {
 func (e InsufficientCreditsError) Error() string {
 	return fmt.Sprintf("insufficient AI credits: %d available, %d required", e.Available, e.Required)
 }
+
+// AddonNotAvailableError → 403 ADDON_NOT_AVAILABLE (Story 9.2a, D7). An add-on purchase was
+// attempted on a tier that cannot buy add-ons (Free — add-ons are Pro/Studio only), or for a
+// pack not sold to the caller's tier. This is a plan-ELIGIBILITY problem, NOT a payment one
+// (so it is a 403, never a 402 INSUFFICIENT_CREDITS) — the FE hints "upgrade to Pro". Pack
+// names the requested pack; Tier names the caller's (ineligible) tier.
+type AddonNotAvailableError struct {
+	Pack string
+	Tier string
+}
+
+func (e AddonNotAvailableError) Error() string {
+	return fmt.Sprintf("add-on pack %q not available on the %s plan", e.Pack, e.Tier)
+}

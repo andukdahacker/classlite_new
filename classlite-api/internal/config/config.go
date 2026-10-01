@@ -74,6 +74,53 @@ type Config struct {
 	// (CheckFFmpegAvailable) so a missing binary fails fast instead of surfacing
 	// three retries deep in a production speaking-grade job (AC5/D3).
 	FFmpegPath string
+	// Story 9.2a — Polar.sh billing (the first real payment integration). PolarAPIKey lives
+	// in env only and is NEVER logged/serialized (EDGE-4/R49) — LogSummary shows only a bool.
+	// PolarWebhookSecret / PolarWebhookSecretPrevious drive the Standard-Webhooks HMAC verifier
+	// (the PREVIOUS secret enables a 24h zero-downtime rotation window, AC5). PolarProductIDs
+	// maps a "<tier>_<cycle>" / "addon_<packId>" key to the Polar-side priced-entity id, read
+	// from POLAR_PRICE_* env vars.
+	//
+	// ARMING PRECONDITION (D3/D29): these are OPTIONAL in non-dev — Validate() does NOT require
+	// them, because the production arming flip is DEFERRED to post-9-2b and the live POLAR_API_KEY
+	// deliberately stays UNSET (mock/sandbox) in prod until 9-2b ships the purchase UI (else the
+	// owner-gated checkout could take REAL money with no product wrapper). manual-setup.md records
+	// both preconditions.
+	PolarAPIKey                string
+	PolarWebhookSecret         string
+	PolarWebhookSecretPrevious string
+	PolarProductIDs            map[string]string
+	// BillingEnforcementEnabled promotes the 9-1a dark-launch flag (D3/D19) into config for
+	// observability + .env.example documentation. The prod default is OFF (D3). NOTE: the
+	// billing_service still reads the flag at CALL time (os.Getenv) so tests can flip it with
+	// t.Setenv and the wiring's no-op-when-off semantics are byte-identical to 9-1a — this field
+	// is the promoted surface (LogSummary + a single load point), not a behavior change.
+	BillingEnforcementEnabled bool
+}
+
+// polarProductIDKeys are the "<tier>_<cycle>" / "addon_<packId>" slots the checkout builder
+// resolves to Polar priced-entity ids (Story 9.2a). Read from POLAR_PRICE_<UPPER> env vars;
+// absent slots are simply not present in the map (arming-gated — unset in prod until 9-2b).
+var polarProductIDKeys = map[string]string{
+	"pro_monthly":        "POLAR_PRICE_PRO_MONTHLY",
+	"pro_annual":         "POLAR_PRICE_PRO_ANNUAL",
+	"studio_monthly":     "POLAR_PRICE_STUDIO_MONTHLY",
+	"studio_annual":      "POLAR_PRICE_STUDIO_ANNUAL",
+	"addon_credits_100":  "POLAR_PRICE_ADDON_CREDITS_100",
+	"addon_credits_500":  "POLAR_PRICE_ADDON_CREDITS_500",
+	"addon_credits_2000": "POLAR_PRICE_ADDON_CREDITS_2000",
+}
+
+// loadPolarProductIDs reads the configured Polar priced-entity ids into a "<slot>" → id map,
+// omitting any unset slot.
+func loadPolarProductIDs() map[string]string {
+	out := make(map[string]string)
+	for slot, envKey := range polarProductIDKeys {
+		if v := getEnv(envKey, ""); v != "" {
+			out[slot] = v
+		}
+	}
+	return out
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -113,6 +160,13 @@ func Load() Config {
 		GradeReleaseEmailEnabled:  getEnvBool("GRADE_RELEASE_EMAIL_ENABLED", false),
 		AppResultURLBase:          getEnv("APP_RESULT_URL_BASE", "http://localhost:5173"),
 		FFmpegPath:                getEnv("CLASSLITE_FFMPEG_PATH", "ffmpeg"),
+		// Story 9.2a — Polar billing. Optional until arming (D3/D29). Enforcement flag
+		// promoted here (prod default OFF); billing_service still reads it at call time.
+		PolarAPIKey:                getEnv("POLAR_API_KEY", ""),
+		PolarWebhookSecret:         getEnv("POLAR_WEBHOOK_SECRET", ""),
+		PolarWebhookSecretPrevious: getEnv("POLAR_WEBHOOK_SECRET_PREVIOUS", ""),
+		PolarProductIDs:            loadPolarProductIDs(),
+		BillingEnforcementEnabled:  getEnvBool("BILLING_ENFORCEMENT_ENABLED", false),
 	}
 }
 
@@ -316,6 +370,12 @@ func (c Config) LogSummary() {
 		"grade_release_email_enabled", c.GradeReleaseEmailEnabled,
 		"app_result_url_base_set", c.AppResultURLBase != "",
 		"ffmpeg_path", c.FFmpegPath,
+		// Story 9.2a — Polar secrets shown only as a bool (EDGE-4/R49, never the value).
+		"polar_api_key_set", c.PolarAPIKey != "",
+		"polar_webhook_secret_set", c.PolarWebhookSecret != "",
+		"polar_webhook_secret_previous_set", c.PolarWebhookSecretPrevious != "",
+		"polar_product_ids_count", len(c.PolarProductIDs),
+		"billing_enforcement_enabled", c.BillingEnforcementEnabled,
 	)
 }
 

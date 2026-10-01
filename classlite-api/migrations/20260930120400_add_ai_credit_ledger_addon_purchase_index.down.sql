@@ -1,0 +1,2 @@
+-- Reverse 20260930120400_add_ai_credit_ledger_addon_purchase_index.
+DROP INDEX IF EXISTS uq_ai_credit_ledger_purchase_reason;

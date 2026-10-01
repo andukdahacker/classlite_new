@@ -53,8 +53,30 @@ type BillingLimits struct {
 	StorageBytes      int64
 }
 
-// BillingSummary is the GET /api/billing model (AC15/AC27). NO nextInvoice/paymentMethod
-// (D-DASH → 9.2).
+// NextInvoiceInfo is the upcoming renewal charge projection (Story 9.2a, D-DASH). AmountVnd is
+// the plan's price for the current cycle (display estimate — Polar is authoritative for the
+// actual charge, D25); DueDate is the current period end. Null on a Free/no-Polar center.
+type NextInvoiceInfo struct {
+	AmountVnd int
+	DueDate   time.Time
+}
+
+// PaymentMethodInfo is the card-on-file summary (Story 9.2a, D-DASH). PROVISIONAL: not yet
+// persisted from Polar, so always nil for now (9-2b co-finalizes) — GO-5 explicit null.
+type PaymentMethodInfo struct {
+	Brand string
+	Last4 string
+}
+
+// PendingDowngradeInfo is a scheduled at-renewal downgrade (Story 9.2a, E17/D9). Null when none.
+type PendingDowngradeInfo struct {
+	Plan        string
+	EffectiveAt time.Time
+}
+
+// BillingSummary is the GET /api/billing model (AC15/AC27). Story 9.2a adds the D-DASH cards
+// deferred from 9-1a: NextInvoice + PaymentMethod + PendingDowngrade (all explicit-null when
+// absent — GO-5; every one is null on a Free/no-Polar center).
 type BillingSummary struct {
 	Plan               string
 	BillingCycle       string
@@ -68,6 +90,9 @@ type BillingSummary struct {
 	Classes            CountMeter
 	Credits            CreditMeter
 	Storage            StorageMeter
+	NextInvoice        *NextInvoiceInfo
+	PaymentMethod      *PaymentMethodInfo
+	PendingDowngrade   *PendingDowngradeInfo
 }
 
 // PlanCatalogEntry is one tier in GET /api/billing/plans (AC17).
@@ -113,6 +138,13 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 	centerUUID, err := uuid.Parse(tc.CenterID)
 	if err != nil {
 		return BillingSummary{}, &ForbiddenError{Reason: "invalid tenant context"}
+	}
+
+	// Story 9.2a (D18) — lost-webhook reconcile BEFORE building the summary, so a checkout whose
+	// confirming webhook never arrived is applied (once) and the fresh reads below reflect it.
+	// No-op when no Polar client / no pending intents; idempotent on a second GET.
+	if err := s.ReconcilePendingCheckouts(ctx, tc); err != nil {
+		return BillingSummary{}, err
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -183,6 +215,29 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 		periodEnd = &t
 	}
 
+	// D-DASH cards (Story 9.2a). nextInvoice is the upcoming renewal charge (plan price at the
+	// current cycle, display estimate — D25); pendingDowngrade surfaces a scheduled at-renewal
+	// change (E17) — 9-2b renders "Downgrade scheduled for [date]" + warns an add-on purchase
+	// when a downgrade-to-Free is pending (D25). paymentMethod stays null (PROVISIONAL — not yet
+	// persisted from Polar, 9-2b co-finalizes).
+	var nextInvoice *NextInvoiceInfo
+	if tier != plan.Free && sub.CurrentPeriodEnd.Valid {
+		prices := plan.PricesFor(tier)
+		amount := prices.MonthlyVnd
+		if sub.BillingCycle == "annual" {
+			amount = prices.AnnualVnd
+		}
+		nextInvoice = &NextInvoiceInfo{AmountVnd: amount, DueDate: sub.CurrentPeriodEnd.Time}
+	}
+	var pendingDowngrade *PendingDowngradeInfo
+	if sub.PendingPlan.Valid && sub.PendingPlan.String != "" {
+		pd := &PendingDowngradeInfo{Plan: sub.PendingPlan.String}
+		if sub.PendingEffectiveAt.Valid {
+			pd.EffectiveAt = sub.PendingEffectiveAt.Time
+		}
+		pendingDowngrade = pd
+	}
+
 	return BillingSummary{
 		Plan:               sub.Plan,
 		BillingCycle:       sub.BillingCycle,
@@ -207,6 +262,9 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 			PercentUsed: percentUsed(storageUsed, storageLimit),
 			Approaching: storageLimit > 0 && float64(storageUsed) >= math.Ceil(float64(storageLimit)*PlanApproachingThreshold),
 		},
+		NextInvoice:      nextInvoice,
+		PaymentMethod:    nil, // PROVISIONAL — not yet persisted from Polar (9-2b co-finalizes)
+		PendingDowngrade: pendingDowngrade,
 	}, nil
 }
 

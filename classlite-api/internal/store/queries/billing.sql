@@ -15,14 +15,18 @@
 SELECT pg_advisory_xact_lock(hashtext(@center_id::text), @resource_class::int);
 
 -- name: GetSubscription :one
+-- Story 9.2a extends the SELECT list with the pending-downgrade columns (D9/D26) so the
+-- generated row stays the full generated.Subscription (a subset SELECT would spawn a
+-- distinct row struct and break every SetPlan/read caller). No behavior change for 9-1a.
 SELECT id, center_id, plan, billing_cycle, status, polar_subscription_id,
-       current_period_start, current_period_end, created_at, updated_at
+       current_period_start, current_period_end, created_at, updated_at,
+       pending_plan, pending_billing_cycle, pending_effective_at
 FROM subscriptions
 WHERE center_id = @center_id;
 
 -- name: InsertSubscriptionDefault :one
 -- Defensive get-or-create half (D26c) + on-center-create (D7). Genesis Free, no Polar,
--- no billing period. Idempotent via UNIQUE(center_id).
+-- no billing period, no pending change. Idempotent via UNIQUE(center_id).
 INSERT INTO subscriptions
     (id, center_id, plan, billing_cycle, status, polar_subscription_id,
      current_period_start, current_period_end)
@@ -30,7 +34,8 @@ VALUES
     (gen_random_uuid(), @center_id, 'free', 'monthly', 'active', NULL, now(), NULL)
 ON CONFLICT (center_id) DO NOTHING
 RETURNING id, center_id, plan, billing_cycle, status, polar_subscription_id,
-          current_period_start, current_period_end, created_at, updated_at;
+          current_period_start, current_period_end, created_at, updated_at,
+          pending_plan, pending_billing_cycle, pending_effective_at;
 
 -- name: SetPlan :exec
 -- Override seam (D19) + the 9.2 plan-change write path. Callers pair this with

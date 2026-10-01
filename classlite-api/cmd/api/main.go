@@ -25,6 +25,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/media"
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/polar"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/worker"
@@ -162,11 +163,25 @@ func main() {
 	// the speaking grader below (the dispatcher/4.3a spine stays media-agnostic, D17).
 	audioTranscoder := media.NewFFmpegTranscoder(media.FFmpegConfig{FFmpegPath: cfg.FFmpegPath})
 
-	// Story 9.1a — the billing/plan-limit service (Epic 9 keystone). Constructed HERE (before
+	// Story 9.2a — the Polar.sh billing client (the first real payment integration). Real HTTPS
+	// client when POLAR_API_KEY is set; a deterministic mock otherwise (dev/sandbox fallback,
+	// D4). ARMING PRECONDITION (D3/D29): the live key stays UNSET in prod until 9-2b ships the
+	// purchase UI, so the owner-gated checkout cannot take REAL money with no product wrapper —
+	// until then this is the mock and no live charge is possible. The key is never logged (R49).
+	var polarClient polar.Client
+	if cfg.PolarAPIKey != "" {
+		polarClient = polar.NewClient(cfg.PolarAPIKey)
+	} else {
+		slog.Info("POLAR_API_KEY unset — using the Polar mock client (no live charges possible); live key is an arming precondition for 9-2b (manual-setup.md)")
+		polarClient = polar.NewMockClient(polar.MockConfig{})
+	}
+
+	// Story 9.1a/9.2a — the billing/plan-limit service (Epic 9 keystone). Constructed HERE (before
 	// the dispatcher) so the worker's terminal-fail refund can reverse an armed ai_credits
 	// spend, not just the legacy ledger row (D19, code-review F1). Shared across every resource
-	// service that enforces a plan cap + the on-center-create row provisioning (D7).
-	billingSvc := service.NewBillingService(pool)
+	// service that enforces a plan cap + the on-center-create row provisioning (D7). 9.2a injects
+	// the Polar client (checkout/reconcile/downgrade-schedule paths).
+	billingSvc := service.NewBillingServiceWithPolar(pool, clock.RealClock{}, polarClient)
 
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
@@ -670,6 +685,22 @@ func main() {
 	mux.Handle("GET /api/billing", billingChain(billingHandler.GetSummary))
 	mux.Handle("GET /api/billing/plans", billingChain(billingHandler.GetPlans))
 
+	// Story 9.2a — owner-gated billing WRITE + preview endpoints (D5/D6/D7/D9). The FE never
+	// calls Polar directly (D5/arch:942): these proxy handler → billing_service → internal/polar.
+	// Payment confirmation is webhook-driven (D2) — none of these change plan/credits locally.
+	mux.Handle("GET /api/billing/addons", billingChain(billingHandler.GetAddons))
+	mux.Handle("GET /api/billing/proration-preview", billingChain(billingHandler.GetProrationPreview))
+	mux.Handle("POST /api/billing/checkout", billingChain(billingHandler.CreateCheckout))
+	mux.Handle("POST /api/billing/downgrade", billingChain(billingHandler.ScheduleDowngrade))
+	mux.Handle("POST /api/billing/downgrade/cancel", billingChain(billingHandler.CancelDowngrade))
+
+	// Story 9.2a — the PUBLIC Polar webhook receiver (D2/D27). It authenticates by Standard-
+	// Webhooks SIGNATURE, not JWT/RLS, so it is NOT on the mux here — it is mounted OUTSIDE the
+	// originMW + global RateLimit wrappers below (a Polar S2S POST carries no Origin, which
+	// originMW would 403 before the verifier ran — D27). It caps the body before HMAC + never
+	// 500/panics on malformed headers.
+	polarWebhookHandler := handler.NewPolarWebhookHandler(billingSvc, cfg.PolarWebhookSecret, cfg.PolarWebhookSecretPrevious, clock.RealClock{})
+
 	// Story 7.4a — Anchored Q&A (6 routes). Open chain — NO RequireRole: every
 	// role reaches the handler so Owner/Admin get the R25/R26 empty-list contract
 	// from the service (not a 403 at the edge). Role scoping + SEC-1 DB-role
@@ -986,14 +1017,21 @@ func main() {
 	})
 	originMW := middleware.NewOriginCheck(corsOrigins)
 
+	// Story 9.2a (D27) — the Polar webhook route must BYPASS originMW + the shared global
+	// RateLimit bucket: a Polar S2S POST carries no Origin (originMW would 403 it before the
+	// signature verifier) and is server-to-server (the 200/60s human bucket is wrong for it; it
+	// authenticates by HMAC + caps its own body). A root mux routes the webhook straight to its
+	// handler (still under RequestID→ClientIP→Logger→CORS) while everything else goes through the
+	// protected originMW+RateLimit chain. Go 1.22 ServeMux prefers the more specific pattern.
+	protected := originMW(middleware.RateLimit(200.0/60.0, 200)(mux))
+	root := http.NewServeMux()
+	root.Handle("/", protected)
+	root.Handle("POST /api/webhooks/polar", polarWebhookHandler)
+
 	wrapped := middleware.RequestID(
 		middleware.ClientIP(
 			middleware.Logger(
-				corsMW(
-					originMW(
-						middleware.RateLimit(200.0/60.0, 200)(mux),
-					),
-				),
+				corsMW(root),
 			),
 		),
 	)

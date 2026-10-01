@@ -92,16 +92,35 @@ type billingUsageDTO struct {
 	Storage      storageMeterDTO `json:"storage"`
 }
 
+// Story 9.2a D-DASH wire DTOs (PROVISIONAL — 9-2b co-finalizes; GO-5 explicit null when absent).
+type nextInvoiceDTO struct {
+	AmountVnd int       `json:"amountVnd"`
+	DueDate   time.Time `json:"dueDate"`
+}
+
+type paymentMethodDTO struct {
+	Brand string `json:"brand"`
+	Last4 string `json:"last4"`
+}
+
+type pendingDowngradeDTO struct {
+	Plan        string    `json:"plan"`
+	EffectiveAt time.Time `json:"effectiveAt"`
+}
+
 type billingSummaryDTO struct {
-	Plan               string           `json:"plan"`
-	BillingCycle       string           `json:"billingCycle"`
-	Status             string           `json:"status"`
-	IsFree             bool             `json:"isFree"`
-	CreditsApplicable  bool             `json:"creditsApplicable"`
-	CurrentPeriodStart time.Time        `json:"currentPeriodStart"`
-	CurrentPeriodEnd   *time.Time       `json:"currentPeriodEnd"`
-	Limits             billingLimitsDTO `json:"limits"`
-	Usage              billingUsageDTO  `json:"usage"`
+	Plan               string               `json:"plan"`
+	BillingCycle       string               `json:"billingCycle"`
+	Status             string               `json:"status"`
+	IsFree             bool                 `json:"isFree"`
+	CreditsApplicable  bool                 `json:"creditsApplicable"`
+	CurrentPeriodStart time.Time            `json:"currentPeriodStart"`
+	CurrentPeriodEnd   *time.Time           `json:"currentPeriodEnd"`
+	Limits             billingLimitsDTO     `json:"limits"`
+	Usage              billingUsageDTO      `json:"usage"`
+	NextInvoice        *nextInvoiceDTO      `json:"nextInvoice"`
+	PaymentMethod      *paymentMethodDTO    `json:"paymentMethod"`
+	PendingDowngrade   *pendingDowngradeDTO `json:"pendingDowngrade"`
 }
 
 type planVATDTO struct {
@@ -168,7 +187,31 @@ func toBillingSummaryDTO(s service.BillingSummary) billingSummaryDTO {
 				Approaching: s.Storage.Approaching,
 			},
 		},
+		NextInvoice:      toNextInvoiceDTO(s.NextInvoice),
+		PaymentMethod:    toPaymentMethodDTO(s.PaymentMethod),
+		PendingDowngrade: toPendingDowngradeDTO(s.PendingDowngrade),
 	}
+}
+
+func toNextInvoiceDTO(n *service.NextInvoiceInfo) *nextInvoiceDTO {
+	if n == nil {
+		return nil
+	}
+	return &nextInvoiceDTO{AmountVnd: n.AmountVnd, DueDate: n.DueDate}
+}
+
+func toPaymentMethodDTO(p *service.PaymentMethodInfo) *paymentMethodDTO {
+	if p == nil {
+		return nil
+	}
+	return &paymentMethodDTO{Brand: p.Brand, Last4: p.Last4}
+}
+
+func toPendingDowngradeDTO(p *service.PendingDowngradeInfo) *pendingDowngradeDTO {
+	if p == nil {
+		return nil
+	}
+	return &pendingDowngradeDTO{Plan: p.Plan, EffectiveAt: p.EffectiveAt}
 }
 
 func toPlanCatalogDTO(entries []service.PlanCatalogEntry) []planCatalogEntryDTO {

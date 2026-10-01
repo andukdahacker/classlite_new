@@ -2457,6 +2457,139 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/addons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only add-on credit packs for the caller's tier (story 9.2a — FR-64)
+         * @description Lists the one-time AI-credit add-on packs purchasable on the caller's tier (tier-resolved
+         *     VND price + 10%-inclusive VAT split). Free tier → 403 ADDON_NOT_AVAILABLE (add-ons are
+         *     Pro/Studio only — a plan-eligibility problem, not payment; D7).
+         */
+        get: operations["getBillingAddons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/proration-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only upgrade proration preview (Polar-authoritative, verbatim) (story 9.2a — FR-63)
+         * @description Proxies Polar's subscription-update proration preview and returns its breakdown VERBATIM
+         *     (subtotal / vat / credit-applied / charged-today, integer VND). We never compute proration
+         *     locally (D6/D25). Owner-only.
+         */
+        get: operations["getBillingProrationPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner-only — open a Polar hosted checkout for an upgrade or add-on (story 9.2a — FR-63/64)
+         * @description Creates a Polar hosted-checkout session (plan upgrade with proration, or a one-time add-on
+         *     order) and returns the URL the FE redirects to. NO local plan/credit change — confirmation
+         *     is webhook-driven (D2/D8). A Free-tier add-on attempt → 403 ADDON_NOT_AVAILABLE (D7).
+         */
+        post: operations["createBillingCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/downgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner-only — schedule an at-renewal downgrade (no data loss) (story 9.2a — FR-63)
+         * @description Records a single pending downgrade that takes effect at the next renewal (a second schedule
+         *     REPLACES the first — D26); the current plan + limits stay active until then, and NO data is
+         *     ever deleted (R24). An intervening upgrade cancels it (D26).
+         */
+        post: operations["scheduleBillingDowngrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/downgrade/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner-only — cancel a scheduled downgrade before renewal (story 9.2a — FR-63)
+         * @description Clears the pending downgrade (and cancels the Polar schedule); the plan continues unchanged at renewal.
+         */
+        post: operations["cancelBillingDowngrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/polar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Polar.sh webhook receiver — signature-verified, PUBLIC (story 9.2a — D2/D27)
+         * @description The Polar server-to-server webhook endpoint. PUBLIC: it authenticates by Standard-Webhooks
+         *     HMAC SIGNATURE (webhook-id / webhook-timestamp / webhook-signature headers), NOT JWT/RLS, so
+         *     it sits OUTSIDE the tenant chain AND outside the originMW + global RateLimit (D27). The body
+         *     is io.LimitReader-capped before the HMAC; a forged/replayed/stale event never reaches a
+         *     state write (R11); delivery is deduped by the Standard-Webhooks event id (D23). Not called
+         *     by the FE — documented here for completeness.
+         */
+        post: operations["polarWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2479,13 +2612,17 @@ export interface components {
             data: components["schemas"]["BillingSummary"];
             meta: components["schemas"]["EnvelopeMeta"];
         };
-        /** @description Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2). */
+        /**
+         * @description Current plan + limits + live usage. Story 9.2a ADDS the D-DASH cards deferred from 9-1a:
+         *     nextInvoice + paymentMethod + pendingDowngrade (PROVISIONAL — 9-2b co-finalizes). All
+         *     explicit-null when absent (GO-5); every one is null on a Free/no-Polar center.
+         */
         BillingSummary: {
             /** @enum {string} */
             plan: "free" | "pro" | "studio";
             /** @enum {string} */
             billingCycle: "monthly" | "annual";
-            /** @description Subscription status (active|past_due|cancelled today; 9.3 grows it — do not assume a closed set). */
+            /** @description Subscription status (active|past_due|cancelled|trialing|unpaid|paused — 9.2a widened it; do not assume a closed set). */
             status: string;
             /** @description True on the Free tier (D24 — the FE renders 'AI grading not included' instead of an alarming 0/0 meter). */
             isFree: boolean;
@@ -2500,6 +2637,12 @@ export interface components {
             currentPeriodEnd: string | null;
             limits: components["schemas"]["BillingLimits"];
             usage: components["schemas"]["BillingUsage"];
+            /** @description PROVISIONAL (9-2a, D-DASH) — the upcoming renewal charge (plan price at the current cycle; Polar is authoritative for the actual charge). Null on Free/no-Polar. */
+            nextInvoice: components["schemas"]["BillingNextInvoice"] | null;
+            /** @description PROVISIONAL (9-2a, D-DASH) — the card on file. Always null for now (not yet persisted from Polar — 9-2b co-finalizes). */
+            paymentMethod: components["schemas"]["BillingPaymentMethod"] | null;
+            /** @description PROVISIONAL (9-2a, E17) — a scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25). */
+            pendingDowngrade: components["schemas"]["BillingPendingDowngrade"] | null;
         };
         /** @description The plan's caps. A null field means unlimited (no ceiling). */
         BillingLimits: {
@@ -2564,6 +2707,90 @@ export interface components {
             monthlyVat: number;
             annualSubtotal: number;
             annualVat: number;
+        };
+        BillingNextInvoice: {
+            /** @description Plan price at the current cycle (display estimate — Polar is authoritative). */
+            amountVnd: number;
+            /** Format: date-time */
+            dueDate: string;
+        };
+        BillingPaymentMethod: {
+            brand: string;
+            last4: string;
+        };
+        BillingPendingDowngrade: {
+            /** @enum {string} */
+            plan: "free" | "pro" | "studio";
+            /**
+             * Format: date-time
+             * @description The renewal boundary the downgrade applies at (current_period_end).
+             */
+            effectiveAt: string;
+        };
+        EnvelopeBillingAddons: {
+            data: {
+                addons: components["schemas"]["BillingAddonOffer"][];
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @description One add-on credit pack available for the caller's tier (tier-resolved price, D7). */
+        BillingAddonOffer: {
+            /** @description credits_100 | credits_500 | credits_2000. */
+            packId: string;
+            credits: number;
+            priceVnd: number;
+            subtotalVnd: number;
+            vatVnd: number;
+        };
+        BillingCheckoutRequest: {
+            /**
+             * @description upgrade = plan change (needs plan+billingCycle); addon = credit pack (needs addonPackId).
+             * @enum {string}
+             */
+            kind: "upgrade" | "addon";
+            /** @enum {string|null} */
+            plan?: "pro" | "studio" | null;
+            /** @enum {string|null} */
+            billingCycle?: "monthly" | "annual" | null;
+            addonPackId?: string | null;
+        };
+        EnvelopeBillingCheckout: {
+            data: {
+                /** @description The Polar hosted-checkout URL to redirect to. Payment confirmation is webhook-driven (D2). */
+                checkoutUrl: string;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeProrationPreview: {
+            data: components["schemas"]["BillingProrationPreview"];
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @description Polar's proration breakdown VERBATIM (never computed locally — D6/D25). Integer VND. */
+        BillingProrationPreview: {
+            /** @enum {string} */
+            targetPlan: "pro" | "studio";
+            /** @enum {string} */
+            targetBillingCycle: "monthly" | "annual";
+            subtotalVnd: number;
+            vatVnd: number;
+            totalVnd: number;
+            creditAppliedVnd: number;
+            chargedTodayVnd: number;
+        };
+        BillingDowngradeRequest: {
+            /** @enum {string} */
+            plan: "free" | "pro" | "studio";
+            /** @enum {string} */
+            billingCycle: "monthly" | "annual";
+        };
+        EnvelopeBillingPendingDowngrade: {
+            data: {
+                pendingPlan: string | null;
+                pendingBillingCycle: string | null;
+                /** Format: date-time */
+                effectiveAt: string | null;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         EnvelopeSearchResults: {
             data: components["schemas"]["SearchResults"];
@@ -13637,6 +13864,271 @@ export interface operations {
             };
             /** @description INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getBillingAddons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The packs available for the caller's tier. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingAddons"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) / ADDON_NOT_AVAILABLE (Free tier) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getBillingProrationPreview: {
+        parameters: {
+            query: {
+                plan: "pro" | "studio";
+                billingCycle: "monthly" | "annual";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Polar's proration breakdown (verbatim). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeProrationPreview"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createBillingCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description The hosted checkout URL. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingCheckout"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) / ADDON_NOT_AVAILABLE (Free tier add-on) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (bad kind/plan/cycle/pack) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    scheduleBillingDowngrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingDowngradeRequest"];
+            };
+        };
+        responses: {
+            /** @description The pending downgrade state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingPendingDowngrade"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelBillingDowngrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The (now-cleared) pending downgrade state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingPendingDowngrade"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    polarWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "webhook-id": string;
+                "webhook-timestamp": string;
+                "webhook-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Event accepted (or a deduped/ignored no-op — always 200 so Polar does not retry a processed event). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description WEBHOOK_SIGNATURE_INVALID / WEBHOOK_TIMESTAMP_STALE */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description WEBHOOK_BODY_TOO_LARGE */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

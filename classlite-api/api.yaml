@@ -7131,6 +7131,144 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  # ---------------- Story 9.2a — Billing write + preview (Owner-only) + Polar webhook ----------------
+  # Owner-gated (RequireRole "owner"). The FE never calls Polar directly (D5) — these proxy
+  # handler → billing_service → internal/polar. Payment confirmation is webhook-driven (D2).
+  # Schemas PROVISIONAL (9-2b co-finalizes).
+  /api/billing/addons:
+    get:
+      operationId: getBillingAddons
+      summary: Owner-only add-on credit packs for the caller's tier (story 9.2a — FR-64)
+      description: |
+        Lists the one-time AI-credit add-on packs purchasable on the caller's tier (tier-resolved
+        VND price + 10%-inclusive VAT split). Free tier → 403 ADDON_NOT_AVAILABLE (add-ons are
+        Pro/Studio only — a plan-eligibility problem, not payment; D7).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The packs available for the caller's tier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingAddons'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: "INSUFFICIENT_ROLE (non-owner) / ADDON_NOT_AVAILABLE (Free tier)", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/proration-preview:
+    get:
+      operationId: getBillingProrationPreview
+      summary: Owner-only upgrade proration preview (Polar-authoritative, verbatim) (story 9.2a — FR-63)
+      description: |
+        Proxies Polar's subscription-update proration preview and returns its breakdown VERBATIM
+        (subtotal / vat / credit-applied / charged-today, integer VND). We never compute proration
+        locally (D6/D25). Owner-only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: plan, in: query, required: true, schema: { type: string, enum: [pro, studio] } }
+        - { name: billingCycle, in: query, required: true, schema: { type: string, enum: [monthly, annual] } }
+      responses:
+        "200":
+          description: Polar's proration breakdown (verbatim).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeProrationPreview'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (non-owner), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/checkout:
+    post:
+      operationId: createBillingCheckout
+      summary: Owner-only — open a Polar hosted checkout for an upgrade or add-on (story 9.2a — FR-63/64)
+      description: |
+        Creates a Polar hosted-checkout session (plan upgrade with proration, or a one-time add-on
+        order) and returns the URL the FE redirects to. NO local plan/credit change — confirmation
+        is webhook-driven (D2/D8). A Free-tier add-on attempt → 403 ADDON_NOT_AVAILABLE (D7).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingCheckoutRequest'
+      responses:
+        "200":
+          description: The hosted checkout URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingCheckout'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: "INSUFFICIENT_ROLE (non-owner) / ADDON_NOT_AVAILABLE (Free tier add-on)", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "422": { description: VALIDATION_ERROR (bad kind/plan/cycle/pack), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/downgrade:
+    post:
+      operationId: scheduleBillingDowngrade
+      summary: Owner-only — schedule an at-renewal downgrade (no data loss) (story 9.2a — FR-63)
+      description: |
+        Records a single pending downgrade that takes effect at the next renewal (a second schedule
+        REPLACES the first — D26); the current plan + limits stay active until then, and NO data is
+        ever deleted (R24). An intervening upgrade cancels it (D26).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingDowngradeRequest'
+      responses:
+        "200":
+          description: The pending downgrade state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingPendingDowngrade'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (non-owner), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "422": { description: VALIDATION_ERROR, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/downgrade/cancel:
+    post:
+      operationId: cancelBillingDowngrade
+      summary: Owner-only — cancel a scheduled downgrade before renewal (story 9.2a — FR-63)
+      description: Clears the pending downgrade (and cancels the Polar schedule); the plan continues unchanged at renewal.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The (now-cleared) pending downgrade state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingPendingDowngrade'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (non-owner), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/webhooks/polar:
+    post:
+      operationId: polarWebhook
+      summary: Polar.sh webhook receiver — signature-verified, PUBLIC (story 9.2a — D2/D27)
+      description: |
+        The Polar server-to-server webhook endpoint. PUBLIC: it authenticates by Standard-Webhooks
+        HMAC SIGNATURE (webhook-id / webhook-timestamp / webhook-signature headers), NOT JWT/RLS, so
+        it sits OUTSIDE the tenant chain AND outside the originMW + global RateLimit (D27). The body
+        is io.LimitReader-capped before the HMAC; a forged/replayed/stale event never reaches a
+        state write (R11); delivery is deduped by the Standard-Webhooks event id (D23). Not called
+        by the FE — documented here for completeness.
+      parameters:
+        - { name: webhook-id, in: header, required: true, schema: { type: string } }
+        - { name: webhook-timestamp, in: header, required: true, schema: { type: string } }
+        - { name: webhook-signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true, description: "The raw Polar event envelope (verified by signature)." }
+      responses:
+        "200": { description: "Event accepted (or a deduped/ignored no-op — always 200 so Polar does not retry a processed event)." }
+        "401": { description: "WEBHOOK_SIGNATURE_INVALID / WEBHOOK_TIMESTAMP_STALE", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "413": { description: WEBHOOK_BODY_TOO_LARGE, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+
 components:
   schemas:
     # ---------------- Story 8.1 — Role dashboards ----------------
@@ -7180,12 +7318,15 @@ components:
           $ref: '#/components/schemas/EnvelopeMeta'
     BillingSummary:
       type: object
-      description: Current plan + limits + live usage. NO nextInvoice/paymentMethod (D-DASH → 9.2).
-      required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage]
+      description: |
+        Current plan + limits + live usage. Story 9.2a ADDS the D-DASH cards deferred from 9-1a:
+        nextInvoice + paymentMethod + pendingDowngrade (PROVISIONAL — 9-2b co-finalizes). All
+        explicit-null when absent (GO-5); every one is null on a Free/no-Polar center.
+      required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage, nextInvoice, paymentMethod, pendingDowngrade]
       properties:
         plan: { type: string, enum: [free, pro, studio] }
         billingCycle: { type: string, enum: [monthly, annual] }
-        status: { type: string, description: "Subscription status (active|past_due|cancelled today; 9.3 grows it — do not assume a closed set)." }
+        status: { type: string, description: "Subscription status (active|past_due|cancelled|trialing|unpaid|paused — 9.2a widened it; do not assume a closed set)." }
         isFree: { type: boolean, description: "True on the Free tier (D24 — the FE renders 'AI grading not included' instead of an alarming 0/0 meter)." }
         creditsApplicable: { type: boolean, description: "False on Free (no AI credits) — D24." }
         currentPeriodStart: { type: string, format: date-time }
@@ -7194,6 +7335,21 @@ components:
           $ref: '#/components/schemas/BillingLimits'
         usage:
           $ref: '#/components/schemas/BillingUsage'
+        nextInvoice:
+          nullable: true
+          description: "PROVISIONAL (9-2a, D-DASH) — the upcoming renewal charge (plan price at the current cycle; Polar is authoritative for the actual charge). Null on Free/no-Polar."
+          allOf:
+            - $ref: '#/components/schemas/BillingNextInvoice'
+        paymentMethod:
+          nullable: true
+          description: "PROVISIONAL (9-2a, D-DASH) — the card on file. Always null for now (not yet persisted from Polar — 9-2b co-finalizes)."
+          allOf:
+            - $ref: '#/components/schemas/BillingPaymentMethod'
+        pendingDowngrade:
+          nullable: true
+          description: "PROVISIONAL (9-2a, E17) — a scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25)."
+          allOf:
+            - $ref: '#/components/schemas/BillingPendingDowngrade'
     BillingLimits:
       type: object
       description: The plan's caps. A null field means unlimited (no ceiling).
@@ -7276,6 +7432,110 @@ components:
         monthlyVat: { type: integer }
         annualSubtotal: { type: integer }
         annualVat: { type: integer }
+
+    # ---------------- Story 9.2a — Polar billing (PROVISIONAL — 9-2b co-finalizes) ----------------
+    # Upgrade/downgrade/add-on write paths + the D-DASH cards. Money is integer VND; Polar is
+    # authoritative for amounts actually charged (D25). All camelCase, GO-5 explicit nulls.
+    BillingNextInvoice:
+      type: object
+      required: [amountVnd, dueDate]
+      properties:
+        amountVnd: { type: integer, description: "Plan price at the current cycle (display estimate — Polar is authoritative)." }
+        dueDate: { type: string, format: date-time }
+    BillingPaymentMethod:
+      type: object
+      required: [brand, last4]
+      properties:
+        brand: { type: string }
+        last4: { type: string }
+    BillingPendingDowngrade:
+      type: object
+      required: [plan, effectiveAt]
+      properties:
+        plan: { type: string, enum: [free, pro, studio] }
+        effectiveAt: { type: string, format: date-time, description: "The renewal boundary the downgrade applies at (current_period_end)." }
+    EnvelopeBillingAddons:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [addons]
+          properties:
+            addons:
+              type: array
+              items:
+                $ref: '#/components/schemas/BillingAddonOffer'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    BillingAddonOffer:
+      type: object
+      description: One add-on credit pack available for the caller's tier (tier-resolved price, D7).
+      required: [packId, credits, priceVnd, subtotalVnd, vatVnd]
+      properties:
+        packId: { type: string, description: "credits_100 | credits_500 | credits_2000." }
+        credits: { type: integer }
+        priceVnd: { type: integer }
+        subtotalVnd: { type: integer }
+        vatVnd: { type: integer }
+    BillingCheckoutRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [upgrade, addon], description: "upgrade = plan change (needs plan+billingCycle); addon = credit pack (needs addonPackId)." }
+        plan: { type: string, enum: [pro, studio], nullable: true }
+        billingCycle: { type: string, enum: [monthly, annual], nullable: true }
+        addonPackId: { type: string, nullable: true }
+    EnvelopeBillingCheckout:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [checkoutUrl]
+          properties:
+            checkoutUrl: { type: string, description: "The Polar hosted-checkout URL to redirect to. Payment confirmation is webhook-driven (D2)." }
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    EnvelopeProrationPreview:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/BillingProrationPreview'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    BillingProrationPreview:
+      type: object
+      description: Polar's proration breakdown VERBATIM (never computed locally — D6/D25). Integer VND.
+      required: [targetPlan, targetBillingCycle, subtotalVnd, vatVnd, totalVnd, creditAppliedVnd, chargedTodayVnd]
+      properties:
+        targetPlan: { type: string, enum: [pro, studio] }
+        targetBillingCycle: { type: string, enum: [monthly, annual] }
+        subtotalVnd: { type: integer }
+        vatVnd: { type: integer }
+        totalVnd: { type: integer }
+        creditAppliedVnd: { type: integer }
+        chargedTodayVnd: { type: integer }
+    BillingDowngradeRequest:
+      type: object
+      required: [plan, billingCycle]
+      properties:
+        plan: { type: string, enum: [free, pro, studio] }
+        billingCycle: { type: string, enum: [monthly, annual] }
+    EnvelopeBillingPendingDowngrade:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [pendingPlan, pendingBillingCycle, effectiveAt]
+          properties:
+            pendingPlan: { type: string, nullable: true }
+            pendingBillingCycle: { type: string, nullable: true }
+            effectiveAt: { type: string, format: date-time, nullable: true }
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
 
     # ---------------- Story 8.4 — Global search ----------------
     EnvelopeSearchResults:

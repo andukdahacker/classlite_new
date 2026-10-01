@@ -208,3 +208,38 @@ upgrade exit — arming it earlier would brick a genesis-Free center with no way
 
 - Leave `BILLING_ENFORCEMENT_ENABLED` **unset** (or `false`) in prod until Story 9.2 ships. Flip to `true` only alongside the upgrade path.
 - No new third-party service in 9-1a (Polar arrives in 9.2). No new secret. No new DNS record.
+
+## Polar.sh — Billing Payments (Story 9.2a)
+
+The first real payment integration. ClassLite never touches raw card data — every charge runs
+through Polar's hosted checkout, confirmed asynchronously by the signature-verified
+`POST /api/webhooks/polar` receiver. The `internal/polar` client falls back to a deterministic
+MOCK when `POLAR_API_KEY` is unset, so dev/staging/prod all boot without the key (and NO live
+charge is possible until it is set). Secrets are never logged (R49 — `LogSummary` shows only a
+`*_set` bool).
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| `POLAR_API_KEY` (unset => mock client, no live charges) | [-] | [ ] | [ ] |
+| `POLAR_WEBHOOK_SECRET` (Standard-Webhooks HMAC) + `POLAR_WEBHOOK_SECRET_PREVIOUS` (24h rotation window) | [-] | [ ] | [ ] |
+| `POLAR_PRICE_*` (per tier×cycle + per add-on pack → Polar priced-entity ids) | [-] | [ ] | [ ] |
+| Register the webhook endpoint `https://api.<domain>/api/webhooks/polar` in the Polar dashboard | [-] | [ ] | [ ] |
+| Create the Polar products/prices (Pro/Studio monthly+annual, add-on packs 100/500/2000) | [-] | [ ] | [ ] |
+| FU-9-POLAR-CONTRACT: record real-sandbox fixtures (cite date + API version) + a staging SMOKE against real Polar | [ ] | [ ] | [-] |
+
+### ARMING PRECONDITIONS (D3/D29 — BOTH must hold before prod goes live)
+
+1. **`BILLING_ENFORCEMENT_ENABLED` prod flip is DEFERRED to post-9-2b.** The gate stays **OFF in
+   prod** until Story 9-2b has wired the staff-invite / class-create / AI-grade 409/402 dialog
+   surfaces (FU-9-1B-DIALOG-WIRING) — a live gate must never fire with no UI to explain it. The
+   FU-9-CONTRACT-402 provider-contract test (shipped in 9-2a) is a hard precondition on the flip.
+2. **Live `POLAR_API_KEY` stays UNSET in prod until 9-2b ships the purchase UI.** Otherwise the
+   owner-gated `POST /api/billing/checkout` could take REAL money with no product wrapper. Until
+   then the mock/sandbox client serves and no live charge is possible.
+
+- The webhook route BYPASSES the shared `originMW` + global `RateLimit` (D27 — a Polar S2S POST
+  carries no `Origin`); it is signature-authenticated + body-capped. No code change needed, but
+  do not "fix" its missing Origin check — that is intentional.
+- VN VAT e-invoice compliance (epic:120 — "Polar-generated invoice uses standard Vietnamese VAT
+  format") is an **ops/legal open question** (owner: Ducdo/ops), verified by NO 9-2a AC — not a
+  code item (D29c).

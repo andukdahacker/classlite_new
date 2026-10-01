@@ -428,7 +428,14 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		// Story 9.1a billing gates (value-typed, errors.As with a value target).
 		var planLimitExceeded service.PlanLimitExceededError
 		var insufficientCredits service.InsufficientCreditsError
+		// Story 9.2a — an add-on purchase on an ineligible tier (Free) is a plan-ELIGIBILITY
+		// problem, not a payment one → 403, never 402 (D7).
+		var addonNotAvailable service.AddonNotAvailableError
 		switch {
+		case errors.As(err, &addonNotAvailable):
+			handler.WriteError(w, r, http.StatusForbidden,
+				"ADDON_NOT_AVAILABLE", "Add-on credit packs are available on the Pro and Studio plans — upgrade to buy them.", nil)
+			return
 		case errors.As(err, &planLimitExceeded):
 			handler.WriteError(w, r, http.StatusConflict,
 				"PLAN_LIMIT_EXCEEDED", "You've reached your plan limit — upgrade to add more.",

@@ -30,6 +30,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/plan"
+	"github.com/ducdo/classlite-api/internal/polar"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 	"github.com/google/uuid"
@@ -76,6 +77,10 @@ func BillingEnforcementEnabled() bool { return billingEnforcementEnabled() }
 type BillingService struct {
 	db  AuthDB
 	clk clock.Clock
+	// polar is the Story 9.2a Polar.sh client (checkout create, reconcile poll, proration
+	// preview, scheduled downgrade). nil when the service is constructed without Polar (the
+	// 9-1a credit/gate paths never touch it); the checkout/reconcile paths guard on nil.
+	polar polar.Client
 }
 
 // NewBillingService wires the service with the real wall clock.
@@ -89,6 +94,15 @@ func NewBillingServiceWithClock(db AuthDB, c clock.Clock) *BillingService {
 		c = clock.RealClock{}
 	}
 	return &BillingService{db: db, clk: c}
+}
+
+// NewBillingServiceWithPolar wires the service with a Polar client (Story 9.2a) so the
+// checkout / reconcile / downgrade-schedule paths can reach Polar. nil clk → RealClock (D6).
+func NewBillingServiceWithPolar(db AuthDB, c clock.Clock, p polar.Client) *BillingService {
+	if c == nil {
+		c = clock.RealClock{}
+	}
+	return &BillingService{db: db, clk: c, polar: p}
 }
 
 // --- write-time plan-limit gates (run INSIDE the caller's tx — D3) ---------------------
@@ -120,10 +134,39 @@ func (s *BillingService) CheckStudentPerClass(ctx context.Context, q *generated.
 	if err != nil {
 		return fmt.Errorf("check students-per-class: count: %w", err)
 	}
-	if int(current) >= max {
-		return PlanLimitExceededError{Limit: "studentsPerClass", Current: int(current), Max: max, CanManageBilling: tc.Role == model.RoleOwner}
+	effMax, err := s.effectiveMax(ctx, q, centerUUID, lockClassEnrollment, max)
+	if err != nil {
+		return err
+	}
+	if int(current) >= effMax {
+		return PlanLimitExceededError{Limit: "studentsPerClass", Current: int(current), Max: effMax, CanManageBilling: tc.Role == model.RoleOwner}
 	}
 	return nil
+}
+
+// effectiveMax applies the FU-9-1-GRANDFATHER high-water baseline (D13): a create is blocked
+// iff currentCount >= max(planMax, high_water_baseline). A downgraded-then-trimmed center can
+// re-add up to where it was at arming, never above. No baseline row (the common/unarmed case,
+// pgx.ErrNoRows) → plain planMax (byte-identical 9-1a behavior). currentCount is ALWAYS a live
+// COUNT under the lock (the 9-1a D20 rule) — this only raises the CEILING, never the count.
+// Only pgx.ErrNoRows (the common/unarmed case) collapses to the plain plan cap; any OTHER DB
+// error is propagated so a transient read failure can NOT silently drop a grandfathered ceiling
+// back to planMax and wrongly block a legitimate create (review P-5).
+func (s *BillingService) effectiveMax(ctx context.Context, q *generated.Queries, centerUUID uuid.UUID, resourceClass, planMax int) (int, error) {
+	baseline, err := q.GetResourceBaseline(ctx, generated.GetResourceBaselineParams{
+		CenterID:      pgUUID(centerUUID),
+		ResourceClass: int16(resourceClass),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return planMax, nil // no baseline (unarmed) → plain plan cap
+		}
+		return 0, fmt.Errorf("effective max: resource baseline: %w", err)
+	}
+	if int(baseline) > planMax {
+		return int(baseline), nil
+	}
+	return planMax, nil
 }
 
 // CheckTeacherSeat blocks adding/inviting a teacher past the plan's teacher-seat cap
@@ -148,8 +191,12 @@ func (s *BillingService) CheckTeacherSeat(ctx context.Context, q *generated.Quer
 	if err != nil {
 		return fmt.Errorf("check teacher seat: count: %w", err)
 	}
-	if int(current) >= max {
-		return PlanLimitExceededError{Limit: "teachers", Current: int(current), Max: max, CanManageBilling: tc.Role == model.RoleOwner}
+	effMax, err := s.effectiveMax(ctx, q, centerUUID, lockClassSeat, max)
+	if err != nil {
+		return err
+	}
+	if int(current) >= effMax {
+		return PlanLimitExceededError{Limit: "teachers", Current: int(current), Max: effMax, CanManageBilling: tc.Role == model.RoleOwner}
 	}
 	return nil
 }
@@ -176,8 +223,12 @@ func (s *BillingService) CheckClassLimit(ctx context.Context, q *generated.Queri
 	if err != nil {
 		return fmt.Errorf("check class limit: count: %w", err)
 	}
-	if int(current) >= max {
-		return PlanLimitExceededError{Limit: "classes", Current: int(current), Max: max, CanManageBilling: tc.Role == model.RoleOwner}
+	effMax, err := s.effectiveMax(ctx, q, centerUUID, lockClassClass, max)
+	if err != nil {
+		return err
+	}
+	if int(current) >= effMax {
+		return PlanLimitExceededError{Limit: "classes", Current: int(current), Max: effMax, CanManageBilling: tc.Role == model.RoleOwner}
 	}
 	return nil
 }
@@ -224,6 +275,24 @@ func (s *BillingService) consumeCreditTx(ctx context.Context, q *generated.Queri
 		return nil // already deducted for this job — idempotent no-op
 	} else if !errors.Is(derr, pgx.ErrNoRows) {
 		return fmt.Errorf("consume credit: check existing deduction: %w", derr)
+	}
+
+	// D25 (Story 9.2a) — TIER-ELIGIBILITY before the balance check. AI availability requires
+	// the plan tier to INCLUDE AI (Pro/Studio), NOT merely a positive balance: a Free center
+	// that carries add-on credits from a prior Pro plan (carry-forward, FR-64) has those
+	// credits FROZEN — unusable until it re-upgrades. So a Free-tier consume is denied even
+	// when addon_remaining > 0, and NOTHING is spent (the balance is untouched). Re-upgrading
+	// via SetPlanFromPolar makes the same balance spendable again. The check is on the TIER's
+	// catalog allowance (plan.AICreditsPerMonth), not the mutable ai_credits.monthly_allocation,
+	// so a Pro center whose monthly bucket is exhausted still spends its add-on bucket.
+	sub, err := s.getOrCreateSubscription(ctx, q, tc)
+	if err != nil {
+		return err
+	}
+	if plan.LimitsFor(plan.Tier(sub.Plan)).AICreditsPerMonth <= 0 {
+		// The balance is frozen, not absent — surface it as INSUFFICIENT_CREDITS with 0
+		// USABLE credits (the FE messages "N credits paused — available on Pro/Studio", 9-2b).
+		return InsufficientCreditsError{Available: 0, Required: 1}
 	}
 
 	alloc := int(credits.MonthlyAllocation)
