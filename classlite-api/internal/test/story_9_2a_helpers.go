@@ -136,6 +136,37 @@ func polarSubscriptionUpdated(centerID pgtype.UUID, polarSubID, plan, cycle stri
 	})
 }
 
+// polarSubscriptionUpdatedWithCard (Story 9.2b, AC12) carries a payment_method {brand, last4}
+// alongside the plan/period, to drive the card-on-file capture. Pass the SAME plan/cycle/period
+// as the stored subscription to exercise the NON-genuine (payment-method-edit) no-op branch.
+func polarSubscriptionUpdatedWithCard(centerID pgtype.UUID, polarSubID, plan, cycle, brand, last4 string, periodStart, periodEnd time.Time) []byte {
+	return mustJSON(map[string]any{
+		"type": "subscription.updated",
+		"data": map[string]any{
+			"id":                   polarSubID,
+			"status":               "active",
+			"product_plan":         plan,
+			"recurring_interval":   cycle,
+			"current_period_start": periodStart.Format(time.RFC3339),
+			"current_period_end":   periodEnd.Format(time.RFC3339),
+			"metadata":             map[string]any{"center_id": UUIDString(centerID)},
+			"payment_method":       map[string]any{"brand": brand, "last4": last4},
+		},
+	})
+}
+
+// readSubscriptionPaymentMethod value-scans the stored card descriptor (nullable columns →
+// NULL when absent). Story 9.2b Task 11 readback.
+func readSubscriptionPaymentMethod(t *testing.T, centerID pgtype.UUID) (brand, last4 *string) {
+	t.Helper()
+	if err := SuperuserPool(t).QueryRow(context.Background(),
+		`SELECT payment_brand, payment_last4 FROM subscriptions WHERE center_id = $1`, centerID,
+	).Scan(&brand, &last4); err != nil {
+		t.Fatalf("read payment method: %v", err)
+	}
+	return
+}
+
 // polarSubscriptionUpdatedForOrder is the SECOND event of the same upgrade charge (a
 // distinct webhook-id) — the D19 multi-event double-grant red pairs it with the order.paid
 // for one orderID to prove exactly one grant/invoice.

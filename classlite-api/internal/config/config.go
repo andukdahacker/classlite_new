@@ -96,6 +96,12 @@ type Config struct {
 	// t.Setenv and the wiring's no-op-when-off semantics are byte-identical to 9-1a — this field
 	// is the promoted surface (LogSummary + a single load point), not a behavior change.
 	BillingEnforcementEnabled bool
+	// AppBillingSuccessURL is the app URL Polar redirects the owner back to after a
+	// hosted checkout (Story 9-2b, AC3). It carries the FE's return param
+	// (`?checkout=success`) so the billing dashboard can bridge the webhook-confirmation
+	// window ("updating your plan…"). NOTE: the exact param must be validated against
+	// Polar's real redirect behavior at the D29a staging smoke before arming.
+	AppBillingSuccessURL string
 }
 
 // polarProductIDKeys are the "<tier>_<cycle>" / "addon_<packId>" slots the checkout builder
@@ -167,6 +173,7 @@ func Load() Config {
 		PolarWebhookSecretPrevious: getEnv("POLAR_WEBHOOK_SECRET_PREVIOUS", ""),
 		PolarProductIDs:            loadPolarProductIDs(),
 		BillingEnforcementEnabled:  getEnvBool("BILLING_ENFORCEMENT_ENABLED", false),
+		AppBillingSuccessURL:       getEnv("APP_BILLING_SUCCESS_URL", "http://localhost:5173/settings/billing?checkout=success"),
 	}
 }
 
@@ -376,6 +383,7 @@ func (c Config) LogSummary() {
 		"polar_webhook_secret_previous_set", c.PolarWebhookSecretPrevious != "",
 		"polar_product_ids_count", len(c.PolarProductIDs),
 		"billing_enforcement_enabled", c.BillingEnforcementEnabled,
+		"app_billing_success_url_set", c.AppBillingSuccessURL != "",
 	)
 }
 

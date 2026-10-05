@@ -33,7 +33,8 @@ import {
   type Session,
   type UserSummary,
 } from '@/features/auth/api/authKeys'
-// RED: this module does not exist yet.
+import { BillingErrorDialogHost } from '@/features/billing'
+import { useBillingErrorDialogStore } from '@/features/billing/store/useBillingErrorDialogStore'
 import { InviteStaffModal } from '@/features/people/components/InviteStaffModal'
 import {
   DEFAULT_CENTER_ID,
@@ -226,5 +227,36 @@ describe('InviteStaffModal — AC17 teacher payload includes classId', () => {
     await waitFor(() => expect(body).not.toBeNull())
     expect(body).toMatchObject({ email: 't@b.co', role: 'teacher' })
     expect(body).toHaveProperty('classId')
+  })
+})
+
+// Story 9-2b — FU-9-1B-DIALOG-WIRING (AC14): a 409 PLAN_LIMIT_EXCEEDED / TEACHER_SEATS
+// on invite opens the GLOBAL billing dialog, not the inline form error.
+describe('InviteStaffModal — billing 409 wiring (AC14)', () => {
+  test('409 PLAN_LIMIT_EXCEEDED opens the global dialog instead of the inline field error', async () => {
+    seedSession('owner')
+    server.use(
+      http.post('*/api/centers/:centerId/invites', () =>
+        HttpResponse.json(
+          { error: { code: 'PLAN_LIMIT_EXCEEDED', message: 'seats', requestId: 'r', details: { limit: 'TEACHER_SEATS', current: 3, max: 3, canManageBilling: true } } },
+          { status: 409 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <InviteStaffModal onClose={vi.fn()} />
+          <BillingErrorDialogHost />
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+    await user.type(await screen.findByRole('textbox', { name: emailLabel() }), 'new@example.com')
+    await user.click(screen.getByTestId('role-chip-admin'))
+    await user.click(screen.getByRole('button', { name: submitName() }))
+    expect(await screen.findByTestId('plan-limit-exceeded-dialog')).toBeInTheDocument()
+    expect(screen.queryByText(i18n.t('people.invite.error.generic'))).not.toBeInTheDocument()
+    useBillingErrorDialogStore.getState().reset()
   })
 })

@@ -13,6 +13,8 @@ import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import { createTestQueryClient } from '@/lib/query-client'
 import type { components } from '@/lib/api/client'
+import { BillingErrorDialogHost } from '@/features/billing'
+import { useBillingErrorDialogStore } from '@/features/billing/store/useBillingErrorDialogStore'
 import { AiGradePanel, type AiGradePanelProps } from '../AiGradePanel'
 
 type AIWritingGradeResult = components['schemas']['AIWritingGradeResult']
@@ -412,5 +414,48 @@ describe('AiGradePanel — a11y (TEST-FE-5, AC18)', () => {
     fireEvent.click(screen.getByTestId('ai-run-grading'))
     const dialog = await screen.findByTestId('ai-grade-confirm-dialog')
     expect(await axe(dialog)).toHaveNoViolations()
+  })
+})
+
+// Story 9-2b — FU-9-1B-DIALOG-WIRING (AC14): a 402 INSUFFICIENT_CREDITS enqueue
+// rejection opens the GLOBAL billing dialog, not the generic enqueue toast.
+describe('AiGradePanel — billing 402 wiring (AC14)', () => {
+  function renderWithHost() {
+    const client = createTestQueryClient()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <AiGradePanel
+            submissionId={SUBMISSION_ID}
+            rehydratedSuggestion={null}
+            draftDirty={false}
+            appliedBandCriteria={new Set()}
+            onAcceptBand={vi.fn()}
+            onAcceptComment={vi.fn()}
+          />
+          <BillingErrorDialogHost />
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  afterEach(() => useBillingErrorDialogStore.getState().reset())
+
+  test('402 INSUFFICIENT_CREDITS opens the global dialog and suppresses the generic toast', async () => {
+    const errorSpy = vi.spyOn(toast, 'error')
+    server.use(
+      http.post(AI_GRADE_PATH, () =>
+        HttpResponse.json(
+          { error: { code: 'INSUFFICIENT_CREDITS', message: 'no credits', requestId: 'r', details: { available: 0, required: 1 } } },
+          { status: 402 },
+        ),
+      ),
+    )
+    renderWithHost()
+    fireEvent.click(screen.getByTestId('ai-run-grading'))
+    fireEvent.click(await screen.findByTestId('ai-grade-confirm-run'))
+    expect(await screen.findByTestId('insufficient-credits-dialog')).toBeInTheDocument()
+    // The generic "couldn't start" enqueue toast must NOT fire for the billing block.
+    expect(errorSpy).not.toHaveBeenCalledWith(i18n.t('grading.ai.toast.enqueueFailed'))
   })
 })

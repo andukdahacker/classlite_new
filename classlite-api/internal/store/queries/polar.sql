@@ -82,6 +82,18 @@ SET plan = @plan,
     updated_at = now()
 WHERE center_id = @center_id;
 
+-- name: SetSubscriptionPaymentMethod :exec
+-- Story 9.2b (Task 11, AC12) — persist the Polar card-on-file ({brand, last4}, the MASKED
+-- descriptor — never raw card data, epic:127-130). SEPARATE from UpdateSubscriptionFromPolar
+-- because a payment-method edit arrives as a NON-genuine subscription.updated (same
+-- plan/cycle/period → the D17 no-op branch); the caller runs this on BOTH the genuine and
+-- no-op paths whenever the payload carries a card. RLS tenant-scoped (webhook tenant tx, SEC-6).
+UPDATE subscriptions
+SET payment_brand = @payment_brand,
+    payment_last4 = @payment_last4,
+    updated_at = now()
+WHERE center_id = @center_id;
+
 -- name: SetPolarSubscriptionID :exec
 -- D20 first-event binding on an otherwise no-op subscription.updated: record the Polar
 -- subscription id if not yet bound, without touching plan/period/credits. Idempotent (only

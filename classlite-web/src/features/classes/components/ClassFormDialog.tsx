@@ -20,6 +20,7 @@ import { useForm, useWatch, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '@/lib/api-fetch'
+import { reportBillingError } from '@/features/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -157,6 +158,9 @@ export function ClassFormDialog({
       }
       onClose()
     } catch (err) {
+      // A 409 PLAN_LIMIT_EXCEEDED / CLASSES hard-block (create path only) opens the
+      // global billing dialog (D-9-1b-3 / FU-9-1B-DIALOG-WIRING); other errors inline.
+      if (reportBillingError(err)) return
       setServerError(err instanceof ApiError ? err.message : t('classes.error.body'))
     }
   }

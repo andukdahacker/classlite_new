@@ -23,11 +23,17 @@
 //   - features/billing/components/{PlanLimitExceededDialog,InsufficientCreditsDialog}.tsx
 //     mounted at a GLOBAL ApiError seam (D-9-1b-3), wired to the enrolment mutation only.
 //   - D-9-1b-1: owner CTA = "See plans" (NOT "Upgrade"); teacher = "ask your owner", no CTA.
-import { render, screen } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
+import { http, HttpResponse } from 'msw'
 import { I18nextProvider } from 'react-i18next'
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import i18n from '@/lib/i18n'
 import { ApiError } from '@/lib/api-fetch'
+import { server } from '@/test/msw-server'
+import { createTestQueryClient } from '@/lib/query-client'
 import { RoleProvider } from '@/hooks/RoleContext'
 import type { Role } from '@/features/auth/api/authKeys'
 // RED: these modules do not exist yet.
@@ -48,10 +54,38 @@ const credits402 = new ApiError(402, 'INSUFFICIENT_CREDITS', 'Not enough AI cred
   required: 10,
 })
 
+// 9-2b: PlanLimitExceededDialog's owner branch now reads the current plan (to open the
+// s71 upgrade modal for the next tier), so the dialog needs a QueryClientProvider + a
+// billing summary. A pro summary → owner sees "Upgrade to Studio".
+const PRO_SUMMARY = {
+  plan: 'pro', billingCycle: 'monthly', status: 'active', isFree: false, creditsApplicable: true,
+  currentPeriodStart: '2026-09-01T00:00:00+07:00', currentPeriodEnd: '2026-10-01T00:00:00+07:00',
+  limits: { teachers: 10, classes: null, studentsPerClass: 20, aiCreditsPerMonth: 500, storageBytes: 5368709120 },
+  usage: {
+    teacherSeats: { current: 3, max: 10, approaching: false },
+    classes: { current: 4, max: null, approaching: false },
+    aiCredits: { monthlyAllocation: 500, monthlyUsed: 100, addonRemaining: 0, available: 400, resetAt: '2026-10-01T00:00:00+07:00' },
+    storage: { usedBytes: 1, limitBytes: 5368709120, percentUsed: 0, approaching: false },
+  },
+  nextInvoice: null, paymentMethod: null, pendingDowngrade: null,
+}
+
+beforeEach(() => {
+  server.use(
+    http.get('*/api/billing', () => HttpResponse.json({ data: PRO_SUMMARY, meta: { requestId: 't' } })),
+    http.get('*/api/billing/plans', () => HttpResponse.json({ data: { plans: [] }, meta: { requestId: 't' } })),
+  )
+})
+afterEach(() => server.resetHandlers())
+
 function renderDialog(ui: React.ReactElement, role: Role | null = null): void {
   render(
     <I18nextProvider i18n={i18n}>
-      <RoleProvider value={role}>{ui}</RoleProvider>
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter>
+          <RoleProvider value={role}>{ui}</RoleProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
     </I18nextProvider>,
   )
 }
@@ -71,7 +105,7 @@ describe('billing type-guards discriminate on the details shape (AC16 / D-9-1b-4
 })
 
 describe('PlanLimitExceededDialog — 409 (C7 / C11 / AC14 / D-9-1b-1)', () => {
-  test('owner: names the limit + current/max and shows the "See plans" CTA (NO "Upgrade" verb)', () => {
+  test('owner: names the limit + current/max and (9-2b) offers a live "Upgrade" CTA to the next tier', async () => {
     renderDialog(<PlanLimitExceededDialog open error={planLimit409(true)} />)
     expect(screen.getByText(i18n.t('billing.error.planLimitExceeded'))).toBeInTheDocument()
     // AC14: the dialog names WHICH limit was hit (STUDENTS_PER_CLASS), not just the ratio.
@@ -83,14 +117,41 @@ describe('PlanLimitExceededDialog — 409 (C7 / C11 / AC14 / D-9-1b-1)', () => {
       ),
     ).toBeInTheDocument()
     expect(screen.getByText(/20/)).toBeInTheDocument() // current/max surfaced
-    expect(screen.getByRole('link', { name: i18n.t('billing.dashboard.seePlans') })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /upgrade/i })).not.toBeInTheDocument()
+    // 9-2b AC2: once the summary loads, the owner CTA is a real "Upgrade to {next tier}"
+    // (the dead 9-1b "Talk to us" / picker-only link is gone — purchase is live).
+    const upgrade = await screen.findByTestId('plan-limit-upgrade')
+    expect(upgrade).toHaveTextContent(i18n.t('billing.action.upgradeTo', { tier: 'Studio' }))
   })
 
   test('teacher (canManageBilling=false): shows "ask your owner", CTA ABSENT (C11 negative half)', () => {
     renderDialog(<PlanLimitExceededDialog open error={planLimit409(false)} />)
     expect(screen.getByText(i18n.t('billing.error.askOwner'))).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: i18n.t('billing.dashboard.seePlans') })).not.toBeInTheDocument()
+  })
+
+  // Code-review patch (2026-10-05): the app-wide dialog must NOT fire the owner-only
+  // GET /api/billing for a non-owner (it would be a guaranteed 403 + console noise).
+  test('non-owner: does NOT fire the owner-only billing summary request', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/billing', () => {
+        calls += 1
+        return HttpResponse.json({ data: PRO_SUMMARY, meta: { requestId: 't' } })
+      }),
+    )
+    renderDialog(<PlanLimitExceededDialog open error={planLimit409(false)} />)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(calls).toBe(0)
+  })
+
+  // Code-review patch (2026-10-05): opening the upgrade modal must close the limit dialog,
+  // so the two Radix dialogs never stack (double focus-trap).
+  test('owner: opening the upgrade modal removes the limit dialog (no stacked dialogs)', async () => {
+    renderDialog(<PlanLimitExceededDialog open error={planLimit409(true)} />)
+    await userEvent.click(await screen.findByTestId('plan-limit-upgrade'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('plan-limit-exceeded-dialog')).not.toBeInTheDocument(),
+    )
   })
 
   test('malformed detail → neutral generic message, NOT the non-owner "ask owner" path (P4)', () => {

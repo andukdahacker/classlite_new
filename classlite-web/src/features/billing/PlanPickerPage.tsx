@@ -1,29 +1,40 @@
 /**
- * PlanPickerPage — s68, `/settings/billing/plans`, Owner-only (Story 9-1b,
- * AC3–AC6/AC20). Three tier cards read entirely from `GET /api/billing/plans`
- * (prices + VAT split never hardcoded, D25) with the caller's current plan
- * highlighted from `GET /api/billing`.
+ * PlanPickerPage — s68, `/settings/billing/plans`, Owner-only (Story 9-1b; the real
+ * upgrade/downgrade flow lands in 9-2b).
  *
- * The monthly/annual toggle is client-only UI state (a local `useState`, never
- * the TanStack cache — AC4). It uses local state rather than a Zustand store
- * because the ATDD reds run in-order against a shared module scope with no
- * store-reset hook; cross-navigation persistence (the conversion nicety) is
- * FU-9-1B-TOGGLE-PERSIST for 9.2, where the picker gains the real purchase
- * flow. No "Upgrade" verb — non-current CTAs are "Talk to us" (D-9-1b-1).
+ * Three tier cards read entirely from `GET /api/billing/plans` (prices + VAT split
+ * never hardcoded, D25) with the caller's current plan highlighted from
+ * `GET /api/billing`. Each non-current card opens the s71 UpgradeModal (higher tier)
+ * or the downgrade-confirm modal (lower tier) — replacing 9-1b's `mailto:` placeholder.
+ *
+ * The monthly/annual toggle now persists in a UI-only Zustand store
+ * (`useBillingCycleStore`, AC16 / FU-9-1B-TOGGLE-PERSIST) so the selection — the
+ * FR-61 conversion lever — survives navigation within the session; the upgrade modal
+ * reads the same billing-cycle intent.
  */
 import { useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import type { components } from '@/lib/api/client'
 import { useBillingPlans } from './api/useBillingPlans'
 import { useBillingSummary } from './api/useBillingSummary'
+import { useBillingCycleStore } from './store/useBillingCycleStore'
 import { PlanCard } from './components/PlanCard'
+import { UpgradeModal } from './components/UpgradeModal'
+import { DowngradeConfirmModal } from './components/DowngradeConfirmModal'
+
+type PlanId = components['schemas']['BillingSummary']['plan']
+type UpgradeTarget = components['schemas']['BillingProrationPreview']['targetPlan']
 
 export function PlanPickerPage(): ReactElement {
   const { t } = useTranslation()
   const plansQuery = useBillingPlans()
   const summaryQuery = useBillingSummary()
-  const [annual, setAnnual] = useState(false)
+  const annual = useBillingCycleStore((s) => s.annual)
+  const toggleAnnual = useBillingCycleStore((s) => s.toggle)
+  const [upgradeTarget, setUpgradeTarget] = useState<UpgradeTarget | null>(null)
+  const [downgradeTarget, setDowngradeTarget] = useState<PlanId | null>(null)
 
   if (plansQuery.isPending || summaryQuery.isPending) {
     return (
@@ -66,7 +77,9 @@ export function PlanPickerPage(): ReactElement {
   }
 
   const plans = plansQuery.data.plans
-  const currentPlan = summaryQuery.data.plan
+  const summary = summaryQuery.data
+  const currentPlan = summary.plan
+  const billingCycle = annual ? 'annual' : 'monthly'
 
   return (
     <div className="space-y-6" data-testid="plan-picker">
@@ -83,7 +96,7 @@ export function PlanPickerPage(): ReactElement {
             role="switch"
             aria-checked={annual}
             aria-label={t('billing.picker.annualToggle')}
-            onClick={() => setAnnual((current) => !current)}
+            onClick={() => toggleAnnual()}
             className={`relative h-6 w-11 rounded-full transition-colors ${
               annual ? 'bg-[color:var(--cl-accent)]' : 'bg-slate-300'
             }`}
@@ -114,10 +127,30 @@ export function PlanPickerPage(): ReactElement {
             key={entry.plan}
             entry={entry}
             annual={annual}
-            isCurrent={entry.plan === currentPlan}
+            currentPlan={currentPlan}
+            onUpgrade={setUpgradeTarget}
+            onDowngrade={setDowngradeTarget}
           />
         ))}
       </div>
+
+      {upgradeTarget ? (
+        <UpgradeModal
+          open
+          onClose={() => setUpgradeTarget(null)}
+          targetPlan={upgradeTarget}
+          billingCycle={billingCycle}
+        />
+      ) : null}
+      {downgradeTarget ? (
+        <DowngradeConfirmModal
+          open
+          onClose={() => setDowngradeTarget(null)}
+          targetPlan={downgradeTarget}
+          billingCycle={billingCycle}
+          effectiveAt={summary.currentPeriodEnd}
+        />
+      ) : null}
     </div>
   )
 }

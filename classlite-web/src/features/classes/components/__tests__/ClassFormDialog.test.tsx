@@ -10,6 +10,8 @@ import { describe, expect, test, vi } from 'vitest'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import { createTestQueryClient } from '@/lib/query-client'
+import { BillingErrorDialogHost } from '@/features/billing'
+import { useBillingErrorDialogStore } from '@/features/billing/store/useBillingErrorDialogStore'
 import { ClassFormDialog } from '../ClassFormDialog'
 import { classWire } from '../../api/__tests__/handlers'
 
@@ -171,5 +173,39 @@ describe('ClassFormDialog', () => {
     // Name preserved — template scalars prefill but the typed name wins.
     expect(nameField).toHaveValue('My Own Class Name')
     expect(await screen.findByTestId('class-template-toggles')).toBeInTheDocument()
+  })
+})
+
+// Story 9-2b — FU-9-1B-DIALOG-WIRING (AC14): a 409 PLAN_LIMIT_EXCEEDED / CLASSES on
+// create opens the GLOBAL billing dialog, not the inline form error.
+describe('ClassFormDialog — billing 409 wiring (AC14)', () => {
+  function renderWithHost() {
+    const client = createTestQueryClient()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <ClassFormDialog centerId="c-1" initial={null} onClose={vi.fn()} />
+          <BillingErrorDialogHost />
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  test('409 PLAN_LIMIT_EXCEEDED (create) opens the global dialog instead of the inline error', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/templates', () => HttpResponse.json(tplEnvelope())),
+      http.post('/api/classes', () =>
+        HttpResponse.json(
+          { error: { code: 'PLAN_LIMIT_EXCEEDED', message: 'limit', requestId: 'r', details: { limit: 'CLASSES', current: 1, max: 1, canManageBilling: true } } },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderWithHost()
+    await user.type(await screen.findByTestId('class-field-name'), 'Overflow Class')
+    await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
+    expect(await screen.findByTestId('plan-limit-exceeded-dialog')).toBeInTheDocument()
+    useBillingErrorDialogStore.getState().reset()
   })
 })

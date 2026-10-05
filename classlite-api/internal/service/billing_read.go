@@ -61,8 +61,9 @@ type NextInvoiceInfo struct {
 	DueDate   time.Time
 }
 
-// PaymentMethodInfo is the card-on-file summary (Story 9.2a, D-DASH). PROVISIONAL: not yet
-// persisted from Polar, so always nil for now (9-2b co-finalizes) — GO-5 explicit null.
+// PaymentMethodInfo is the card-on-file summary (Story 9.2a; persisted in 9.2b, Task 11).
+// {Brand, Last4} is Polar's MASKED descriptor (e.g. 'visa' / '4242'), never raw card data
+// (epic:127-130). Null when absent (Free / no Polar / pre-first-payment) — GO-5 explicit null.
 type PaymentMethodInfo struct {
 	Brand string
 	Last4 string
@@ -237,6 +238,13 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 		}
 		pendingDowngrade = pd
 	}
+	// Story 9.2b (AC12) — the real card-on-file, persisted from the Polar webhook. Null when
+	// absent (Free / no Polar / pre-first-payment); the FE degrades to "Managed by Polar".
+	var paymentMethod *PaymentMethodInfo
+	if sub.PaymentBrand.Valid && sub.PaymentBrand.String != "" &&
+		sub.PaymentLast4.Valid && sub.PaymentLast4.String != "" {
+		paymentMethod = &PaymentMethodInfo{Brand: sub.PaymentBrand.String, Last4: sub.PaymentLast4.String}
+	}
 
 	return BillingSummary{
 		Plan:               sub.Plan,
@@ -263,7 +271,7 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 			Approaching: storageLimit > 0 && float64(storageUsed) >= math.Ceil(float64(storageLimit)*PlanApproachingThreshold),
 		},
 		NextInvoice:      nextInvoice,
-		PaymentMethod:    nil, // PROVISIONAL — not yet persisted from Polar (9-2b co-finalizes)
+		PaymentMethod:    paymentMethod,
 		PendingDowngrade: pendingDowngrade,
 	}, nil
 }

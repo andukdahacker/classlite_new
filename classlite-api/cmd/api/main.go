@@ -182,6 +182,7 @@ func main() {
 	// service that enforces a plan cap + the on-center-create row provisioning (D7). 9.2a injects
 	// the Polar client (checkout/reconcile/downgrade-schedule paths).
 	billingSvc := service.NewBillingServiceWithPolar(pool, clock.RealClock{}, polarClient)
+	billingSvc.SetCheckoutSuccessURL(cfg.AppBillingSuccessURL) // Story 9-2b AC3 — post-checkout return URL.
 
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),

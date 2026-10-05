@@ -2417,9 +2417,10 @@ export interface paths {
         /**
          * Owner-only billing summary — plan + limits + live usage (story 9.1a — FR-61/62)
          * @description Returns the caller center's current plan, its limits, and live usage meters
-         *     (teacher seats, classes, AI credits, storage). Owner-only (RequireRole "owner",
-         *     D9): admin/teacher/student → 403 INSUFFICIENT_ROLE (the non-disclosure edge). NO
-         *     `nextInvoice` / `paymentMethod` (D-DASH → 9.2). `limits.*` and `usage.*.max` are
+         *     (teacher seats, classes, AI credits, storage), plus the D-DASH cards `nextInvoice`,
+         *     `paymentMethod` (persisted card-on-file, 9.2b), and `pendingDowngrade`. Owner-only
+         *     (RequireRole "owner", D9): admin/teacher/student → 403 INSUFFICIENT_ROLE (the
+         *     non-disclosure edge). `limits.*` and `usage.*.max` are
          *     null when the plan grants an unlimited amount (GO-5 explicit nulls). The
          *     `approaching` booleans are SERVER-computed (D22) — the FE renders, never recomputes.
          *     `resetAt` is VN-local (center timezone) midnight of the next period (D24).
@@ -2613,8 +2614,8 @@ export interface components {
             meta: components["schemas"]["EnvelopeMeta"];
         };
         /**
-         * @description Current plan + limits + live usage. Story 9.2a ADDS the D-DASH cards deferred from 9-1a:
-         *     nextInvoice + paymentMethod + pendingDowngrade (PROVISIONAL — 9-2b co-finalizes). All
+         * @description Current plan + limits + live usage, plus the D-DASH cards: nextInvoice + paymentMethod +
+         *     pendingDowngrade (finalized in Story 9.2b — paymentMethod is now persisted from Polar). All
          *     explicit-null when absent (GO-5); every one is null on a Free/no-Polar center.
          */
         BillingSummary: {
@@ -2637,11 +2638,11 @@ export interface components {
             currentPeriodEnd: string | null;
             limits: components["schemas"]["BillingLimits"];
             usage: components["schemas"]["BillingUsage"];
-            /** @description PROVISIONAL (9-2a, D-DASH) — the upcoming renewal charge (plan price at the current cycle; Polar is authoritative for the actual charge). Null on Free/no-Polar. */
+            /** @description The upcoming renewal charge (plan price at the current cycle; Polar is authoritative for the actual charge). Null on Free/no-Polar. */
             nextInvoice: components["schemas"]["BillingNextInvoice"] | null;
-            /** @description PROVISIONAL (9-2a, D-DASH) — the card on file. Always null for now (not yet persisted from Polar — 9-2b co-finalizes). */
+            /** @description The card on file — Polar's MASKED {brand, last4} descriptor, persisted from the Polar webhook (Story 9.2b; never raw card data). Null on Free / no card yet / pre-first-payment. */
             paymentMethod: components["schemas"]["BillingPaymentMethod"] | null;
-            /** @description PROVISIONAL (9-2a, E17) — a scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25). */
+            /** @description A scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25). */
             pendingDowngrade: components["schemas"]["BillingPendingDowngrade"] | null;
         };
         /** @description The plan's caps. A null field means unlimited (no ceiling). */

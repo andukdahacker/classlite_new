@@ -39,6 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { components } from '@/lib/api/client'
+import { reportBillingError } from '@/features/billing'
 
 import { computeOverallBand, CRITERION_KEYS } from '../lib/computeOverallBand'
 import { useAiGradeJob } from '../hooks/useAiGradeJob'
@@ -149,6 +150,10 @@ export function AiGradePanel({
     }
     if (enqueueToastedRef.current) return
     enqueueToastedRef.current = true
+    // A 402 INSUFFICIENT_CREDITS enqueue rejection opens the global billing dialog
+    // (D-9-1b-3 / FU-9-1B-DIALOG-WIRING) instead of a generic toast; everything else
+    // toasts. Enforcement arms in 9-2b (D3).
+    if (reportBillingError(aiJob.enqueueError)) return
     toast.error(t('grading.ai.toast.enqueueFailed'))
   }, [aiJob.enqueueError, t])
 

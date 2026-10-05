@@ -29,6 +29,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { components } from '@/lib/api/client'
+import { reportBillingError } from '@/features/billing'
 
 import { AiGradeConfirmDialog } from './AiGradePanel'
 import type { UseAiGradeSpeakingJobResult } from '../hooks/useAiGradeSpeakingJob'
@@ -134,6 +135,9 @@ export function AiSpeakingGradePanel({
     if (aiJob.enqueueError.code === 'SUBMISSION_TOO_LONG' || aiJob.enqueueError.code === 'SUBMISSION_NOT_GRADABLE') {
       return
     }
+    // A 402 INSUFFICIENT_CREDITS enqueue rejection opens the global billing dialog
+    // (D-9-1b-3 / FU-9-1B-DIALOG-WIRING) instead of a generic toast. Arms in 9-2b (D3).
+    if (reportBillingError(aiJob.enqueueError)) return
     toast.error(t('speakingGrading.ai.toast.enqueueFailed'))
   }, [aiJob.enqueueError, t])
 

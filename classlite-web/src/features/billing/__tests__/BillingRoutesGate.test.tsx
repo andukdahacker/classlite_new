@@ -85,6 +85,12 @@ describe('billing routes — owner-only gate (C6 / AC6 / AC11 / AC20)', () => {
       expect(screen.queryByTestId('plan-usage-meter-aiCredits')).not.toBeInTheDocument()
       // Even a raw leaked field from the summary payload must not reach the DOM.
       expect(screen.queryByText(/SECRET_PLAN_NAME/)).not.toBeInTheDocument()
+      // Story 9-2b AC17: every NEW owner-only surface is absent too (route-gated).
+      expect(screen.queryByTestId('next-invoice-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('pending-downgrade-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('billing-dashboard-upgrade')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('billing-buy-credits')).not.toBeInTheDocument()
     },
   )
 

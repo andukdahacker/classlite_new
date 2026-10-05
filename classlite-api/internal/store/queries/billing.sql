@@ -20,7 +20,8 @@ SELECT pg_advisory_xact_lock(hashtext(@center_id::text), @resource_class::int);
 -- distinct row struct and break every SetPlan/read caller). No behavior change for 9-1a.
 SELECT id, center_id, plan, billing_cycle, status, polar_subscription_id,
        current_period_start, current_period_end, created_at, updated_at,
-       pending_plan, pending_billing_cycle, pending_effective_at
+       pending_plan, pending_billing_cycle, pending_effective_at,
+       payment_brand, payment_last4
 FROM subscriptions
 WHERE center_id = @center_id;
 
@@ -35,7 +36,8 @@ VALUES
 ON CONFLICT (center_id) DO NOTHING
 RETURNING id, center_id, plan, billing_cycle, status, polar_subscription_id,
           current_period_start, current_period_end, created_at, updated_at,
-          pending_plan, pending_billing_cycle, pending_effective_at;
+          pending_plan, pending_billing_cycle, pending_effective_at,
+          payment_brand, payment_last4;
 
 -- name: SetPlan :exec
 -- Override seam (D19) + the 9.2 plan-change write path. Callers pair this with

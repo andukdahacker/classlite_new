@@ -81,6 +81,18 @@ type BillingService struct {
 	// preview, scheduled downgrade). nil when the service is constructed without Polar (the
 	// 9-1a credit/gate paths never touch it); the checkout/reconcile paths guard on nil.
 	polar polar.Client
+	// checkoutSuccessURL is the app URL Polar redirects to after a hosted checkout
+	// (Story 9-2b, AC3). Set via SetCheckoutSuccessURL from cfg.AppBillingSuccessURL;
+	// empty when unset (Polar then uses its own default return). Passed verbatim as
+	// the checkout session's success_url.
+	checkoutSuccessURL string
+}
+
+// SetCheckoutSuccessURL sets the post-checkout return URL (Story 9-2b, AC3). main.go
+// wires it from cfg.AppBillingSuccessURL after construction (mirrors the SetBillingService
+// setter pattern).
+func (s *BillingService) SetCheckoutSuccessURL(url string) {
+	s.checkoutSuccessURL = url
 }
 
 // NewBillingService wires the service with the real wall clock.

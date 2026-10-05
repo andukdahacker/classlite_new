@@ -18,6 +18,9 @@ import { PlanPickerPage } from '../PlanPickerPage'
 import { BillingDashboardPage } from '../BillingDashboardPage'
 import { PlanLimitExceededDialog } from '../components/PlanLimitExceededDialog'
 import { InsufficientCreditsDialog } from '../components/InsufficientCreditsDialog'
+import { UpgradeModal } from '../components/UpgradeModal'
+import { DowngradeConfirmModal } from '../components/DowngradeConfirmModal'
+import { AddonPacksModal } from '../components/AddonPacksModal'
 
 type PlanCatalogEntry = components['schemas']['PlanCatalogEntry']
 type BillingSummary = components['schemas']['BillingSummary']
@@ -57,6 +60,9 @@ const SUMMARY: BillingSummary = {
     aiCredits: { monthlyAllocation: 500, monthlyUsed: 100, addonRemaining: 0, available: 400, resetAt: '2026-10-01T00:00:00+07:00' },
     storage: { usedBytes: 1, limitBytes: 5368709120, percentUsed: 0, approaching: false },
   },
+  nextInvoice: null,
+  paymentMethod: null,
+  pendingDowngrade: null,
 }
 
 function seedOwner(): void {
@@ -119,6 +125,37 @@ describe('billing surfaces — axe clean (C14)', () => {
     const error = new ApiError(402, 'INSUFFICIENT_CREDITS', 'm', 'r', { available: 3, required: 10 })
     const { baseElement } = render(wrap(<InsufficientCreditsDialog open error={error} />))
     await screen.findByTestId('insufficient-credits-dialog')
+    expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
+  })
+
+  // Story 9-2b — the three new dialogs (AC19).
+  test('upgrade modal has no accessibility violations', async () => {
+    server.use(
+      http.get('*/api/billing/proration-preview', () =>
+        HttpResponse.json({ data: { targetPlan: 'pro', targetBillingCycle: 'monthly', subtotalVnd: 362727, vatVnd: 36273, totalVnd: 399000, creditAppliedVnd: 0, chargedTodayVnd: 399000 }, meta: { requestId: 't' } }),
+      ),
+    )
+    const { baseElement } = render(wrap(<UpgradeModal open onClose={() => {}} targetPlan="pro" billingCycle="monthly" />))
+    await screen.findByTestId('upgrade-modal-charge')
+    expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
+  })
+
+  test('downgrade-confirm modal has no accessibility violations', async () => {
+    const { baseElement } = render(
+      wrap(<DowngradeConfirmModal open onClose={() => {}} targetPlan="free" billingCycle="monthly" effectiveAt="2026-10-01T00:00:00+07:00" />),
+    )
+    await screen.findByTestId('downgrade-confirm-modal')
+    expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
+  })
+
+  test('add-on packs modal has no accessibility violations', async () => {
+    server.use(
+      http.get('*/api/billing/addons', () =>
+        HttpResponse.json({ data: { addons: [{ packId: 'credits_100', credits: 100, priceVnd: 99000, subtotalVnd: 90000, vatVnd: 9000 }] }, meta: { requestId: 't' } }),
+      ),
+    )
+    const { baseElement } = render(wrap(<AddonPacksModal open onClose={() => {}} />))
+    await screen.findByTestId('addon-pack-credits_100')
     expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
   })
 })

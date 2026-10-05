@@ -19,6 +19,7 @@ import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '@/lib/api-fetch'
+import { reportBillingError } from '@/features/billing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,6 +68,10 @@ export function InviteStaffModal({ onClose }: InviteStaffModalProps): ReactEleme
       await invite.mutateAsync(buildInvitePayload(values))
       onClose()
     } catch (err) {
+      // A billing hard-block (409 PLAN_LIMIT_EXCEEDED / TEACHER_SEATS) is surfaced
+      // through the global ApiError dialog seam (D-9-1b-3 / FU-9-1B-DIALOG-WIRING);
+      // everything else stays inline. Enforcement arms in 9-2b (D3).
+      if (reportBillingError(err)) return
       if (!(err instanceof ApiError)) {
         setError('root', { message: t('people.invite.error.generic') })
         return

@@ -67,6 +67,16 @@ type polarEvent struct {
 			CenterID    string `json:"center_id"`
 			AddonPackID string `json:"addon_pack_id"`
 		} `json:"metadata"`
+		// Story 9.2b (Task 11, AC12) — the Polar card-on-file descriptor ({brand, last4},
+		// MASKED, never raw card data — epic:127-130). These wire field names are
+		// PROVISIONAL (modeled under the Jan-2026 cutoff) and MUST be reconciled against the
+		// real Polar subscription payload before arming (FU-9-POLAR-CONTRACT / D29a): if the
+		// sandbox nests them differently (e.g. data.payment_method.card.*), fix this shape.
+		// Absent fields → empty strings → the card is left untouched (see setPlanFromPolarTx).
+		PaymentMethod struct {
+			Brand string `json:"brand"`
+			Last4 string `json:"last4"`
+		} `json:"payment_method"`
 	} `json:"data"`
 }
 
@@ -313,14 +323,15 @@ func (s *BillingService) applySubscriptionEventTx(ctx context.Context, q *genera
 	// Map Polar's recurring-interval vocabulary to our internal cycle BEFORE validation (review
 	// P-4): Polar sends month/year (etc.), not our literal monthly/annual — an unmapped value
 	// would otherwise fail validation and poison-pill the webhook.
-	return s.setPlanFromPolarTx(ctx, q, tc, plan.Tier(ev.Data.ProductPlan), normalizePolarCycle(ev.Data.RecurringInterval), ev.Data.ID, periodStart, periodEnd, supersededCancel)
+	return s.setPlanFromPolarTx(ctx, q, tc, plan.Tier(ev.Data.ProductPlan), normalizePolarCycle(ev.Data.RecurringInterval), ev.Data.ID, periodStart, periodEnd, ev.Data.PaymentMethod.Brand, ev.Data.PaymentMethod.Last4, supersededCancel)
 }
 
 // SetPlanFromPolar is the public D17 seam (its own tenant tx). The webhook path calls
 // setPlanFromPolarTx directly on the dispatch tx. NEVER the genesis/override SetPlan.
 func (s *BillingService) SetPlanFromPolar(ctx context.Context, tc model.TenantContext, tier plan.Tier, cycle, polarSubID string, periodStart, periodEnd time.Time) error {
 	return s.inTenantTx(ctx, tc, func(q *generated.Queries) error {
-		return s.setPlanFromPolarTx(ctx, q, tc, tier, cycle, polarSubID, periodStart, periodEnd, nil)
+		// Public seam carries no payload card (brand/last4 empty → payment method untouched).
+		return s.setPlanFromPolarTx(ctx, q, tc, tier, cycle, polarSubID, periodStart, periodEnd, "", "", nil)
 	})
 }
 
@@ -329,7 +340,7 @@ func (s *BillingService) SetPlanFromPolar(ctx context.Context, tc model.TenantCo
 // ONLY on a genuine plan-change or period-rollover — a mid-cycle upgrade PRESERVES monthly_used
 // (tops up to the new ceiling, never re-zeroes); an unrelated update (same plan/cycle/period) is
 // a NO-OP on credits/period (it only binds polar_subscription_id if unbound). D17.
-func (s *BillingService) setPlanFromPolarTx(ctx context.Context, q *generated.Queries, tc model.TenantContext, tier plan.Tier, cycle, polarSubID string, periodStart, periodEnd time.Time, supersededCancel *string) error {
+func (s *BillingService) setPlanFromPolarTx(ctx context.Context, q *generated.Queries, tc model.TenantContext, tier plan.Tier, cycle, polarSubID string, periodStart, periodEnd time.Time, brand, last4 string, supersededCancel *string) error {
 	if !plan.IsValid(tier) {
 		return model.ValidationError{Fields: []model.FieldError{{Field: "plan", Message: "unknown plan tier"}}}
 	}
@@ -350,6 +361,21 @@ func (s *BillingService) setPlanFromPolarTx(ctx context.Context, q *generated.Qu
 	sub, err := s.getOrCreateSubscription(ctx, q, tc)
 	if err != nil {
 		return err
+	}
+
+	// Story 9.2b (AC12) — persist the card-on-file BEFORE the genuine/no-op split: a
+	// payment-method edit arrives as a NON-genuine subscription.updated (same plan/cycle/period),
+	// which returns early below, so capturing it only on the genuine path would miss it. Only
+	// write when the payload actually carried a card (both fields present) — an absent card must
+	// never blank an existing one. {brand, last4} is Polar's MASKED descriptor (epic:127-130).
+	if brand != "" && last4 != "" {
+		if err := q.SetSubscriptionPaymentMethod(ctx, generated.SetSubscriptionPaymentMethodParams{
+			PaymentBrand: pgtype.Text{String: brand, Valid: true},
+			PaymentLast4: pgtype.Text{String: last4, Valid: true},
+			CenterID:     pgUUID(centerUUID),
+		}); err != nil {
+			return fmt.Errorf("set plan from polar: payment method: %w", err)
+		}
 	}
 
 	// A zero/unparseable payload period (review P-4) is NOT a genuine change — never let a missing
@@ -571,6 +597,7 @@ func (s *BillingService) CreateCheckout(ctx context.Context, tc model.TenantCont
 	)
 	params.CenterID = tc.CenterID
 	params.Kind = kind
+	params.SuccessURL = s.checkoutSuccessURL // AC3: carries the FE's ?checkout=success return param.
 	params.Metadata = map[string]string{"center_id": tc.CenterID}
 
 	switch kind {
@@ -830,7 +857,9 @@ func (s *BillingService) applyReconciledCheckoutTx(ctx context.Context, q *gener
 			sub := r.Subscription
 			// nil cancel-sink: reconcile runs in-tx and cannot make the out-of-tx Polar cancel
 			// call; a superseded-downgrade cleanup here is left to the subscription-event path.
-			if err := s.setPlanFromPolarTx(ctx, q, tc, plan.Tier(sub.Plan), sub.Cycle, sub.ID, sub.PeriodStart, sub.PeriodEnd, nil); err != nil {
+			// Empty card: the reconcile read (ResolvedSubscription) carries no payment method —
+			// the card-on-file is captured on the subscription.updated/active webhook event (AC12).
+			if err := s.setPlanFromPolarTx(ctx, q, tc, plan.Tier(sub.Plan), sub.Cycle, sub.ID, sub.PeriodStart, sub.PeriodEnd, "", "", nil); err != nil {
 				return err
 			}
 		}

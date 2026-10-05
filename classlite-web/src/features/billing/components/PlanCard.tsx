@@ -1,35 +1,58 @@
 /**
- * PlanCard — one tier card in the plan picker (Story 9-1b, AC3/AC5/D-9-1b-1).
+ * PlanCard — one tier card in the plan picker (Story 9-1b; CTAs rewired in 9-2b,
+ * Task 9 / AC1/AC4).
  *
- * Renders the tier's feature limits, the active-cycle VND price + server VAT
- * split (verbatim — never re-derived, D25), and an honest CTA:
- *   - current tier  → a "Current plan" badge, CTA neutralized;
- *   - other tiers   → a "Talk to us about {tier}" `mailto:` link (no "Upgrade"
- *                     verb — the purchase flow is 9.2, D-9-1b-1).
+ * Renders the tier's feature limits, the active-cycle VND price + server VAT split
+ * (verbatim — never re-derived, D25), and a real plan-change CTA relative to the
+ * caller's current tier:
+ *   - current tier       → a "Current plan" badge, no CTA;
+ *   - a higher tier      → "Upgrade to {tier}" → opens the s71 UpgradeModal (`onUpgrade`);
+ *   - a lower tier       → "Downgrade to {tier}" → opens the downgrade-confirm
+ *                          modal (`onDowngrade`).
+ * The 9-1b `mailto:` "Talk to us" placeholder is gone — purchase is live.
  */
 import type { ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatDataSize } from '@/lib/formatDataSize'
+import { Button } from '@/components/ui/button'
+import type { components } from '@/lib/api/client'
 import type { PlanCatalogEntry } from '../api/useBillingPlans'
 import { formatVnd } from '../lib/formatVnd'
-import { buildTalkToUsMailto, planDisplayName } from '../lib/planDisplay'
+import { planDisplayName } from '../lib/planDisplay'
+
+type PlanId = components['schemas']['BillingSummary']['plan']
+type UpgradeTarget = components['schemas']['BillingProrationPreview']['targetPlan']
 
 export interface PlanCardProps {
   entry: PlanCatalogEntry
   /** Show annual price + VAT split when true, monthly when false. */
   annual: boolean
-  /** True when this tier is the caller's current plan. */
-  isCurrent: boolean
+  /** The caller's current plan — decides upgrade vs downgrade vs current. */
+  currentPlan: PlanId
+  /** Open the upgrade modal for a strictly-higher target tier. */
+  onUpgrade: (target: UpgradeTarget) => void
+  /** Open the downgrade-confirm modal for a strictly-lower target tier. */
+  onDowngrade: (target: PlanId) => void
 }
+
+const PLAN_RANK: Record<PlanId, number> = { free: 0, pro: 1, studio: 2 }
 
 function limitLabel(value: number | null, unlimited: string): string {
   return value === null ? unlimited : String(value)
 }
 
-export function PlanCard({ entry, annual, isCurrent }: PlanCardProps): ReactElement {
+export function PlanCard({
+  entry,
+  annual,
+  currentPlan,
+  onUpgrade,
+  onDowngrade,
+}: PlanCardProps): ReactElement {
   const { t, i18n } = useTranslation()
   const tier = planDisplayName(entry.plan)
   const isPaid = entry.priceMonthlyVnd > 0
+  const isCurrent = entry.plan === currentPlan
+  const isHigher = PLAN_RANK[entry.plan] > PLAN_RANK[currentPlan]
   const unlimited = t('billing.meter.unlimited')
 
   const price = annual ? entry.priceAnnualVnd : entry.priceMonthlyVnd
@@ -86,13 +109,23 @@ export function PlanCard({ entry, annual, isCurrent }: PlanCardProps): ReactElem
         <li>{t('billing.picker.limits.storage', { value: formatDataSize(entry.limits.storageBytes, i18n.language) })}</li>
       </ul>
 
-      {isCurrent ? null : (
-        <a
-          href={buildTalkToUsMailto(entry.plan)}
-          className="mt-auto inline-flex w-fit items-center rounded-md border border-[color:var(--cl-accent)] px-3 py-1.5 text-sm font-medium text-[color:var(--cl-accent)]"
+      {isCurrent ? null : isHigher ? (
+        <Button
+          className="mt-auto w-fit"
+          data-testid={`plan-card-upgrade-${entry.plan}`}
+          onClick={() => onUpgrade(entry.plan as UpgradeTarget)}
         >
-          {t('billing.picker.talkToUs', { tier })}
-        </a>
+          {t('billing.action.upgradeTo', { tier })}
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          className="mt-auto w-fit"
+          data-testid={`plan-card-downgrade-${entry.plan}`}
+          onClick={() => onDowngrade(entry.plan)}
+        >
+          {t('billing.action.downgradeTo', { tier })}
+        </Button>
       )}
     </div>
   )

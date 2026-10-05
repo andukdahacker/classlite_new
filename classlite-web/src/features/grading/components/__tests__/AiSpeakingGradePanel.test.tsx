@@ -17,6 +17,8 @@ import { toast } from 'sonner'
 import i18n from '@/lib/i18n'
 import { ApiError } from '@/lib/api-fetch'
 import type { components } from '@/lib/api/client'
+import { BillingErrorDialogHost } from '@/features/billing'
+import { useBillingErrorDialogStore } from '@/features/billing/store/useBillingErrorDialogStore'
 import { AiSpeakingGradePanel, type AiSpeakingGradePanelProps } from '../AiSpeakingGradePanel'
 import type { UseAiGradeSpeakingJobResult } from '../../hooks/useAiGradeSpeakingJob'
 
@@ -277,6 +279,37 @@ describe('AiSpeakingGradePanel — enqueue-time rejection (AC4)', () => {
       i18n.t('speakingGrading.ai.notGradable'),
     )
     expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  // Story 9-2b — FU-9-1B-DIALOG-WIRING (AC14): a 402 INSUFFICIENT_CREDITS enqueue
+  // rejection opens the GLOBAL billing dialog, not the generic enqueue toast.
+  test('402 INSUFFICIENT_CREDITS opens the global dialog and suppresses the generic toast', async () => {
+    const errorSpy = vi.spyOn(toast, 'error')
+    const enqueueError = new ApiError(402, 'INSUFFICIENT_CREDITS', 'no credits', 'req-402', { available: 0, required: 1 })
+    render(
+      <I18nextProvider i18n={i18n}>
+        <>
+          <AiSpeakingGradePanel
+            aiJob={makeAiJob({ enqueueError })}
+            suggestion={null}
+            hasExistingSuggestion={false}
+            reviewPending={false}
+            onReview={vi.fn()}
+            bands={[]}
+            overallBand={0}
+            hasUnacceptedPraise={false}
+            onConfirmRun={vi.fn()}
+            onAcceptBand={vi.fn()}
+            onDismissBand={vi.fn()}
+            onAcceptAllPraise={vi.fn()}
+          />
+          <BillingErrorDialogHost />
+        </>
+      </I18nextProvider>,
+    )
+    expect(await screen.findByTestId('insufficient-credits-dialog')).toBeInTheDocument()
+    expect(errorSpy).not.toHaveBeenCalledWith(i18n.t('speakingGrading.ai.toast.enqueueFailed'))
+    useBillingErrorDialogStore.getState().reset()
   })
 
   test('a generic enqueue error → the "couldn\'t start" toast (not the inline reject)', () => {

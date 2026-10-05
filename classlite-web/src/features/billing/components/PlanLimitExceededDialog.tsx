@@ -19,9 +19,10 @@
  *     flow is 9.2, a dead button would be a broken promise, D-9-1b-1);
  *   - non-owner → the shared "ask your center owner" copy, no CTA.
  */
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ApiError } from '@/lib/api-fetch'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -29,9 +30,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import type { components } from '@/lib/api/client'
 import { isPlanLimitDetails } from '../lib/typeGuards'
+import { useBillingSummary } from '../api/useBillingSummary'
+import { planDisplayName } from '../lib/planDisplay'
+import { UpgradeModal } from './UpgradeModal'
 
 const PLANS_PATH = '/settings/billing/plans'
+
+type PlanId = components['schemas']['BillingSummary']['plan']
+type UpgradeTarget = components['schemas']['BillingProrationPreview']['targetPlan']
+
+/** The next tier up, or null when already on the top (Studio) / unknown. */
+function nextTierUp(plan: PlanId): UpgradeTarget | null {
+  if (plan === 'free') return 'pro'
+  if (plan === 'pro') return 'studio'
+  return null
+}
 
 export interface PlanLimitExceededDialogProps {
   open: boolean
@@ -45,7 +60,11 @@ export function PlanLimitExceededDialog({
   onClose,
 }: PlanLimitExceededDialogProps): ReactElement {
   const { t } = useTranslation()
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const details = isPlanLimitDetails(error.details) ? error.details : null
+  // Owner-only endpoint: only fetch when this viewer can manage billing, so a
+  // non-owner limit hit (this dialog is app-wide) doesn't fire a guaranteed 403.
+  const summaryQuery = useBillingSummary(details?.canManageBilling ?? false)
 
   // P4: a malformed / unknown 409 detail falls through to a neutral generic
   // message — never the non-owner "ask your owner" path (which would misinform
@@ -74,10 +93,18 @@ export function PlanLimitExceededDialog({
   const limitName = t(`billing.error.limitName.${details.limit}`, {
     defaultValue: t('billing.error.limitNameGeneric'),
   })
+  // 9-2b AC2 — the owner's CTA opens the s71 upgrade modal directly for the next
+  // tier up (the gating limit is relieved by any higher tier). Studio (no higher
+  // tier) falls back to the picker link.
+  const currentPlan = summaryQuery.data?.plan ?? null
+  const upgradeTarget = currentPlan ? nextTierUp(currentPlan) : null
 
   return (
+    <>
+    {/* Suppress the limit dialog while the upgrade modal is open so the two Radix
+        dialogs never stack (double focus-trap / overlay). */}
     <Dialog
-      open={open}
+      open={open && !upgradeOpen}
       onOpenChange={(next) => {
         if (!next) onClose?.()
       }}
@@ -101,16 +128,35 @@ export function PlanLimitExceededDialog({
         </p>
 
         {canManageBilling ? (
-          <a
-            href={PLANS_PATH}
-            className="inline-flex w-fit items-center rounded-md bg-[color:var(--cl-accent)] px-3 py-1.5 text-sm font-medium text-white"
-          >
-            {t('billing.dashboard.seePlans')}
-          </a>
+          upgradeTarget ? (
+            <Button
+              className="w-fit"
+              data-testid="plan-limit-upgrade"
+              onClick={() => setUpgradeOpen(true)}
+            >
+              {t('billing.action.upgradeTo', { tier: planDisplayName(upgradeTarget) })}
+            </Button>
+          ) : (
+            <a
+              href={PLANS_PATH}
+              className="inline-flex w-fit items-center rounded-md bg-[color:var(--cl-accent)] px-3 py-1.5 text-sm font-medium text-white"
+            >
+              {t('billing.dashboard.seePlans')}
+            </a>
+          )
         ) : (
           <p className="text-sm text-slate-600">{t('billing.error.askOwner')}</p>
         )}
       </DialogContent>
     </Dialog>
+    {canManageBilling && upgradeTarget ? (
+      <UpgradeModal
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        targetPlan={upgradeTarget}
+        billingCycle={summaryQuery.data?.billingCycle ?? 'monthly'}
+      />
+    ) : null}
+    </>
   )
 }

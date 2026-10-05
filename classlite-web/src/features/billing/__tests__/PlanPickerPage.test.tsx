@@ -28,8 +28,8 @@ import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import { queryClient, createTestQueryClient } from '@/lib/query-client'
 import { authKeys, type Role, type Session } from '@/features/auth/api/authKeys'
-// RED: these modules do not exist yet.
 import { PlanPickerPage } from '@/features/billing/PlanPickerPage'
+import { useBillingCycleStore } from '@/features/billing/store/useBillingCycleStore'
 
 type PlanCatalogEntry = components['schemas']['PlanCatalogEntry']
 type BillingSummary = components['schemas']['BillingSummary']
@@ -79,6 +79,9 @@ function summary(overrides: Partial<BillingSummary> = {}): BillingSummary {
       aiCredits: { monthlyAllocation: 0, monthlyUsed: 0, addonRemaining: 0, available: 0, resetAt: '2026-10-01T00:00:00+07:00' },
       storage: { usedBytes: 0, limitBytes: 524288000, percentUsed: 0, approaching: false },
     },
+    nextInvoice: null,
+    paymentMethod: null,
+    pendingDowngrade: null,
     ...overrides,
   }
 }
@@ -113,6 +116,9 @@ beforeEach(() => {
 })
 afterEach(() => {
   queryClient.clear()
+  // The annual toggle now persists in a module-singleton Zustand store (AC16) —
+  // reset between tests so a flipped cycle does not leak forward (TEST-FE-3).
+  useBillingCycleStore.getState().reset()
 })
 
 describe('PlanPickerPage — FR1 price/VAT display (C1/C2)', () => {
@@ -147,19 +153,78 @@ describe('PlanPickerPage — FR1 price/VAT display (C1/C2)', () => {
   })
 })
 
-describe('PlanPickerPage — current plan + honest CTAs (AC5/D-9-1b-1)', () => {
+describe('PlanPickerPage — current plan + real upgrade/downgrade CTAs (9-2b AC1/AC4)', () => {
   test('the caller current plan (free) is flagged and its CTA is neutralized', async () => {
     renderPicker()
     const freeCard = await screen.findByTestId('plan-card-free')
     expect(within(freeCard).getByText(i18n.t('billing.picker.currentPlan'))).toBeInTheDocument()
+    // Current tier has neither an upgrade nor a downgrade CTA.
+    expect(within(freeCard).queryByTestId('plan-card-upgrade-free')).not.toBeInTheDocument()
+    expect(within(freeCard).queryByTestId('plan-card-downgrade-free')).not.toBeInTheDocument()
   })
 
-  test('non-current CTAs say "Talk to us" and are mailto: links — NO "Upgrade" verb (D-9-1b-1)', async () => {
-    renderPicker()
+  test('higher tiers show "Upgrade to {tier}" and open the s71 upgrade modal (AC1/AC2)', async () => {
+    renderPicker() // current = free → pro & studio are upgrades
     const proCard = await screen.findByTestId('plan-card-pro')
-    const cta = within(proCard).getByRole('link', { name: i18n.t('billing.picker.talkToUs', { tier: 'Pro' }) })
-    expect(cta).toHaveAttribute('href', expect.stringMatching(/^mailto:/))
-    // Negative: the word "Upgrade" must NOT appear as a button/link anywhere (dead verb).
-    expect(within(proCard).queryByRole('button', { name: /upgrade/i })).not.toBeInTheDocument()
+    const upgrade = within(proCard).getByTestId('plan-card-upgrade-pro')
+    expect(upgrade).toHaveTextContent(i18n.t('billing.action.upgradeTo', { tier: 'Pro' }))
+    // Proration preview for the opened modal.
+    server.use(
+      http.get('*/api/billing/proration-preview', () =>
+        HttpResponse.json(
+          { data: { targetPlan: 'pro', targetBillingCycle: 'monthly', subtotalVnd: 362727, vatVnd: 36273, totalVnd: 399000, creditAppliedVnd: 0, chargedTodayVnd: 399000 }, meta: { requestId: 't' } },
+        ),
+      ),
+    )
+    upgrade.click()
+    expect(await screen.findByTestId('upgrade-modal')).toBeInTheDocument()
+  })
+
+  test('lower tiers show "Downgrade to {tier}" and open the downgrade-confirm modal (AC4)', async () => {
+    seedOwner()
+    server.use(
+      http.get('*/api/billing/plans', () => HttpResponse.json({ data: { plans: PLANS }, meta: { requestId: 't' } })),
+      http.get('*/api/billing', () => HttpResponse.json({ data: summary({ plan: 'studio', isFree: false, creditsApplicable: true, currentPeriodEnd: '2026-10-01T00:00:00+07:00' }), meta: { requestId: 't' } })),
+    )
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <MemoryRouter initialEntries={['/settings/billing/plans']}>
+            <PlanPickerPage />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+    const proCard = await screen.findByTestId('plan-card-pro')
+    const downgrade = within(proCard).getByTestId('plan-card-downgrade-pro')
+    expect(downgrade).toHaveTextContent(i18n.t('billing.action.downgradeTo', { tier: 'Pro' }))
+    downgrade.click()
+    expect(await screen.findByTestId('downgrade-confirm-modal')).toBeInTheDocument()
+  })
+})
+
+describe('PlanPickerPage — annual toggle persists across navigation (AC16 / FU-9-1B-TOGGLE-PERSIST)', () => {
+  test('flipping to annual survives an unmount + remount (session persistence)', async () => {
+    seedOwner()
+    function renderOnce() {
+      return render(
+        <I18nextProvider i18n={i18n}>
+          <QueryClientProvider client={createTestQueryClient()}>
+            <MemoryRouter initialEntries={['/settings/billing/plans']}>
+              <PlanPickerPage />
+            </MemoryRouter>
+          </QueryClientProvider>
+        </I18nextProvider>,
+      )
+    }
+    const first = renderOnce()
+    const toggle = await screen.findByRole('switch', { name: i18n.t('billing.picker.annualToggle') })
+    toggle.click()
+    expect(await screen.findByText(/3\.990\.000/)).toBeInTheDocument() // annual pro price
+    // Navigate away and back — a fresh mount reads the persisted store, not useState(false).
+    first.unmount()
+    renderOnce()
+    expect(await screen.findByText(/3\.990\.000/)).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: i18n.t('billing.picker.annualToggle') })).toHaveAttribute('aria-checked', 'true')
   })
 })

@@ -18,11 +18,19 @@ export type BillingSummary = components['schemas']['BillingSummary']
 
 const SUMMARY_STALE_TIME_MS = 45_000
 
-/** useBillingSummary fetches `GET /api/billing` → `BillingSummary`. */
-export function useBillingSummary() {
+/**
+ * useBillingSummary fetches `GET /api/billing` → `BillingSummary`.
+ *
+ * `enabled` (default `true`) gates the fetch. `/api/billing` is owner-only (403 for
+ * admin/teacher/student), so a caller rendered for mixed roles — e.g. the app-wide
+ * PlanLimitExceededDialog — passes `canManageBilling` to avoid firing a
+ * guaranteed-403 request for non-owners.
+ */
+export function useBillingSummary(enabled = true) {
   return useQuery<BillingSummary, ApiError>({
     queryKey: billingKeys.summary(),
     queryFn: () => apiFetch<BillingSummary>('/api/billing'),
     staleTime: SUMMARY_STALE_TIME_MS,
+    enabled,
   })
 }

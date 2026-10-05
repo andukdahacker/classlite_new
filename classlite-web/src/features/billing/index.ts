@@ -1,7 +1,7 @@
 /**
- * Billing feature public surface (Story 9-1b). Cross-feature consumers import
- * from this barrel only (TS-7) — e.g. `EnrolmentComposer` (people) reaches
- * `reportBillingError` and the app root mounts `BillingErrorDialogHost` here.
+ * Billing feature public surface (Story 9-1b; extended 9-2b). Cross-feature
+ * consumers import from this barrel only (TS-7) — e.g. `EnrolmentComposer` (people)
+ * reaches `reportBillingError` and the app root mounts `BillingErrorDialogHost`.
  */
 export { PlanPickerPage } from './PlanPickerPage'
 export { BillingDashboardPage } from './BillingDashboardPage'
@@ -10,3 +10,22 @@ export { reportBillingError } from './lib/reportBillingError'
 export { billingKeys } from './api/billingKeys'
 export { useBillingSummary, type BillingSummary } from './api/useBillingSummary'
 export { useBillingPlans, type PlanCatalogEntry } from './api/useBillingPlans'
+// Story 9-2b additions.
+export { useProrationPreview, type BillingProrationPreview } from './api/useProrationPreview'
+export { useBillingAddons, type BillingAddonOffer, type BillingAddons } from './api/useBillingAddons'
+export { useCreateCheckout, type BillingCheckoutRequest } from './api/useCreateCheckout'
+export {
+  useScheduleDowngrade,
+  useCancelDowngrade,
+  type BillingDowngradeRequest,
+} from './api/useScheduleDowngrade'
+export { UpgradeModal } from './components/UpgradeModal'
+export { DowngradeConfirmModal } from './components/DowngradeConfirmModal'
+export { PendingDowngradeCard } from './components/PendingDowngradeCard'
+export { AddonPacksModal } from './components/AddonPacksModal'
+export { useBillingCycleStore } from './store/useBillingCycleStore'
+export {
+  normalizeSummaryPending,
+  normalizeEndpointPending,
+  type PendingDowngrade,
+} from './lib/pendingDowngrade'
