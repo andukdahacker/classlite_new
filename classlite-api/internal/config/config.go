@@ -114,6 +114,12 @@ type Config struct {
 	// dunning email must point at the settings surface where the owner fixes their card, matching
 	// the FE grace banner's /settings/billing link — not the checkout-success bridge.
 	AppBillingSettingsURL string
+	// AppStorageSettingsURL is the absolute storage-settings deep link embedded in the
+	// Story 10.1a storage-threshold owner email's "Upgrade to Studio" CTA (code-review).
+	// A relative href does not resolve in a mail client, so the email needs an absolute
+	// URL (the in-app notification row's link stays relative — it is client-routed).
+	// Mirrors AppBillingSettingsURL; wired via notificationSvc.SetStorageSettingsURL.
+	AppStorageSettingsURL string
 }
 
 // polarProductIDKeys are the "<tier>_<cycle>" / "addon_<packId>" slots the checkout builder
@@ -188,6 +194,7 @@ func Load() Config {
 		BillingEnforcementEnabled:  getEnvBool("BILLING_ENFORCEMENT_ENABLED", false),
 		AppBillingSuccessURL:       getEnv("APP_BILLING_SUCCESS_URL", "http://localhost:5173/settings/billing?checkout=success"),
 		AppBillingSettingsURL:      getEnv("APP_BILLING_SETTINGS_URL", "http://localhost:5173/settings/billing"),
+		AppStorageSettingsURL:      getEnv("APP_STORAGE_SETTINGS_URL", "http://localhost:5173/settings/storage"),
 	}
 }
 

@@ -65,10 +65,10 @@ func hasReason(rs []string, want string) bool {
 func TestAtRiskDetector_Classify_BoundaryTable_ATDD(t *testing.T) {
 	target := fp(6.5)
 	cases := []struct {
-		name        string
-		in          service.AtRiskInputs
-		wantStatus  string
-		wantReason  string // "" ⇒ assert NO at-risk reason
+		name       string
+		in         service.AtRiskInputs
+		wantStatus string
+		wantReason string // "" ⇒ assert NO at-risk reason
 	}{
 		// ---- Attendance floor (strictly below 0.70) ----
 		{"attendance 0.69 → at_risk", service.AtRiskInputs{AttendancePresentLate: 69, AttendanceTotalMarked: 100, OverallBand: fp(7.0), ClassTargetBand: target}, "at_risk", "attendance_below_floor"},
@@ -115,8 +115,8 @@ func TestAtRiskDetector_Classify_MultipleReasons_ATDD(t *testing.T) {
 	d := newDetector()
 	got := d.Classify(service.AtRiskInputs{
 		AttendancePresentLate: 5, AttendanceTotalMarked: 10, // 0.50 < 0.70
-		ConsecutiveMissed:   3,                                  // ≥ 2
-		RecentReleasedBands: []float64{7.5, 7.0, 6.5, 6.0},      // drop 1.5 ≥ 1.0
+		ConsecutiveMissed:   3,                             // ≥ 2
+		RecentReleasedBands: []float64{7.5, 7.0, 6.5, 6.0}, // drop 1.5 ≥ 1.0
 		OverallBand:         fp(6.0), ClassTargetBand: fp(6.5),
 	})
 	if got.Status != "at_risk" {

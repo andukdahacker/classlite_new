@@ -39,7 +39,7 @@ func TestDowngradeReadOnly_OverCapClassRejectsMutation_C8b(t *testing.T) {
 
 	// A downgraded Free center with two grandfathered classes: one over cap, one under.
 	_, tc := newBillingCenter(t, "free", 0, 0, 0, billingEpoch.AddDate(0, 1, 0))
-	overCap, _ := seedFreeClass(t, pool, tc, 6, 0) // 6 active enrollments > Free cap (5)
+	overCap, _ := seedFreeClass(t, pool, tc, 6, 0)  // 6 active enrollments > Free cap (5)
 	underCap, _ := seedFreeClass(t, pool, tc, 3, 0) // 3 <= 5
 
 	var ple service.PlanLimitExceededError

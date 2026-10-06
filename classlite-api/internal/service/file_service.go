@@ -36,6 +36,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ducdo/classlite-api/internal/clock"
+	"github.com/ducdo/classlite-api/internal/event"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
@@ -68,6 +69,11 @@ const (
 	// downloadURLExpiry bounds the presigned GET URL for file preview/download
 	// (Story 4.4b — AC5). Matches the 5-min presign PUT expiry (A10 #4).
 	downloadURLExpiry = 5 * time.Minute
+
+	// StorageNotifyThresholdPercent is the cumulative-usage percentage whose
+	// crossing fires the owner storage_threshold notification (Story 10.1a, DD4).
+	// Integer math: threshold = limit * StorageNotifyThresholdPercent / 100.
+	StorageNotifyThresholdPercent = 95
 )
 
 // FileService owns Knowledge Hub files + folders and the storage ceiling.
@@ -76,6 +82,7 @@ type FileService struct {
 	storage StorageService
 	audit   AuditLogger
 	clk     clock.Clock
+	events  *event.Bus
 }
 
 // NewFileService constructs a FileService bound to the DB pool, the R2 storage
@@ -83,6 +90,14 @@ type FileService struct {
 // and a clock.
 func NewFileService(db AuthDB, storage StorageService, audit AuditLogger, clk clock.Clock) *FileService {
 	return &FileService{db: db, storage: storage, audit: audit, clk: clk}
+}
+
+// SetEventBus injects the in-process event bus (Story 10.1a, DD4/Task 3.1). Wired
+// via a setter rather than a NewFileService ctor param to avoid churning the
+// already-green 4-arg callsites (the deviation the ATDD red seam documents). A nil
+// bus (the default) leaves ConfirmUpload's storage-threshold publish inert.
+func (s *FileService) SetEventBus(bus *event.Bus) {
+	s.events = bus
 }
 
 // --- inputs / outputs ---
@@ -244,6 +259,12 @@ func (s *FileService) ConfirmUpload(ctx context.Context, tc model.TenantContext,
 		folderID = pgUUID(*in.FolderID)
 	}
 
+	// Storage-threshold crossing (Story 10.1a, DD4). Captured INSIDE the locked
+	// closure (so the predicate is evaluated under the per-center advisory lock —
+	// the double-fire window largely evaporates) and published AFTER the closure
+	// commits (post-commit — never pre-commit, which would re-fire on a rollback).
+	var crossed bool
+	var crossedUsed, crossedLimit int64
 	var out generated.File
 	err = s.mutateInTenantTx(ctx, tc, func(tx pgx.Tx, q *generated.Queries) error {
 		// Serialize per center so the read-then-insert quota check is atomic
@@ -337,6 +358,13 @@ func (s *FileService) ConfirmUpload(ctx context.Context, tc model.TenantContext,
 			s.bestEffortDelete(ctx, in.ObjectKey)
 			return StorageFullError{UsedBytes: used, LimitBytes: limit, RequestedBytes: meta.Size}
 		}
+		// 95%-crossing predicate (DD4): the pre-insert total was below the
+		// threshold and this upload pushes cumulative usage to/over it. Integer
+		// math; the predicate IS the dedup (a second upload already ≥threshold
+		// won't re-fire; a delete-then-re-cross is a new crossing → re-fires).
+		// Armed only on the fresh-insert path below, never on an idempotent replay.
+		threshold := limit * StorageNotifyThresholdPercent / 100
+		wouldCross := used < threshold && used+meta.Size >= threshold
 
 		row, ierr := q.InsertFileIdempotent(ctx, generated.InsertFileIdempotentParams{
 			CenterID:    pgUUID(centerUUID),
@@ -367,11 +395,40 @@ func (s *FileService) ConfirmUpload(ctx context.Context, tc model.TenantContext,
 			Changes{After: map[string]any{"name": row.Name, "objectKey": row.ObjectKey, "sizeBytes": row.SizeBytes}}); aerr != nil {
 			return fmt.Errorf("confirm upload: audit: %w", aerr)
 		}
+		// Fresh insert committed this upload's bytes — arm the crossing (the
+		// idempotent-replay + ON CONFLICT re-read paths above return early and
+		// never reach here, so a replay cannot re-fire).
+		crossed = wouldCross
+		crossedUsed = used + meta.Size
+		crossedLimit = limit
 		out = row
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Post-commit publish (DD4/DD2): the row is durably committed, so the owner
+	// notification + Upgrade email fire exactly once per crossing. Nil-tolerant —
+	// a FileService without an injected bus (lean tests) skips this.
+	if crossed && s.events != nil {
+		// Published with a NON-CANCELLABLE context (Story 10.1a code-review, HIGH):
+		// the 95% crossing is exactly-once — once usage is >= threshold the predicate
+		// never re-fires — so a request-ctx cancel (client disconnect) between this
+		// post-commit point and the subscriber's own tenant tx must NOT drop it, or
+		// the owner is never warned for this crossing. Mirrors the billing
+		// PaymentFailed bridge (billing_polar.go). Kept SYNCHRONOUS so the crossing
+		// predicate's exactly-once / no-double-fire semantics stay deterministic; the
+		// recover() contains a handler panic so a best-effort notification can never
+		// 500 the upload-confirm it rides on (the synchronous bus does not recover).
+		func() {
+			defer func() { _ = recover() }()
+			s.events.Publish(context.WithoutCancel(ctx), event.Event{
+				Type:      event.StorageThresholdCrossed,
+				CenterID:  tc.CenterID,
+				Payload:   StorageThresholdPayload{UsedBytes: crossedUsed, LimitBytes: crossedLimit},
+				Timestamp: s.clk.Now(),
+			})
+		}()
 	}
 	return &out, nil
 }

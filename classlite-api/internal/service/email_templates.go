@@ -311,3 +311,50 @@ func RenderPasswordResetEmail(fullName, resetURL string) (subject, htmlBody stri
 
 	return PasswordResetEmailSubject, body
 }
+
+// StorageThresholdEmailSubject is hard-coded (SEC-11) for the Story 10.1a
+// storage-threshold owner notification. No user input reaches the subject.
+const StorageThresholdEmailSubject = "Your ClassLite storage is almost full — upgrade for more space"
+
+// RenderStorageThresholdEmail produces the subject + HTML body for the owner
+// storage-threshold email (Story 10.1a, D3). ownerName originates from user input
+// and is HTML-escaped (SEC-11); usedBytes/limitBytes render the headroom. settingsURL
+// is the ABSOLUTE storage-settings deep link for the "Upgrade to Studio" CTA — a
+// relative href does not resolve in a mail client (code-review fix); an empty value
+// falls back to the relative path (dev/tests without the wiring). English-only (VN
+// deferred — FU-9-4-EMAIL-LOCALE).
+func RenderStorageThresholdEmail(ownerName, settingsURL string, usedBytes, limitBytes int64) (subject, htmlBody string) {
+	safeName := html.EscapeString(ownerName)
+	if settingsURL == "" {
+		settingsURL = "/settings/storage"
+	}
+	safeURL := html.EscapeString(settingsURL)
+	usedMB := usedBytes / (1024 * 1024)
+	limitMB := limitBytes / (1024 * 1024)
+	pct := 0
+	if limitBytes > 0 {
+		pct = int(usedBytes * 100 / limitBytes)
+	}
+
+	body := fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; margin: 0; padding: 24px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background: #ffffff; border-radius: 8px; max-width: 480px; width: 100%%; padding: 32px;">
+      <tr>
+        <td>
+          <h1 style="font-size: 20px; margin: 0 0 16px;">Storage almost full, %s</h1>
+          <p style="margin: 0 0 24px;">Your center has used <strong>%d MB of %d MB (%d%%)</strong> of its storage. When you run out, new uploads will be blocked.</p>
+          <p style="text-align: center; margin: 0 0 24px;">
+            <a href="%s" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Upgrade to Studio</a>
+          </p>
+          <p style="font-size: 13px; color: #6b7280; margin: 0;">Upgrade to the Studio plan for more storage, or free up space by removing files you no longer need.</p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #9ca3af; margin: 0;">You're receiving this because you're the owner of a ClassLite center.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, safeName, usedMB, limitMB, pct, safeURL)
+
+	return StorageThresholdEmailSubject, body
+}

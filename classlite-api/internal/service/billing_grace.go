@@ -242,19 +242,24 @@ func (s *BillingService) RescheduleGraceTickTx(ctx context.Context, q *generated
 // past_due, starts the 7-day clock, and enqueues the first grace tick — idempotent on the
 // TARGET STATE: an already-past_due center (a re-delivered or a second distinct failure event)
 // does NOT restart the clock or double-enqueue (the 9-2a D19 idiom). Runs on the dispatch tx.
-func (s *BillingService) enterGraceTx(ctx context.Context, q *generated.Queries, tc model.TenantContext, ev polarEvent) error {
+//
+// Returns transitioned=true ONLY when this call actually flipped the center from a
+// non-grace state into past_due. An already-past_due no-op returns false (Story
+// 10.1a code-review): the caller gates the on-bus PaymentFailed publish on this, so
+// a multi-webhook dunning cycle yields exactly ONE owner "Payment failed" inbox row.
+func (s *BillingService) enterGraceTx(ctx context.Context, q *generated.Queries, tc model.TenantContext, ev polarEvent) (transitioned bool, err error) {
 	centerUUID, err := uuid.Parse(tc.CenterID)
 	if err != nil {
-		return &ForbiddenError{Reason: "invalid tenant context"}
+		return false, &ForbiddenError{Reason: "invalid tenant context"}
 	}
 	sub, err := s.getOrCreateSubscription(ctx, q, tc)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if sub.Status == "past_due" {
 		// Already in grace — target-state idempotency (AC2). Do not restart the clock or
-		// enqueue a second tick.
-		return nil
+		// enqueue a second tick, and signal NO transition so the caller skips the publish.
+		return false, nil
 	}
 	now := s.clk.Now()
 	if err := q.SetPastDueWithGrace(ctx, generated.SetPastDueWithGraceParams{
@@ -262,11 +267,11 @@ func (s *BillingService) enterGraceTx(ctx context.Context, q *generated.Queries,
 		PaymentFailedAt:  pgTimestamptz(now),
 		CenterID:         pgUUID(centerUUID),
 	}); err != nil {
-		return fmt.Errorf("enter grace: set past_due: %w", err)
+		return false, fmt.Errorf("enter grace: set past_due: %w", err)
 	}
 	params, err := json.Marshal(model.BillingGraceTickParams{GraceStartedAt: now.Format(time.RFC3339)})
 	if err != nil {
-		return fmt.Errorf("enter grace: marshal tick params: %w", err)
+		return false, fmt.Errorf("enter grace: marshal tick params: %w", err)
 	}
 	// The first tick arms the clock (D5); claimable immediately (next_attempt_at = now) so the
 	// worker runs the day-0 warning, then reschedules the next tick.
@@ -277,15 +282,15 @@ func (s *BillingService) enterGraceTx(ctx context.Context, q *generated.Queries,
 		ParamsSchemaVersion: int32(model.BillingGraceTickParamsSchemaVersion),
 		NextAttemptAt:       pgTimestamptz(now),
 	}); err != nil {
-		return fmt.Errorf("enter grace: enqueue first tick: %w", err)
+		return false, fmt.Errorf("enter grace: enqueue first tick: %w", err)
 	}
 	// Code-review D3 (2026-10-06, R2) — snapshot the FAILED charge as a 'declined' invoice so the
 	// s70 history + the declined-only Retry action render a real row (recovery transitions it to
 	// 'paid'). Idempotent on polar_order_id; skipped only when the failure event carries no id.
 	if err := s.insertDeclinedInvoiceTx(ctx, q, tc, centerUUID, ev); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // insertDeclinedInvoiceTx writes a 'declined' invoice for a payment-failure event (code-review

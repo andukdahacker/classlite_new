@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ducdo/classlite-api/internal/event"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/plan"
 	"github.com/ducdo/classlite-api/internal/polar"
@@ -175,6 +176,11 @@ func (s *BillingService) ProcessPolarEvent(ctx context.Context, eventID, eventTy
 
 	var dispatchErr error
 	var supersededDowngradeSubID string
+	// graceEntered is true only when enterGraceTx actually flipped the center INTO
+	// past_due this call (Story 10.1a code-review). The on-bus PaymentFailed publish
+	// below gates on it so a multi-webhook dunning cycle (distinct event_ids, each
+	// passing the polar_webhook_events PK) yields exactly ONE owner inbox row.
+	var graceEntered bool
 
 	// Story 9.3 (AC9/BLOCKER-1) — status-based grace recovery, BEFORE the normal dispatch. A
 	// recovery-eligible event (order.paid / subscription.active/.updated) arriving while the
@@ -200,7 +206,7 @@ func (s *BillingService) ProcessPolarEvent(ctx context.Context, eventID, eventTy
 		case "subscription.updated", "subscription.active":
 			dispatchErr = s.applySubscriptionEventTx(ctx, q, tc, ev, &supersededDowngradeSubID)
 		case polarPaymentFailedEventType:
-			dispatchErr = s.enterGraceTx(ctx, q, tc, ev)
+			graceEntered, dispatchErr = s.enterGraceTx(ctx, q, tc, ev)
 		default:
 			slog.Info("polar webhook: ignored event type", "event_id", eventID, "event_type", eventType)
 		}
@@ -233,6 +239,26 @@ func (s *BillingService) ProcessPolarEvent(ctx context.Context, eventID, eventTy
 			slog.Warn("polar webhook: failed to cancel superseded downgrade schedule",
 				"subscription_id", supersededDowngradeSubID, "error", cerr.Error())
 		}
+	}
+
+	// Story 10.1a (DD4b): bridge the Polar past-due transition onto the event bus
+	// so the owner billing notification is created on-bus (the off-bus grace clock
+	// is untouched). dispatchErr is nil here by construction (the failure branch
+	// above returned), so a payment-failed event committed the grace transition.
+	// Dispatched ASYNC (fresh non-request context) per the DD2 webhook-timeout
+	// carve-out: a slow/contended notification insert must not risk a Polar
+	// timeout→retry storm on a path doing real billing writes.
+	if eventType == polarPaymentFailedEventType && graceEntered && s.events != nil {
+		centerID := tc.CenterID
+		firedAt := s.clk.Now()
+		go func() {
+			defer func() { _ = recover() }()
+			s.events.Publish(context.WithoutCancel(ctx), event.Event{
+				Type:      event.PaymentFailed,
+				CenterID:  centerID,
+				Timestamp: firedAt,
+			})
+		}()
 	}
 	return nil
 }

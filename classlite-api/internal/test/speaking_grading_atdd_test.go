@@ -3,7 +3,9 @@
 // Mirrors grading_service_test.go (setupGradingEnv) but for the SPEAKING branch.
 //
 // Build-tagged `atdd_red_phase`: excluded from `go test ./...`; run with
-//   go test -tags=atdd_red_phase ./internal/test/...
+//
+//	go test -tags=atdd_red_phase ./internal/test/...
+//
 // FAILS TO COMPILE today (GradeSpeaking / ReviseSpeakingGrade / .WithStorage /
 // SpeakingGradeWriteInput / grading.SpeakingCriterionScores etc. do not exist).
 //
@@ -16,17 +18,17 @@
 //
 // SEAMS (dev, green phase — the ONE place to reconcile):
 //   - service.NewGradingService(db, audit, clk).WithStorage(mock)  ← NEW .WithStorage
-//       builder (D5 — GradingService has NO storage today; main.go:580 rewired)
+//     builder (D5 — GradingService has NO storage today; main.go:580 rewired)
 //   - (*GradingService).GradeSpeaking(ctx, tc, submissionID uuid.UUID,
-//         in service.SpeakingGradeWriteInput) (*service.GradeView, error)
+//     in service.SpeakingGradeWriteInput) (*service.GradeView, error)
 //   - (*GradingService).ReviseSpeakingGrade(ctx, tc, submissionID, service.SpeakingGradeWriteInput) (*service.GradeView, error)
 //   - service.SpeakingGradeWriteInput{ Scores grading.SpeakingCriterionScores;
-//         Comments []grading.TimestampedComment; Feedback *string; Reason string }
+//     Comments []grading.TimestampedComment; Feedback *string; Reason string }
 //   - assertSpeakingExercise → model.ConflictError{Code:"SUBMISSION_NOT_SPEAKING"}
-//       on a non-speaking submission (sibling of assertWritingExercise's
-//       SUBMISSION_NOT_WRITING); checked INSIDE the tx → zero side effects.
+//     on a non-speaking submission (sibling of assertWritingExercise's
+//     SUBMISSION_NOT_WRITING); checked INSIDE the tx → zero side effects.
 //   - GradeSpeaking reuses insertGradeRow / GradeSubmission flip / outbox /
-//       23505+P0001 translation UNCHANGED (D1 — no grades migration).
+//     23505+P0001 translation UNCHANGED (D1 — no grades migration).
 package test
 
 import (

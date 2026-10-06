@@ -3,11 +3,13 @@
 // class teacher may mint a GET presign for a speaking submission's audio, and a
 // gated failure mints ZERO URLs.
 //
-//   Surface 1: the grading READ (GetSubmissionForGrading) sets AudioUrl+AudioStatus.
-//   Surface 2: the on-demand teacher audio-REFRESH route (GetTeacherSubmissionAudioURL).
+//	Surface 1: the grading READ (GetSubmissionForGrading) sets AudioUrl+AudioStatus.
+//	Surface 2: the on-demand teacher audio-REFRESH route (GetTeacherSubmissionAudioURL).
 //
 // Build-tagged `atdd_red_phase`; run with
-//   go test -tags=atdd_red_phase ./internal/test/...
+//
+//	go test -tags=atdd_red_phase ./internal/test/...
+//
 // FAILS TO COMPILE today (.WithStorage / TeacherGradingView.AudioUrl+AudioStatus /
 // GetTeacherSubmissionAudioURL do not exist).
 //
@@ -21,14 +23,14 @@
 //
 // SEAMS (dev, green phase):
 //   - GetSubmissionForGrading populates TeacherGradingView.AudioUrl *string +
-//       AudioStatus string ("hasAudio" | "none"); the presign is minted OUTSIDE the
-//       committed read tx (PERF-1 — mirror attempt_service.go:154-162). No HeadObject
-//       (D6): AudioStatus is "hasAudio" iff a non-empty audioKey exists.
+//     AudioStatus string ("hasAudio" | "none"); the presign is minted OUTSIDE the
+//     committed read tx (PERF-1 — mirror attempt_service.go:154-162). No HeadObject
+//     (D6): AudioStatus is "hasAudio" iff a non-empty audioKey exists.
 //   - (*GradingService).GetTeacherSubmissionAudioURL(ctx, tc, classID, assignmentID,
-//       submissionID uuid.UUID) (string, error) — teacher-of-class authz
-//       (assertTeacherOfSubmissionClass), 5-min GET presign; a same-tenant non-class
-//       teacher → *service.ForbiddenError, zero mint. Wired to
-//       GET /api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio.
+//     submissionID uuid.UUID) (string, error) — teacher-of-class authz
+//     (assertTeacherOfSubmissionClass), 5-min GET presign; a same-tenant non-class
+//     teacher → *service.ForbiddenError, zero mint. Wired to
+//     GET /api/classes/{classId}/grading/{assignmentId}/{submissionId}/audio.
 package test
 
 import (

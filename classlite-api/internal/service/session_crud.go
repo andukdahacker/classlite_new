@@ -346,6 +346,11 @@ func (s *SessionService) UpdateSessions(
 		}}
 		return s.audit.LogWithinTx(ctx, tx, tc, sessionUpdatedAction, sessionAuditEntity, sessionID, changes)
 	})
+	if err == nil {
+		// Post-commit (DD4b): a successful schedule-affecting edit notifies the
+		// class's active students (fan-out in the Story 10.1a subscriber).
+		s.publishScheduleChanged(ctx, tc, sessionID.String(), uuidStringFromPg(out.ClassID))
+	}
 	return out, err
 }
 
@@ -398,6 +403,9 @@ func (s *SessionService) CancelSessions(
 		changes := Changes{Before: before, After: map[string]any{"scope": scope, "affected": len(affected), "status": updated.Status}}
 		return s.audit.LogWithinTx(ctx, tx, tc, sessionCancelledAction, sessionAuditEntity, sessionID, changes)
 	})
+	if err == nil {
+		s.publishScheduleChanged(ctx, tc, sessionID.String(), uuidStringFromPg(out.ClassID))
+	}
 	return out, err
 }
 
@@ -416,7 +424,8 @@ func (s *SessionService) DeleteSessions(
 	}
 	now := s.clk.Now()
 
-	return s.mutateInTenantTx(ctx, tc, func(tx pgx.Tx, txQ *generated.Queries) error {
+	var classID pgtype.UUID
+	err := s.mutateInTenantTx(ctx, tc, func(tx pgx.Tx, txQ *generated.Queries) error {
 		// Lock the target first so the optimistic guard is atomic (CR-3-4 P4).
 		if _, err := txQ.LockSession(ctx, pgUUID(sessionID)); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -431,6 +440,7 @@ func (s *SessionService) DeleteSessions(
 			}
 			return fmt.Errorf("delete session: get target: %w", err)
 		}
+		classID = target.ClassID
 		if err := assertSessionTeacherScope(tc, target.ClassTeacherID, sessionID); err != nil {
 			return err
 		}
@@ -467,6 +477,10 @@ func (s *SessionService) DeleteSessions(
 		changes := Changes{Before: before, After: map[string]any{"scope": resolvedScope, "deleted": len(affected)}}
 		return s.audit.LogWithinTx(ctx, tx, tc, sessionDeletedAction, sessionAuditEntity, sessionID, changes)
 	})
+	if err == nil {
+		s.publishScheduleChanged(ctx, tc, sessionID.String(), uuidStringFromPg(classID))
+	}
+	return err
 }
 
 // --- recurrence + validation ---

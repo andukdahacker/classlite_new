@@ -41,7 +41,7 @@ import (
 // --- local uuid<->pgtype converters (unique names; the package idiom is
 // pgtype.UUID{Bytes:…,Valid:true} / uuid.UUID(x.Bytes)) ---
 
-func pgUUID(id uuid.UUID) pgtype.UUID  { return pgtype.UUID{Bytes: id, Valid: true} }
+func pgUUID(id uuid.UUID) pgtype.UUID    { return pgtype.UUID{Bytes: id, Valid: true} }
 func uuidFromPg(x pgtype.UUID) uuid.UUID { return uuid.UUID(x.Bytes) }
 
 // --- local raw seeds (tagged; the red must not depend on greenfield writers) ---

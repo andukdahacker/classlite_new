@@ -8,15 +8,15 @@
 //
 // SEAMS (dev, green phase — the ONE place to reconcile):
 //   - service.NewAIGradeService(db, audit, clock) *service.AIGradeService  (or the
-//       enqueue may land on GradingService — confirm and adjust enqueueAIGrade below)
+//     enqueue may land on GradingService — confirm and adjust enqueueAIGrade below)
 //   - (*AIGradeService).EnqueueAIGrade(ctx, tc, submissionID uuid.UUID) (jobID uuid.UUID, err error)
-//       · teacher-of-class authz + writing/gradable guards run BEFORE InsertJob (D9)
-//       · InsertJob + InsertJobDeduction in ONE tenant tx (copy ai_generation_service.go:58-90)
-//       · 2nd in-flight enqueue hits uq_jobs_ai_grade_inflight → 23505 → tx rolls back
-//         (deduct included) → returns the EXISTING job (D6)
+//     · teacher-of-class authz + writing/gradable guards run BEFORE InsertJob (D9)
+//     · InsertJob + InsertJobDeduction in ONE tenant tx (copy ai_generation_service.go:58-90)
+//     · 2nd in-flight enqueue hits uq_jobs_ai_grade_inflight → 23505 → tx rolls back
+//     (deduct included) → returns the EXISTING job (D6)
 //   - service.GetSubmissionForGrading returns service.TeacherGradingView with a new
-//       field AiSuggestion *model.AIWritingGradeResult (D2) — latest complete job,
-//       ORDER BY completed_at DESC, id DESC (D11); nil when none.
+//     field AiSuggestion *model.AIWritingGradeResult (D2) — latest complete job,
+//     ORDER BY completed_at DESC, id DESC (D11); nil when none.
 //   - model.JobTypeAIGradeWriting = "ai_grade_writing"
 package test
 

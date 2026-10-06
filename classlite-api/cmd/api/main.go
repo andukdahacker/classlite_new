@@ -185,6 +185,16 @@ func main() {
 	billingSvc.SetCheckoutSuccessURL(cfg.AppBillingSuccessURL)  // Story 9-2b AC3 — post-checkout return URL.
 	billingSvc.SetBillingSettingsURL(cfg.AppBillingSettingsURL) // Story 9.3 code-review P5 — grace-email "Update payment method" deep link.
 	billingSvc.SetEmailSender(emailSender)                      // Story 9.3 — grace warning + invoice-to-accountant emails (party-mode §G).
+	billingSvc.SetEventBus(eventBus)                            // Story 10.1a (DD4b) — bridge Polar past-due → event.PaymentFailed (owner inbox).
+
+	// Story 10.1a — the Inbox/Notifications service: the FIRST consumer of the event
+	// bus. Register() wires its seven write subscribers onto the single main.go bus
+	// instance (AC6); the same instance serves the GET /api/inbox read API below.
+	// Registered HERE (before any producer can fire) so no event is missed. Each
+	// subscriber opens its OWN tenant tx from event.CenterID (SEC-6/R3).
+	notificationSvc := service.NewNotificationService(pool, clock.RealClock{}, emailSender)
+	notificationSvc.SetStorageSettingsURL(cfg.AppStorageSettingsURL) // Story 10.1a code-review — absolute Upgrade CTA in the storage-threshold email.
+	notificationSvc.Register(eventBus)
 
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
@@ -644,6 +654,7 @@ func main() {
 	// classChain (role + teacher-scope enforced in-service). The injected clock
 	// is the now()-floor source that makes past sessions immutable.
 	sessionSvc := service.NewSessionService(pool, auditSvc, clock.RealClock{})
+	sessionSvc.SetEventBus(eventBus) // Story 10.1a (DD4b) — publish event.ScheduleChanged on schedule-affecting mutations.
 	sessionHandler := handler.NewSessionHandler(sessionSvc, clock.RealClock{})
 	sessionChain := func(h middleware.HandlerWithError) http.Handler {
 		return extractTenant(
@@ -787,6 +798,18 @@ func main() {
 	mux.Handle("POST /api/questions/{id}/replies", questionChain(questionHandler.Reply))
 	mux.Handle("PATCH /api/questions/{id}", questionChain(questionHandler.Resolve))
 	mux.Handle("POST /api/questions/batch-reply", questionChain(questionHandler.BatchReply))
+
+	// Story 10.1a — the role-safe Inbox read API. Mounted on the SAME open
+	// authenticated-tenant chain as Q&A (extractTenant → requireVerified →
+	// requireCenter → ErrorMapper — NO role gate: every role has an inbox, DD5).
+	// Role-scoping is baked at WRITE time by notificationSvc's subscribers (DD3);
+	// the read is "give me MY rows". The service instance is the one Register()'d
+	// on the bus above (one shared NotificationService).
+	inboxHandler := handler.NewInboxHandler(notificationSvc, clock.RealClock{})
+	mux.Handle("GET /api/inbox", questionChain(inboxHandler.List))
+	mux.Handle("GET /api/inbox/count", questionChain(inboxHandler.Count))
+	mux.Handle("POST /api/inbox/{id}/read", questionChain(inboxHandler.MarkRead))
+	mux.Handle("POST /api/inbox/{id}/archive", questionChain(inboxHandler.Archive))
 
 	// Story 8.1a — Role-specific dashboards (backend). ONE endpoint on the SAME
 	// ungated Q&A-style chain (extractTenant → requireVerified → requireCenter →
@@ -932,6 +955,7 @@ func main() {
 	// storage pre-check, confirm HeadObject-re-validates + enforces the ceiling
 	// under a per-center lock + creates the idempotent files row.
 	fileSvc := service.NewFileService(pool, uploadStorage, auditSvc, clock.RealClock{})
+	fileSvc.SetEventBus(eventBus) // Story 10.1a (DD4) — publish event.StorageThresholdCrossed on a 94→95% confirm crossing.
 	uploadHandler := handler.NewUploadHandler(fileSvc, uploadStorage, auditSvc, clock.RealClock{})
 	knowledgeHubHandler := handler.NewKnowledgeHubHandler(fileSvc, clock.RealClock{})
 	knowledgeChain := func(h middleware.HandlerWithError) http.Handler {

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/clock"
+	"github.com/ducdo/classlite-api/internal/event"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
@@ -53,15 +54,40 @@ const (
 
 // SessionService owns the session CRUD + recurrence + scoped mutations.
 type SessionService struct {
-	db    AuthDB
-	audit AuditLogger
-	clk   clock.Clock
+	db     AuthDB
+	audit  AuditLogger
+	clk    clock.Clock
+	events *event.Bus
 }
 
 // NewSessionService constructs a SessionService. clk is the now()-floor source
 // (deterministic in tests) that makes past sessions immutable.
 func NewSessionService(db AuthDB, audit AuditLogger, clk clock.Clock) *SessionService {
 	return &SessionService{db: db, audit: audit, clk: clk}
+}
+
+// SetEventBus injects the in-process event bus (Story 10.1a, DD4b). A setter
+// (not a ctor param) keeps the already-green NewSessionService callsites
+// untouched. Nil-tolerant: without a bus, ScheduleChanged is never published.
+func (s *SessionService) SetEventBus(bus *event.Bus) {
+	s.events = bus
+}
+
+// publishScheduleChanged fans out event.ScheduleChanged post-commit (DD4b —
+// there is no post-commit region in the mutation methods today, so this is
+// net-new code AFTER each closure returns nil). Nil-tolerant. Recipients (active
+// enrolled students) are resolved in the Story 10.1a subscriber, not here.
+func (s *SessionService) publishScheduleChanged(ctx context.Context, tc model.TenantContext, sessionID, classID string) {
+	if s.events == nil || classID == "" {
+		return
+	}
+	s.events.Publish(ctx, event.Event{
+		Type:      event.ScheduleChanged,
+		CenterID:  tc.CenterID,
+		UserID:    tc.UserID,
+		Payload:   map[string]any{"sessionId": sessionID, "classId": classID},
+		Timestamp: s.clk.Now(),
+	})
 }
 
 // --- inputs ---

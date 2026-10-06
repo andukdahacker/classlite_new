@@ -1241,6 +1241,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's active-queue notifications (story 10.1a — AC3)
+         * @description The caller's OWN non-archived notification rows, newest-first (created_at
+         *     DESC, id DESC), paginated (XL-2 page/page_size). Optional `type` +
+         *     `unread_only` filters. Role is NOT a read filter — role-scoping is a
+         *     WRITE-time invariant (DD3), so e.g. only the owner ever has a
+         *     `payment_failed` row. A caller with no rows → `data:[]`, `total:0` (not an
+         *     error). Every role has an inbox (no role gate).
+         */
+        get: operations["listInbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unread notification count for the badge (story 10.1a — AC4)
+         * @description A single indexed COUNT of the caller's unread, non-archived rows — the
+         *     lightweight badge-polling endpoint (interval owned by 10-1b).
+         */
+        get: operations["getInboxUnreadCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark one own notification read (story 10.1a — AC5)
+         * @description Marks a caller-owned row read. Idempotent — a 2nd call on an already-read
+         *     row returns 200 (no-op), NOT 404. A row owned by another user (same or
+         *     other tenant) → 404 NOT_FOUND (non-disclosure, never 403).
+         */
+        post: operations["markNotificationRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive one own notification (story 10.1a — AC5)
+         * @description Archives a caller-owned row, removing it from the active queue and the
+         *     unread count. A row owned by another user → 404 NOT_FOUND (non-disclosure).
+         */
+        post: operations["archiveNotification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -5035,6 +5124,78 @@ export interface components {
             /** Format: date-time */
             serverTime: string;
             pagination: components["schemas"]["PaginationMeta"];
+        };
+        /**
+         * @description The seven ruled domain triggers (story 10.1a). The full set is the notification_type enum.
+         * @enum {string}
+         */
+        NotificationType: "grade_released" | "assignment_created" | "enrollment_changed" | "question_asked" | "schedule_changed" | "payment_failed" | "storage_threshold";
+        /**
+         * @description The typed per-type snapshot (story 10.1a DD1b) — NOT a free object.
+         *     `schemaVersion` is always present (GO-7); the remaining fields are
+         *     populated per the parent `type`. Resource ids are authoritative for any
+         *     secondary action; the denormalized display-name fields are an immutable
+         *     write-time snapshot (a later resource rename does NOT update the row).
+         *     Fields not carried by the ruled event payloads (bandPreview, schedule
+         *     old/new time + changeKind, question preview) are omitted in v1
+         *     (FU-10-1-METADATA-ENRICH). Modeled as a superset object rather than a
+         *     per-type oneOf for v1 maintainability.
+         */
+        NotificationMetadata: {
+            schemaVersion: number;
+            actorId?: string | null;
+            submissionId?: string | null;
+            assignmentId?: string | null;
+            assignmentTitle?: string | null;
+            className?: string | null;
+            dueAt?: string | null;
+            questionId?: string | null;
+            studentId?: string | null;
+            studentName?: string | null;
+            sessionId?: string | null;
+            action?: string | null;
+            fromClassId?: string | null;
+            toClassId?: string | null;
+            enrollmentId?: string | null;
+            /** Format: int64 */
+            usedBytes?: number | null;
+            /** Format: int64 */
+            limitBytes?: number | null;
+        };
+        /** @description One inbox row (story 10.1a). readAt/archivedAt are explicit null when unset (GO-5). */
+        Notification: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["NotificationType"];
+            title: string;
+            body: string;
+            link: string;
+            metadata: components["schemas"]["NotificationMetadata"];
+            /** Format: date-time */
+            readAt: string | null;
+            /** Format: date-time */
+            archivedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        EnvelopeNotificationList: {
+            data: components["schemas"]["Notification"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        EnvelopeUnreadCount: {
+            data: {
+                unread: number;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /** @description The 200 ack for mark-read / archive (story 10.1a — AC5). */
+        EnvelopeNotificationAck: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                status: string;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
         };
         /** @enum {string} */
         AtRiskStatus: "good" | "normal" | "at_risk";
@@ -9476,6 +9637,149 @@ export interface operations {
             };
             /** @description CENTER_CONTEXT_REQUIRED (missing center context — NEVER a pure role gate) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listInbox: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["NotificationType"];
+                unread_only?: boolean;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's active-queue notifications */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeNotificationList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getInboxUnreadCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's unread count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeUnreadCount"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    markNotificationRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row was marked read (or was already read) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeNotificationAck"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOTIFICATION_NOT_FOUND (absent or owned by another user) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    archiveNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row was archived */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeNotificationAck"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOTIFICATION_NOT_FOUND (absent or owned by another user) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

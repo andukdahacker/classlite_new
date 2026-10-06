@@ -15,23 +15,23 @@
 // SEAMS (dev, green — the ONE place to reconcile):
 //   - service.NewAutoGradeService(db service.AuthDB, audit service.AuditLogger, clk clock.Clock) *service.AutoGradeService
 //   - (*AutoGradeService).Override(ctx, tc model.TenantContext, submissionID uuid.UUID,
-//         in service.AutoGradeOverrideInput) (*service.AutoGradeView, error)
-//       Takes SELECT … FOR UPDATE on the submission (D9), recomputes effective
-//       raw/max/percentage/band (maxScore fixed; rawScore = Σ exact-correct +
-//       Σ override==correct; unresolved needs_review excluded from provisional denom),
-//       mutates auto_grade_results in place, writes audit_logs 'autograde.override'
-//       ({questionRef, from, to}, entityType 'submission') via AuditService.LogWithinTx.
+//     in service.AutoGradeOverrideInput) (*service.AutoGradeView, error)
+//     Takes SELECT … FOR UPDATE on the submission (D9), recomputes effective
+//     raw/max/percentage/band (maxScore fixed; rawScore = Σ exact-correct +
+//     Σ override==correct; unresolved needs_review excluded from provisional denom),
+//     mutates auto_grade_results in place, writes audit_logs 'autograde.override'
+//     ({questionRef, from, to}, entityType 'submission') via AuditService.LogWithinTx.
 //   - (*AutoGradeService).Release(ctx, tc, submissionID uuid.UUID) (*service.GradeView, error)
-//       Takes FOR UPDATE (D9); inserts a grades row (graded_by = caller UUID;
-//       criterion_scores = objective shape WITH "kind":"objective" discriminator, D8;
-//       overall_band = final band; comments = '[]'; released_at = now()); unresolved
-//       needs_review counts as WRONG in the definitive grade (D10); flips submission
-//       submitted→graded (guarded); enqueues the grade-release outbox (reused unchanged).
+//     Takes FOR UPDATE (D9); inserts a grades row (graded_by = caller UUID;
+//     criterion_scores = objective shape WITH "kind":"objective" discriminator, D8;
+//     overall_band = final band; comments = '[]'; released_at = now()); unresolved
+//     needs_review counts as WRONG in the definitive grade (D10); flips submission
+//     submitted→graded (guarded); enqueues the grade-release outbox (reused unchanged).
 //   - service.AutoGradeOverrideInput{ QuestionRef string; Mark string } // "correct"|"wrong"
 //   - service.AutoGradeView{ RawScore, MaxScore int; Percentage, ProvisionalBand float64;
-//         Released bool; Answers []service.AutoGradeAnswerView }
+//     Released bool; Answers []service.AutoGradeAnswerView }
 //   - Guards → model.ConflictError{Code: "SUBMISSION_ALREADY_RELEASED" | "SUBMISSION_NOT_OBJECTIVE"
-//         | "AUTO_GRADE_NOT_FOUND"}; unknown questionRef → model.ValidationError (INVALID_QUESTION_REF).
+//     | "AUTO_GRADE_NOT_FOUND"}; unknown questionRef → model.ValidationError (INVALID_QUESTION_REF).
 package test
 
 import (

@@ -3081,6 +3081,155 @@ paths:
   # Mutation bodies are stable. Q&A is teacher↔student only: Owner/Admin reach
   # these endpoints and receive an empty list / 404 (never a 403 at the edge) —
   # the R25/R26 elision.
+  /api/inbox:
+    get:
+      operationId: listInbox
+      summary: List the caller's active-queue notifications (story 10.1a — AC3)
+      description: |
+        The caller's OWN non-archived notification rows, newest-first (created_at
+        DESC, id DESC), paginated (XL-2 page/page_size). Optional `type` +
+        `unread_only` filters. Role is NOT a read filter — role-scoping is a
+        WRITE-time invariant (DD3), so e.g. only the owner ever has a
+        `payment_failed` row. A caller with no rows → `data:[]`, `total:0` (not an
+        error). Every role has an inbox (no role gate).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/NotificationType'
+        - name: unread_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The caller's active-queue notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeNotificationList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/inbox/count:
+    get:
+      operationId: getInboxUnreadCount
+      summary: Unread notification count for the badge (story 10.1a — AC4)
+      description: |
+        A single indexed COUNT of the caller's unread, non-archived rows — the
+        lightweight badge-polling endpoint (interval owned by 10-1b).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeUnreadCount'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/inbox/{id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: Mark one own notification read (story 10.1a — AC5)
+      description: |
+        Marks a caller-owned row read. Idempotent — a 2nd call on an already-read
+        row returns 200 (no-op), NOT 404. A row owned by another user (same or
+        other tenant) → 404 NOT_FOUND (non-disclosure, never 403).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The row was marked read (or was already read)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeNotificationAck'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: NOTIFICATION_NOT_FOUND (absent or owned by another user)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/inbox/{id}/archive:
+    post:
+      operationId: archiveNotification
+      summary: Archive one own notification (story 10.1a — AC5)
+      description: |
+        Archives a caller-owned row, removing it from the active queue and the
+        unread count. A row owned by another user → 404 NOT_FOUND (non-disclosure).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The row was archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeNotificationAck'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "404":
+          description: NOTIFICATION_NOT_FOUND (absent or owned by another user)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/questions:
     post:
       operationId: askQuestion
@@ -11548,6 +11697,156 @@ components:
           format: date-time
         pagination:
           $ref: '#/components/schemas/PaginationMeta'
+
+    NotificationType:
+      type: string
+      description: The seven ruled domain triggers (story 10.1a). The full set is the notification_type enum.
+      enum:
+        - grade_released
+        - assignment_created
+        - enrollment_changed
+        - question_asked
+        - schedule_changed
+        - payment_failed
+        - storage_threshold
+
+    NotificationMetadata:
+      type: object
+      description: |
+        The typed per-type snapshot (story 10.1a DD1b) — NOT a free object.
+        `schemaVersion` is always present (GO-7); the remaining fields are
+        populated per the parent `type`. Resource ids are authoritative for any
+        secondary action; the denormalized display-name fields are an immutable
+        write-time snapshot (a later resource rename does NOT update the row).
+        Fields not carried by the ruled event payloads (bandPreview, schedule
+        old/new time + changeKind, question preview) are omitted in v1
+        (FU-10-1-METADATA-ENRICH). Modeled as a superset object rather than a
+        per-type oneOf for v1 maintainability.
+      required: [schemaVersion]
+      properties:
+        schemaVersion:
+          type: integer
+        actorId:
+          type: string
+          nullable: true
+        submissionId:
+          type: string
+          nullable: true
+        assignmentId:
+          type: string
+          nullable: true
+        assignmentTitle:
+          type: string
+          nullable: true
+        className:
+          type: string
+          nullable: true
+        dueAt:
+          type: string
+          nullable: true
+        questionId:
+          type: string
+          nullable: true
+        studentId:
+          type: string
+          nullable: true
+        studentName:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        action:
+          type: string
+          nullable: true
+        fromClassId:
+          type: string
+          nullable: true
+        toClassId:
+          type: string
+          nullable: true
+        enrollmentId:
+          type: string
+          nullable: true
+        usedBytes:
+          type: integer
+          format: int64
+          nullable: true
+        limitBytes:
+          type: integer
+          format: int64
+          nullable: true
+
+    Notification:
+      type: object
+      description: One inbox row (story 10.1a). readAt/archivedAt are explicit null when unset (GO-5).
+      required: [id, type, title, body, link, metadata, readAt, archivedAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        body:
+          type: string
+        link:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/NotificationMetadata'
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    EnvelopeNotificationList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
+
+    EnvelopeUnreadCount:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [unread]
+          properties:
+            unread:
+              type: integer
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    EnvelopeNotificationAck:
+      type: object
+      description: The 200 ack for mark-read / archive (story 10.1a — AC5).
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [id, status]
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
     AtRiskStatus:
       type: string
       enum: [good, normal, at_risk]

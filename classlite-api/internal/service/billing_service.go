@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/clock"
+	"github.com/ducdo/classlite-api/internal/event"
 	"github.com/ducdo/classlite-api/internal/model"
 	"github.com/ducdo/classlite-api/internal/plan"
 	"github.com/ducdo/classlite-api/internal/polar"
@@ -102,6 +103,18 @@ type BillingService struct {
 	// 9-1a/9-2a paths never send email); the grace tick skips the send when nil rather
 	// than nil-deref, and main.go wires it right after SetCheckoutSuccessURL.
 	emailSender EmailSender
+	// events is the in-process event bus (Story 10.1a, DD4b). nil until SetEventBus
+	// is called; the Polar past-due path bridges event.PaymentFailed onto it so the
+	// owner billing notification is created on-bus. The off-bus grace clock is
+	// untouched. A setter (not a ctor param) keeps the 9.x callsites green.
+	events *event.Bus
+}
+
+// SetEventBus wires the in-process event bus (Story 10.1a, DD4b). main.go calls it
+// on the shared billingSvc instance. Nil-tolerant: without a bus, the Polar
+// past-due path publishes nothing.
+func (s *BillingService) SetEventBus(bus *event.Bus) {
+	s.events = bus
 }
 
 // SetEmailSender wires the grace/invoice email sender (Story 9.3). main.go calls it right

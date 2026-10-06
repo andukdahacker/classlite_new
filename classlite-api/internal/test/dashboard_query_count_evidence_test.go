@@ -18,9 +18,9 @@ import (
 )
 
 type queryCountEvidence struct {
-	Story    string                         `json:"story"`
-	Endpoint string                         `json:"endpoint"`
-	Note     string                         `json:"note"`
+	Story    string                          `json:"story"`
+	Endpoint string                          `json:"endpoint"`
+	Note     string                          `json:"note"`
 	PerRole  map[string]queryCountRoleRecord `json:"perRole"`
 }
 

@@ -13,7 +13,7 @@
 //
 // SEAMS (dev, green — the ONE place to reconcile):
 //   - service.AutoGrader interface:
-//         GradeOnSubmit(ctx context.Context, tx pgx.Tx, tc model.TenantContext, submissionID uuid.UUID) error
+//     GradeOnSubmit(ctx context.Context, tx pgx.Tx, tc model.TenantContext, submissionID uuid.UUID) error
 //     Invoked by Submit INSIDE a post-flip SAVEPOINT (D13). Production wiring reads the
 //     live exercise via store.UnmarshalExerciseContent (D14, NOT the answer-stripped
 //     attempt bundle), runs the pure grading.Grade engine (D15), and INSERTs one

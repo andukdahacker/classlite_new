@@ -12,14 +12,14 @@
 //
 // SEAMS (dev, green — reconcile in Task 2 migrations):
 //   - migration create_auto_grade_results: columns per AC8 — id, submission_id uuid
-//       NOT NULL UNIQUE FK→submissions ON DELETE RESTRICT, center_id uuid NOT NULL
-//       FK→centers, raw_score int, max_score int, percentage numeric, provisional_band
-//       numeric(2,1), answers jsonb NOT NULL, created_at, updated_at; 4-policy FORCE
-//       RLS grid on center_id (mirror grades). Plus partial index
-//       idx_grades_submission_released ON grades(submission_id) WHERE released_at IS NOT NULL.
+//     NOT NULL UNIQUE FK→submissions ON DELETE RESTRICT, center_id uuid NOT NULL
+//     FK→centers, raw_score int, max_score int, percentage numeric, provisional_band
+//     numeric(2,1), answers jsonb NOT NULL, created_at, updated_at; 4-policy FORCE
+//     RLS grid on center_id (mirror grades). Plus partial index
+//     idx_grades_submission_released ON grades(submission_id) WHERE released_at IS NOT NULL.
 //   - migration add_auto_grade_results_immutable_trigger: BEFORE UPDATE, RAISE P0001
-//       named 'auto_grade_results_immutable_after_release' when
-//       EXISTS(SELECT 1 FROM grades WHERE submission_id=NEW.submission_id AND released_at IS NOT NULL).
+//     named 'auto_grade_results_immutable_after_release' when
+//     EXISTS(SELECT 1 FROM grades WHERE submission_id=NEW.submission_id AND released_at IS NOT NULL).
 package test
 
 import (

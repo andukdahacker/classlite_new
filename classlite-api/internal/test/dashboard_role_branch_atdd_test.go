@@ -13,21 +13,21 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // RED: this file carries a real `//go:build atdd_red_phase` directive, so
-//   • `go test ./...`                        → EXCLUDED (suite stays green)
-//   • `go test -tags=atdd_red_phase ./internal/test/` → COMPILE-FAILS on the ONE
+//   - `go test ./...`                        → EXCLUDED (suite stays green)
+//   - `go test -tags=atdd_red_phase ./internal/test/` → COMPILE-FAILS on the ONE
 //     documented greenfield seam below (none against a shipped helper).
 //
 // GREEN SEAMS (dev — the ONE place to reconcile; Task 4 + Task 7):
 //
-//   internal/test/story_8_1_helpers.go:
-//     func NewDashboardTestServerForRole(t *testing.T, db storyDB,
-//         userID pgtype.UUID, centerID string, role string) http.Handler
-//       — model on NewStudentTestServerForRole (story_7_2a_helpers.go) BUT wire
-//         the UNGATED questionChain shape (cmd/api/main.go:644-651): NO
-//         RequireRole (a student must reach the handler — D2). Marks the caller
-//         email_verified + injects the Bearer token; the caller's center_members
-//         row (its DB role) is created by the test via CreateCenterMember.
-//       — mounts: mux.Handle("GET /api/dashboard", chain(dashboardHandler.Get)).
+//	internal/test/story_8_1_helpers.go:
+//	  func NewDashboardTestServerForRole(t *testing.T, db storyDB,
+//	      userID pgtype.UUID, centerID string, role string) http.Handler
+//	    — model on NewStudentTestServerForRole (story_7_2a_helpers.go) BUT wire
+//	      the UNGATED questionChain shape (cmd/api/main.go:644-651): NO
+//	      RequireRole (a student must reach the handler — D2). Marks the caller
+//	      email_verified + injects the Bearer token; the caller's center_members
+//	      row (its DB role) is created by the test via CreateCenterMember.
+//	    — mounts: mux.Handle("GET /api/dashboard", chain(dashboardHandler.Get)).
 //
 // The dash* JSON-parse structs below are LOCAL test types (they intentionally
 // mirror the PROVISIONAL D3 render-contract, camelCase, pointers for the three
@@ -69,7 +69,7 @@ type dashSessionLite struct {
 	SessionID   string `json:"sessionId"`
 	ClassID     string `json:"classId"`
 	ClassName   string `json:"className"`
-	TeacherName string `json:"teacherName"`  // owner todaySessions only (AC6)
+	TeacherName string `json:"teacherName"`   // owner todaySessions only (AC6)
 	EnrolledCnt int    `json:"enrolledCount"` // owner todaySessions only (AC6)
 }
 
@@ -200,8 +200,8 @@ func TestDashboard_RoleBranch_ExactlyOneBlock_ATDD(t *testing.T) {
 	}{
 		{"student", false, false, true},
 		{"teacher", true, false, false},
-		{"owner", false, true, false},   // owner|admin → owner block (D3)
-		{"admin", false, true, false},   // admin populates the SAME owner block
+		{"owner", false, true, false}, // owner|admin → owner block (D3)
+		{"admin", false, true, false}, // admin populates the SAME owner block
 	}
 
 	for _, tc := range cases {
