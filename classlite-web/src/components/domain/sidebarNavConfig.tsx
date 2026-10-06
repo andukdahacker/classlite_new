@@ -10,6 +10,7 @@ import {
   Inbox,
   LayoutDashboard,
   Settings,
+  UserCircle,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -56,6 +57,7 @@ const OWNER_GROUPS: ReadonlyArray<SidebarNavGroup> = [
   {
     labelKey: 'sidebar.section.settings',
     items: [
+      { labelKey: 'sidebar.owner.profile', icon: icon(UserCircle), href: '/profile' },
       { labelKey: 'sidebar.owner.settings', icon: icon(Settings), href: '/settings' },
     ],
   },
@@ -75,6 +77,7 @@ const ADMIN_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       { labelKey: 'sidebar.admin.inbox', icon: icon(Inbox), href: '/inbox' },
       { labelKey: 'sidebar.admin.knowledgeHub', icon: icon(BookOpen), href: '/knowledge-hub' },
       { labelKey: 'sidebar.admin.archive', icon: icon(Archive), href: '/archive' },
+      { labelKey: 'sidebar.admin.profile', icon: icon(UserCircle), href: '/profile' },
     ],
   },
 ]
@@ -92,6 +95,7 @@ const TEACHER_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       { labelKey: 'sidebar.teacher.inbox', icon: icon(Inbox), href: '/inbox' },
       { labelKey: 'sidebar.teacher.knowledgeHub', icon: icon(BookOpen), href: '/knowledge-hub' },
       { labelKey: 'sidebar.teacher.archive', icon: icon(Archive), href: '/archive' },
+      { labelKey: 'sidebar.teacher.profile', icon: icon(UserCircle), href: '/profile' },
     ],
   },
 ]
@@ -111,6 +115,7 @@ const STUDENT_GROUPS: ReadonlyArray<SidebarNavGroup> = [
       // locales (parity) for that future surface.
       { labelKey: 'sidebar.student.myPerformance', icon: icon(BarChart3), href: '/my-performance' },
       { labelKey: 'sidebar.student.inbox', icon: icon(Inbox), href: '/inbox' },
+      { labelKey: 'sidebar.student.profile', icon: icon(UserCircle), href: '/profile' },
     ],
   },
 ]

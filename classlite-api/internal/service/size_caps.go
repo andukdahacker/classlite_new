@@ -19,6 +19,12 @@ const (
 	// (AC7). `.webm`/`.m4a` are SHARED with listening (100 MB), so this cap can
 	// only be selected by the `speaking` feature — see MaxUploadBytes.
 	speakingAudioMaxBytes int64 = 25 * 1024 * 1024
+	// avatarImageMaxBytes is the A9 cap for a profile avatar (Story 9.4, D3/D8).
+	// Tighter than the 15 MB Knowledge image cap because a profile photo is small;
+	// shared image extensions (png/jpeg/webp) would otherwise inherit the 15 MB
+	// knowledge ceiling via the extension-keyed map, so the `avatars` feature
+	// overrides to 5 MB in MaxUploadBytes.
+	avatarImageMaxBytes int64 = 5 * 1024 * 1024
 )
 
 // oneMiB converts a byte cap to whole MB for the 413 FILE_TOO_LARGE message
@@ -58,6 +64,13 @@ func MaxUploadBytes(feature, ext string) (int64, bool) {
 		// unknown ext under `speaking` still gets the speaking ceiling (defense
 		// in depth) rather than falling through to "no cap".
 		return speakingAudioMaxBytes, true
+	}
+	if feature == FeatureAvatars {
+		// Story 9.4 — an avatar is capped at 5 MB regardless of ext. The shared
+		// png/jpeg/webp extensions would otherwise inherit the 15 MB knowledge
+		// image ceiling via the map below; the avatar allowlist (D8) already
+		// bounds ext to {png,jpeg,webp}, so `ok=true` for any of them.
+		return avatarImageMaxBytes, true
 	}
 	cap, ok := uploadSizeCaps[strings.ToLower(ext)]
 	return cap, ok

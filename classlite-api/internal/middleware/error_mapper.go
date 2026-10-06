@@ -173,8 +173,23 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		var submissionLocked *service.SubmissionLockedError
 		var timeExpired *service.TimeExpiredError
 		var exerciseLocked *service.ExerciseLockedError
+		// Story 9.4 self-profile change-password errors (AC4).
+		var invalidCurrentPassword *service.InvalidCurrentPasswordError
+		var passwordNotSet *service.PasswordNotSetError
 
 		switch {
+		case errors.As(err, &invalidCurrentPassword):
+			// 403, NOT 401 (AC4 allows either): a wrong current password is a
+			// business rejection, not an expired session — a 401 would trip the
+			// frontend's silent-token-refresh path (TS-5) and bounce the user to
+			// /login instead of surfacing the inline "current password incorrect".
+			handler.WriteError(w, r, http.StatusForbidden,
+				"INVALID_CURRENT_PASSWORD", "Your current password is incorrect.", nil)
+			return
+		case errors.As(err, &passwordNotSet):
+			handler.WriteError(w, r, http.StatusConflict,
+				"PASSWORD_NOT_SET", "This account signs in with Google and has no password to change.", nil)
+			return
 		case errors.As(err, &invalidReference):
 			handler.WriteError(w, r, http.StatusUnprocessableEntity,
 				"INVALID_REFERENCE", "A referenced record does not exist.",

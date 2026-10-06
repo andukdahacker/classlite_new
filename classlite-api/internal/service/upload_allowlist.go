@@ -23,6 +23,14 @@ const FeatureKnowledge = "knowledge"
 // (submission_service) cannot silently drift on a typo'd literal.
 const FeatureSpeaking = "speaking"
 
+// FeatureAvatars is the object-key feature segment for a user's profile avatar
+// (Story 9.4). A confirmed avatar upload writes no `files` row (verify-only);
+// the authoritative size/type re-check (D7) runs in the user service on persist
+// (HeadObject), because the avatar flow skips POST /api/uploads/confirm. Named
+// constant so the per-feature allowlist (D8), the 5 MB cap, and the service-side
+// prefix guard cannot drift on a typo'd literal.
+const FeatureAvatars = "avatars"
+
 // AllowedExtensions maps a lower-cased file extension to its single canonical
 // MIME type. The presign path rejects any extension absent from this map and
 // rejects a Content-Type that does not match the extension's canonical type
@@ -33,6 +41,10 @@ var AllowedExtensions = map[string]string{
 	".jpg":  "image/jpeg",
 	".jpeg": "image/jpeg",
 	".svg":  "image/svg+xml",
+	// Story 9.4 (D8) — `.webp` was unallowlisted, so a presign for a WebP avatar
+	// was rejected outright. Added globally (any feature may presign it); the
+	// per-feature avatar subset below is what keeps SVG out of avatars.
+	".webp": "image/webp",
 	".mp3":  "audio/mpeg",
 	".wav":  "audio/wav",
 	".webm": "audio/webm",
@@ -55,6 +67,33 @@ var AllowedFeatures = map[string]bool{
 	FeatureSpeaking:  true,
 	"avatars":        true,
 	"imports":        true, // Story 2.7 — bulk student import uploads.
+}
+
+// FeatureAllowedExtensions restricts specific features to a SUBSET of the global
+// AllowedExtensions. The global map asserts "this ext↔MIME pair is valid
+// somewhere"; a per-feature entry asserts "this feature accepts ONLY these
+// exts". A feature ABSENT from this map falls back to the full global allowlist
+// (knowledge / imports / speaking keep their current wide behavior). Story 9.4
+// (D8): avatars ⊆ {png, jpeg, webp} so SVG is rejected for AVATARS (stored-SVG
+// XSS) WITHOUT loosening SVG for the Knowledge Hub — the global allowlist alone
+// could not express that distinction.
+var FeatureAllowedExtensions = map[string]map[string]bool{
+	FeatureAvatars: {".png": true, ".jpg": true, ".jpeg": true, ".webp": true},
+}
+
+// FeatureAllowsExtension reports whether `feature` accepts `ext`. It first
+// requires the ext to be globally allowlisted (ext↔MIME known), then — if the
+// feature declares a per-feature subset — requires membership in that subset.
+// ext is matched case-insensitively and includes the leading dot.
+func FeatureAllowsExtension(feature, ext string) bool {
+	ext = strings.ToLower(ext)
+	if _, ok := AllowedExtensions[ext]; !ok {
+		return false
+	}
+	if subset, ok := FeatureAllowedExtensions[feature]; ok {
+		return subset[ext]
+	}
+	return true
 }
 
 // ParseObjectKey splits an R2 key of the form {center_id}/{feature}/{uuid}.{ext}

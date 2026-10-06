@@ -330,6 +330,19 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 9.4 — the s38 self-profile page. ALL roles (AC2) — NO
+      // RouteRoleGate (the page is personal account management, not a
+      // role-gated surface); self-scoping is enforced server-side by the token
+      // userId. Its own lazy chunk under the AppLayout group.
+      {
+        path: '/profile',
+        lazy: async () => {
+          const { default: ProfilePage } = await import(
+            '@/features/profile/ProfilePage'
+          )
+          return { Component: ProfilePage }
+        },
+      },
       // Story 3.1 — /classes index. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). The create/edit form is a
       // Dialog (not a /classes/new child route), so this single boundary

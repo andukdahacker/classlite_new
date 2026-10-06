@@ -361,6 +361,48 @@ func main() {
 	mux.Handle("PUT /api/onboarding/progress", onboardingChain(onboardingHandler.PutProgress))
 	mux.Handle("POST /api/centers", onboardingChain(centerHandler.Create))
 
+	// Story 9.4 — self-profile (GET/PUT /api/users/me + change-password). Copies
+	// the onboardingChain SHAPE (extractTenant → requireVerified → ErrorMapper,
+	// NO requireCenter) so a membership-limbo user still reaches their profile;
+	// self-scoping is enforced in-service by the token userId (users is
+	// global/no-RLS). change-password gets its OWN tighter user+IP-keyed bucket
+	// (SEC-10 — not IP-only, so a shared-NAT brute-force cannot bypass it).
+	userSvc := service.NewUserService(pool, hasher, uploadStorage, cfg.R2PublicAvatarBase, clock.RealClock{})
+	userHandler := handler.NewUserHandler(userSvc)
+	// Separate read vs write buckets (review patch): a profile SAVE triggers an
+	// invalidate→refetch GET, so sharing one bucket let routine reads erode the
+	// write budget and risked spurious self-429s on legitimate writes.
+	userProfileReadLimit := middleware.RateLimitByKey(
+		"user-profile-read",
+		rate.Every(60*time.Second),
+		120,
+		middleware.UserAndIPKeyFn,
+	)
+	userProfileLimit := middleware.RateLimitByKey(
+		"user-profile",
+		rate.Every(60*time.Second),
+		60,
+		middleware.UserAndIPKeyFn,
+	)
+	changePasswordLimit := middleware.RateLimitByKey(
+		"user-change-password",
+		rate.Every(60*time.Second),
+		5,
+		middleware.UserAndIPKeyFn,
+	)
+	userChain := func(limit func(http.Handler) http.Handler) func(middleware.HandlerWithError) http.Handler {
+		return func(h middleware.HandlerWithError) http.Handler {
+			return extractTenant(
+				requireVerified(
+					limit(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			)
+		}
+	}
+	mux.Handle("GET /api/users/me", userChain(userProfileReadLimit)(userHandler.GetMe))
+	mux.Handle("PUT /api/users/me", userChain(userProfileLimit)(userHandler.UpdateMe))
+	mux.Handle("POST /api/users/me/change-password", userChain(changePasswordLimit)(userHandler.ChangePassword))
+
 	// Story 2.2 — Templates + Spawn. Middleware chain per AC8:
 	//   ExtractTenant → onboardingLimit → RequireVerifiedEmail →
 	//   RequireCenterContext → handler

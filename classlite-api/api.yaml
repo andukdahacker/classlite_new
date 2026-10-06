@@ -621,6 +621,150 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/users/me:
+    get:
+      operationId: getMyProfile
+      summary: Fetch the authenticated user's own profile (story 9.4, AC6/D1)
+      description: |
+        Returns the caller's self-profile resolved from the access-token
+        `userId` claim ONLY — there is no user-id path/body param, so a user can
+        only ever read their OWN record. `users` is a GLOBAL table (no RLS), so
+        self-scoping is a service/handler responsibility. Sits behind the
+        verified-email gate (unverified users do not reach it).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeUserProfile'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: Email not verified (EMAIL_VERIFICATION_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      operationId: updateMyProfile
+      summary: Full-snapshot update of the caller's profile (story 9.4, AC6/D5)
+      description: |
+        FULL-SNAPSHOT replace of the four editable fields
+        (`fullName`, `avatarUrl`, `languagePref`, `notificationSettings`). The
+        client ALWAYS sends the current full profile (an avatar-only or
+        language-only edit still carries the unchanged fields), so a partial PUT
+        cannot silently blank a field (D5 clobber/self-blank guard). The server
+        REQUIRES all four fields present, rejects an empty `fullName` and a
+        `languagePref` outside {vi,en} with 422, and resolves the target from the
+        token `userId` ONLY. It does NOT accept an `email` field (AC7). An
+        `avatarUrl` shaped like an R2 object key is re-validated against the
+        caller's center prefix + HeadObject-rechecked (AC9/D7) and stored as a
+        full public URL; an external provider URL (Google) is tolerated verbatim.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeUserProfile'
+        "401":
+          description: Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: |
+            Email not verified (EMAIL_VERIFICATION_REQUIRED), or a cross-tenant /
+            empty-center avatar key (R2_KEY_PREFIX_MISMATCH — AC9/D11)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Validation failure (missing fullName, bad languagePref, malformed avatar key / notificationSettings)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/users/me/change-password:
+    post:
+      operationId: changeMyPassword
+      summary: Change the authenticated user's password (story 9.4, AC4)
+      description: |
+        Verifies `currentPassword` (bcrypt compare), then validates + hashes
+        `newPassword` (cost 12) and stores it. Unlike password RESET, this does
+        NOT invalidate other sessions — `DeleteAllRefreshTokensForUser` is never
+        called, so the user stays logged in on other devices (AC4/AC10). An
+        OAuth-only account (no password set) returns a typed 409, never a 500.
+        Tighter per-route rate limit (user+IP keyed, SEC-10).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        "204":
+          description: Password changed; other sessions left intact
+        "401":
+          description: Missing or invalid access token (AUTH_REQUIRED / AUTH_INVALID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: |
+            Email not verified (EMAIL_VERIFICATION_REQUIRED), or the supplied
+            current password is wrong (INVALID_CURRENT_PASSWORD — 403 not 401 so
+            it is not mistaken for an expired session / silent-refresh trigger)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "409":
+          description: Account has no password set — it signs in with Google (PASSWORD_NOT_SET)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: New password failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "429":
+          description: Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/centers:
     post:
       operationId: createCenter
@@ -8427,6 +8571,16 @@ components:
     UserSummary:
       type: object
       required: [id, email, fullName, emailVerified]
+      description: |
+        The session user summary stored at `Session.user`. Story 9.4 (D12)
+        extended it ADDITIVELY with `avatarUrl` + `languagePref` so the sidebar
+        pill + topbar re-render from the session cache without a profile refetch.
+        This shape is read by EVERY session consumer (login / refresh /
+        accept-invite). The two 9.4 fields are OPTIONAL in the contract so the
+        extension stays truly additive (existing session-literal fixtures keep
+        compiling — no consumer may assert exact-shape equality); the Go side
+        always emits them (GO-5: no omitempty), so live session data always
+        carries them.
       properties:
         id:
           type: string
@@ -8438,6 +8592,124 @@ components:
           type: string
         emailVerified:
           type: boolean
+        avatarUrl:
+          type: string
+          nullable: true
+          description: |
+            The caller's avatar — a full, directly-loadable URL (an R2 public
+            base URL for an uploaded avatar, or an external provider URL for a
+            Google-OAuth account). `null` when no avatar is set; the pill then
+            renders gradient initials. Rendered raw as `<img src>` (Story 9.4
+            D6), so this is never a presigned/expiring URL.
+        languagePref:
+          type: string
+          enum: [vi, en]
+          description: The caller's persisted UI language preference (Story 9.4 AC3).
+
+    NotificationSettings:
+      type: object
+      required: [schemaVersion, emailOnSubmission, emailOnQuestion, emailOnAnnouncement]
+      description: |
+        Story 9.4 (AC12 / GO-7) — the per-user notification preferences, a typed
+        jsonb stamped with `schemaVersion` (never an untyped map). v1 is a small
+        fixed boolean set, all defaulted true. The live consumer (inbox event
+        routing) lands in Epic 10, which treats these persisted values as
+        authoritative; 9.4 renders the toggles DISABLED-with-note (D15). A read
+        of an older/unknown `schemaVersion` upcasts-with-defaults server-side,
+        never 500.
+      properties:
+        schemaVersion:
+          type: integer
+          description: Schema version of this settings object (currently 1).
+        emailOnSubmission:
+          type: boolean
+        emailOnQuestion:
+          type: boolean
+        emailOnAnnouncement:
+          type: boolean
+
+    UserProfile:
+      type: object
+      required: [id, email, fullName, avatarUrl, languagePref, notificationSettings, emailVerified, isOauthOnly]
+      description: |
+        Story 9.4 (AC6 / D1) — the caller's self-profile returned by
+        GET/PUT /api/users/me. GO-5: every key always emitted; `avatarUrl` null
+        serializes as `null` (not omitted).
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          description: The caller's login email — display-only (AC7); never mutated via PUT.
+        fullName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+          description: Full directly-loadable avatar URL, or null. Rendered raw as `<img src>` (D6).
+        languagePref:
+          type: string
+          enum: [vi, en]
+        notificationSettings:
+          $ref: '#/components/schemas/NotificationSettings'
+        emailVerified:
+          type: boolean
+        isOauthOnly:
+          type: boolean
+          description: |
+            True when the account has no password set (signs in with Google).
+            Drives the AC7 single explanatory state covering BOTH the locked
+            email and the disabled change-password control.
+
+    UpdateUserProfileRequest:
+      type: object
+      required: [fullName, avatarUrl, languagePref, notificationSettings]
+      description: |
+        Story 9.4 (AC6 / D5) — FULL-SNAPSHOT replace. All four editable fields
+        are REQUIRED; the client always sends the current full profile so a
+        partial PUT cannot blank a field. Deliberately has NO `email` field
+        (AC7 — email is display-only).
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          description: Non-empty display name; an empty/whitespace value → 422.
+        avatarUrl:
+          type: string
+          nullable: true
+          description: |
+            One of — `null` (clear avatar); an R2 object KEY shaped
+            `{centerId}/avatars/{uuid}.{ext}` from a fresh presign (server
+            re-validates the center prefix + HeadObject, then stores the full
+            public URL); or a previously-stored full URL / external provider URL
+            (tolerated verbatim — the full-snapshot no-op + Google-OAuth cases).
+        languagePref:
+          type: string
+          enum: [vi, en]
+        notificationSettings:
+          $ref: '#/components/schemas/NotificationSettings'
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          description: The caller's current password, verified via bcrypt before any change.
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 72
+          description: New password (8–72 bytes; bcrypt hard limit). Same validation as password reset.
+
+    EnvelopeUserProfile:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/UserProfile'
 
     RegisterResult:
       type: object

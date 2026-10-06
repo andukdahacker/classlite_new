@@ -49,6 +49,7 @@ import { Outlet, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Menu } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
+import { useAuth } from '@/hooks/useAuth'
 import { useRole, type Role } from '@/hooks/useRole'
 import { matchLongestHrefPrefix } from '@/lib/match-route'
 import { AppShell } from '@/components/domain/AppShell'
@@ -76,6 +77,11 @@ export default function AppLayout() {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
   const role = useRole()
+  // Story 9.4 — close TODO(1-8): feed the sidebar pill the real authenticated
+  // user (name + avatar) from the session cache instead of the role-label
+  // placeholder. `session.user` carries avatarUrl (D12). `useAuth` subscribes to
+  // the session cache so a profile Save re-renders the pill without a refetch.
+  const { user, session } = useAuth()
   const location = useLocation()
   // ⌘K/Ctrl+K palette open-state + global keydown (Story 8-4b, D1). The hook is
   // called unconditionally (rules of hooks); the listener is ENABLED only for an
@@ -131,12 +137,13 @@ export default function AppLayout() {
             <SidebarShell
               role={role}
               groups={SIDEBAR_NAV_BY_ROLE[role]}
-              // TODO(1-8): replace `t(userPill.role.${role})` with the
-              // authenticated user's display name from the auth wrapper.
-              // Until then, every dev user sees their role label as the
-              // user name (Owner shows "Owner / Owner") — clearly a
-              // placeholder, not a leak.
-              user={{ name: t(`userPill.role.${role}`), avatarUrl: null }}
+              // Story 9.4 closes TODO(1-8): the real authenticated user's name +
+              // avatar. Falls back to the role label only when the session cache
+              // has no user yet (boot-probe window).
+              user={{
+                name: user?.displayName ?? t(`userPill.role.${role}`),
+                avatarUrl: session?.user?.avatarUrl ?? null,
+              }}
               activeHref={sidebarActiveHref}
               collapsed={sidebarCollapsed}
             />

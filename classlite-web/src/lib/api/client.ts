@@ -362,6 +362,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the authenticated user's own profile (story 9.4, AC6/D1)
+         * @description Returns the caller's self-profile resolved from the access-token
+         *     `userId` claim ONLY — there is no user-id path/body param, so a user can
+         *     only ever read their OWN record. `users` is a GLOBAL table (no RLS), so
+         *     self-scoping is a service/handler responsibility. Sits behind the
+         *     verified-email gate (unverified users do not reach it).
+         */
+        get: operations["getMyProfile"];
+        /**
+         * Full-snapshot update of the caller's profile (story 9.4, AC6/D5)
+         * @description FULL-SNAPSHOT replace of the four editable fields
+         *     (`fullName`, `avatarUrl`, `languagePref`, `notificationSettings`). The
+         *     client ALWAYS sends the current full profile (an avatar-only or
+         *     language-only edit still carries the unchanged fields), so a partial PUT
+         *     cannot silently blank a field (D5 clobber/self-blank guard). The server
+         *     REQUIRES all four fields present, rejects an empty `fullName` and a
+         *     `languagePref` outside {vi,en} with 422, and resolves the target from the
+         *     token `userId` ONLY. It does NOT accept an `email` field (AC7). An
+         *     `avatarUrl` shaped like an R2 object key is re-validated against the
+         *     caller's center prefix + HeadObject-rechecked (AC9/D7) and stored as a
+         *     full public URL; an external provider URL (Google) is tolerated verbatim.
+         */
+        put: operations["updateMyProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the authenticated user's password (story 9.4, AC4)
+         * @description Verifies `currentPassword` (bcrypt compare), then validates + hashes
+         *     `newPassword` (cost 12) and stores it. Unlike password RESET, this does
+         *     NOT invalidate other sessions — `DeleteAllRefreshTokensForUser` is never
+         *     called, so the user stays logged in on other devices (AC4/AC10). An
+         *     OAuth-only account (no password set) returns a typed 409, never a 500.
+         *     Tighter per-route rate limit (user+IP keyed, SEC-10).
+         */
+        post: operations["changeMyPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/centers": {
         parameters: {
             query?: never;
@@ -3513,6 +3576,17 @@ export interface components {
             currentStep: "persona" | "center" | "template" | "spawn" | "solo_first_class" | "done";
             payload: components["schemas"]["OnboardingProgressPayload"];
         };
+        /**
+         * @description The session user summary stored at `Session.user`. Story 9.4 (D12)
+         *     extended it ADDITIVELY with `avatarUrl` + `languagePref` so the sidebar
+         *     pill + topbar re-render from the session cache without a profile refetch.
+         *     This shape is read by EVERY session consumer (login / refresh /
+         *     accept-invite). The two 9.4 fields are OPTIONAL in the contract so the
+         *     extension stays truly additive (existing session-literal fixtures keep
+         *     compiling — no consumer may assert exact-shape equality); the Go side
+         *     always emits them (GO-5: no omitempty), so live session data always
+         *     carries them.
+         */
         UserSummary: {
             /** Format: uuid */
             id: string;
@@ -3520,6 +3594,92 @@ export interface components {
             email: string;
             fullName: string;
             emailVerified: boolean;
+            /**
+             * @description The caller's avatar — a full, directly-loadable URL (an R2 public
+             *     base URL for an uploaded avatar, or an external provider URL for a
+             *     Google-OAuth account). `null` when no avatar is set; the pill then
+             *     renders gradient initials. Rendered raw as `<img src>` (Story 9.4
+             *     D6), so this is never a presigned/expiring URL.
+             */
+            avatarUrl?: string | null;
+            /**
+             * @description The caller's persisted UI language preference (Story 9.4 AC3).
+             * @enum {string}
+             */
+            languagePref?: "vi" | "en";
+        };
+        /**
+         * @description Story 9.4 (AC12 / GO-7) — the per-user notification preferences, a typed
+         *     jsonb stamped with `schemaVersion` (never an untyped map). v1 is a small
+         *     fixed boolean set, all defaulted true. The live consumer (inbox event
+         *     routing) lands in Epic 10, which treats these persisted values as
+         *     authoritative; 9.4 renders the toggles DISABLED-with-note (D15). A read
+         *     of an older/unknown `schemaVersion` upcasts-with-defaults server-side,
+         *     never 500.
+         */
+        NotificationSettings: {
+            /** @description Schema version of this settings object (currently 1). */
+            schemaVersion: number;
+            emailOnSubmission: boolean;
+            emailOnQuestion: boolean;
+            emailOnAnnouncement: boolean;
+        };
+        /**
+         * @description Story 9.4 (AC6 / D1) — the caller's self-profile returned by
+         *     GET/PUT /api/users/me. GO-5: every key always emitted; `avatarUrl` null
+         *     serializes as `null` (not omitted).
+         */
+        UserProfile: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: email
+             * @description The caller's login email — display-only (AC7); never mutated via PUT.
+             */
+            email: string;
+            fullName: string;
+            /** @description Full directly-loadable avatar URL, or null. Rendered raw as `<img src>` (D6). */
+            avatarUrl: string | null;
+            /** @enum {string} */
+            languagePref: "vi" | "en";
+            notificationSettings: components["schemas"]["NotificationSettings"];
+            emailVerified: boolean;
+            /**
+             * @description True when the account has no password set (signs in with Google).
+             *     Drives the AC7 single explanatory state covering BOTH the locked
+             *     email and the disabled change-password control.
+             */
+            isOauthOnly: boolean;
+        };
+        /**
+         * @description Story 9.4 (AC6 / D5) — FULL-SNAPSHOT replace. All four editable fields
+         *     are REQUIRED; the client always sends the current full profile so a
+         *     partial PUT cannot blank a field. Deliberately has NO `email` field
+         *     (AC7 — email is display-only).
+         */
+        UpdateUserProfileRequest: {
+            /** @description Non-empty display name; an empty/whitespace value → 422. */
+            fullName: string;
+            /**
+             * @description One of — `null` (clear avatar); an R2 object KEY shaped
+             *     `{centerId}/avatars/{uuid}.{ext}` from a fresh presign (server
+             *     re-validates the center prefix + HeadObject, then stores the full
+             *     public URL); or a previously-stored full URL / external provider URL
+             *     (tolerated verbatim — the full-snapshot no-op + Google-OAuth cases).
+             */
+            avatarUrl: string | null;
+            /** @enum {string} */
+            languagePref: "vi" | "en";
+            notificationSettings: components["schemas"]["NotificationSettings"];
+        };
+        ChangePasswordRequest: {
+            /** @description The caller's current password, verified via bcrypt before any change. */
+            currentPassword: string;
+            /** @description New password (8–72 bytes; bcrypt hard limit). Same validation as password reset. */
+            newPassword: string;
+        };
+        EnvelopeUserProfile: {
+            data: components["schemas"]["UserProfile"];
         };
         RegisterResult: {
             user: components["schemas"]["UserSummary"];
@@ -6547,6 +6707,178 @@ export interface operations {
                 };
             };
             /** @description Validation failure */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getMyProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeUserProfile"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Email not verified (EMAIL_VERIFICATION_REQUIRED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updateMyProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeUserProfile"];
+                };
+            };
+            /** @description Missing (AUTH_REQUIRED) or invalid (AUTH_INVALID) access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description Email not verified (EMAIL_VERIFICATION_REQUIRED), or a cross-tenant /
+             *     empty-center avatar key (R2_KEY_PREFIX_MISMATCH — AC9/D11)
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation failure (missing fullName, bad languagePref, malformed avatar key / notificationSettings) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limit exceeded (RATE_LIMIT_EXCEEDED); Retry-After header carries the retry window in seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    changeMyPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed; other sessions left intact */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid access token (AUTH_REQUIRED / AUTH_INVALID) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description Email not verified (EMAIL_VERIFICATION_REQUIRED), or the supplied
+             *     current password is wrong (INVALID_CURRENT_PASSWORD — 403 not 401 so
+             *     it is not mistaken for an expired session / silent-refresh trigger)
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Account has no password set — it signs in with Google (PASSWORD_NOT_SET) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description New password failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

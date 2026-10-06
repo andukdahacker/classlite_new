@@ -156,6 +156,27 @@ type userSummary struct {
 	Email         string `json:"email"`
 	FullName      string `json:"fullName"`
 	EmailVerified bool   `json:"emailVerified"`
+	// Story 9.4 (D12) — additive, app-wide. Every session consumer (login /
+	// refresh / accept-invite) now carries the self avatar + language so the
+	// sidebar pill + topbar re-render from the session cache without a profile
+	// refetch (AC8). GO-5: avatarUrl null serializes as null.
+	AvatarURL    *string `json:"avatarUrl"`
+	LanguagePref string  `json:"languagePref"`
+}
+
+// userSummaryFromUser builds the session user summary from a full user row
+// (Story 9.4 D12 — avatarUrl/languagePref are already on res.User, so threading
+// them is handler-layer only). Centralized so the three session sites (login /
+// refresh / accept-invite) cannot drift.
+func userSummaryFromUser(id, email, fullName string, emailVerified bool, avatarURL *string, languagePref string) userSummary {
+	return userSummary{
+		ID:            id,
+		Email:         email,
+		FullName:      fullName,
+		EmailVerified: emailVerified,
+		AvatarURL:     avatarURL,
+		LanguagePref:  languagePref,
+	}
 }
 
 // sessionCenterPayload mirrors api.yaml SessionCenter — the six-field center
@@ -321,12 +342,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) error {
 	h.setRefreshCookie(w, res)
 	WriteJSON(w, http.StatusOK, loginResponseBody{
 		AccessToken: res.AccessToken,
-		User: userSummary{
-			ID:            uuid.UUID(res.User.ID.Bytes).String(),
-			Email:         res.User.Email,
-			FullName:      res.User.FullName,
-			EmailVerified: res.User.EmailVerified,
-		},
+		User: userSummaryFromUser(
+			uuid.UUID(res.User.ID.Bytes).String(),
+			res.User.Email,
+			res.User.FullName,
+			res.User.EmailVerified,
+			textPgToPtr(res.User.AvatarUrl),
+			res.User.LanguagePref,
+		),
 		Role:   nullableRole(res.Role),
 		Center: sessionCenterFromService(res.Center),
 	})
@@ -346,12 +369,14 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) error {
 	h.setRefreshCookie(w, res)
 	WriteJSON(w, http.StatusOK, loginResponseBody{
 		AccessToken: res.AccessToken,
-		User: userSummary{
-			ID:            uuid.UUID(res.User.ID.Bytes).String(),
-			Email:         res.User.Email,
-			FullName:      res.User.FullName,
-			EmailVerified: res.User.EmailVerified,
-		},
+		User: userSummaryFromUser(
+			uuid.UUID(res.User.ID.Bytes).String(),
+			res.User.Email,
+			res.User.FullName,
+			res.User.EmailVerified,
+			textPgToPtr(res.User.AvatarUrl),
+			res.User.LanguagePref,
+		),
 		Role:   nullableRole(res.Role),
 		Center: sessionCenterFromService(res.Center),
 	})
@@ -730,12 +755,14 @@ func (h *AuthHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) error
 	})
 	WriteJSON(w, http.StatusOK, acceptInviteResponseBody{
 		AccessToken: res.AccessToken,
-		User: userSummary{
-			ID:            uuid.UUID(res.User.ID.Bytes).String(),
-			Email:         res.User.Email,
-			FullName:      res.User.FullName,
-			EmailVerified: res.User.EmailVerified,
-		},
+		User: userSummaryFromUser(
+			uuid.UUID(res.User.ID.Bytes).String(),
+			res.User.Email,
+			res.User.FullName,
+			res.User.EmailVerified,
+			textPgToPtr(res.User.AvatarUrl),
+			res.User.LanguagePref,
+		),
 		Center: acceptInviteCenterPayload{ID: res.CenterID, Name: res.CenterName},
 		Role:   res.Role,
 	})

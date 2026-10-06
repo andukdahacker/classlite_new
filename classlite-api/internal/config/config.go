@@ -23,6 +23,12 @@ type Config struct {
 	R2AccessKeyID     string
 	R2SecretAccessKey string
 	R2BucketName      string
+	// R2PublicAvatarBase is the stable public URL prefix the `avatars/` R2 prefix
+	// is served from (Story 9.4, D6-A). An uploaded avatar is stored + returned as
+	// `{base}/{center_id}/avatars/{uuid}.{ext}` so the sidebar pill can render it
+	// raw as `<img src>` (a presigned-GET would expire inside the long-lived
+	// session cache). Empty in dev (no R2) → the avatar upload control degrades.
+	R2PublicAvatarBase string
 	// AppVerifyURLBase is the canonical base URL embedded in verification emails
 	// (story 1.4). The token is appended as ?token=<value>.
 	AppVerifyURLBase string
@@ -155,6 +161,7 @@ func Load() Config {
 		R2AccessKeyID:             getEnv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey:         getEnv("R2_SECRET_ACCESS_KEY", ""),
 		R2BucketName:              getEnv("R2_BUCKET_NAME", "classlite-uploads"),
+		R2PublicAvatarBase:        getEnv("R2_PUBLIC_AVATAR_BASE", ""),
 		AppVerifyURLBase:          getEnv("APP_VERIFY_URL_BASE", "http://localhost:5173/verify-email"),
 		AppResetURLBase:           getEnv("APP_RESET_URL_BASE", "http://localhost:5173/reset-password"),
 		AppInviteURLBase:          getEnv("APP_INVITE_URL_BASE", "http://localhost:5173/invite"),

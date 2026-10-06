@@ -125,6 +125,14 @@ func (h *UploadHandler) Presign(w http.ResponseWriter, r *http.Request) error {
 			{Field: "feature", Message: fmt.Sprintf("unknown feature %q", req.Feature)},
 		}}
 	}
+	// Story 9.4 (D8) — per-feature extension subset. A feature with a declared
+	// subset (e.g. avatars ⊆ {png,jpeg,webp}) rejects a globally-allowed-but-not-
+	// for-this-feature extension (SVG for avatars) WITHOUT loosening it elsewhere.
+	if !service.FeatureAllowsExtension(req.Feature, ext) {
+		return model.ValidationError{Fields: []model.FieldError{
+			{Field: "filename", Message: fmt.Sprintf("file type %s is not allowed for %s", ext, req.Feature)},
+		}}
+	}
 
 	tc, err := tenantForUpload(r)
 	if err != nil {
