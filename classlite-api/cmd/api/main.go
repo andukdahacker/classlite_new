@@ -182,7 +182,9 @@ func main() {
 	// service that enforces a plan cap + the on-center-create row provisioning (D7). 9.2a injects
 	// the Polar client (checkout/reconcile/downgrade-schedule paths).
 	billingSvc := service.NewBillingServiceWithPolar(pool, clock.RealClock{}, polarClient)
-	billingSvc.SetCheckoutSuccessURL(cfg.AppBillingSuccessURL) // Story 9-2b AC3 — post-checkout return URL.
+	billingSvc.SetCheckoutSuccessURL(cfg.AppBillingSuccessURL)  // Story 9-2b AC3 — post-checkout return URL.
+	billingSvc.SetBillingSettingsURL(cfg.AppBillingSettingsURL) // Story 9.3 code-review P5 — grace-email "Update payment method" deep link.
+	billingSvc.SetEmailSender(emailSender)                      // Story 9.3 — grace warning + invoice-to-accountant emails (party-mode §G).
 
 	aiDispatcher := worker.NewPoolDispatcher(pool, geminiClient, clock.RealClock{},
 		worker.NewGenerateSectionHandler(pool, geminiClient, clock.RealClock{}),
@@ -206,6 +208,10 @@ func main() {
 		// grade/submission write (D1). storage + transcoder are constructor fields so
 		// the dispatcher stays storage/media-agnostic (D6/D17).
 		worker.NewGradeSpeakingHandler(pool, geminiClient, clock.RealClock{}, uploadStorage, audioTranscoder),
+		// Story 9.3 — the payment-failure grace clock rides the SAME pool dispatcher (jobs.type
+		// is free text; no dispatcher change). It calls BillingService.HandleGraceTick (GFW-7)
+		// on each future-dated tick and self-reschedules the next while the center is past_due.
+		worker.NewBillingGraceTickHandler(pool, billingSvc),
 	)
 	aiDispatcher.SetBilling(billingSvc) // Story 9.1a — armed credit refund on terminal fail (D19/F1); before Start
 	go aiDispatcher.Start(workerCtx)
@@ -683,6 +689,17 @@ func main() {
 			),
 		)
 	}
+	// Story 9.3 (R4) — the grace indicator is readable by owner AND admin (owner sees the
+	// actionable s73 strip, admin an informational variant). teacher/student still 403.
+	billingGraceChain := func(h middleware.HandlerWithError) http.Handler {
+		return extractTenant(
+			requireVerified(
+				requireCenter(
+					middleware.RequireRole("owner", "admin")(http.HandlerFunc(middleware.ErrorMapper(h))),
+				),
+			),
+		)
+	}
 	mux.Handle("GET /api/billing", billingChain(billingHandler.GetSummary))
 	mux.Handle("GET /api/billing/plans", billingChain(billingHandler.GetPlans))
 
@@ -694,6 +711,12 @@ func main() {
 	mux.Handle("POST /api/billing/checkout", billingChain(billingHandler.CreateCheckout))
 	mux.Handle("POST /api/billing/downgrade", billingChain(billingHandler.ScheduleDowngrade))
 	mux.Handle("POST /api/billing/downgrade/cancel", billingChain(billingHandler.CancelDowngrade))
+
+	// Story 9.3 — owner-gated invoice history read + export (D7/FR-66). ListInvoices is
+	// paginated/filterable; EmailInvoices renders the history → Resend (SEC-11 sanitized).
+	mux.Handle("GET /api/billing/grace", billingGraceChain(billingHandler.GetGrace))
+	mux.Handle("GET /api/billing/invoices", billingChain(billingHandler.ListInvoices))
+	mux.Handle("POST /api/billing/invoices/email", billingChain(billingHandler.EmailInvoices))
 
 	// Story 9.2a — the PUBLIC Polar webhook receiver (D2/D27). It authenticates by Standard-
 	// Webhooks SIGNATURE, not JWT/RLS, so it is NOT on the mux here — it is mounted OUTSIDE the

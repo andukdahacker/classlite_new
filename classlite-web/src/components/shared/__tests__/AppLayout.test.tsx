@@ -18,6 +18,7 @@
 import { describe, expect, test, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { axe } from 'vitest-axe'
 import AppLayout from '@/components/shared/AppLayout'
 import { __resetWarnTrackingForTests } from '@/components/shared/AppLayout-warn-tracking'
@@ -36,9 +37,14 @@ function renderAppLayout(role: Role | null = null) {
       {
         path: '/',
         Component: () => (
-          <RoleProvider value={role}>
-            <AppLayout />
-          </RoleProvider>
+          // Story 9.3 — AppLayout now mounts BillingGraceBanner (useGrace → useQuery), so the
+          // tree needs a QueryClient. No MSW handler here → the owner/admin grace query errors
+          // harmlessly and the banner renders null (grace absent), leaving the chrome unchanged.
+          <QueryClientProvider client={queryClient}>
+            <RoleProvider value={role}>
+              <AppLayout />
+            </RoleProvider>
+          </QueryClientProvider>
         ),
         children: [
           {

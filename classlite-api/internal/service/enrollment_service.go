@@ -135,6 +135,16 @@ func (s *EnrollmentService) AddEnrollment(
 			return EnrolledStudent{}, err
 		}
 	}
+	// Story 9.3 code-review D2 (2026-10-06, R3/C8b) — the ALWAYS-ON grace-downgrade read-only
+	// guard, INDEPENDENT of BILLING_ENFORCEMENT_ENABLED: a Free center whose target class is
+	// already OVER the Free students-per-class cap (post day-7 auto-downgrade) is read-only on
+	// enrollment, so the advertised FR-65 pause is REAL even while the add-flag is dark. A class
+	// at/under the cap, or any non-Free center, is unaffected.
+	if s.billing != nil {
+		if err := s.billing.CheckClassMutableTx(ctx, txQ, tc, toClassID); err != nil {
+			return EnrolledStudent{}, err
+		}
+	}
 
 	enrollment, err := insertActiveEnrollment(ctx, txQ, centerUUID, studentID, toClassID)
 	if err != nil {

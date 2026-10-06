@@ -2,7 +2,7 @@
 // role="switch" control). axe-core structural audit on s68 + s69 + both latent
 // dialogs (TEST-FE-5). MSW at the HTTP boundary (TEST-FE-1); real QueryClient.
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import { http, HttpResponse } from 'msw'
 import { I18nextProvider } from 'react-i18next'
@@ -21,6 +21,7 @@ import { InsufficientCreditsDialog } from '../components/InsufficientCreditsDial
 import { UpgradeModal } from '../components/UpgradeModal'
 import { DowngradeConfirmModal } from '../components/DowngradeConfirmModal'
 import { AddonPacksModal } from '../components/AddonPacksModal'
+import { InvoiceHistoryPage } from '../components/InvoiceHistoryPage'
 
 type PlanCatalogEntry = components['schemas']['PlanCatalogEntry']
 type BillingSummary = components['schemas']['BillingSummary']
@@ -63,6 +64,7 @@ const SUMMARY: BillingSummary = {
   nextInvoice: null,
   paymentMethod: null,
   pendingDowngrade: null,
+  grace: null,
 }
 
 function seedOwner(): void {
@@ -156,6 +158,23 @@ describe('billing surfaces — axe clean (C14)', () => {
     )
     const { baseElement } = render(wrap(<AddonPacksModal open onClose={() => {}} />))
     await screen.findByTestId('addon-pack-credits_100')
+    expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
+  })
+
+  // Story 9.3 code-review P7 (2026-10-06) — the email-to-accountant dialog is now a focus-trapped
+  // Base-UI Dialog (was a bare <div role="dialog"> with no focus trap / no axe coverage).
+  test('invoice email-to-accountant dialog has no accessibility violations', async () => {
+    server.use(
+      http.get('*/api/billing/invoices', () =>
+        HttpResponse.json({
+          data: [{ id: 'inv-1', issuedAt: '2026-09-01T00:00:00+07:00', amountVnd: 399000, subtotalVnd: 362727, vatVnd: 36273, status: 'paid', pdfUrl: null }],
+          meta: { requestId: 't', pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } },
+        }),
+      ),
+    )
+    const { baseElement } = render(wrap(<InvoiceHistoryPage />))
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('billing.invoices.emailAccountant') }))
+    await screen.findByText(i18n.t('billing.invoices.emailDialog.recipient'))
     expect(await axe(baseElement, DIALOG_AXE_OPTIONS)).toHaveNoViolations()
   })
 })

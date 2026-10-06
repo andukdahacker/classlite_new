@@ -302,6 +302,34 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 9.3 — the s70 owner-gated invoice-history page. Same RouteRoleGate
+      // owner boundary + deep-imported Component as /settings/billing/plans.
+      {
+        path: '/settings/billing/invoices',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner']}
+                requiredRolesForCopy={['owner']}
+                sectionNameKey="billing"
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { InvoiceHistoryPage } = await import('@/features/billing')
+              return { Component: InvoiceHistoryPage }
+            },
+          },
+        ],
+      },
       // Story 3.1 — /classes index. Its own lazy chunk under the AppLayout
       // group, gated to staff (owner/admin/teacher). The create/edit form is a
       // Dialog (not a /classes/new child route), so this single boundary

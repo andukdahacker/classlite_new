@@ -11,7 +11,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/clock"
@@ -43,6 +45,89 @@ func (h *BillingHandler) GetSummary(w http.ResponseWriter, r *http.Request) erro
 	}
 	WriteEnvelope(w, http.StatusOK, h.clk, toBillingSummaryDTO(summary))
 	return nil
+}
+
+// GetGrace handles GET /api/billing/grace (Story 9.3, R4). Owner+admin (the route gate);
+// returns just the grace block (or explicit null when not past_due — GO-5), the scoped s73
+// strip source so admin gets the indicator without the owner-only full summary.
+func (h *BillingHandler) GetGrace(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok || tc.CenterID == "" {
+		return ErrTenantContextMissing
+	}
+	grace, err := h.svc.GetGrace(r.Context(), tc)
+	if err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, toGraceDTO(grace))
+	return nil
+}
+
+// ListInvoices handles GET /api/billing/invoices (Story 9.3, AC14). Owner-only (the route
+// gate); parses the optional status filter + page/pageSize, returns the paginated history with
+// a meta.pagination block (XL-2). Amounts render verbatim (D25).
+func (h *BillingHandler) ListInvoices(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok || tc.CenterID == "" {
+		return ErrTenantContextMissing
+	}
+	status := r.URL.Query().Get("status")
+	page := atoiDefault(r.URL.Query().Get("page"), 1)
+	pageSize := atoiDefault(r.URL.Query().Get("pageSize"), 0) // 0 → service default
+	// code-review P1 (2026-10-06) — the service returns the EFFECTIVE page/pageSize it used
+	// (after clamping + applying its own default); report those in meta, never re-derive them
+	// from len(rows) (which was wrong on any partial page when pageSize was omitted).
+	rows, total, effPage, effSize, err := h.svc.ListInvoicesPage(r.Context(), tc, status, page, pageSize)
+	if err != nil {
+		return err
+	}
+	out := make([]billingInvoiceDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toBillingInvoiceDTO(row))
+	}
+	totalPages := 0
+	if effSize > 0 {
+		totalPages = (total + effSize - 1) / effSize
+	}
+	meta := billingInvoiceListMeta{
+		ServerTime: h.clk.Now().UTC(),
+		Pagination: PaginationMeta{Page: effPage, PageSize: effSize, Total: total, TotalPages: totalPages},
+	}
+	// data is the invoice array directly; pagination lives in meta.pagination (XL-2 house pattern).
+	WriteEnvelopeWithMeta(w, http.StatusOK, out, meta)
+	return nil
+}
+
+// EmailInvoices handles POST /api/billing/invoices/email (Story 9.3, AC16). Owner-only; the
+// service validates + sanitizes the recipient (SEC-11) and sends the history via Resend.
+func (h *BillingHandler) EmailInvoices(w http.ResponseWriter, r *http.Request) error {
+	tc, ok := model.TenantFromContext(r.Context())
+	if !ok || tc.CenterID == "" {
+		return ErrTenantContextMissing
+	}
+	var body struct {
+		Recipient string `json:"recipient"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return model.ValidationError{Fields: []model.FieldError{{Field: "recipient", Message: "invalid request body"}}}
+	}
+	if err := h.svc.EmailInvoicesToAccountant(r.Context(), tc, body.Recipient); err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, map[string]any{"sent": true})
+	return nil
+}
+
+// atoiDefault parses a positive query int, falling back to def on empty/invalid.
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }
 
 // GetPlans handles GET /api/billing/plans (AC17).
@@ -121,6 +206,34 @@ type billingSummaryDTO struct {
 	NextInvoice        *nextInvoiceDTO      `json:"nextInvoice"`
 	PaymentMethod      *paymentMethodDTO    `json:"paymentMethod"`
 	PendingDowngrade   *pendingDowngradeDTO `json:"pendingDowngrade"`
+	Grace              *graceDTO            `json:"grace"`
+}
+
+// Story 9.3 (D9) — the grace block for the s73 strip. Explicit null when not past_due (GO-5).
+type graceDTO struct {
+	GraceStartedAt   time.Time `json:"graceStartedAt"`
+	GraceEndsAt      time.Time `json:"graceEndsAt"`
+	PaymentFailedAt  time.Time `json:"paymentFailedAt"`
+	RetryCount       int       `json:"retryCount"`
+	RetriesScheduled []int     `json:"retriesScheduled"`
+}
+
+// Story 9.3 — the s70 invoice-history wire row + list meta.
+type billingInvoiceDTO struct {
+	ID          string     `json:"id"`
+	Kind        *string    `json:"kind"`
+	AmountVnd   int        `json:"amountVnd"`
+	SubtotalVnd *int       `json:"subtotalVnd"`
+	VatVnd      *int       `json:"vatVnd"`
+	Currency    string     `json:"currency"`
+	Status      string     `json:"status"`
+	PdfUrl      *string    `json:"pdfUrl"`
+	IssuedAt    *time.Time `json:"issuedAt"`
+}
+
+type billingInvoiceListMeta struct {
+	ServerTime time.Time      `json:"serverTime"`
+	Pagination PaginationMeta `json:"pagination"`
 }
 
 type planVATDTO struct {
@@ -190,6 +303,38 @@ func toBillingSummaryDTO(s service.BillingSummary) billingSummaryDTO {
 		NextInvoice:      toNextInvoiceDTO(s.NextInvoice),
 		PaymentMethod:    toPaymentMethodDTO(s.PaymentMethod),
 		PendingDowngrade: toPendingDowngradeDTO(s.PendingDowngrade),
+		Grace:            toGraceDTO(s.Grace),
+	}
+}
+
+func toGraceDTO(g *service.GraceInfo) *graceDTO {
+	if g == nil {
+		return nil
+	}
+	scheduled := g.RetriesScheduled
+	if scheduled == nil {
+		scheduled = []int{}
+	}
+	return &graceDTO{
+		GraceStartedAt:   g.GraceStartedAt,
+		GraceEndsAt:      g.GraceEndsAt,
+		PaymentFailedAt:  g.PaymentFailedAt,
+		RetryCount:       g.RetryCount,
+		RetriesScheduled: scheduled,
+	}
+}
+
+func toBillingInvoiceDTO(r service.BillingInvoiceRow) billingInvoiceDTO {
+	return billingInvoiceDTO{
+		ID:          r.ID.String(),
+		Kind:        r.Kind,
+		AmountVnd:   r.AmountVnd,
+		SubtotalVnd: r.SubtotalVnd,
+		VatVnd:      r.VatVnd,
+		Currency:    r.Currency,
+		Status:      r.Status,
+		PdfUrl:      r.PdfUrl,
+		IssuedAt:    r.IssuedAt,
 	}
 }
 

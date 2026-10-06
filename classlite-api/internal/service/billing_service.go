@@ -45,6 +45,12 @@ const (
 	lockClassClass      = 2
 	lockClassEnrollment = 3
 	lockClassCredit     = 4
+	// lockClassSubscription serializes grace-state transitions on a center (code-review P3,
+	// 2026-10-06): the webhook recovery/dispatch path and the day-7 grace-tick downgrade both
+	// acquire it so a last-minute recovery can never race the auto-downgrade (R21 wrong-day
+	// transition). Acquired BEFORE lockClassCredit on every path that takes both, so the lock
+	// order is consistent (no deadlock).
+	lockClassSubscription = 5
 )
 
 // ledger reasons (subset the 4.3a CHECK already admits).
@@ -86,6 +92,23 @@ type BillingService struct {
 	// empty when unset (Polar then uses its own default return). Passed verbatim as
 	// the checkout session's success_url.
 	checkoutSuccessURL string
+	// billingSettingsURL is the payment-settings page deep link for the grace warning emails'
+	// "Update payment method" CTA (code-review P5, 2026-10-06). DISTINCT from checkoutSuccessURL
+	// (the post-checkout return URL): the dunning email must point at the fix-your-card surface,
+	// matching the FE grace banner's /settings/billing link. Set via SetBillingSettingsURL.
+	billingSettingsURL string
+	// emailSender delivers the Story 9.3 payment-failure grace emails (days 0/3/5/6) +
+	// the invoice-history-to-accountant email. nil until SetEmailSender is called (the
+	// 9-1a/9-2a paths never send email); the grace tick skips the send when nil rather
+	// than nil-deref, and main.go wires it right after SetCheckoutSuccessURL.
+	emailSender EmailSender
+}
+
+// SetEmailSender wires the grace/invoice email sender (Story 9.3). main.go calls it right
+// after SetCheckoutSuccessURL on the shared billingSvc instance (mirrors SetCheckoutSuccessURL;
+// a prod-only nil-deref the gate can't see if omitted — party-mode §G). Idempotent setter.
+func (s *BillingService) SetEmailSender(sender EmailSender) {
+	s.emailSender = sender
 }
 
 // SetCheckoutSuccessURL sets the post-checkout return URL (Story 9-2b, AC3). main.go
@@ -93,6 +116,13 @@ type BillingService struct {
 // setter pattern).
 func (s *BillingService) SetCheckoutSuccessURL(url string) {
 	s.checkoutSuccessURL = url
+}
+
+// SetBillingSettingsURL sets the payment-settings deep link used by the grace warning emails
+// (Story 9.3, code-review P5). main.go wires it from cfg.AppBillingSettingsURL alongside
+// SetCheckoutSuccessURL.
+func (s *BillingService) SetBillingSettingsURL(url string) {
+	s.billingSettingsURL = url
 }
 
 // NewBillingService wires the service with the real wall clock.

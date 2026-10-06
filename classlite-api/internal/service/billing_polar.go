@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/model"
@@ -37,6 +38,15 @@ import (
 // reasonAddonPurchase is the ai_credit_ledger reason for a paid add-on top-up (4.3a CHECK
 // already admits it; the reserved 9-1a hook this story populates).
 const reasonAddonPurchase = "addon_purchase"
+
+// polarPaymentFailedEventType is the Polar event that STARTS our grace clock (Story 9.3,
+// D2/D6). VERIFIED against the Polar docs at dev time: Polar fires `subscription.past_due`
+// when a subscription's renewal charge fails (candidates were also order.payment_failed /
+// invoice.payment_failed — FU-9-POLAR-CONTRACT posture, Jan-2026 cutoff). It is resolved via
+// the SAME persisted-sub-id-wins path as subscription.updated/.active (confused-deputy guard,
+// SEC-7) — a signed event whose data.id maps to a center can never be redirected by raw-body
+// metadata. If the sandbox shows a different wire name before arming, swap this one constant.
+const polarPaymentFailedEventType = "subscription.past_due"
 
 // purchaseIDNamespace maps a Polar order id deterministically to ONE purchase id, used as BOTH
 // the add-on ledger ref_purchase_id AND the invoices PK — so the two are linked (D8) and a
@@ -63,7 +73,13 @@ type polarEvent struct {
 		CheckoutID         string `json:"checkout_id"`
 		CurrentPeriodStart string `json:"current_period_start"`
 		CurrentPeriodEnd   string `json:"current_period_end"`
-		Metadata           struct {
+		// HostedInvoiceURL is Polar's hosted invoice/receipt PDF link (Story 9.3 code-review D4,
+		// 2026-10-06). PROVISIONAL wire name under the Jan-2026 cutoff (candidates: hosted_invoice_url
+		// / invoice_url / receipt_url — FU-9-POLAR-CONTRACT; reconcile against the sandbox payload
+		// before arming). Persisted to invoices.polar_invoice_id only when it is an https URL, so the
+		// s70 Download-PDF action (AC15) renders; absent/non-URL → left null → the FE omits the action.
+		HostedInvoiceURL string `json:"hosted_invoice_url"`
+		Metadata         struct {
 			CenterID    string `json:"center_id"`
 			AddonPackID string `json:"addon_pack_id"`
 		} `json:"metadata"`
@@ -131,6 +147,13 @@ func (s *BillingService) ProcessPolarEvent(ctx context.Context, eventID, eventTy
 	if err := store.SetTenantContext(ctx, tx, tc); err != nil {
 		return fmt.Errorf("process polar event: set tenant: %w", err)
 	}
+	// Code-review P3 (2026-10-06) — serialize grace-state transitions per center: take the
+	// subscription lock BEFORE the recovery read + dispatch so a day-7 grace tick running
+	// concurrently (its own tx) cannot race this recovery/downgrade (R21 wrong-day transition).
+	// Acquired before lockClassCredit (applyOrderPaidTx) so the lock order is consistent.
+	if err := s.acquireLock(ctx, q, tc, lockClassSubscription); err != nil {
+		return fmt.Errorf("process polar event: lock: %w", err)
+	}
 
 	// D24 — the webhook re-establishes CENTER context with no acting user; attribute every
 	// downstream ledger row (grant/top-up) to the center OWNER. A center with no owner is a
@@ -152,13 +175,35 @@ func (s *BillingService) ProcessPolarEvent(ctx context.Context, eventID, eventTy
 
 	var dispatchErr error
 	var supersededDowngradeSubID string
-	switch eventType {
-	case "order.paid":
-		dispatchErr = s.applyOrderPaidTx(ctx, q, tc, ev)
-	case "subscription.updated", "subscription.active":
-		dispatchErr = s.applySubscriptionEventTx(ctx, q, tc, ev, &supersededDowngradeSubID)
-	default:
-		slog.Info("polar webhook: ignored event type", "event_id", eventID, "event_type", eventType)
+
+	// Story 9.3 (AC9/BLOCKER-1) — status-based grace recovery, BEFORE the normal dispatch. A
+	// recovery-eligible event (order.paid / subscription.active/.updated) arriving while the
+	// center is past_due means payment resolved WITHIN the window: clear grace + cancel ticks +
+	// return to active, INDEPENDENT of the genuine plan/period-change gate (a same-period
+	// dunning-retry success does not roll the period, so setPlanFromPolarTx's !genuine early
+	// return would otherwise leave it past_due and wrongly downgrade at day 7). The normal
+	// dispatch below then applies any genuine change (a no-op on an unchanged period).
+	if isRecoveryEligibleEvent(ev) {
+		sub, serr := q.GetSubscription(ctx, pgUUID(centerUUID))
+		if serr != nil && !errors.Is(serr, pgx.ErrNoRows) {
+			return fmt.Errorf("process polar event: recovery read: %w", serr)
+		}
+		if serr == nil && sub.Status == "past_due" {
+			dispatchErr = s.recoverFromGraceTx(ctx, q, tc)
+		}
+	}
+
+	if dispatchErr == nil {
+		switch eventType {
+		case "order.paid":
+			dispatchErr = s.applyOrderPaidTx(ctx, q, tc, ev)
+		case "subscription.updated", "subscription.active":
+			dispatchErr = s.applySubscriptionEventTx(ctx, q, tc, ev, &supersededDowngradeSubID)
+		case polarPaymentFailedEventType:
+			dispatchErr = s.enterGraceTx(ctx, q, tc, ev)
+		default:
+			slog.Info("polar webhook: ignored event type", "event_id", eventID, "event_type", eventType)
+		}
 	}
 	if dispatchErr != nil {
 		// A PERMANENT failure (a malformed/unmapped payload or an authz/tenant problem on an
@@ -203,6 +248,34 @@ func isPermanentEventError(err error) bool {
 	return errors.As(err, &ve) || errors.As(err, &fe)
 }
 
+// isRecoveryEligibleEvent reports whether an event, delivered while the center is past_due,
+// signals an actual SUBSCRIPTION payment recovery (Story 9.3, AC9/D6). Recovery is still
+// status-based rather than gated on a genuine plan change (BLOCKER-1 — a same-period dunning-
+// retry success must recover), but code-review D1 (2026-10-06) tightened it to inspect the
+// event PAYLOAD, not just its type, closing a revenue-bypass hole:
+//
+//   - order.paid recovers ONLY when the order is a subscription charge, never an add-on pack
+//     purchase (buying AI credits while past_due must NOT clear the failed renewal's dunning
+//     clock). Add-on orders carry a known addon_pack_id → plan.AddonPackByID(...).Credits > 0.
+//   - subscription.active recovers unless the payload explicitly reports a non-active status.
+//   - subscription.updated recovers ONLY when the payload status is "active" — the generic
+//     update event fires for many non-payment reasons (metadata/schedule changes) that can
+//     legitimately arrive while still past_due, so the type alone is NOT trusted.
+//
+// The payment-failure event itself is never recovery-eligible.
+func isRecoveryEligibleEvent(ev polarEvent) bool {
+	switch ev.Type {
+	case "order.paid":
+		return plan.AddonPackByID(ev.Data.Metadata.AddonPackID).Credits == 0
+	case "subscription.active":
+		return ev.Data.Status == "" || ev.Data.Status == "active"
+	case "subscription.updated":
+		return ev.Data.Status == "active"
+	default:
+		return false
+	}
+}
+
 // resolvePolarCenter resolves the tenant per D20: for a subscription event the PERSISTED
 // polar_subscription_id mapping WINS (the confused-deputy guard — a signed/replayed event whose
 // body names another center can never redirect a grant); only when the id is unbound (the
@@ -214,7 +287,7 @@ func (s *BillingService) resolvePolarCenter(ctx context.Context, q *generated.Qu
 	switch eventType {
 	case "order.paid":
 		return ev.Data.Metadata.CenterID, nil
-	case "subscription.updated", "subscription.active":
+	case "subscription.updated", "subscription.active", polarPaymentFailedEventType:
 		if ev.Data.ID != "" {
 			bound, err := q.PolarCenterBySubscriptionID(ctx, ev.Data.ID)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -261,7 +334,7 @@ func (s *BillingService) applyOrderPaidTx(ctx context.Context, q *generated.Quer
 			slog.Info("polar order.paid: no add-on pack and no order id — nothing to snapshot")
 			return nil
 		}
-		return s.insertChargeInvoice(ctx, q, tc, purchaseIDForOrder(orderID), orderID, "subscription", ev.Data.Amount, ev.Data.Currency)
+		return s.insertChargeInvoice(ctx, q, tc, purchaseIDForOrder(orderID), orderID, "subscription", ev.Data.Amount, ev.Data.Currency, ev.Data.Status, ev.Data.HostedInvoiceURL)
 	}
 	if orderID == "" {
 		return nil
@@ -312,7 +385,7 @@ func (s *BillingService) applyOrderPaidTx(ctx context.Context, q *generated.Quer
 	}); err != nil {
 		return fmt.Errorf("apply order.paid: update buckets: %w", err)
 	}
-	return s.insertChargeInvoice(ctx, q, tc, purchaseID, orderID, "addon", ev.Data.Amount, ev.Data.Currency)
+	return s.insertChargeInvoice(ctx, q, tc, purchaseID, orderID, "addon", ev.Data.Amount, ev.Data.Currency, ev.Data.Status, ev.Data.HostedInvoiceURL)
 }
 
 // applySubscriptionEventTx applies a Polar subscription.updated/.active plan change (D17). Parses
@@ -508,7 +581,14 @@ func (s *BillingService) grantPlanAllocationFromPolarTx(ctx context.Context, q *
 // insertChargeInvoice snapshots a Polar charge (D10/D25 — amount VERBATIM from Polar, never the
 // plan catalog). id equals the order's purchase id (D8 linkage); UNIQUE(polar_order_id) +
 // ON CONFLICT DO NOTHING makes it idempotent. Runs under the tenant tx.
-func (s *BillingService) insertChargeInvoice(ctx context.Context, q *generated.Queries, tc model.TenantContext, id uuid.UUID, orderID, kind string, amountVnd int, currency string) error {
+func (s *BillingService) insertChargeInvoice(ctx context.Context, q *generated.Queries, tc model.TenantContext, id uuid.UUID, orderID, kind string, amountVnd int, currency, status, hostedInvoiceURL string) error {
+	// Story 9.3 (R2) — PROPAGATE the charge status instead of hardcoding 'paid', so the
+	// declined/refunded producer writes the right pill. A blank status defaults to 'paid' (the
+	// order.paid / reconciled-checkout callers are successful charges). The declined producer +
+	// the declined→paid recovery transition now ship (code-review D3, 2026-10-06).
+	if status == "" {
+		status = "paid"
+	}
 	centerUUID, err := uuid.Parse(tc.CenterID)
 	if err != nil {
 		return &ForbiddenError{Reason: "invalid tenant context"}
@@ -532,17 +612,25 @@ func (s *BillingService) insertChargeInvoice(ctx context.Context, q *generated.Q
 		subtotalVnd = pgtype.Int4{Int32: int32(subtotal), Valid: true}
 		vatVnd = pgtype.Int4{Int32: int32(amountVnd - subtotal), Valid: true}
 	}
+	// Story 9.3 code-review D4 (2026-10-06) — persist Polar's hosted invoice PDF URL so the s70
+	// Download-PDF action (AC15) renders. Only an https URL is stored (toInvoiceRow surfaces pdfUrl
+	// only for https); a bare id / empty value stays null and the FE omits the action.
+	polarInvoiceID := pgtype.Text{}
+	if strings.HasPrefix(hostedInvoiceURL, "https://") {
+		polarInvoiceID = pgtype.Text{String: hostedInvoiceURL, Valid: true}
+	}
 	if _, err := q.InsertInvoice(ctx, generated.InsertInvoiceParams{
-		ID:           pgUUID(id),
-		CenterID:     pgUUID(centerUUID),
-		PolarOrderID: pgtype.Text{String: orderID, Valid: orderID != ""},
-		Kind:         pgtype.Text{String: kind, Valid: true},
-		AmountVnd:    int32(amountVnd),
-		SubtotalVnd:  subtotalVnd,
-		VatVnd:       vatVnd,
-		Currency:     currency,
-		Status:       "paid",
-		IssuedAt:     pgTimestamptz(s.clk.Now()),
+		ID:             pgUUID(id),
+		CenterID:       pgUUID(centerUUID),
+		PolarInvoiceID: polarInvoiceID,
+		PolarOrderID:   pgtype.Text{String: orderID, Valid: orderID != ""},
+		Kind:           pgtype.Text{String: kind, Valid: true},
+		AmountVnd:      int32(amountVnd),
+		SubtotalVnd:    subtotalVnd,
+		VatVnd:         vatVnd,
+		Currency:       currency,
+		Status:         status,
+		IssuedAt:       pgTimestamptz(s.clk.Now()),
 	}); err != nil {
 		return fmt.Errorf("insert invoice: %w", err)
 	}
@@ -864,7 +952,9 @@ func (s *BillingService) applyReconciledCheckoutTx(ctx context.Context, q *gener
 			}
 		}
 		if r.Order != nil {
-			if err := s.insertChargeInvoice(ctx, q, tc, purchaseIDForOrder(r.Order.ID), r.Order.ID, "subscription", r.Order.AmountVnd, r.Order.Currency); err != nil {
+			// The reconcile read (ResolvedSubscription) carries no hosted-invoice URL — the PDF link
+			// is populated on the subscription/order webhook event (D4); pass "" here.
+			if err := s.insertChargeInvoice(ctx, q, tc, purchaseIDForOrder(r.Order.ID), r.Order.ID, "subscription", r.Order.AmountVnd, r.Order.Currency, "paid", ""); err != nil {
 				return err
 			}
 		}
@@ -986,27 +1076,7 @@ func (s *BillingService) CaptureResourceBaselines(ctx context.Context, tc model.
 		return &ForbiddenError{Reason: "invalid tenant context"}
 	}
 	return s.inTenantTx(ctx, tc, func(q *generated.Queries) error {
-		seats, err := q.CountTeacherSeats(ctx, pgUUID(centerUUID))
-		if err != nil {
-			return fmt.Errorf("capture baselines: seats: %w", err)
-		}
-		classes, err := q.CountCenterClasses(ctx, pgUUID(centerUUID))
-		if err != nil {
-			return fmt.Errorf("capture baselines: classes: %w", err)
-		}
-		for _, b := range []struct {
-			class int
-			count int64
-		}{{lockClassSeat, seats}, {lockClassClass, classes}} {
-			if err := q.InsertResourceBaseline(ctx, generated.InsertResourceBaselineParams{
-				CenterID:       pgUUID(centerUUID),
-				ResourceClass:  int16(b.class),
-				HighWaterCount: int32(b.count),
-			}); err != nil {
-				return fmt.Errorf("capture baselines: insert class %d: %w", b.class, err)
-			}
-		}
-		return nil
+		return s.captureResourceBaselinesTx(ctx, q, centerUUID)
 	})
 }
 

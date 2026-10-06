@@ -199,6 +199,17 @@ func (s *AuthService) AdminInviteStaff(ctx context.Context, tc model.TenantConte
 			return nil, err
 		}
 	}
+	// Story 9.3 code-review D2 (2026-10-06, R3/C8a) — the ALWAYS-ON grace-downgrade read-only
+	// guard, INDEPENDENT of BILLING_ENFORCEMENT_ENABLED: a Free center already OVER the Free
+	// teacher-seat cap (post day-7 auto-downgrade) is read-only on seat management, so the
+	// advertised FR-65 pause is REAL in prod even while the add-flag is dark. A center at/under
+	// the cap, or any non-Free center, is unaffected.
+	if s.billing != nil {
+		if err := s.billing.CheckTeacherSeatMutableTx(ctx, txQ, tc); err != nil {
+			_ = tx.Rollback(context.WithoutCancel(ctx))
+			return nil, err
+		}
+	}
 
 	// Story 7.1a (D7) — re-validate the optional target class IN-TENANT.
 	// GetClassByID is RLS-scoped, so a class not in the caller's center →

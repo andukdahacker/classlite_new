@@ -31,11 +31,45 @@ ON CONFLICT (polar_order_id) DO NOTHING;
 -- The service pairs the newest snapshot with the subscription period for display. Newest
 -- first; caller treats pgx.ErrNoRows as "no invoice yet".
 SELECT id, center_id, polar_invoice_id, polar_order_id, kind, amount_vnd, subtotal_vnd,
-       vat_vnd, currency, status, description, issued_at, created_at
+       vat_vnd, currency, status, description, issued_at, created_at, updated_at
 FROM invoices
 WHERE center_id = @center_id
 ORDER BY issued_at DESC NULLS LAST, created_at DESC
 LIMIT 1;
+
+-- name: ListInvoices :many
+-- Story 9.3 (AC14/D7) — the s70 invoice-history read: a center's invoices newest-first,
+-- with an OPTIONAL status filter (sqlc.narg — NULL = all statuses) and page/pageSize
+-- pagination (XL-2 — the service converts page→OFFSET). RLS tenant-scoped; uses the existing
+-- idx_invoices_center_issued (center_id, issued_at DESC). issued_at NULLS LAST + created_at
+-- DESC + id DESC is a page-stable order across same-instant snapshots.
+SELECT id, center_id, polar_invoice_id, polar_order_id, kind, amount_vnd, subtotal_vnd,
+       vat_vnd, currency, status, description, issued_at, created_at, updated_at
+FROM invoices
+WHERE center_id = @center_id
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text)
+ORDER BY issued_at DESC NULLS LAST, created_at DESC, id DESC
+LIMIT @page_size OFFSET @row_offset;
+
+-- name: ListAllInvoices :many
+-- Story 9.3 code-review D7 (2026-10-06) — the UNBOUNDED invoice history for the email-to-
+-- accountant records surface (AC16): every invoice for the center, newest-first, no page cap.
+-- The accountant email is a server-side render whose purpose is the COMPLETE history, so the
+-- prior 100-row cap silently dropped older rows. Realistic invoice counts are small (monthly
+-- billing); RLS tenant-scoped; same page-stable order as ListInvoices.
+SELECT id, center_id, polar_invoice_id, polar_order_id, kind, amount_vnd, subtotal_vnd,
+       vat_vnd, currency, status, description, issued_at, created_at, updated_at
+FROM invoices
+WHERE center_id = @center_id
+ORDER BY issued_at DESC NULLS LAST, created_at DESC, id DESC;
+
+-- name: CountInvoices :one
+-- Story 9.3 (AC14) — the total matching the same optional status filter, for the pagination
+-- meta (total/totalPages). RLS tenant-scoped.
+SELECT count(*)
+FROM invoices
+WHERE center_id = @center_id
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text);
 
 -- name: InsertAddonPurchaseLedgerRow :execrows
 -- D22 (Murat) — the add-on grant idempotency guard, SEPARATE from the 9-1a

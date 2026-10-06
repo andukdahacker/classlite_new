@@ -94,6 +94,9 @@ type BillingSummary struct {
 	NextInvoice        *NextInvoiceInfo
 	PaymentMethod      *PaymentMethodInfo
 	PendingDowngrade   *PendingDowngradeInfo
+	// Grace is the active payment-failure grace window (Story 9.3, D9) — non-nil ONLY while
+	// status=past_due; explicit null otherwise (GO-5). Drives the owner/admin s73 red strip.
+	Grace *GraceInfo
 }
 
 // PlanCatalogEntry is one tier in GET /api/billing/plans (AC17).
@@ -273,6 +276,8 @@ func (s *BillingService) GetUsageAndLimits(ctx context.Context, tc model.TenantC
 		NextInvoice:      nextInvoice,
 		PaymentMethod:    paymentMethod,
 		PendingDowngrade: pendingDowngrade,
+		// Story 9.3 (D9) — the grace block for the s73 strip; non-nil only while past_due.
+		Grace: graceInfoFromSub(sub),
 	}, nil
 }
 

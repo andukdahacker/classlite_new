@@ -38,6 +38,7 @@ function proSummary(pending: BillingSummary['pendingDowngrade'] = null): Billing
     nextInvoice: null,
     paymentMethod: null,
     pendingDowngrade: pending,
+    grace: null,
   }
 }
 

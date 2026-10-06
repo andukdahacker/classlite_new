@@ -82,6 +82,7 @@ function summary(overrides: Partial<BillingSummary> = {}): BillingSummary {
     nextInvoice: null,
     paymentMethod: null,
     pendingDowngrade: null,
+    grace: null,
     ...overrides,
   }
 }

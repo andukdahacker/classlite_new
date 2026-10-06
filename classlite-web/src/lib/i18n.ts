@@ -4,6 +4,7 @@ import en from '@/locales/en.json'
 import vi from '@/locales/vi.json'
 import { readLanguageCookie } from '@/lib/language-cookie'
 import { formatVnDate } from '@/lib/formatVnDate'
+import { formatVnDateLong } from '@/lib/formatVnDateLong'
 
 // Story 1-7c AC6 — seed the initial language from the `lang` cookie. If
 // the cookie is absent or malformed, fall back to English. Reading at
@@ -28,6 +29,12 @@ i18n.use(initReactI18next).init({
 // and never call `new Date().toLocaleDateString()` in a render path.
 i18n.services.formatter?.add('vnDate', (value, lng) =>
   typeof value === 'string' ? formatVnDate(value, lng ?? 'en') : String(value),
+)
+
+// Story 9.3 (M7) — the long `{{val, vnDateLong}}` token (e.g. `billing.grace.deadline`)
+// renders the grace day-7 deadline as a spelled-out `12 Oct 2026`, derived from graceEndsAt.
+i18n.services.formatter?.add('vnDateLong', (value, lng) =>
+  typeof value === 'string' ? formatVnDateLong(value, lng ?? 'en') : String(value),
 )
 
 export default i18n

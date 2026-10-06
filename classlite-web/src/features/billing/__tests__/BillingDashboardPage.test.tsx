@@ -51,6 +51,7 @@ const FREE: BillingSummary = {
   nextInvoice: null,
   paymentMethod: null,
   pendingDowngrade: null,
+  grace: null,
 }
 
 const STUDIO: BillingSummary = {
@@ -73,6 +74,7 @@ const STUDIO: BillingSummary = {
   nextInvoice: null,
   paymentMethod: null,
   pendingDowngrade: null,
+  grace: null,
 }
 
 function seedOwner(): void {
@@ -185,6 +187,7 @@ const PRO_BASE: BillingSummary = {
   nextInvoice: null,
   paymentMethod: null,
   pendingDowngrade: null,
+  grace: null,
 }
 
 describe('BillingDashboardPage — 9-2b next-invoice card (AC11)', () => {

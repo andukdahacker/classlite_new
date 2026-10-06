@@ -45,7 +45,27 @@ const (
 	// params.SubmissionID + the partial unique index uq_jobs_ai_grade_speaking_inflight
 	// (D9).
 	JobTypeAIGradeSpeaking JobType = "ai_grade_speaking"
+	// JobTypeBillingGraceTick is the Story 9.3 payment-failure grace clock (D5). It rides
+	// the SAME 4.3a dispatcher (jobs.type is free text, no migration) on the EXISTING queue,
+	// future-dated via next_attempt_at (InsertDelayedJob). Not an AI job — the handler ignores
+	// the gemini client and calls BillingService.HandleGraceTick (GFW-7 worker-imports-service),
+	// which runs the elapsed-day action (days 0/3/5/6 warning email, 3/5 Polar re-collect, day-7
+	// 23:59 auto-downgrade), idempotent per day via the grace_last_tick_day high-water marker.
+	// Idempotency anchor: the center's single live grace clock (one tick per center at a time).
+	JobTypeBillingGraceTick JobType = "billing_grace_tick"
 )
+
+// BillingGraceTickParamsSchemaVersion stamps jobs.params_schema_version for the grace-tick
+// payload (GO-7). Independent of the AI/grade-release schema lines.
+const BillingGraceTickParamsSchemaVersion = 1
+
+// BillingGraceTickParams is the Story 9.3 billing_grace_tick payload. It carries the grace
+// clock's start instant so the worker can reschedule the next tick deterministically; the
+// center is NEVER read from the payload (SEC-7/R3) — the job-row center_id (set by the
+// dispatcher before the handler runs) is the sole tenant trust anchor.
+type BillingGraceTickParams struct {
+	GraceStartedAt string `json:"graceStartedAt"`
+}
 
 // AIGenerationModeToJobType maps the enqueue request `mode` discriminator to its
 // JobType. Only these three modes are valid in 4.3a — an unknown mode is a 422

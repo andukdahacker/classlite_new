@@ -17,11 +17,13 @@ SELECT pg_advisory_xact_lock(hashtext(@center_id::text), @resource_class::int);
 -- name: GetSubscription :one
 -- Story 9.2a extends the SELECT list with the pending-downgrade columns (D9/D26) so the
 -- generated row stays the full generated.Subscription (a subset SELECT would spawn a
--- distinct row struct and break every SetPlan/read caller). No behavior change for 9-1a.
+-- distinct row struct and break every SetPlan/read caller). Story 9.3 (D8) appends the
+-- grace-tracking columns for the same reason. No behavior change for 9-1a/9-2a readers.
 SELECT id, center_id, plan, billing_cycle, status, polar_subscription_id,
        current_period_start, current_period_end, created_at, updated_at,
        pending_plan, pending_billing_cycle, pending_effective_at,
-       payment_brand, payment_last4
+       payment_brand, payment_last4,
+       grace_period_start, payment_failed_at, grace_retry_count, grace_last_tick_day
 FROM subscriptions
 WHERE center_id = @center_id;
 
@@ -37,7 +39,8 @@ ON CONFLICT (center_id) DO NOTHING
 RETURNING id, center_id, plan, billing_cycle, status, polar_subscription_id,
           current_period_start, current_period_end, created_at, updated_at,
           pending_plan, pending_billing_cycle, pending_effective_at,
-          payment_brand, payment_last4;
+          payment_brand, payment_last4,
+          grace_period_start, payment_failed_at, grace_retry_count, grace_last_tick_day;
 
 -- name: SetPlan :exec
 -- Override seam (D19) + the 9.2 plan-change write path. Callers pair this with
@@ -163,3 +166,122 @@ FROM enrollments
 WHERE center_id = @center_id
   AND class_id = @class_id
   AND status = 'active';
+
+-- name: CountCenterTeacherSeats :one
+-- Story 9.3 (C8a) — teacher-ROLE members only (NOT owner/admin), for the grace-downgrade
+-- read-only seat lock. Distinct from CountTeacherSeats (which counts owner+admin+teacher +
+-- live invites for the 9-1a ADD gate): R3's read-only lock keys off "the 2nd+ teacher seat"
+-- — a Free center with more teacher members than the Free teacher cap locks seat management
+-- (read-only) until it trims or re-upgrades. Live COUNT, RLS tenant-scoped.
+SELECT count(*)
+FROM center_members
+WHERE center_id = @center_id
+  AND archived_at IS NULL
+  AND role = 'teacher';
+
+-- Story 9.3 — grace-period state machine mutators (D8). All RLS tenant-scoped on
+-- center_id; the webhook enter/recovery paths run under the dispatch tenant tx (SEC-6),
+-- the grace tick under the worker's re-established tenant context.
+
+-- name: SetPastDueWithGrace :exec
+-- AC1 — enter grace on a Polar payment-failure event: flip to past_due and START the
+-- 7-day clock (grace_period_start = clk.Now(), payment_failed_at = clk.Now()). Resets the
+-- retry counter + the per-day high-water marker so a fresh clock begins at day -1. The
+-- caller guards against a re-entry (already past_due) so this never restarts a live clock
+-- (AC2 target-state idempotency).
+UPDATE subscriptions
+SET status = 'past_due',
+    grace_period_start = @grace_period_start,
+    payment_failed_at = @payment_failed_at,
+    grace_retry_count = 0,
+    grace_last_tick_day = -1,
+    updated_at = now()
+WHERE center_id = @center_id;
+
+-- name: ClearGrace :exec
+-- AC9 recovery — a payment recovered within the window: return to active and NULL the
+-- grace-tracking columns (the clock stops). Status-based (the caller detects past_due),
+-- independent of the genuine plan-change gate (BLOCKER-1). The plan/period are untouched
+-- (recovery keeps the current paid plan); pending grace ticks are cancelled separately.
+UPDATE subscriptions
+SET status = 'active',
+    grace_period_start = NULL,
+    payment_failed_at = NULL,
+    grace_retry_count = 0,
+    grace_last_tick_day = -1,
+    updated_at = now()
+WHERE center_id = @center_id;
+
+-- name: ExpireGraceToFree :exec
+-- AC6 day-7 auto-downgrade: flip plan→free + status→cancelled and NULL the grace columns.
+-- A DISTINCT write from setPlanFromPolarTx (which hardcodes status='active' + 422s on an
+-- empty cycle — review M1): the service pairs this with the discrete zero-deletion helpers
+-- (CaptureResourceBaselines high-water, storage re-point to the Free ceiling, credit cap)
+-- so NOT ONE content row is deleted (R24). billing_cycle/period are left as-is (a cancelled
+-- Free center has no live period meaning; the next re-upgrade rewrites them).
+-- Code-review P4 (2026-10-06): also CLEAR any scheduled-downgrade columns — a center that had
+-- a pending downgrade queued when it entered grace would otherwise show a phantom "downgrade
+-- scheduled to free" in the owner summary (GetUsageAndLimits derives pendingDowngrade from
+-- pending_plan) on an already-free/cancelled center until a later re-upgrade clears them.
+UPDATE subscriptions
+SET plan = 'free',
+    status = 'cancelled',
+    grace_period_start = NULL,
+    payment_failed_at = NULL,
+    grace_retry_count = 0,
+    grace_last_tick_day = -1,
+    pending_plan = NULL,
+    pending_billing_cycle = NULL,
+    pending_effective_at = NULL,
+    updated_at = now()
+WHERE center_id = @center_id;
+
+-- name: IncrementGraceRetry :exec
+-- AC4 — record one Polar re-collect request (days 3 & 5). Provider-agnostic counter: it
+-- increments whether Polar exposes a manual re-collect call or auto-retries (D2). Gated by
+-- the per-day marker in the service so a re-run tick never double-increments.
+UPDATE subscriptions
+SET grace_retry_count = grace_retry_count + 1,
+    updated_at = now()
+WHERE center_id = @center_id;
+
+-- name: InsertDeclinedInvoice :execrows
+-- AC14/AC15 (R2, code-review D3 2026-10-06) — snapshot the FAILED subscription charge as a
+-- 'declined' invoice when the center enters grace, so the s70 history + the declined-only Retry
+-- action render a real row (previously the declined/refunded pills were dead — no producer).
+-- id + polar_order_id are derived from the failed-charge id (D8 linkage); UNIQUE(polar_order_id)
+-- + ON CONFLICT DO NOTHING dedups a re-delivered payment-failure event. Amount is snapshotted
+-- VERBATIM from the Polar failure payload (D25 — never the plan catalog); 0 when Polar omits it.
+INSERT INTO invoices
+    (id, center_id, polar_invoice_id, polar_order_id, kind, amount_vnd, subtotal_vnd,
+     vat_vnd, currency, status, description, issued_at)
+VALUES
+    (@id, @center_id, NULL, @polar_order_id, 'subscription', @amount_vnd, NULL,
+     NULL, @currency, 'declined', NULL, @issued_at)
+ON CONFLICT (polar_order_id) DO NOTHING;
+
+-- name: MarkLatestDeclinedInvoicePaid :execrows
+-- AC9 (R2, code-review D3 2026-10-06) — on recovery WITHIN the grace window, transition the
+-- center's most-recent 'declined' invoice → 'paid' (the retry charge succeeded). Scoped to the
+-- newest declined row so a later distinct failure's declined row is untouched; a no-op (0 rows)
+-- when no declined row exists (recovery of a center whose failure predated the producer, or a
+-- recovery driven by a fresh order.paid that already wrote its own paid row). RLS-scoped — relies
+-- on the invoices_update policy added in 20261006120000 (invoices were append-only before 9.3).
+UPDATE invoices
+SET status = 'paid',
+    updated_at = now()
+WHERE id = (
+    SELECT i.id FROM invoices i
+    WHERE i.center_id = @center_id AND i.status = 'declined'
+    ORDER BY i.issued_at DESC NULLS LAST, i.id DESC
+    LIMIT 1
+);
+
+-- name: AdvanceGraceTickDay :exec
+-- AC5 — advance the per-day high-water marker to the elapsed day a tick just acted on.
+-- Written in the SAME service tx as the day's effect so a re-run of that day (elapsedDay
+-- <= grace_last_tick_day) is a pure no-op — fixes the days-0/6 double-send (BLOCKER-4).
+UPDATE subscriptions
+SET grace_last_tick_day = @grace_last_tick_day,
+    updated_at = now()
+WHERE center_id = @center_id;

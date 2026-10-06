@@ -50,6 +50,86 @@ func RenderGradeReleasedEmail(studentName, assignmentTitle, resultURL string) (s
 	return GradeReleasedEmailSubject, body
 }
 
+// PaymentFailedEmailSubject is hard-coded (SEC-11) for the Story 9.3 grace warning emails
+// (days 0/3/5/6). No user input reaches the subject (the sender also sanitizes/caps it).
+const PaymentFailedEmailSubject = "Action needed: your ClassLite payment failed"
+
+// RenderPaymentFailedEmail produces the subject + HTML body for a Story 9.3 payment-failure
+// grace warning (AC3). day is the elapsed grace day the tick fired on (0/3/5/6); deadlineText
+// is the human day-7 deadline; settingsURL deep-links to the owner's payment settings. The
+// body names the reason (a failed charge), the day-7 deadline, and the fix-it link — the
+// anti-panic signposting (center keeps running, nothing is deleted). No PII beyond the center
+// name; no secrets (EDGE-4 — the caller logs metadata only). English-only (the FE strip is
+// i18n; transactional email i18n is deferred, consistent with the other templates here).
+func RenderPaymentFailedEmail(day int, deadlineText, settingsURL string) (subject, htmlBody string) {
+	safeDeadline := html.EscapeString(deadlineText)
+	safeURL := html.EscapeString(settingsURL)
+	daysLeft := 7 - day
+	if daysLeft < 0 {
+		daysLeft = 0
+	}
+
+	body := fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; margin: 0; padding: 24px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background: #ffffff; border-radius: 8px; max-width: 480px; width: 100%%; padding: 32px;">
+      <tr>
+        <td>
+          <h1 style="font-size: 20px; margin: 0 0 16px; color: #b91c1c;">Your ClassLite payment didn't go through</h1>
+          <p style="margin: 0 0 16px;">We couldn't collect your latest subscription payment. Your center is still running and <strong>none of your data will be deleted</strong> — but if payment isn't resolved by <strong>%s</strong> (%d day(s) left), your plan will be downgraded to Free and paid features will pause.</p>
+          <p style="text-align: center; margin: 0 0 24px;">
+            <a href="%s" style="display: inline-block; background: #b91c1c; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Update payment method</a>
+          </p>
+          <p style="font-size: 13px; color: #6b7280; margin: 0 0 8px;">If the button doesn't work, copy and paste this link into your browser:</p>
+          <p style="font-size: 13px; word-break: break-all; margin: 0;"><a href="%s" style="color: #b91c1c;">%s</a></p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #9ca3af; margin: 0;">You're receiving this because you're the owner of a ClassLite center with a billing issue.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, safeDeadline, daysLeft, safeURL, safeURL, safeURL)
+
+	return PaymentFailedEmailSubject, body
+}
+
+// InvoiceHistoryEmailSubject is hard-coded (SEC-11) for the Story 9.3 email-to-accountant
+// send. The recipient is validated/sanitized at the service layer (net/mail.ParseAddress +
+// CRLF-strip); this constant subject carries no user input.
+const InvoiceHistoryEmailSubject = "Your ClassLite invoice history"
+
+// RenderInvoiceHistoryEmail produces the subject + HTML body for the Story 9.3
+// email-to-accountant send (AC16). rows is the pre-rendered, HTML-escaped table body
+// (date · amount · status), assembled by the caller from the center's invoices. No raw card
+// data, no secrets (FR-66 / EDGE-4). English-only (consistent with the other templates).
+func RenderInvoiceHistoryEmail(centerName, tableRows string) (subject, htmlBody string) {
+	safeCenter := html.EscapeString(centerName)
+	body := fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; margin: 0; padding: 24px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background: #ffffff; border-radius: 8px; max-width: 560px; width: 100%%; padding: 32px;">
+      <tr>
+        <td>
+          <h1 style="font-size: 20px; margin: 0 0 16px;">Invoice history — %s</h1>
+          <p style="margin: 0 0 16px;">Here is the ClassLite invoice history for your records.</p>
+          <table cellpadding="6" cellspacing="0" border="0" style="width: 100%%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+              <tr style="text-align: left; border-bottom: 1px solid #e5e7eb;">
+                <th>Date</th><th>Amount (VND)</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>%s</tbody>
+          </table>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #9ca3af; margin: 0;">Sent from ClassLite at the center owner's request.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, safeCenter, tableRows)
+	return InvoiceHistoryEmailSubject, body
+}
+
 // InviteEmailSubjectTemplate is the subject pattern. centerName is the
 // only variable — held against SEC-11 by Resend's sanitization plus the
 // MAX subject cap.

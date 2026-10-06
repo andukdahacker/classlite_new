@@ -44,6 +44,7 @@ function makeSummary(pending: BillingSummary['pendingDowngrade']): BillingSummar
     nextInvoice: null,
     paymentMethod: null,
     pendingDowngrade: pending,
+    grace: null,
   }
 }
 

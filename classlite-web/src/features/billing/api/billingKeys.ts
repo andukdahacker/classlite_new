@@ -27,6 +27,12 @@ export const billingKeys = {
   addons: () => [...billingKeys.all, 'addons'] as const,
   prorationPreview: (plan: PlanId, billingCycle: BillingCycle) =>
     [...billingKeys.all, 'proration-preview', plan, billingCycle] as const,
+  // Story 9.3 — the s73 grace indicator (owner+admin) + the s70 invoice history.
+  grace: () => [...billingKeys.all, 'grace'] as const,
+  invoices: (status: string) =>
+    [...billingKeys.all, 'invoices', status] as const,
+  emailInvoicesMutation: () =>
+    [...billingKeys.all, 'invoices', 'email'] as const,
   checkoutMutation: () => [...billingKeys.all, 'checkout'] as const,
   downgradeMutation: () => [...billingKeys.all, 'downgrade'] as const,
   cancelDowngradeMutation: () =>

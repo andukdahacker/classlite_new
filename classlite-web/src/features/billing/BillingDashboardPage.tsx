@@ -144,6 +144,13 @@ export function BillingDashboardPage(): ReactElement {
                 ? ` · ${t('billing.dashboard.periodEnd', { val: summary.currentPeriodEnd })}`
                 : ''}
             </p>
+            <a
+              href="/settings/billing/invoices"
+              className="mt-1 inline-flex w-fit text-sm font-medium text-[color:var(--cl-accent)] underline"
+              data-testid="billing-dashboard-invoice-history"
+            >
+              {t('billing.dashboard.invoiceHistory')}
+            </a>
           </div>
           {summary.isFree ? (
             <a

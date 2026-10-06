@@ -7245,6 +7245,83 @@ paths:
                 $ref: '#/components/schemas/EnvelopeBillingPendingDowngrade'
         "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
         "403": { description: INSUFFICIENT_ROLE (non-owner), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+
+  # ---------------- Story 9.3 — Invoice history read + export (Owner-only) ----------------
+  # Owner-gated (RequireRole "owner", D7). Reads over the shipped 9-2a invoices table; the
+  # PDF is a passthrough to Polar's hosted invoice (pdfUrl|null). Email-to-accountant renders
+  # the history server-side and sends via Resend (SEC-11 sanitized).
+  /api/billing/grace:
+    get:
+      operationId: getBillingGrace
+      summary: Owner/admin grace-state indicator — the s73 strip source (story 9.3 — R4/FR-65)
+      description: |
+        Returns JUST the payment-failure grace block (non-null while the subscription is
+        past_due; explicit null otherwise). Readable by owner AND admin (R4 — the owner sees the
+        actionable strip, the admin an informational variant; an absentee-owner center is not
+        silently downgraded for the admin). A scoped read so admin gets the indicator WITHOUT the
+        owner-only full summary. teacher/student → 403 INSUFFICIENT_ROLE.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The grace block (or null).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingGrace'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (teacher/student) / CENTER_CONTEXT_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/invoices:
+    get:
+      operationId: listBillingInvoices
+      summary: Owner-only invoice history — paginated, status-filterable (story 9.3 — FR-66)
+      description: |
+        Returns the caller center's invoices newest-first (issued_at DESC), with an optional
+        `status` filter and `page`/`pageSize` pagination (XL-2). Each row snapshots its own
+        amount/subtotal/vat/currency at charge time (D25 — Polar authoritative; the plan catalog
+        is display-only). `pdfUrl` is the Polar-hosted invoice PDF (null when not yet available —
+        the FE omits the Download-PDF action). Owner-only (non-owner → 403 INSUFFICIENT_ROLE).
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string }, description: "Optional status filter (e.g. paid/declined/refunded). Omitted = all." }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: The caller center's invoice history (paginated).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingInvoices'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+  /api/billing/invoices/email:
+    post:
+      operationId: emailBillingInvoices
+      summary: Owner-only — email the invoice history to an accountant (story 9.3 — FR-66)
+      description: |
+        Renders the center's invoice history and emails it to the supplied recipient via Resend.
+        The recipient is validated with net/mail.ParseAddress and all header fields are CRLF-stripped
+        with the subject capped (SEC-11 — no header injection). Owner-only.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingInvoiceEmailRequest'
+      responses:
+        "200":
+          description: The history email was sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillingInvoiceEmail'
+        "401": { description: AUTH_REQUIRED / AUTH_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "403": { description: INSUFFICIENT_ROLE (non-owner), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        "422": { description: VALIDATION_ERROR (bad/injected recipient), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
   /api/webhooks/polar:
     post:
       operationId: polarWebhook
@@ -7323,7 +7400,7 @@ components:
         Current plan + limits + live usage, plus the D-DASH cards: nextInvoice + paymentMethod +
         pendingDowngrade (finalized in Story 9.2b — paymentMethod is now persisted from Polar). All
         explicit-null when absent (GO-5); every one is null on a Free/no-Polar center.
-      required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage, nextInvoice, paymentMethod, pendingDowngrade]
+      required: [plan, billingCycle, status, isFree, creditsApplicable, currentPeriodStart, currentPeriodEnd, limits, usage, nextInvoice, paymentMethod, pendingDowngrade, grace]
       properties:
         plan: { type: string, enum: [free, pro, studio] }
         billingCycle: { type: string, enum: [monthly, annual] }
@@ -7351,6 +7428,28 @@ components:
           description: "A scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25)."
           allOf:
             - $ref: '#/components/schemas/BillingPendingDowngrade'
+        grace:
+          nullable: true
+          description: "The payment-failure grace state (Story 9.3, D9). Non-null ONLY while status=past_due; explicit null otherwise (GO-5). Drives the owner/admin red grace strip (s73): countdown to graceEndsAt + the recovery timeline. The FE renders the deadline from graceEndsAt via {{val,vnDate}} (M7) — never a server-baked label."
+          allOf:
+            - $ref: '#/components/schemas/BillingGrace'
+    BillingGrace:
+      type: object
+      description: |
+        The active 7-day payment-failure grace window (Story 9.3, FR-65). Present only while the
+        subscription is past_due. graceStartedAt + graceEndsAt bound the window (graceEndsAt is the
+        day-7 23:59 auto-downgrade deadline, R1). retriesScheduled lists the days OUR clock requests
+        a Polar re-collect (3 & 5). All instants are RFC3339; money is never carried here.
+      required: [graceStartedAt, graceEndsAt, paymentFailedAt, retryCount, retriesScheduled]
+      properties:
+        graceStartedAt: { type: string, format: date-time, description: "When the 7-day clock started (= the payment-failure event instant)." }
+        graceEndsAt: { type: string, format: date-time, description: "The day-7 23:59 auto-downgrade deadline (grace start date + 7 days, 23:59). The FE countdown + deadline label derive from THIS (M7)." }
+        paymentFailedAt: { type: string, format: date-time, description: "When Polar reported the failure." }
+        retryCount: { type: integer, description: "How many Polar re-collect requests our ticks have issued so far (0–2)." }
+        retriesScheduled:
+          type: array
+          description: "The elapsed-day indices on which a Polar re-collect is requested (always [3, 5])."
+          items: { type: integer }
     BillingLimits:
       type: object
       description: The plan's caps. A null field means unlimited (no ceiling).
@@ -7535,6 +7634,71 @@ components:
             pendingPlan: { type: string, nullable: true }
             pendingBillingCycle: { type: string, nullable: true }
             effectiveAt: { type: string, format: date-time, nullable: true }
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+
+    # ---------------- Story 9.3 — Grace-state indicator + Invoice history ----------------
+    EnvelopeBillingGrace:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          nullable: true
+          description: "The active grace window, or null when the center is not past_due (GO-5)."
+          allOf:
+            - $ref: '#/components/schemas/BillingGrace'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+    BillingInvoice:
+      type: object
+      description: |
+        One invoice row from the shipped 9-2a invoices table (Story 9.3, FR-66). Money is integer
+        VND, snapshotted at charge time (D25 — never re-read from the plan catalog); subtotalVnd/
+        vatVnd re-sum to amountVnd (10%-inclusive VAT). `status` is Polar's status (paid/declined/
+        refunded/…); the FE maps it to a pill. `pdfUrl` is the Polar-hosted invoice PDF or null.
+      required: [id, kind, amountVnd, subtotalVnd, vatVnd, currency, status, pdfUrl, issuedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, nullable: true, description: "subscription | addon (null for a defensive/bare row)." }
+        amountVnd: { type: integer }
+        subtotalVnd: { type: integer, nullable: true }
+        vatVnd: { type: integer, nullable: true }
+        currency: { type: string }
+        status: { type: string, description: "Polar charge status (e.g. paid, declined, refunded)." }
+        pdfUrl: { type: string, nullable: true, description: "Polar-hosted invoice PDF URL, or null when unavailable (the FE omits the Download-PDF action)." }
+        issuedAt: { type: string, format: date-time, nullable: true }
+    EnvelopeBillingInvoices:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          description: "The invoice history page (newest-first). Pagination is in meta.pagination."
+          items:
+            $ref: '#/components/schemas/BillingInvoice'
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/EnvelopeMeta'
+            - type: object
+              description: "Pagination block (XL-2). total = matching rows; page/pageSize echo the EFFECTIVE values the server used (service default applied when omitted — code-review P1/P8 2026-10-06)."
+              required: [pagination]
+              properties:
+                pagination:
+                  $ref: '#/components/schemas/PaginationMeta'
+    BillingInvoiceEmailRequest:
+      type: object
+      required: [recipient]
+      properties:
+        recipient: { type: string, description: "The accountant's email (validated server-side with net/mail.ParseAddress; CRLF-stripped — SEC-11)." }
+    EnvelopeBillingInvoiceEmail:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [sent]
+          properties:
+            sent: { type: boolean }
         meta:
           $ref: '#/components/schemas/EnvelopeMeta'
 

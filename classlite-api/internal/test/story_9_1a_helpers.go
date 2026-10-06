@@ -234,6 +234,10 @@ func newBillingSrv(t *testing.T, db storyDB) http.Handler {
 	}
 	mux.Handle("GET /api/billing", ownerChain(billingHandler.GetSummary))
 	mux.Handle("GET /api/billing/plans", ownerChain(billingHandler.GetPlans))
+	// Story 9.3 — the s70 invoice read/export endpoints, owner-gated on the SAME chain
+	// (billing_invoice_authz_atdd_test asserts 403 INSUFFICIENT_ROLE for non-owners).
+	mux.Handle("GET /api/billing/invoices", ownerChain(billingHandler.ListInvoices))
+	mux.Handle("POST /api/billing/invoices/email", ownerChain(billingHandler.EmailInvoices))
 	return mux
 }
 

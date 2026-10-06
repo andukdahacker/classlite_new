@@ -125,6 +125,13 @@ type Client interface {
 	ScheduleDowngrade(ctx context.Context, subscriptionID, targetPlan, targetCycle string, effectiveAt time.Time) error
 	// CancelDowngrade cancels a previously scheduled downgrade (D9/D26).
 	CancelDowngrade(ctx context.Context, subscriptionID string) error
+	// RetrySubscriptionCharge asks Polar to re-attempt collection of a past_due subscription's
+	// outstanding renewal charge (Story 9.3 AC4, code-review D6 2026-10-06). Called best-effort
+	// on grace days 3 & 5. PROVISIONAL endpoint under the Jan-2026 cutoff (FU-9-POLAR-CONTRACT):
+	// if Polar auto-retries natively and exposes no manual trigger, the prod client should make
+	// this a no-op; the MockClient records the call for the CI time-travel suite. A non-nil error
+	// is logged and swallowed by the caller — a failed re-collect never blocks the dunning clock.
+	RetrySubscriptionCharge(ctx context.Context, subscriptionID string) error
 }
 
 // httpClient is the real Polar REST client. The API key is held only here and sent in the
@@ -270,4 +277,12 @@ func (c *httpClient) CancelDowngrade(ctx context.Context, subscriptionID string)
 	return c.doJSON(ctx, http.MethodPatch, "/v1/subscriptions/"+subscriptionID, map[string]any{
 		"cancel_scheduled_changes": true,
 	}, nil)
+}
+
+// RetrySubscriptionCharge requests Polar re-collect the subscription's outstanding charge (D6).
+// PROVISIONAL endpoint (FU-9-POLAR-CONTRACT, Jan-2026 cutoff): reconcile the path/verb against
+// the Polar dunning API at the D29a staging smoke before arming. If Polar only auto-retries and
+// exposes no manual trigger, replace the body of this method with a logged no-op.
+func (c *httpClient) RetrySubscriptionCharge(ctx context.Context, subscriptionID string) error {
+	return c.doJSON(ctx, http.MethodPost, "/v1/subscriptions/"+subscriptionID+"/retry-charge", nil, nil)
 }

@@ -2566,6 +2566,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/grace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner/admin grace-state indicator — the s73 strip source (story 9.3 — R4/FR-65)
+         * @description Returns JUST the payment-failure grace block (non-null while the subscription is
+         *     past_due; explicit null otherwise). Readable by owner AND admin (R4 — the owner sees the
+         *     actionable strip, the admin an informational variant; an absentee-owner center is not
+         *     silently downgraded for the admin). A scoped read so admin gets the indicator WITHOUT the
+         *     owner-only full summary. teacher/student → 403 INSUFFICIENT_ROLE.
+         */
+        get: operations["getBillingGrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only invoice history — paginated, status-filterable (story 9.3 — FR-66)
+         * @description Returns the caller center's invoices newest-first (issued_at DESC), with an optional
+         *     `status` filter and `page`/`pageSize` pagination (XL-2). Each row snapshots its own
+         *     amount/subtotal/vat/currency at charge time (D25 — Polar authoritative; the plan catalog
+         *     is display-only). `pdfUrl` is the Polar-hosted invoice PDF (null when not yet available —
+         *     the FE omits the Download-PDF action). Owner-only (non-owner → 403 INSUFFICIENT_ROLE).
+         */
+        get: operations["listBillingInvoices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/invoices/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner-only — email the invoice history to an accountant (story 9.3 — FR-66)
+         * @description Renders the center's invoice history and emails it to the supplied recipient via Resend.
+         *     The recipient is validated with net/mail.ParseAddress and all header fields are CRLF-stripped
+         *     with the subject capped (SEC-11 — no header injection). Owner-only.
+         */
+        post: operations["emailBillingInvoices"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks/polar": {
         parameters: {
             query?: never;
@@ -2644,6 +2714,35 @@ export interface components {
             paymentMethod: components["schemas"]["BillingPaymentMethod"] | null;
             /** @description A scheduled at-renewal downgrade, or null. The FE renders 'Downgrade scheduled for [date]' + warns an add-on purchase when a downgrade-to-Free is pending (D25). */
             pendingDowngrade: components["schemas"]["BillingPendingDowngrade"] | null;
+            /** @description The payment-failure grace state (Story 9.3, D9). Non-null ONLY while status=past_due; explicit null otherwise (GO-5). Drives the owner/admin red grace strip (s73): countdown to graceEndsAt + the recovery timeline. The FE renders the deadline from graceEndsAt via {{val,vnDate}} (M7) — never a server-baked label. */
+            grace: components["schemas"]["BillingGrace"] | null;
+        };
+        /**
+         * @description The active 7-day payment-failure grace window (Story 9.3, FR-65). Present only while the
+         *     subscription is past_due. graceStartedAt + graceEndsAt bound the window (graceEndsAt is the
+         *     day-7 23:59 auto-downgrade deadline, R1). retriesScheduled lists the days OUR clock requests
+         *     a Polar re-collect (3 & 5). All instants are RFC3339; money is never carried here.
+         */
+        BillingGrace: {
+            /**
+             * Format: date-time
+             * @description When the 7-day clock started (= the payment-failure event instant).
+             */
+            graceStartedAt: string;
+            /**
+             * Format: date-time
+             * @description The day-7 23:59 auto-downgrade deadline (grace start date + 7 days, 23:59). The FE countdown + deadline label derive from THIS (M7).
+             */
+            graceEndsAt: string;
+            /**
+             * Format: date-time
+             * @description When Polar reported the failure.
+             */
+            paymentFailedAt: string;
+            /** @description How many Polar re-collect requests our ticks have issued so far (0–2). */
+            retryCount: number;
+            /** @description The elapsed-day indices on which a Polar re-collect is requested (always [3, 5]). */
+            retriesScheduled: number[];
         };
         /** @description The plan's caps. A null field means unlimited (no ceiling). */
         BillingLimits: {
@@ -2790,6 +2889,50 @@ export interface components {
                 pendingBillingCycle: string | null;
                 /** Format: date-time */
                 effectiveAt: string | null;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        EnvelopeBillingGrace: {
+            /** @description The active grace window, or null when the center is not past_due (GO-5). */
+            data: components["schemas"]["BillingGrace"] | null;
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description One invoice row from the shipped 9-2a invoices table (Story 9.3, FR-66). Money is integer
+         *     VND, snapshotted at charge time (D25 — never re-read from the plan catalog); subtotalVnd/
+         *     vatVnd re-sum to amountVnd (10%-inclusive VAT). `status` is Polar's status (paid/declined/
+         *     refunded/…); the FE maps it to a pill. `pdfUrl` is the Polar-hosted invoice PDF or null.
+         */
+        BillingInvoice: {
+            /** Format: uuid */
+            id: string;
+            /** @description subscription | addon (null for a defensive/bare row). */
+            kind: string | null;
+            amountVnd: number;
+            subtotalVnd: number | null;
+            vatVnd: number | null;
+            currency: string;
+            /** @description Polar charge status (e.g. paid, declined, refunded). */
+            status: string;
+            /** @description Polar-hosted invoice PDF URL, or null when unavailable (the FE omits the Download-PDF action). */
+            pdfUrl: string | null;
+            /** Format: date-time */
+            issuedAt: string | null;
+        };
+        EnvelopeBillingInvoices: {
+            /** @description The invoice history page (newest-first). Pagination is in meta.pagination. */
+            data: components["schemas"]["BillingInvoice"][];
+            meta: components["schemas"]["EnvelopeMeta"] & {
+                pagination: components["schemas"]["PaginationMeta"];
+            };
+        };
+        BillingInvoiceEmailRequest: {
+            /** @description The accountant's email (validated server-side with net/mail.ParseAddress; CRLF-stripped — SEC-11). */
+            recipient: string;
+        };
+        EnvelopeBillingInvoiceEmail: {
+            data: {
+                sent: boolean;
             };
             meta: components["schemas"]["EnvelopeMeta"];
         };
@@ -14084,6 +14227,138 @@ export interface operations {
             };
             /** @description INSUFFICIENT_ROLE (non-owner) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getBillingGrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grace block (or null). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingGrace"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (teacher/student) / CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listBillingInvoices: {
+        parameters: {
+            query?: {
+                /** @description Optional status filter (e.g. paid/declined/refunded). Omitted = all. */
+                status?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller center's invoice history (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingInvoices"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) / CENTER_CONTEXT_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    emailBillingInvoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingInvoiceEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The history email was sent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeBillingInvoiceEmail"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description VALIDATION_ERROR (bad/injected recipient) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

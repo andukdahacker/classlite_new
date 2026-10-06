@@ -47,14 +47,18 @@ type MockConfig struct {
 	// FailCreateCheckout, when set, makes CreateCheckout return an error (D21 — proves the
 	// outbound call runs OUTSIDE any tx: a Polar failure leaves nothing half-written).
 	FailCreateCheckout bool
+	// FailRetryCharge, when set, makes RetrySubscriptionCharge return an error (Story 9.3 D6 —
+	// proves a failed grace re-collect is swallowed/logged and never blocks the dunning clock).
+	FailRetryCharge bool
 }
 
 // MockClient is a deterministic polar.Client for tests.
 type MockClient struct {
-	cfg   MockConfig
-	mu    sync.Mutex
-	calls int
-	seq   int
+	cfg          MockConfig
+	mu           sync.Mutex
+	calls        int
+	retryCharges int
+	seq          int
 }
 
 // NewMockClient builds a MockClient for the given config.
@@ -135,4 +139,26 @@ func (m *MockClient) CancelDowngrade(_ context.Context, _ string) error {
 	defer m.mu.Unlock()
 	m.calls++
 	return nil
+}
+
+// RetrySubscriptionCharge records a re-collect request (Story 9.3 AC4, code-review D6). The
+// grace time-travel suite asserts RetryChargeCount() == the number of elapsed retry days
+// (days 3 & 5). FailRetryCharge makes it return an error so the caller's best-effort
+// swallow-and-log path (a failed re-collect never blocks the clock) is exercised.
+func (m *MockClient) RetrySubscriptionCharge(_ context.Context, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	m.retryCharges++
+	if m.cfg.FailRetryCharge {
+		return fmt.Errorf("polar: simulated retry-charge failure")
+	}
+	return nil
+}
+
+// RetryChargeCount returns how many RetrySubscriptionCharge calls were made (Story 9.3 D6).
+func (m *MockClient) RetryChargeCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.retryCharges
 }

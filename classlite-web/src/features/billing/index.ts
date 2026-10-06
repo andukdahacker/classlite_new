@@ -24,6 +24,12 @@ export { DowngradeConfirmModal } from './components/DowngradeConfirmModal'
 export { PendingDowngradeCard } from './components/PendingDowngradeCard'
 export { AddonPacksModal } from './components/AddonPacksModal'
 export { useBillingCycleStore } from './store/useBillingCycleStore'
+// Story 9.3 — grace strip (s73) + invoice history (s70).
+export { BillingGraceBanner } from './components/BillingGraceBanner'
+export { InvoiceHistoryPage } from './components/InvoiceHistoryPage'
+export { useGrace, type BillingGrace } from './api/useGrace'
+export { useInvoices, type BillingInvoice } from './api/useInvoices'
+export { useEmailInvoices } from './api/useEmailInvoices'
 export {
   normalizeSummaryPending,
   normalizeEndpointPending,

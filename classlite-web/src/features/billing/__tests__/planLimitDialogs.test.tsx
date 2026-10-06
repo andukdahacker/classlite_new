@@ -67,7 +67,7 @@ const PRO_SUMMARY = {
     aiCredits: { monthlyAllocation: 500, monthlyUsed: 100, addonRemaining: 0, available: 400, resetAt: '2026-10-01T00:00:00+07:00' },
     storage: { usedBytes: 1, limitBytes: 5368709120, percentUsed: 0, approaching: false },
   },
-  nextInvoice: null, paymentMethod: null, pendingDowngrade: null,
+  nextInvoice: null, paymentMethod: null, pendingDowngrade: null, grace: null,
 }
 
 beforeEach(() => {

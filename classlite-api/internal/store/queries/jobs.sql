@@ -14,6 +14,32 @@ RETURNING id, center_id, created_by, type, status, params, params_schema_version
           result_schema_version, error_details, retry_count, max_retries,
           next_attempt_at, created_at, started_at, completed_at;
 
+-- name: InsertDelayedJob :one
+-- Story 9.3 (D5/C4) — enqueue a FUTURE-dated job on the existing queue. InsertJob leaves
+-- next_attempt_at NULL (claim-immediately); the grace clock needs a tick that only becomes
+-- claimable once MockClock reaches @next_attempt_at (ClaimNextJob's `next_attempt_at <= @now`
+-- predicate). Used for the first billing_grace_tick at grace entry and each self-rescheduled
+-- next tick. created_by is NULL for a system-enqueued job (no acting user — SEC-6 worker
+-- re-establishes tenant from center_id). center_id comes from tc.CenterID (GO-1); RLS WITH
+-- CHECK rejects a spoof.
+INSERT INTO jobs (id, center_id, created_by, type, params, params_schema_version, next_attempt_at)
+VALUES (gen_random_uuid(), @center_id, NULL, @type, @params, @params_schema_version, @next_attempt_at)
+RETURNING id, center_id, created_by, type, status, params, params_schema_version, result,
+          result_schema_version, error_details, retry_count, max_retries,
+          next_attempt_at, created_at, started_at, completed_at;
+
+-- name: CancelPendingGraceTicks :exec
+-- Story 9.3 (C1) — terminate every not-yet-run billing_grace_tick for the center. Called on
+-- the day-7 downgrade (ExpireGraceToFree) and on recovery (ClearGrace) so no stray tick fires
+-- a phantom email or re-downgrades a recovered/cancelled center. The jobs table is NOT under
+-- the R24 zero-deletion invariant (it is operational state, not user content), so a DELETE is
+-- the cleanest terminal state (no 'cancelled' job_status value exists, and a DELETE can never
+-- be mistaken by the dispatcher for a claimable/refundable row). RLS tenant-scoped.
+DELETE FROM jobs
+WHERE center_id = @center_id
+  AND type = 'billing_grace_tick'
+  AND status IN ('pending', 'processing');
+
 -- name: GetJobByID :one
 -- RLS-scoped + creator-scoped poll read (AC2 / D4). A row in another tenant
 -- returns pgx.ErrNoRows via RLS; a row created by a DIFFERENT user in the same

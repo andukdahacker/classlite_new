@@ -41,6 +41,7 @@ const SUMMARY: BillingSummary = {
   nextInvoice: null,
   paymentMethod: null,
   pendingDowngrade: null,
+  grace: null,
 }
 
 const STUDIO_ENTRY = {

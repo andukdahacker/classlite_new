@@ -102,6 +102,12 @@ type Config struct {
 	// window ("updating your plan…"). NOTE: the exact param must be validated against
 	// Polar's real redirect behavior at the D29a staging smoke before arming.
 	AppBillingSuccessURL string
+	// AppBillingSettingsURL is the plain payment-settings page deep link used by the Story 9.3
+	// grace warning emails' "Update payment method" CTA (code-review P5, 2026-10-06). DISTINCT
+	// from AppBillingSuccessURL (the post-checkout return URL carrying ?checkout=success): the
+	// dunning email must point at the settings surface where the owner fixes their card, matching
+	// the FE grace banner's /settings/billing link — not the checkout-success bridge.
+	AppBillingSettingsURL string
 }
 
 // polarProductIDKeys are the "<tier>_<cycle>" / "addon_<packId>" slots the checkout builder
@@ -174,6 +180,7 @@ func Load() Config {
 		PolarProductIDs:            loadPolarProductIDs(),
 		BillingEnforcementEnabled:  getEnvBool("BILLING_ENFORCEMENT_ENABLED", false),
 		AppBillingSuccessURL:       getEnv("APP_BILLING_SUCCESS_URL", "http://localhost:5173/settings/billing?checkout=success"),
+		AppBillingSettingsURL:      getEnv("APP_BILLING_SETTINGS_URL", "http://localhost:5173/settings/billing"),
 	}
 }
 

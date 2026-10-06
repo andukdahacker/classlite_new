@@ -60,7 +60,7 @@ import { SIDEBAR_NAV_BY_ROLE } from '@/components/domain/sidebarNavConfig'
 import { TopbarShell } from '@/components/domain/TopbarShell'
 import { SearchPalette } from '@/features/search/SearchPalette'
 import { useCommandPalette } from '@/features/search/hooks/useCommandPalette'
-import { BillingErrorDialogHost } from '@/features/billing'
+import { BillingErrorDialogHost, BillingGraceBanner } from '@/features/billing'
 import { Button } from '@/components/ui/button'
 import { warnIfFirstNoRoleResolution } from './AppLayout-warn-tracking'
 import LanguageToggle from './LanguageToggle'
@@ -125,6 +125,7 @@ export default function AppLayout() {
         {t('app.layout.skipToContent')}
       </a>
       <AppShell
+        banner={<BillingGraceBanner />}
         sidebar={
           role !== null ? (
             <SidebarShell
