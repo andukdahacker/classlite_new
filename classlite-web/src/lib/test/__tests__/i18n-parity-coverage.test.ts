@@ -36,6 +36,7 @@ import {
   STORY_8_3B_KEYS,
 } from '@/features/analytics/__tests__/analyticsI18nKeys'
 import { STORY_8_4B_KEYS } from '@/features/search/__tests__/searchI18nKeys'
+import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -2178,5 +2179,27 @@ describe('Story 8.4b i18n parity (master ratchet)', () => {
 
   test.each(STORY_8_4B_KEYS)('%s belongs to the search.* namespace', (key) => {
     expect(key.startsWith('search.')).toBe(true)
+  })
+})
+
+/**
+ * Story 10.1b — role-scoped inbox frontend. Net-new keys across the inbox page
+ * chrome (`inbox.*`), the two new filter chips (`inboxList.filters.*`), and the
+ * mapper render catalog + fallback (`inboxRow.*`, beside the 1d-4 chrome keys).
+ * The 1d-4 inbox keys stay in STORY_1D_4_KEYS; this block owns ONLY what 10-1b
+ * adds (see the exhaustive list in inboxI18nKeys.ts).
+ */
+const STORY_10_1B_ALLOWED_PREFIXES = ['inbox.', 'inboxList.filters.', 'inboxRow.'] as const
+describe('Story 10.1b i18n parity (master ratchet)', () => {
+  test('every new Story 10.1b inbox key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_1B_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.1b keys', () => {
+    assertI18nInterpolationParity(STORY_10_1B_KEYS)
+  })
+
+  test.each(STORY_10_1B_KEYS)('%s belongs to a 10.1b allowed prefix', (key) => {
+    expect(STORY_10_1B_ALLOWED_PREFIXES.some((p) => key.startsWith(p))).toBe(true)
   })
 })

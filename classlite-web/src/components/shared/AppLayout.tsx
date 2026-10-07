@@ -58,7 +58,9 @@ import { MobileTabBar } from '@/components/domain/MobileTabBar'
 import { SearchPill } from '@/components/domain/SearchPill'
 import { SidebarShell } from '@/components/domain/SidebarShell'
 import { SIDEBAR_NAV_BY_ROLE } from '@/components/domain/sidebarNavConfig'
+import type { SidebarNavGroup } from '@/components/domain/SidebarShell'
 import { TopbarShell } from '@/components/domain/TopbarShell'
+import { useInboxCount } from '@/features/inbox'
 import { SearchPalette } from '@/features/search/SearchPalette'
 import { useCommandPalette } from '@/features/search/hooks/useCommandPalette'
 import { BillingErrorDialogHost, BillingGraceBanner } from '@/features/billing'
@@ -70,6 +72,26 @@ function sidebarHrefs(role: Role): readonly string[] {
   return SIDEBAR_NAV_BY_ROLE[role].flatMap((group) =>
     group.items.map((item) => item.href),
   )
+}
+
+/** The nav href whose badge carries the inbox unread count (Story 10-1b AC4). */
+const INBOX_NAV_HREF = '/inbox'
+
+/**
+ * Inject the live unread count onto the `/inbox` sidebar item's `badgeCount`.
+ * The static config has no count; SidebarNavItem hides the badge at 0, so the
+ * raw count is safe to pass through.
+ */
+function withInboxBadge(
+  groups: ReadonlyArray<SidebarNavGroup>,
+  unread: number,
+): ReadonlyArray<SidebarNavGroup> {
+  return groups.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.href === INBOX_NAV_HREF ? { ...item, badgeCount: unread } : item,
+    ),
+  }))
 }
 
 export default function AppLayout() {
@@ -90,6 +112,13 @@ export default function AppLayout() {
   // for an authenticated role — the search endpoint is auth-scoped.
   const { open: searchOpen, setOpen: setSearchOpen, openPalette } =
     useCommandPalette(role !== null)
+
+  // Story 10-1b (AC4/DD4) — the SINGLE inbox unread-count poller instance for the
+  // whole app. Disabled for a guest/null role so a logged-out shell never
+  // 401-storms `/count`. The badge reads this from the Query cache; role views +
+  // the optimistic mutations share the same cache entry (no second poller).
+  const inboxCount = useInboxCount({ enabled: role !== null })
+  const inboxUnread = inboxCount.data?.unread ?? 0
 
   useEffect(() => {
     if (role === null && import.meta.env.DEV) {
@@ -136,7 +165,7 @@ export default function AppLayout() {
           role !== null ? (
             <SidebarShell
               role={role}
-              groups={SIDEBAR_NAV_BY_ROLE[role]}
+              groups={withInboxBadge(SIDEBAR_NAV_BY_ROLE[role], inboxUnread)}
               // Story 9.4 closes TODO(1-8): the real authenticated user's name +
               // avatar. Falls back to the role label only when the session cache
               // has no user yet (boot-probe window).
@@ -164,7 +193,11 @@ export default function AppLayout() {
         }
         mobileTabBar={
           role !== null ? (
-            <MobileTabBar role={role} activeHref={location.pathname} />
+            <MobileTabBar
+              role={role}
+              activeHref={location.pathname}
+              unreadByTab={{ inbox: inboxUnread }}
+            />
           ) : null
         }
       >

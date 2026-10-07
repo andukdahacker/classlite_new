@@ -253,6 +253,7 @@ func newInboxSrv(t *testing.T, db storyDB, clk clock.Clock) http.Handler {
 	mux.Handle("GET /api/inbox/count", chain(h.Count))
 	mux.Handle("POST /api/inbox/{id}/read", chain(h.MarkRead))
 	mux.Handle("POST /api/inbox/{id}/archive", chain(h.Archive))
+	mux.Handle("POST /api/inbox/read-all", chain(h.MarkAllRead)) // 10.1b AC6
 	return mux
 }
 

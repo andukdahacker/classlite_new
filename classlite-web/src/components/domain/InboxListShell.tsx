@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
@@ -36,6 +37,12 @@ export interface InboxListShellProps {
   onToggleFilter?: (key: string) => void
   onRowPrimaryAction?: (rowId: string) => void
   onRowArchive?: (rowId: string) => void
+  /**
+   * Optional role-toned empty slot (Story 10-1b DD9). When provided it replaces
+   * the default `inboxList.empty` text while rows are empty — the chip bar stays
+   * visible so an active filter can still be cleared. Omitted → the 1d-4 default.
+   */
+  emptyState?: ReactNode
 }
 
 export function InboxListShell({
@@ -46,6 +53,7 @@ export function InboxListShell({
   onToggleFilter,
   onRowPrimaryAction,
   onRowArchive,
+  emptyState,
 }: InboxListShellProps) {
   const { t } = useTranslation()
   // Defensive: drop active keys that no longer exist in `filters` so the
@@ -61,7 +69,9 @@ export function InboxListShell({
     >
       <header
         data-testid="inbox-list-shell-filters"
-        className="flex flex-wrap items-center gap-2 border-b border-[color:var(--cl-line-soft)] px-4 py-3"
+        // Story 10-1b DD10: chips scroll horizontally on mobile (no wrap), wrap on
+        // desktop. `md:` keeps the 1d-4 desktop layout unchanged.
+        className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-[color:var(--cl-line-soft)] px-4 py-3 md:flex-wrap md:overflow-visible"
         aria-label={t('inboxList.filters.label')}
       >
         {filters.map((filter) => {
@@ -75,7 +85,7 @@ export function InboxListShell({
               aria-pressed={active}
               onClick={() => onToggleFilter?.(filter.key)}
               className={cn(
-                'inline-flex items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+                'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-transparent px-2 py-0.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
                 active
                   ? 'bg-foreground text-background'
                   : 'bg-muted text-muted-foreground hover:bg-muted/70',
@@ -114,6 +124,8 @@ export function InboxListShell({
             />
           ))}
         </ul>
+      ) : emptyState !== undefined ? (
+        <div data-testid="inbox-list-shell-empty">{emptyState}</div>
       ) : (
         <p
           data-testid="inbox-list-shell-empty"

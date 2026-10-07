@@ -7,9 +7,11 @@
  * `enabled=false` once the cap is reached.
  *
  * Why this exists today instead of inlining the interval at the call site:
- * three Epic 1C-and-later stories need polling with cleanup (1-9a verify,
- * Epic 9 billing-grace countdown, Epic 10 inbox unread badge). Centralizing
- * the cleanup discipline prevents three near-identical buggy useEffects.
+ * two Epic 1C-and-later stories need polling with cleanup (1-9a verify,
+ * Epic 9 billing-grace countdown). Centralizing the cleanup discipline
+ * prevents near-identical buggy useEffects. (The Story 10-1b inbox unread
+ * badge does NOT use this hook — it polls via TanStack Query `refetchInterval`
+ * so the badge reads from the Query cache the optimistic mutations write, DD4.)
  *
  * The single `useEffect` here falls under project-context FW-4's permitted
  * exception ("subscription cleanup") — NOT a server-state fetch.

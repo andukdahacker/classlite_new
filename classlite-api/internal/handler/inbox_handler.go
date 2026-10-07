@@ -149,3 +149,19 @@ func (h *InboxHandler) Archive(w http.ResponseWriter, r *http.Request) error {
 	WriteEnvelope(w, http.StatusOK, h.clk, map[string]string{"id": id.String(), "status": "archived"})
 	return nil
 }
+
+// MarkAllRead — POST /api/inbox/read-all (10.1b AC6). Stamps every active (unread,
+// non-archived) row for the caller read in one atomic tx. Caller-scoped via the
+// existing MarkAllReadForUser query (10-1a BH7: retains `AND archived_at IS NULL`);
+// returns the net-new {data:{status}} ack (no id — this verb has no single row).
+func (h *InboxHandler) MarkAllRead(w http.ResponseWriter, r *http.Request) error {
+	tc, err := requireQuestionTenant(r)
+	if err != nil {
+		return err
+	}
+	if err := h.svc.MarkAllRead(r.Context(), tc); err != nil {
+		return err
+	}
+	WriteEnvelope(w, http.StatusOK, h.clk, map[string]string{"status": "ok"})
+	return nil
+}

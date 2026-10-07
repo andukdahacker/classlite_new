@@ -5,6 +5,7 @@ import vi from '@/locales/vi.json'
 import { readLanguageCookie } from '@/lib/language-cookie'
 import { formatVnDate } from '@/lib/formatVnDate'
 import { formatVnDateLong } from '@/lib/formatVnDateLong'
+import { relativeTime } from '@/lib/relativeTime'
 
 // Story 1-7c AC6 — seed the initial language from the `lang` cookie. If
 // the cookie is absent or malformed, fall back to English. Reading at
@@ -35,6 +36,15 @@ i18n.services.formatter?.add('vnDate', (value, lng) =>
 // renders the grace day-7 deadline as a spelled-out `12 Oct 2026`, derived from graceEndsAt.
 i18n.services.formatter?.add('vnDateLong', (value, lng) =>
   typeof value === 'string' ? formatVnDateLong(value, lng ?? 'en') : String(value),
+)
+
+// Story 10.1b (DD4) — the `{{val, relativeTime}}` token renders an inbox row's
+// raw ISO `createdAt` as a locale-aware relative label ("2h ago"), falling back
+// to `vnDate` past ~7 days. Wraps the core threshold logic in relativeTime.ts.
+i18n.services.formatter?.add('relativeTime', (value, lng) =>
+  typeof value === 'string'
+    ? relativeTime(value, i18n.getFixedT(lng ?? 'en'), lng ?? 'en')
+    : String(value),
 )
 
 export default i18n

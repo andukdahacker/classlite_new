@@ -1330,6 +1330,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark all own notifications read (story 10.1b — AC6)
+         * @description Stamps every active (unread, non-archived) row for the caller read in one
+         *     atomic transaction. Caller-scoped — another user's rows and the caller's
+         *     archived rows are untouched. Idempotent (a 2nd call → 200 no-op).
+         */
+        post: operations["markAllInboxRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -5193,6 +5215,17 @@ export interface components {
             data: {
                 /** Format: uuid */
                 id: string;
+                status: string;
+            };
+            meta: components["schemas"]["EnvelopeMeta"];
+        };
+        /**
+         * @description The 200 ack for mark-all-read (story 10.1b — AC6). Carries only a status
+         *     string — this verb has no single row, so there is NO id (not
+         *     EnvelopeNotificationAck).
+         */
+        EnvelopeStatusAck: {
+            data: {
                 status: string;
             };
             meta: components["schemas"]["EnvelopeMeta"];
@@ -9780,6 +9813,35 @@ export interface operations {
             };
             /** @description NOTIFICATION_NOT_FOUND (absent or owned by another user) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    markAllInboxRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All active rows marked read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeStatusAck"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -205,6 +205,16 @@ const baseRoutes: RouteObject[] = [
           return { Component: DashboardRoute }
         },
       },
+      // Story 10-1b — role-scoped inbox. Mirrors `/dashboard`: one dispatcher,
+      // four lazy per-role views, NO `RouteRoleGate` (every role has an inbox —
+      // the branch is content, not access). Role-scope is a 10-1a WRITE invariant.
+      {
+        path: '/inbox',
+        lazy: async () => {
+          const { InboxRoute } = await import('@/features/inbox/InboxRoute')
+          return { Component: InboxRoute }
+        },
+      },
       // Story 2-5a + 2.6 (AC6) — Owner-only Settings surface. The
       // `RouteRoleGate` `element:` wrapper below replaces the inline
       // `useRole()` + `if (role !== 'owner')` block that shipped in 2-5a
