@@ -26,4 +26,7 @@ export const STORY_10_1C_KEYS: readonly string[] = [
   'inbox.teacher.toGrade', // {{count}}
   // the DD3 merge-ceiling honest seam (shown when a source total exceeds the page fetch).
   'inbox.teacher.queueCeiling',
+  // per-source degradation banner (code-review 10-1c): one source failed, the other shown.
+  'inbox.teacher.partialError',
+  'inbox.teacher.partialErrorDismiss',
 ] as const

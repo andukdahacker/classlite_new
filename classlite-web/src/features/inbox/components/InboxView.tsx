@@ -71,6 +71,8 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
   const [activeChip, setActiveChip] = useState<string>(() => defaultChip)
   const [page, setPage] = useState(1)
   const [activeReply, setActiveReply] = useState<{ rowId: string; questionId: string } | null>(null)
+  // Which failed-source signature the teacher has dismissed the partial-error banner for.
+  const [dismissedErrorSignature, setDismissedErrorSignature] = useState('')
 
   const filter = chipFilter(activeChip)
   const isFiltered = Boolean(filter.type || filter.unreadOnly)
@@ -135,9 +137,18 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
   const serverTotalPages = query.data?.pagination?.totalPages ?? 1
   const total = isTeacher ? mergedRows.length : serverTotal
   const totalPages = isTeacher ? Math.max(1, Math.ceil(total / INBOX_PAGE_SIZE)) : serverTotalPages
+  // Clamp the teacher client-pager at render: when the merged set shrinks below the
+  // active page offset (e.g. archiving rows while on page 2), `page` state can outrun
+  // `totalPages`, which would slice to [] and strand the user on an empty body with a
+  // positive header count and no pager (code-review 10-1c). Non-teacher pagination is
+  // server-driven, so `effectivePage` === `page` there (no behavior change).
+  const effectivePage = isTeacher ? Math.min(page, totalPages) : page
   const rows = useMemo(
-    () => (isTeacher ? mergedRows.slice((page - 1) * INBOX_PAGE_SIZE, page * INBOX_PAGE_SIZE) : mergedRows),
-    [isTeacher, mergedRows, page],
+    () =>
+      isTeacher
+        ? mergedRows.slice((effectivePage - 1) * INBOX_PAGE_SIZE, effectivePage * INBOX_PAGE_SIZE)
+        : mergedRows,
+    [isTeacher, mergedRows, effectivePage],
   )
 
   const pageUnread = items.filter((n) => n.readAt == null).length
@@ -180,9 +191,17 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
   // the list self-empties) AND when notifications are not shown (a queue-only chip —
   // else a background notif fetch gets marked read while off-screen). Guards: does NOT
   // fire while backgrounded; records an id only on SUCCESS so a rolled-back mark retries.
+  //
+  // The id set is windowed to the DISPLAYED `rows` slice, NOT the full fetched `items`:
+  // the teacher branch fetches up to INBOX_QUEUE_FETCH_SIZE notifications but client-
+  // paginates 20 at a time, so keying off `items` would mark unread notifications sitting
+  // on client-pages 2+ (never scrolled into view) read and silently drop the nav badge
+  // (code-review 10-1c). Submission rows carry no read state and aren't in `items`, so
+  // the `items` membership check naturally excludes them.
   const markedRef = useRef<Set<string>>(new Set())
+  const displayedIds = useMemo(() => new Set(rows.map((row) => row.id)), [rows])
   const unreadIdsKey = items
-    .filter((n) => n.readAt == null)
+    .filter((n) => n.readAt == null && displayedIds.has(n.id))
     .map((n) => n.id)
     .join(',')
   useEffect(() => {
@@ -242,10 +261,26 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
     [actions, t],
   )
 
-  const isPending = (notifShown && query.isPending) || (queueShown && queueQuery.isPending)
-  const isError = (notifShown && query.isError) || (queueShown && queueQuery.isError)
-  if (isPending) return <InboxSkeleton />
-  if (isError) {
+  // Per-source degradation (code-review 10-1c): the teacher `all` view shows BOTH
+  // sources, so OR-ing isPending/isError across them blanked the whole surface — a
+  // failure of the brand-new derived queue read hid the healthy question feed (and
+  // vice-versa). Instead: the full skeleton/error only when EVERY shown source is
+  // pending/errored; otherwise render what resolved and flag the failed source inline.
+  const notifPending = notifShown && query.isPending
+  const queuePending = queueShown && queueQuery.isPending
+  const notifError = notifShown && query.isError
+  const queueError = queueShown && queueQuery.isError
+  const shownSourceCount = (notifShown ? 1 : 0) + (queueShown ? 1 : 0)
+  const pendingCount = (notifPending ? 1 : 0) + (queuePending ? 1 : 0)
+  const errorCount = (notifError ? 1 : 0) + (queueError ? 1 : 0)
+  const allPending = shownSourceCount > 0 && pendingCount === shownSourceCount
+  const allError = shownSourceCount > 0 && errorCount === shownSourceCount
+  // One source errored while the other has something to show → inline, dismissible warning
+  // keyed on WHICH source(s) failed, so a fresh failure re-surfaces after a dismiss.
+  const errorSignature = `${notifError ? 'n' : ''}${queueError ? 'q' : ''}`
+  const showPartialError = !allError && errorCount > 0 && errorSignature !== dismissedErrorSignature
+  if (allPending) return <InboxSkeleton />
+  if (allError) {
     return (
       <InboxErrorAlert
         onRetry={() => {
@@ -307,6 +342,35 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
         />
       ) : null}
 
+      {showPartialError ? (
+        <div
+          data-testid="inbox-partial-error"
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-[color:var(--cl-border)] px-3 py-2 text-sm text-[color:var(--cl-ink-soft)]"
+        >
+          <span className="grow">{t('inbox.teacher.partialError')}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="inbox-partial-error-retry"
+            onClick={() => {
+              if (notifError) void query.refetch()
+              if (queueError) void queueQuery.refetch()
+            }}
+          >
+            {t('inbox.error.retry')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="inbox-partial-error-dismiss"
+            onClick={() => setDismissedErrorSignature(errorSignature)}
+          >
+            {t('inbox.teacher.partialErrorDismiss')}
+          </Button>
+        </div>
+      ) : null}
+
       <InboxListShell
         rows={rows}
         role={role}
@@ -334,20 +398,20 @@ export function InboxView({ role, emptyLens, enableTeacherReply = false }: Inbox
             variant="outline"
             size="sm"
             data-testid="inbox-pager-prev"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page <= 1}
+            onClick={() => setPage(Math.max(1, effectivePage - 1))}
+            disabled={effectivePage <= 1}
           >
             {t('inbox.pager.prev')}
           </Button>
           <span className="text-sm text-[color:var(--cl-ink-soft)]">
-            {t('inbox.pager.status', { page, totalPages })}
+            {t('inbox.pager.status', { page: effectivePage, totalPages })}
           </span>
           <Button
             variant="outline"
             size="sm"
             data-testid="inbox-pager-next"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
+            onClick={() => setPage(Math.min(totalPages, effectivePage + 1))}
+            disabled={effectivePage >= totalPages}
           >
             {t('inbox.pager.next')}
           </Button>

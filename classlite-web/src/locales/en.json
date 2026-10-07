@@ -869,6 +869,8 @@
   "inboxList.filters.late": "Late",
   "inbox.teacher.toGrade": "{{count}} to grade",
   "inbox.teacher.queueCeiling": "Showing your most recent — open the grading queue for the full backlog.",
+  "inbox.teacher.partialError": "Part of your inbox couldn't load. Showing what we have.",
+  "inbox.teacher.partialErrorDismiss": "Dismiss",
   "scopeBar.label": "Analytics scope",
   "scopeBar.scope.label": "Scope",
   "scopeBar.scope.mine": "My classes",

@@ -3306,6 +3306,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Invalid late_only (not "true"/"false")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/questions:
     post:

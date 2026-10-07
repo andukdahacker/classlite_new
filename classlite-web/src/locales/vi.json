@@ -869,6 +869,8 @@
   "inboxList.filters.late": "Trễ hạn",
   "inbox.teacher.toGrade": "{{count}} bài cần chấm",
   "inbox.teacher.queueCeiling": "Đang hiển thị các bài mới nhất — mở hàng đợi chấm bài để xem toàn bộ.",
+  "inbox.teacher.partialError": "Một phần hộp thư không tải được. Đang hiển thị những gì có sẵn.",
+  "inbox.teacher.partialErrorDismiss": "Bỏ qua",
   "scopeBar.label": "Phạm vi phân tích",
   "scopeBar.scope.label": "Phạm vi",
   "scopeBar.scope.mine": "Lớp của tôi",

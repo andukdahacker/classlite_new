@@ -130,8 +130,12 @@ WHERE sub.center_id = sqlc.arg('center_id')
 -- 8-1a dashboard ListGradingBacklog body + {is_late, class_id, assignment_id ids for
 -- the grading deep-link, LIMIT/OFFSET, late_only}. overdue is a LIVE computation vs
 -- the injected @now (distinct from the is_late submit-time snapshot, DD6). teacher_id
--- REQUIRED (Ducdo Q4). Ordered oldest-submitted-first with the id tiebreak so LIMIT
--- slice membership is deterministic under pagination (the 7-2a released_at lesson).
+-- REQUIRED (Ducdo Q4). Ordered NEWEST-submitted-first with the id tiebreak: the FE
+-- inbox is a newest-first merged feed that only ever fetches page 1 at a bounded cap
+-- (INBOX_QUEUE_FETCH_SIZE), so when the backlog exceeds the cap DESC fetches exactly
+-- the rows that surface at the top of the feed — oldest-first would fetch the rows that
+-- the merge-sort then discards, silently dropping the newest ungraded (code-review
+-- 10-1c). id DESC keeps LIMIT slice membership deterministic under pagination.
 SELECT sub.id AS submission_id,
        u.full_name AS student_name,
        e.title AS assignment_title,
@@ -152,7 +156,7 @@ WHERE sub.center_id = sqlc.arg('center_id')
   AND (cg.id IS NULL OR cg.released_at IS NULL)
   AND c.teacher_id = sqlc.arg('teacher_id')
   AND (NOT sqlc.arg('late_only')::bool OR sub.is_late)
-ORDER BY sub.submitted_at ASC NULLS LAST, sub.id ASC
+ORDER BY sub.submitted_at DESC NULLS LAST, sub.id DESC
 LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
 
 -- name: ListGradingQueue :many
