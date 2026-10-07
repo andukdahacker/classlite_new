@@ -106,6 +106,55 @@ WHERE id = sqlc.arg('id')
 RETURNING id, center_id, assignment_id, student_id, status, content, schema_version,
           is_late, applied_penalty, started_at, submitted_at, created_at, updated_at;
 
+-- name: CountTeacherQueue :one
+-- Story 10.1c — the teacher inbox work-queue count. Reuses the 8-1a dashboard
+-- grading-backlog shape (submitted|ai_processing submissions with no RELEASED grade),
+-- but teacher_id is a REQUIRED arg bound to the caller (Ducdo Q4 — teacher-scoped-only,
+-- never the center-wide narg). RLS tenant-scopes every table; the service-layer
+-- teacher_id predicate is what isolates two teachers in the SAME center (the 7-2a
+-- class). late_only (Ducdo Q3) filters on the is_late snapshot so the filtered total
+-- stays paginated honestly. See _bmad-output/implementation-artifacts/10-1c-teacher-work-queue.md.
+SELECT count(*)::bigint
+FROM submissions sub
+JOIN assignments a ON a.id = sub.assignment_id
+JOIN classes c ON c.id = a.class_id
+LEFT JOIN current_grades cg ON cg.submission_id = sub.id
+WHERE sub.center_id = sqlc.arg('center_id')
+  AND sub.status IN ('submitted', 'ai_processing')
+  AND (cg.id IS NULL OR cg.released_at IS NULL)
+  AND c.teacher_id = sqlc.arg('teacher_id')
+  AND (NOT sqlc.arg('late_only')::bool OR sub.is_late);
+
+-- name: ListTeacherQueue :many
+-- Story 10.1c — one paginated page of the teacher inbox work-queue. Clone of the
+-- 8-1a dashboard ListGradingBacklog body + {is_late, class_id, assignment_id ids for
+-- the grading deep-link, LIMIT/OFFSET, late_only}. overdue is a LIVE computation vs
+-- the injected @now (distinct from the is_late submit-time snapshot, DD6). teacher_id
+-- REQUIRED (Ducdo Q4). Ordered oldest-submitted-first with the id tiebreak so LIMIT
+-- slice membership is deterministic under pagination (the 7-2a released_at lesson).
+SELECT sub.id AS submission_id,
+       u.full_name AS student_name,
+       e.title AS assignment_title,
+       c.name AS class_name,
+       sub.is_late,
+       (COALESCE(a.hard_deadline_at, a.deadline_at) < sqlc.arg('now'))::boolean AS overdue,
+       sub.submitted_at,
+       c.id AS class_id,
+       a.id AS assignment_id
+FROM submissions sub
+JOIN assignments a ON a.id = sub.assignment_id
+JOIN classes c ON c.id = a.class_id
+JOIN exercises e ON e.id = a.exercise_id
+JOIN users u ON u.id = sub.student_id
+LEFT JOIN current_grades cg ON cg.submission_id = sub.id
+WHERE sub.center_id = sqlc.arg('center_id')
+  AND sub.status IN ('submitted', 'ai_processing')
+  AND (cg.id IS NULL OR cg.released_at IS NULL)
+  AND c.teacher_id = sqlc.arg('teacher_id')
+  AND (NOT sqlc.arg('late_only')::bool OR sub.is_late)
+ORDER BY sub.submitted_at ASC NULLS LAST, sub.id ASC
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
+
 -- name: ListGradingQueue :many
 -- Story 6.1 (AC17). Teacher grading queue for one assignment: every
 -- non-in_progress submission (submitted / ai_processing / graded) with the

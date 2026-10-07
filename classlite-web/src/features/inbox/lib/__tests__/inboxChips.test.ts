@@ -55,9 +55,10 @@ describe('deriveInboxChips — per-role derivation (DD8)', () => {
     expect(hasFilter('student', 'billing')).toBe(false)
   })
 
-  it('teacher = questions only (10-1c adds submissions/late)', () => {
+  it('teacher = questions + submissions + late (10-1c filled the grading queue)', () => {
     expect(hasFilter('teacher', 'questions')).toBe(true)
-    expect(hasFilter('teacher', 'submissions')).toBe(false)
+    expect(hasFilter('teacher', 'submissions')).toBe(true)
+    expect(hasFilter('teacher', 'late')).toBe(true)
     expect(hasFilter('teacher', 'grades')).toBe(false)
   })
 

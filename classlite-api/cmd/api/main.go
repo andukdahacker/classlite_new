@@ -810,7 +810,8 @@ func main() {
 	mux.Handle("GET /api/inbox/count", questionChain(inboxHandler.Count))
 	mux.Handle("POST /api/inbox/{id}/read", questionChain(inboxHandler.MarkRead))
 	mux.Handle("POST /api/inbox/{id}/archive", questionChain(inboxHandler.Archive))
-	mux.Handle("POST /api/inbox/read-all", questionChain(inboxHandler.MarkAllRead)) // 10.1b AC6 — caller-scoped mark-all-read.
+	mux.Handle("POST /api/inbox/read-all", questionChain(inboxHandler.MarkAllRead))      // 10.1b AC6 — caller-scoped mark-all-read.
+	mux.Handle("GET /api/inbox/teacher-queue", questionChain(inboxHandler.TeacherQueue)) // 10.1c — teacher grading-backlog derived read (teacher-scoped in-service, Ducdo Q4).
 
 	// Story 8.1a — Role-specific dashboards (backend). ONE endpoint on the SAME
 	// ungated Q&A-style chain (extractTenant → requireVerified → requireCenter →

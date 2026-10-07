@@ -20,9 +20,29 @@ export interface InboxListParams {
 /** The default inbox page size (CQ-3 — named, never an inline literal). */
 export const INBOX_PAGE_SIZE = 20
 
+/**
+ * The bounded fetch size for the teacher merged feed (Story 10-1c DD3). Both the
+ * teacher's active question notifications and ungraded backlog are bounded by class
+ * size (the dashboard rail shows "~19"), so each source is fetched at this ceiling
+ * and the MERGED array is paginated client-side by INBOX_PAGE_SIZE — a single
+ * coherent pager (`total` = merged length), not two server totals summed. Mirrors
+ * the backend MaxPageSize; when a source's server `total` exceeds it, InboxView
+ * surfaces an honest seam (FU-10-1C-MERGE-PAGINATION) rather than silently truncating.
+ */
+export const INBOX_QUEUE_FETCH_SIZE = 100
+
+/** Params for one `GET /api/inbox/teacher-queue` page (snake_case on the wire). */
+export interface TeacherQueueParams {
+  /** server `late_only` filter — the is_late snapshot (Ducdo Q3 / DD6). */
+  lateOnly: boolean
+  page: number
+  pageSize: number
+}
+
 export const inboxKeys = {
   all: ['inbox'] as const,
   lists: () => [...inboxKeys.all, 'list'] as const,
   list: (params: InboxListParams) => [...inboxKeys.lists(), params] as const,
   count: () => [...inboxKeys.all, 'count'] as const,
+  teacherQueue: (params: TeacherQueueParams) => [...inboxKeys.all, 'teacher-queue', params] as const,
 }

@@ -610,6 +610,104 @@ func (s *NotificationService) ListInbox(ctx context.Context, tc model.TenantCont
 	return items, pageResult(page, pageSize, total), nil
 }
 
+// TeacherQueueItem is one row of the teacher grading backlog (Story 10.1c) — a
+// DERIVED read over submissions ⋈ assignments, NOT a notification. Link is built
+// server-side (ids-authoritative, DD1b) as the exact grading deep-link. SubmittedAt
+// is nil-when-NULL (GO-5 explicit null on the wire). The handler renders the wire
+// shape with explicit json tags, no omitempty.
+type TeacherQueueItem struct {
+	SubmissionID    uuid.UUID
+	StudentName     string
+	AssignmentTitle string
+	ClassName       string
+	IsLate          bool
+	Overdue         bool
+	SubmittedAt     *time.Time
+	ClassID         uuid.UUID
+	AssignmentID    uuid.UUID
+	Link            string
+}
+
+// ListTeacherQueue returns the caller's own-class ungraded backlog, paginated
+// (Story 10.1c — AC1/AC2/AC5). ALWAYS teacher-scoped: teacher_id = tc.UserID binds
+// to BOTH the list and count queries (Ducdo Q4 — never the center-wide narg). Two
+// teachers in the same center share a center_id, so RLS does NOT isolate them — the
+// teacher_id predicate does (AC3, the 7-2a class). overdue is computed live in SQL
+// against the injected `now` (distinct from the is_late submit-time snapshot — DD6).
+// lateOnly filters to the is_late snapshot server-side so the filtered total stays
+// honest (AC5). Mirrors ListInbox's clamp + int32 overflow guards.
+func (s *NotificationService) ListTeacherQueue(ctx context.Context, tc model.TenantContext, lateOnly bool, now time.Time, page, pageSize int) ([]TeacherQueueItem, PageResult, error) {
+	centerUUID, userUUID, err := parseTenantIdentity(tc)
+	if err != nil {
+		return nil, PageResult{}, err
+	}
+	// Clamp page BEFORE the OFFSET multiply so a crafted ?page=<huge> cannot overflow
+	// int64, then clamp the OFFSET into int32 range (sqlc's Offset is int32) — a
+	// negative OFFSET would 500. The ListInbox overflow-guard class.
+	if page > math.MaxInt32 {
+		page = math.MaxInt32
+	}
+	page, pageSize, offset := clampPagination(page, pageSize)
+	if offset > math.MaxInt32 {
+		offset = math.MaxInt32
+	}
+	nowTS := pgtype.Timestamptz{Time: now, Valid: true}
+
+	var items []TeacherQueueItem
+	var total int64
+	err = s.inTenantTx(ctx, tc, func(q *generated.Queries) error {
+		rows, lerr := q.ListTeacherQueue(ctx, generated.ListTeacherQueueParams{
+			Now:       nowTS,
+			CenterID:  pgUUID(centerUUID),
+			TeacherID: pgUUID(userUUID),
+			LateOnly:  lateOnly,
+			Off:       int32(offset),
+			Lim:       int32(pageSize),
+		})
+		if lerr != nil {
+			return fmt.Errorf("list teacher queue: %w", lerr)
+		}
+		t, cerr := q.CountTeacherQueue(ctx, generated.CountTeacherQueueParams{
+			CenterID:  pgUUID(centerUUID),
+			TeacherID: pgUUID(userUUID),
+			LateOnly:  lateOnly,
+		})
+		if cerr != nil {
+			return fmt.Errorf("count teacher queue: %w", cerr)
+		}
+		total = t
+		items = make([]TeacherQueueItem, len(rows))
+		for i, r := range rows {
+			items[i] = teacherQueueItemFromRow(r)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, PageResult{}, err
+	}
+	return items, pageResult(page, pageSize, total), nil
+}
+
+// teacherQueueItemFromRow maps a sqlc row to the service DTO, building the exact
+// grading deep-link from the authoritative ids (DD1b).
+func teacherQueueItemFromRow(r generated.ListTeacherQueueRow) TeacherQueueItem {
+	submissionID := uuid.UUID(r.SubmissionID.Bytes)
+	classID := uuid.UUID(r.ClassID.Bytes)
+	assignmentID := uuid.UUID(r.AssignmentID.Bytes)
+	return TeacherQueueItem{
+		SubmissionID:    submissionID,
+		StudentName:     r.StudentName,
+		AssignmentTitle: r.AssignmentTitle,
+		ClassName:       r.ClassName,
+		IsLate:          r.IsLate,
+		Overdue:         r.Overdue,
+		SubmittedAt:     timestamptzToPtr(r.SubmittedAt),
+		ClassID:         classID,
+		AssignmentID:    assignmentID,
+		Link:            fmt.Sprintf("/classes/%s/grading/%s/%s", classID, assignmentID, submissionID),
+	}
+}
+
 // CountUnread returns the caller's unread, non-archived count (AC4).
 func (s *NotificationService) CountUnread(ctx context.Context, tc model.TenantContext) (int, error) {
 	centerUUID, userUUID, err := parseTenantIdentity(tc)

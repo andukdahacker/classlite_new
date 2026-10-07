@@ -3254,6 +3254,59 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/inbox/teacher-queue:
+    get:
+      operationId: listTeacherQueue
+      summary: The caller's teacher grading backlog (story 10.1c — AC1)
+      description: |
+        A DERIVED read (NOT notification rows) over submissions ⋈ assignments: the
+        caller's own-class ungraded backlog — `submitted`/`ai_processing` submissions
+        with no RELEASED grade (`current_grades.released_at IS NULL`), paginated
+        (XL-2 page/page_size). ALWAYS teacher-scoped to the caller
+        (`classes.teacher_id = caller`, Ducdo Q4) — a non-teacher caller teaching no
+        class gets an empty queue (non-disclosure by construction, no role gate).
+        `overdue` is computed live against the server clock; `isLate` is the
+        submit-time snapshot (distinct — DD6). `late_only=true` filters to the
+        `is_late` snapshot server-side so the filtered `total` stays honest (Ducdo Q3).
+        `link` is the exact grading deep-link
+        `/classes/{classId}/grading/{assignmentId}/{submissionId}`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: late_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The caller's teacher grading backlog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTeacherQueueList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/questions:
     post:
       operationId: askQuestion
@@ -11839,6 +11892,54 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
+
+    TeacherQueueItem:
+      type: object
+      description: |
+        One row of the teacher grading backlog (story 10.1c). A DERIVED read over
+        submissions ⋈ assignments — NOT a notification. Display fields are read live
+        from the current join (the queue is a live derived read, not a historical
+        snapshot — DD7). `isLate` is the submit-time snapshot; `overdue` is the live
+        clock computation (distinct — DD6). All fields are non-null (GO-5).
+      required:
+        [submissionId, studentName, assignmentTitle, className, isLate, overdue, submittedAt, classId, assignmentId, link]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        assignmentTitle:
+          type: string
+        className:
+          type: string
+        isLate:
+          type: boolean
+        overdue:
+          type: boolean
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        classId:
+          type: string
+          format: uuid
+        assignmentId:
+          type: string
+          format: uuid
+        link:
+          type: string
+
+    EnvelopeTeacherQueueList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeacherQueueItem'
         meta:
           $ref: '#/components/schemas/EnvelopeMetaPagination'
 

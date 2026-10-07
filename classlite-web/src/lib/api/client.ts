@@ -1352,6 +1352,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/teacher-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's teacher grading backlog (story 10.1c — AC1)
+         * @description A DERIVED read (NOT notification rows) over submissions ⋈ assignments: the
+         *     caller's own-class ungraded backlog — `submitted`/`ai_processing` submissions
+         *     with no RELEASED grade (`current_grades.released_at IS NULL`), paginated
+         *     (XL-2 page/page_size). ALWAYS teacher-scoped to the caller
+         *     (`classes.teacher_id = caller`, Ducdo Q4) — a non-teacher caller teaching no
+         *     class gets an empty queue (non-disclosure by construction, no role gate).
+         *     `overdue` is computed live against the server clock; `isLate` is the
+         *     submit-time snapshot (distinct — DD6). `late_only=true` filters to the
+         *     `is_late` snapshot server-side so the filtered `total` stays honest (Ducdo Q3).
+         *     `link` is the exact grading deep-link
+         *     `/classes/{classId}/grading/{assignmentId}/{submissionId}`.
+         */
+        get: operations["listTeacherQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -5202,6 +5232,33 @@ export interface components {
         };
         EnvelopeNotificationList: {
             data: components["schemas"]["Notification"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        /**
+         * @description One row of the teacher grading backlog (story 10.1c). A DERIVED read over
+         *     submissions ⋈ assignments — NOT a notification. Display fields are read live
+         *     from the current join (the queue is a live derived read, not a historical
+         *     snapshot — DD7). `isLate` is the submit-time snapshot; `overdue` is the live
+         *     clock computation (distinct — DD6). All fields are non-null (GO-5).
+         */
+        TeacherQueueItem: {
+            /** Format: uuid */
+            submissionId: string;
+            studentName: string;
+            assignmentTitle: string;
+            className: string;
+            isLate: boolean;
+            overdue: boolean;
+            /** Format: date-time */
+            submittedAt: string | null;
+            /** Format: uuid */
+            classId: string;
+            /** Format: uuid */
+            assignmentId: string;
+            link: string;
+        };
+        EnvelopeTeacherQueueList: {
+            data: components["schemas"]["TeacherQueueItem"][];
             meta: components["schemas"]["EnvelopeMetaPagination"];
         };
         EnvelopeUnreadCount: {
@@ -9838,6 +9895,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeStatusAck"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTeacherQueue: {
+        parameters: {
+            query?: {
+                late_only?: boolean;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's teacher grading backlog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTeacherQueueList"];
                 };
             };
             /** @description AUTH_REQUIRED / AUTH_INVALID */

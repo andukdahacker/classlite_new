@@ -25,6 +25,13 @@ const EMPTY_LIST = {
   meta: { serverTime: '2026-10-07T12:00:00Z', pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 } },
 }
 
+// Story 10-1c: the teacher view also reads the grading-queue derived source, so the
+// role-dispatch harness must cover both inbox sources at the HTTP boundary.
+const EMPTY_QUEUE = {
+  data: [],
+  meta: { serverTime: '2026-10-07T12:00:00Z', pagination: { page: 1, pageSize: 100, total: 0, totalPages: 0 } },
+}
+
 function seedSession(role: Role | null): void {
   queryClient.setQueryData<Session>(authKeys.session(), {
     user: { id: 'u1', email: 'u@example.com', fullName: 'U', emailVerified: true },
@@ -59,7 +66,10 @@ function renderRoute(): void {
 
 beforeEach(() => {
   queryClient.removeQueries({ queryKey: authKeys.session() })
-  server.use(http.get('/api/inbox', () => HttpResponse.json(EMPTY_LIST)))
+  server.use(
+    http.get('/api/inbox', () => HttpResponse.json(EMPTY_LIST)),
+    http.get('/api/inbox/teacher-queue', () => HttpResponse.json(EMPTY_QUEUE)),
+  )
 })
 afterEach(() => {
   queryClient.removeQueries({ queryKey: authKeys.session() })

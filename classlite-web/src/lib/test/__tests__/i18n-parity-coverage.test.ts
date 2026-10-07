@@ -37,6 +37,7 @@ import {
 } from '@/features/analytics/__tests__/analyticsI18nKeys'
 import { STORY_8_4B_KEYS } from '@/features/search/__tests__/searchI18nKeys'
 import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
+import { STORY_10_1C_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys10c'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -2200,6 +2201,27 @@ describe('Story 10.1b i18n parity (master ratchet)', () => {
   })
 
   test.each(STORY_10_1B_KEYS)('%s belongs to a 10.1b allowed prefix', (key) => {
+    expect(STORY_10_1B_ALLOWED_PREFIXES.some((p) => key.startsWith(p))).toBe(true)
+  })
+})
+
+/**
+ * Story 10.1c — teacher work queue (grading backlog in the inbox). Net-new keys: the
+ * three submission-row meta variants (`inboxRow.teacher.submission.meta*` — DD6), the
+ * Late chip label (`inboxList.filters.late`), the in-feed "N to grade" count
+ * (`inbox.teacher.toGrade` — NOT the nav badge, Q2), and the DD3 merge-ceiling seam
+ * (`inbox.teacher.queueCeiling`). Shares the 10-1b allowed prefixes.
+ */
+describe('Story 10.1c i18n parity (master ratchet)', () => {
+  test('every new Story 10.1c inbox key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_1C_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.1c keys', () => {
+    assertI18nInterpolationParity(STORY_10_1C_KEYS)
+  })
+
+  test.each(STORY_10_1C_KEYS)('%s belongs to a 10.1b/c allowed prefix', (key) => {
     expect(STORY_10_1B_ALLOWED_PREFIXES.some((p) => key.startsWith(p))).toBe(true)
   })
 })

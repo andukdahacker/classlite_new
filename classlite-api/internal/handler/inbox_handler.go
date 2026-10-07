@@ -100,6 +100,71 @@ func (h *InboxHandler) List(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// teacherQueueResponse is one teacher grading-backlog row on the wire (Story
+// 10.1c). All fields explicit, no omitempty (GO-5); submittedAt is nullable (ISO
+// string or null — TS-6). link is the exact grading deep-link.
+type teacherQueueResponse struct {
+	SubmissionID    string  `json:"submissionId"`
+	StudentName     string  `json:"studentName"`
+	AssignmentTitle string  `json:"assignmentTitle"`
+	ClassName       string  `json:"className"`
+	IsLate          bool    `json:"isLate"`
+	Overdue         bool    `json:"overdue"`
+	SubmittedAt     *string `json:"submittedAt"`
+	ClassID         string  `json:"classId"`
+	AssignmentID    string  `json:"assignmentId"`
+	Link            string  `json:"link"`
+}
+
+func (h *InboxHandler) toQueueResponse(it service.TeacherQueueItem) teacherQueueResponse {
+	return teacherQueueResponse{
+		SubmissionID:    it.SubmissionID.String(),
+		StudentName:     it.StudentName,
+		AssignmentTitle: it.AssignmentTitle,
+		ClassName:       it.ClassName,
+		IsLate:          it.IsLate,
+		Overdue:         it.Overdue,
+		SubmittedAt:     wireTimePtr(it.SubmittedAt),
+		ClassID:         it.ClassID.String(),
+		AssignmentID:    it.AssignmentID.String(),
+		Link:            it.Link,
+	}
+}
+
+// TeacherQueue — GET /api/inbox/teacher-queue (Story 10.1c — AC1/AC5). The caller's
+// own-class ungraded backlog (a DERIVED read, NOT notification rows), paginated with
+// an optional ?late_only=true filter. Teacher-scoped in the service (teacher_id =
+// caller, Ducdo Q4) — a non-teacher caller simply gets an empty queue, no role gate.
+// overdue is computed against the injected clock so tests are deterministic.
+func (h *InboxHandler) TeacherQueue(w http.ResponseWriter, r *http.Request) error {
+	tc, err := requireQuestionTenant(r)
+	if err != nil {
+		return err
+	}
+	page, pageSize := parseSnakePageParams(r)
+	lateOnly := false
+	if v := r.URL.Query().Get("late_only"); v != "" {
+		switch v {
+		case "true":
+			lateOnly = true
+		case "false":
+			lateOnly = false
+		default:
+			return model.ValidationError{Fields: []model.FieldError{{Field: "late_only", Message: "must be true or false"}}}
+		}
+	}
+	items, pageMeta, err := h.svc.ListTeacherQueue(r.Context(), tc, lateOnly, h.clk.Now(), page, pageSize)
+	if err != nil {
+		return err
+	}
+	out := make([]teacherQueueResponse, len(items))
+	for i, it := range items {
+		out[i] = h.toQueueResponse(it)
+	}
+	writePaginatedEnvelope(w, h.clk, out, pageMeta)
+	return nil
+}
+
 // Count — GET /api/inbox/count (AC4). Lightweight unread badge count.
 func (h *InboxHandler) Count(w http.ResponseWriter, r *http.Request) error {
 	tc, err := requireQuestionTenant(r)

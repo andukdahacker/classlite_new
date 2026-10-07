@@ -59,6 +59,12 @@ export interface InboxRowData {
   /** Pre-formatted relative-time label (e.g. `2h ago`). Real i18n in Epic 10. */
   occurredAtLabel?: string
   unread?: boolean
+  /**
+   * Suppress the archive affordance (Story 10-1c DD3). Set for teacher grading-queue
+   * `submission` rows — they are a derived read, not a notification, so they carry no
+   * archive/read state and leave the feed only when graded + released.
+   */
+  suppressArchive?: boolean
 }
 
 export interface InboxRowProps {
@@ -172,15 +178,17 @@ export function InboxRow({ row, role, onPrimaryAction, onArchive }: InboxRowProp
         >
           {t(primaryActionKey)}
         </Button>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`${t('inboxRow.action.archive')}: ${t(row.mainTextKey, row.mainTextVars)}`}
-          data-testid={`inbox-row-${row.id}-archive`}
-          onClick={onArchive}
-        >
-          <Archive aria-hidden="true" />
-        </Button>
+        {row.suppressArchive ? null : (
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`${t('inboxRow.action.archive')}: ${t(row.mainTextKey, row.mainTextVars)}`}
+            data-testid={`inbox-row-${row.id}-archive`}
+            onClick={onArchive}
+          >
+            <Archive aria-hidden="true" />
+          </Button>
+        )}
       </div>
     </li>
   )
