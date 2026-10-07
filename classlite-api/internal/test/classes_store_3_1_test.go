@@ -40,6 +40,53 @@ func TestClass_DueDatesEnabled_DBDefaultFalse_Store(t *testing.T) {
 	}
 }
 
+// Story 10.2 AC7 — UpdateClassStatus stamps classes.ended_at ONLY on the →ended
+// transition (the archive anchor), and leaves it untouched on any other
+// transition. The CAS guard (expected_status) is preserved throughout.
+func TestClass_UpdateClassStatus_StampsEndedAt_Store(t *testing.T) {
+	db := SetupDB(t)
+	ctx := context.Background()
+	center := CreateCenterWithID(t, db, TenantAID, "Center A", "center-a")
+	TenantContext(t, db, center.ID)
+	classID := insertClassRaw(t, db, uuid.UUID(center.ID.Bytes), "Stamp ended_at")
+	q := generated.New(db)
+
+	// upcoming → active: a NON-ended transition must NOT stamp ended_at.
+	active, err := q.UpdateClassStatus(ctx, generated.UpdateClassStatusParams{
+		ID:             pgUUIDForTest(classID),
+		NewStatus:      "active",
+		ExpectedStatus: "upcoming",
+	})
+	if err != nil {
+		t.Fatalf("UpdateClassStatus(→active): %v", err)
+	}
+	if active.EndedAt.Valid {
+		t.Errorf("AC7: ended_at must stay NULL on a non-ended transition, got %v", active.EndedAt.Time)
+	}
+
+	// active → ended: stamps ended_at = now().
+	ended, err := q.UpdateClassStatus(ctx, generated.UpdateClassStatusParams{
+		ID:             pgUUIDForTest(classID),
+		NewStatus:      "ended",
+		ExpectedStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("UpdateClassStatus(→ended): %v", err)
+	}
+	if !ended.EndedAt.Valid {
+		t.Errorf("AC7: →ended must stamp a non-null ended_at")
+	}
+
+	// CAS guard still holds — a stale expected_status matches 0 rows.
+	if _, err := q.UpdateClassStatus(ctx, generated.UpdateClassStatusParams{
+		ID:             pgUUIDForTest(classID),
+		NewStatus:      "ended",
+		ExpectedStatus: "active", // stale: the row is already 'ended'
+	}); err == nil {
+		t.Errorf("AC7: CAS guard must reject a stale expected_status (0 rows → error)")
+	}
+}
+
 // AC6/RLS — the new UpdateClass query respects RLS write isolation: tenant A
 // cannot mutate tenant B's class. The row is invisible under tenant A's RLS
 // scope, so the :one RETURNING update matches 0 rows (no-rows error) and the

@@ -1,6 +1,10 @@
 -- Story 2.2 — classes queries. Full CRUD ships in Story 3.1; this file
 -- carries what Spawn needs plus GetClassByID for handler tests + Story 3.1's
 -- read path pre-emptive use.
+--
+-- Story 10.2 (Archive) D2: `ended_at` is appended to every full-column
+-- RETURNING/SELECT list so these queries keep returning the generated `Class`
+-- model, and UpdateClassStatus stamps it on the →ended transition.
 
 -- name: CreateClass :one
 INSERT INTO classes (
@@ -12,14 +16,14 @@ INSERT INTO classes (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, center_id, template_id, name, target_band, primary_skill,
           session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-          description, capacity, due_dates_enabled, updated_at, end_date, color;
+          description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at;
 
 -- name: GetClassByID :one
 -- RLS-scoped — invisible class returns pgx.ErrNoRows. Returns the full class
 -- row (all Story 3.1 columns) for edit-form prefill (AC6).
 SELECT id, center_id, template_id, name, target_band, primary_skill,
        session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-       description, capacity, due_dates_enabled, updated_at, end_date, color
+       description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at
 FROM classes
 WHERE id = $1;
 
@@ -29,7 +33,7 @@ WHERE id = $1;
 -- then newest-first.
 SELECT id, center_id, template_id, name, target_band, primary_skill,
        session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-       description, capacity, due_dates_enabled, updated_at, end_date, color
+       description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at
 FROM classes
 ORDER BY
     CASE status
@@ -46,7 +50,7 @@ ORDER BY
 -- a SetTenantContext tx so RLS is belt-and-suspenders on tenant.
 SELECT id, center_id, template_id, name, target_band, primary_skill,
        session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-       description, capacity, due_dates_enabled, updated_at, end_date, color
+       description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at
 FROM classes
 WHERE teacher_id = $1
 ORDER BY
@@ -90,15 +94,20 @@ SET name              = COALESCE(sqlc.narg('name'), name),
 WHERE id = sqlc.arg('id')
 RETURNING id, center_id, template_id, name, target_band, primary_skill,
           session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-          description, capacity, due_dates_enabled, updated_at, end_date, color;
+          description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at;
 
 -- name: UpdateClassStatus :one
 -- Compare-and-swap lifecycle transition (AC4). The WHERE binds the expected
 -- current status; a 0-row result means the row moved under a concurrent
 -- transition → caller returns INVALID_STATUS_TRANSITION. updated_at advanced.
+-- Story 10.2 D2: on the →ended transition ONLY, stamp ended_at = now() (the
+-- authoritative archive anchor). Any other transition leaves ended_at untouched;
+-- `ended` is terminal (3.1) so this never un-stamps.
 UPDATE classes
-SET status = sqlc.arg('new_status'), updated_at = now()
+SET status = sqlc.arg('new_status'),
+    updated_at = now(),
+    ended_at = CASE WHEN sqlc.arg('new_status') = 'ended' THEN now() ELSE ended_at END
 WHERE id = sqlc.arg('id') AND status = sqlc.arg('expected_status')
 RETURNING id, center_id, template_id, name, target_band, primary_skill,
           session_count, status, teacher_id, pending_teacher_email, start_date, created_at,
-          description, capacity, due_dates_enabled, updated_at, end_date, color;
+          description, capacity, due_dates_enabled, updated_at, end_date, color, ended_at;

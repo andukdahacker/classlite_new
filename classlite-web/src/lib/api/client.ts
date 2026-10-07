@@ -1382,6 +1382,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's archive of past classes & exercises (story 10.2 — FR-60)
+         * @description ONE role-scoped, UNION-paginated read over the REVERSED filters of the
+         *     shipped library/class reads: soft-deleted exercises (`deleted_at IS NOT NULL`,
+         *     the inverse of every exercise read) and ended-≥30-days classes
+         *     (`status='ended' AND ended_at <= now()-30d`). Items are ordered newest-
+         *     `archivedAt`-first with an `id` tiebreak across BOTH types (one coherent
+         *     `total`), paginated (XL-2 page/page_size). Role scope is a SERVICE invariant
+         *     (DD5): a teacher sees only their own (`exercises.created_by` /
+         *     `classes.teacher_id` = caller); owner/admin see center-wide. A student → 403.
+         *     Optional `type` gates a single branch; an unknown `type` (e.g. the deferred
+         *     `session`) → 422. Read-only — the only reuse verbs (Duplicate / Edit-a-copy,
+         *     exercises only) go through `POST /api/exercises/{id}/duplicate`.
+         */
+        get: operations["listArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -5259,6 +5289,43 @@ export interface components {
         };
         EnvelopeTeacherQueueList: {
             data: components["schemas"]["TeacherQueueItem"][];
+            meta: components["schemas"]["EnvelopeMetaPagination"];
+        };
+        /**
+         * @description One archived item (story 10.2) — discriminated by `type`. The archive is a
+         *     live REVERSED filter (DD7): soft-deleted exercises (`deleted_at IS NOT NULL`)
+         *     and ended-≥30-days classes (`status='ended' AND ended_at <= now()-30d`), not a
+         *     frozen snapshot. `archivedAt` is the unified sort key (DD8): an exercise's
+         *     deleted_at, a class's ended_at. Per-type fields are null for the other type
+         *     (GO-5 explicit null — all fields required, nullable where they don't apply):
+         *     a class carries null `skill`/`targetBand` and an empty `link` (read-only);
+         *     an exercise carries null `classStatus`. `link` is the exercise Edit /
+         *     Edit-a-copy target `/exercises/{id}/edit`.
+         */
+        ArchiveItem: {
+            /** @enum {string} */
+            type: "class" | "exercise";
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @description A secondary label — the exercise code (EX-…) for exercises, empty for classes. */
+            subtitle: string;
+            /** Format: date-time */
+            archivedAt: string;
+            /** @description The class lifecycle status (always 'ended' in the archive); null for exercises. */
+            classStatus: string | null;
+            /** @description The exercise skill; null for classes. */
+            skill: string | null;
+            /**
+             * Format: float
+             * @description The exercise target band; null for classes or an unset band.
+             */
+            targetBand: number | null;
+            /** @description The exercise Edit / Edit-a-copy target /exercises/{id}/edit; empty for read-only classes. */
+            link: string;
+        };
+        EnvelopeArchiveList: {
+            data: components["schemas"]["ArchiveItem"][];
             meta: components["schemas"]["EnvelopeMetaPagination"];
         };
         EnvelopeUnreadCount: {
@@ -9940,6 +10007,57 @@ export interface operations {
                 };
             };
             /** @description Invalid late_only (not "true"/"false") */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listArchive: {
+        parameters: {
+            query?: {
+                type?: "class" | "exercise";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's role-scoped archive page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeArchiveList"];
+                };
+            };
+            /** @description AUTH_REQUIRED / AUTH_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INSUFFICIENT_ROLE (a student may not read the archive) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unknown type (not "class"/"exercise") */
             422: {
                 headers: {
                     [name: string]: unknown;

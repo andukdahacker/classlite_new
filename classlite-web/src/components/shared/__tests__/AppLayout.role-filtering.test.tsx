@@ -99,19 +99,24 @@ function renderAppLayoutWithRole(role: Role | null): {
 
 // Role-scoped `href`s each nav group EXPOSES. Wrong-role hrefs must be
 // ABSENT from the DOM per TEST-FE-6, not just visually hidden.
-const OWNER_ONLY_HREFS = ['/knowledge-hub', '/archive'] as const
-const OWNER_HREFS = ['/dashboard', '/people/staff', '/classes', '/settings'] as const
-const ADMIN_HREFS = ['/dashboard', '/people/staff', '/classes']
+const OWNER_ONLY_HREFS = ['/knowledge-hub'] as const
+// Story 10.2 — `/archive` is STAFF-scoped content (owner/admin/teacher), NOT
+// owner-only (FR-60 + the shipped teacher/admin sidebar entry). It was a stale
+// `OWNER_ONLY_HREFS` entry; now asserted present for all staff and absent for
+// students (TEST-FE-6) via the per-role lists below.
+const OWNER_HREFS = ['/dashboard', '/people/staff', '/classes', '/settings', '/archive'] as const
+const ADMIN_HREFS = ['/dashboard', '/people/staff', '/classes', '/archive']
 const ADMIN_ABSENT_HREFS = ['/settings'] // /settings is Owner-only
 const TEACHER_HREFS = [
   '/dashboard',
   '/classes',
   '/exercises',
   '/students',
+  '/archive',
 ]
 const TEACHER_ABSENT_HREFS = ['/people/staff', '/settings']
 const STUDENT_HREFS = ['/dashboard', '/my-classes', '/assignments', '/my-schedule']
-const STUDENT_ABSENT_HREFS = ['/settings', '/people/staff', '/classes']
+const STUDENT_ABSENT_HREFS = ['/settings', '/people/staff', '/classes', '/archive']
 
 beforeEach(() => {
   useUIStore.getState().reset()

@@ -3313,6 +3313,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/archive:
+    get:
+      operationId: listArchive
+      summary: The caller's archive of past classes & exercises (story 10.2 — FR-60)
+      description: |
+        ONE role-scoped, UNION-paginated read over the REVERSED filters of the
+        shipped library/class reads: soft-deleted exercises (`deleted_at IS NOT NULL`,
+        the inverse of every exercise read) and ended-≥30-days classes
+        (`status='ended' AND ended_at <= now()-30d`). Items are ordered newest-
+        `archivedAt`-first with an `id` tiebreak across BOTH types (one coherent
+        `total`), paginated (XL-2 page/page_size). Role scope is a SERVICE invariant
+        (DD5): a teacher sees only their own (`exercises.created_by` /
+        `classes.teacher_id` = caller); owner/admin see center-wide. A student → 403.
+        Optional `type` gates a single branch; an unknown `type` (e.g. the deferred
+        `session`) → 422. Read-only — the only reuse verbs (Duplicate / Edit-a-copy,
+        exercises only) go through `POST /api/exercises/{id}/duplicate`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [class, exercise]
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The caller's role-scoped archive page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeArchiveList'
+        "401":
+          description: AUTH_REQUIRED / AUTH_INVALID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "403":
+          description: INSUFFICIENT_ROLE (a student may not read the archive)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        "422":
+          description: Unknown type (not "class"/"exercise")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/questions:
     post:
       operationId: askQuestion
@@ -11946,6 +12012,62 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TeacherQueueItem'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMetaPagination'
+
+    ArchiveItem:
+      type: object
+      description: |
+        One archived item (story 10.2) — discriminated by `type`. The archive is a
+        live REVERSED filter (DD7): soft-deleted exercises (`deleted_at IS NOT NULL`)
+        and ended-≥30-days classes (`status='ended' AND ended_at <= now()-30d`), not a
+        frozen snapshot. `archivedAt` is the unified sort key (DD8): an exercise's
+        deleted_at, a class's ended_at. Per-type fields are null for the other type
+        (GO-5 explicit null — all fields required, nullable where they don't apply):
+        a class carries null `skill`/`targetBand` and an empty `link` (read-only);
+        an exercise carries null `classStatus`. `link` is the exercise Edit /
+        Edit-a-copy target `/exercises/{id}/edit`.
+      required: [type, id, title, subtitle, archivedAt, classStatus, skill, targetBand, link]
+      properties:
+        type:
+          type: string
+          enum: [class, exercise]
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        subtitle:
+          type: string
+          description: A secondary label — the exercise code (EX-…) for exercises, empty for classes.
+        archivedAt:
+          type: string
+          format: date-time
+        classStatus:
+          type: string
+          nullable: true
+          description: The class lifecycle status (always 'ended' in the archive); null for exercises.
+        skill:
+          type: string
+          nullable: true
+          description: The exercise skill; null for classes.
+        targetBand:
+          type: number
+          format: float
+          nullable: true
+          description: The exercise target band; null for classes or an unset band.
+        link:
+          type: string
+          description: The exercise Edit / Edit-a-copy target /exercises/{id}/edit; empty for read-only classes.
+
+    EnvelopeArchiveList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchiveItem'
         meta:
           $ref: '#/components/schemas/EnvelopeMetaPagination'
 

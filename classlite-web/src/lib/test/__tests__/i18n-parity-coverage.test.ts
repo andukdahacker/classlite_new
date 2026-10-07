@@ -38,6 +38,7 @@ import {
 import { STORY_8_4B_KEYS } from '@/features/search/__tests__/searchI18nKeys'
 import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
 import { STORY_10_1C_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys10c'
+import { STORY_10_2_KEYS } from '@/features/archive/__tests__/archiveI18nKeys'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -2223,5 +2224,26 @@ describe('Story 10.1c i18n parity (master ratchet)', () => {
 
   test.each(STORY_10_1C_KEYS)('%s belongs to a 10.1b/c allowed prefix', (key) => {
     expect(STORY_10_1B_ALLOWED_PREFIXES.some((p) => key.startsWith(p))).toBe(true)
+  })
+})
+
+/**
+ * Story 10.2 — Archive. Net-new keys: the page chrome (title/subtitle), the type
+ * filter chips (all/classes/exercises), the per-type row meta (DD7) + read-only
+ * badge (DD6), the two exercise reuse verbs + toasts (Ducdo D3/DD4), the role-toned
+ * empty (s60), and the inline error (UX-1). The sidebar labels (sidebar.*.archive)
+ * already ship (1d-4 chrome) — NOT re-listed here.
+ */
+describe('Story 10.2 i18n parity (master ratchet)', () => {
+  test('every new Story 10.2 archive key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_2_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.2 keys', () => {
+    assertI18nInterpolationParity(STORY_10_2_KEYS)
+  })
+
+  test.each(STORY_10_2_KEYS)('%s belongs to the archive.* namespace', (key) => {
+    expect(key.startsWith('archive.')).toBe(true)
   })
 })

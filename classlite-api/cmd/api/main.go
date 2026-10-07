@@ -876,6 +876,16 @@ func main() {
 	mux.Handle("DELETE /api/exercises/{id}", exerciseChain(exerciseHandler.Delete))
 	mux.Handle("POST /api/exercises/{id}/duplicate", exerciseChain(exerciseHandler.Duplicate))
 
+	// Story 10.2 — Archive (1 route). Same staff-chain shape as exerciseChain
+	// (role + teacher-scope enforced in-service): owner/admin see center-wide,
+	// teacher sees own (created_by/teacher_id = caller), student → 403. ONE
+	// role-scoped, UNION-paginated reversed-filter read of soft-deleted exercises
+	// (deleted_at IS NOT NULL) + ended-≥30-days classes (status='ended' AND
+	// ended_at <= now()-30d). Read-only; exercise Duplicate reuses the route above.
+	archiveSvc := service.NewArchiveService(pool, clock.RealClock{})
+	archiveHandler := handler.NewArchiveHandler(archiveSvc, clock.RealClock{})
+	mux.Handle("GET /api/archive", exerciseChain(archiveHandler.List))
+
 	// Story 5.1 — Assignments + submission lifecycle (11 routes). Same open chain
 	// shape (role + teacher-scope + enrollment enforced in-service). Assignment
 	// management is teacher/admin/owner; the submission lifecycle is student-only

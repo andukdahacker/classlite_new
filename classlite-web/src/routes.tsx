@@ -674,6 +674,37 @@ const baseRoutes: RouteObject[] = [
           },
         ],
       },
+      // Story 10.2 — /archive (past classes read-only + archived exercises with
+      // Duplicate / Edit-a-copy). Its own lazy chunk under the AppLayout group,
+      // gated to staff (owner/admin/teacher) exactly like /exercises; students
+      // get PermissionDenied (TEST-FE-6 — no archive data in the student DOM).
+      // ArchiveRoute self-gates too (belt-and-suspenders) and lazy-loads the view.
+      {
+        path: '/archive',
+        lazy: async () => {
+          const { default: RouteRoleGate } = await import(
+            '@/components/shared/RouteRoleGate'
+          )
+          return {
+            element: (
+              <RouteRoleGate
+                allowedRoles={['owner', 'admin', 'teacher']}
+                requiredRolesForCopy={['owner', 'admin']}
+              />
+            ),
+          }
+        },
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              // Deep import for its own Rolldown chunk (students never download it).
+              const { ArchiveRoute } = await import('@/features/archive')
+              return { Component: ArchiveRoute }
+            },
+          },
+        ],
+      },
       // Story 2.7 — bulk student import. Mounted at `/students/import` (a CHILD
       // path), NOT the bare `/students` — Story 7.2 owns `/students` (the s42
       // center-wide list); do not squat the parent. Gated owner/admin (the DB

@@ -56,6 +56,18 @@ SELECT id, center_id, created_by, code, title, description, skill, tags,
 FROM exercises
 WHERE id = sqlc.arg('id') AND deleted_at IS NULL;
 
+-- name: GetExerciseByIDForDuplicate :one
+-- Story 10.2 (AC9): the Duplicate/Edit-a-copy source read for the archive, which
+-- surfaces SOFT-DELETED exercises. Identical to GetExerciseByID BUT WITHOUT the
+-- `deleted_at IS NULL` filter so an archived (soft-deleted) source can be cloned
+-- into a fresh ACTIVE row. Still RLS-scoped (tenant boundary) and still fed
+-- through assertExerciseTeacherScope in the service (cross-teacher → 404). A row
+-- in another tenant returns pgx.ErrNoRows → 404.
+SELECT id, center_id, created_by, code, title, description, skill, tags,
+       target_band, content, schema_version, deleted_at, created_at, updated_at
+FROM exercises
+WHERE id = sqlc.arg('id');
+
 -- name: ListExercises :many
 -- Owner/admin scope (AC8) — ALL center exercises. Optional skill/tag/band
 -- filters via sqlc.narg + the ($n IS NULL OR …) idiom. Section/question counts

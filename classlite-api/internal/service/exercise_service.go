@@ -857,8 +857,11 @@ func (s *ExerciseService) SoftDelete(
 // Duplicate clones an exercise: title suffixed "(copy)", same skill/tags/band,
 // a DEEP copy of the content (unmarshal → re-marshal), a fresh unique code, and
 // created_by = the duplicator. Mutating the copy never touches the original —
-// separate rows, separate content bytes. 404 if the source is absent /
-// soft-deleted / cross-teacher.
+// separate rows, separate content bytes. 404 if the source is absent or
+// cross-teacher. The source is read WITHOUT the soft-delete filter
+// (GetExerciseByIDForDuplicate) so the Story 10.2 archive can clone an archived
+// (soft-deleted) exercise into a fresh ACTIVE row (AC9); the tenant boundary
+// (RLS) and the cross-teacher scope (assertExerciseTeacherScope → 404) still hold.
 func (s *ExerciseService) Duplicate(
 	ctx context.Context, tc model.TenantContext, id uuid.UUID,
 ) (ExerciseWithCounts, error) {
@@ -876,7 +879,7 @@ func (s *ExerciseService) Duplicate(
 
 	var out ExerciseWithCounts
 	err = s.mutateInTenantTx(ctx, tc, func(tx pgx.Tx, txQ *generated.Queries) error {
-		src, err := txQ.GetExerciseByID(ctx, pgUUID(id))
+		src, err := txQ.GetExerciseByIDForDuplicate(ctx, pgUUID(id))
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return exerciseNotFound(id)
