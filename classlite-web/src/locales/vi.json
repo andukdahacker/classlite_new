@@ -730,7 +730,6 @@
   "questions.empty.student.title": "Chưa có câu hỏi nào",
   "questions.empty.student.body": "Hãy hỏi giáo viên về bất cứ điều gì trong bài tập này.",
   "questions.empty.teacher.title": "Không có câu hỏi cần trả lời",
-  "questions.empty.teacher.body": "Câu hỏi từ học viên của bạn sẽ xuất hiện ở đây.",
   "questions.empty.teacher.explainer": "Câu hỏi của học viên trên bài tập sẽ hiện ở đây. Các thông báo cần xử lý ngay — chấm bài, ghi danh và thanh toán — nằm trong Hộp thư của bạn.",
   "questions.empty.teacher.openInbox": "Mở Hộp thư",
   "questions.console.title": "Câu hỏi",

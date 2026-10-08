@@ -85,6 +85,19 @@ describe('EmptyState — AC1 contract', () => {
     expect(heading.querySelector('span.italic')).toBeNull()
   })
 
+  test('accent WITHOUT headline still surfaces the brand accent (single-source invariant, no silent drop)', () => {
+    render(<EmptyState data-testid="es" headlineAccent="yet" />)
+    // The accent is the brand single-source; it must render even when the
+    // consumer omits the leading headline — not be swallowed by the headline gate.
+    const heading = screen.getByRole('heading', { level: 2 })
+    const accent = screen.getByText('yet')
+    expect(accent.tagName).toBe('SPAN')
+    expect(accent).toHaveClass('italic')
+    expect(heading).toContainElement(accent)
+    // No stray leading space when there is no headline to append to.
+    expect(heading).toHaveTextContent('yet')
+  })
+
   test('no accessibility violations (simple, actions present)', async () => {
     const { container } = render(
       <EmptyState

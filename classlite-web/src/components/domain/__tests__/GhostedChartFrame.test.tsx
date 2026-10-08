@@ -17,16 +17,25 @@ describe('GhostedChartFrame — AC2', () => {
     expect(screen.getByTestId('frame')).toHaveAttribute('aria-hidden', 'true')
   })
 
-  test("the em-dash placeholders are NOT part of the accessible name", () => {
+  test('the em-dash placeholders live in an aria-hidden subtree (excluded from the accessible name)', () => {
     render(
       <EmptyState tone="guided" live data-testid="region" headline="No classes to analyze yet">
         <GhostedChartFrame data-testid="frame" />
       </EmptyState>,
     )
     const region = screen.getByRole('status')
-    // Accessible text comes from the EmptyState headline, never the dash fill.
+    // Accessible text comes from the EmptyState headline...
     expect(region).toHaveTextContent('No classes to analyze yet')
-    expect(region).not.toHaveTextContent('— — — —')
+    // ...and every dash placeholder sits inside an aria-hidden ancestor, so a
+    // screen reader never announces the ghost fill ("dash dash dash"). (A spaced
+    // `not.toHaveTextContent('— — — —')` literal could never match the unspaced
+    // DOM text and `toHaveTextContent` reads aria-hidden text anyway — so this
+    // walks the actual hidden boundary instead.)
+    const dashes = screen.getAllByText('—')
+    expect(dashes.length).toBeGreaterThan(0)
+    for (const dash of dashes) {
+      expect(dash.closest('[aria-hidden="true"]')).not.toBeNull()
+    }
   })
 
   test('no accessibility violations inside a guided EmptyState', async () => {

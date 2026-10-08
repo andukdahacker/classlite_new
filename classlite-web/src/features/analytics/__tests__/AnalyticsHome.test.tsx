@@ -33,7 +33,7 @@
 //     STATIC label (reuse scopeBar.* keys), the class-picker is the one live
 //     control (onClassChange → navigate to /analytics/class/:id).
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router'
@@ -117,10 +117,16 @@ describe('AnalyticsHome — Story 10.3 AC7 empty-path a11y (net-new)', () => {
     const region = screen.getByTestId('analytics-home-empty')
     // The region's accessible text is the headline, never the dash fill.
     expect(region).toHaveTextContent(i18n.t('analytics.home.empty.headline') as string)
-    expect(region).not.toHaveTextContent('— — — —')
-    // The chart silhouette subtree is aria-hidden (name never "dash dash dash").
-    const hidden = region.querySelector('[aria-hidden="true"]')
-    expect(hidden).not.toBeNull()
+    // Every dash placeholder sits inside an aria-hidden subtree, so the ghost
+    // fill is excluded from the region's accessible name. (A spaced
+    // `not.toHaveTextContent('— — — —')` literal can never match the unspaced DOM
+    // text and `toHaveTextContent` reads aria-hidden text anyway, so it proved
+    // nothing — this walks the actual hidden boundary.)
+    const dashes = within(region).getAllByText('—')
+    expect(dashes.length).toBeGreaterThan(0)
+    for (const dash of dashes) {
+      expect(dash.closest('[aria-hidden="true"]')).not.toBeNull()
+    }
   })
 })
 

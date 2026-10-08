@@ -4,7 +4,7 @@ baseline_commit: 41b9fd961aab9c66c2e91955c59dbed29a4712ae
 
 # Story 10.3: Empty States
 
-Status: review
+Status: done
 
 ## Story
 
@@ -134,6 +134,22 @@ export interface EmptyStateProps {
 - [x] **Task 6 (AC5):** Swap the 8 `EmptyStatePlaceholder` story imports → `EmptyState` (explicit prop map); delete the placeholder fixture; leave `error-state-placeholder.tsx`. Confirm `storybook:test` executes stories + stays green.
 - [x] **Task 7 (AC6):** Author net-new keys in `en.json`+`vi.json`; build the exhaustive `STORY_10_3_KEYS`; wire into `i18n-parity-coverage.test.ts`; flag prose keys ★ REVIEWER-MANDATORY VN.
 - [x] **Task 8 (AC7):** Final gates — `tsc -b`=0, ESLint=0, `vitest` 0-regression, `storybook:test` green, `i18n-parity` green; inbox-lens absence test; en/vi overflow; empty-path axe on analytics/my-perf.
+
+### Review Findings
+
+_Code review 2026-10-08 (/bmad-code-review 10-3, Amelia; Blind Hunter + Edge Case Hunter + Acceptance Auditor @ Opus). Diff `fefd965^..fefd965`. 3 decision-needed resolved (Ducdo: 1a accept · 2b patch · 3a accept), 8 patches APPLIED, 3 dismissed (2 noise + 1 FP). Gates re-verified: vitest 7f/1112t · tsc -b=0 · ESLint 0 · i18n-parity OK._
+
+- [x] [Review][Decision→Dismissed] Bundled production-behavior changes in a "change-nothing" story — "fix the pre existings" carries real component edits beyond gate-greening (billing lazy-seed, SampleDashboardPreview contrast, `readableTextColor` WCAG fix, WritingAttemptShell flake). **Ducdo 1a: accept — intended to ride this PR.**
+- [x] [Review][Patch] FW-7 hard-rule relaxed repo-wide → **narrowed (Ducdo 2b).** Replaced the unconditional `features/<area>/*.stories.tsx` allow with an explicit `ROUTE_PAGE_STORIES` allowlist (13 registered pages); an unregistered feature-root story now fails with a "register-or-move-to-/components/" reason. Restored the `features/grading/GradingCard.stories.tsx` negative test + added a non-`Page`-suffixed registered positive. (blind+auditor) [classlite-web/src/test/storybook-rules/fw7-placement.ts, fw7-placement.test.ts]
+- [x] [Review][Decision→Dismissed] Re-platform behavior deltas on the 3 PARTIAL surfaces (classes/roster/knowledge-hub) — lost dashed-border card + gained net-new `role="status"`. **Ducdo 3a: accept — exactly what D1 one-idiom consolidation intends.**
+- [x] [Review][Patch] Vacuous a11y assertion `not.toHaveTextContent('— — — —')` → replaced with a dash-under-`aria-hidden`-ancestor walk (the spaced literal could never match the unspaced DOM, and `toHaveTextContent` reads `aria-hidden` text so it proved nothing). [classlite-web/src/components/domain/__tests__/GhostedChartFrame.test.tsx, classlite-web/src/features/analytics/__tests__/AnalyticsHome.test.tsx]
+- [x] [Review][Patch] Dead locale key `questions.empty.teacher.body` retired from en.json/vi.json + its `STORY_7_4B_KEYS` parity entry. [classlite-web/src/locales/en.json, vi.json, i18n-parity-coverage.test.ts]
+- [x] [Review][Patch→Dismissed FALSE-POSITIVE] 9-4 keys under `STORY_1D_3_KEYS` is NOT mis-attribution — the parity file header (L160-164) documents that all `sidebar.*`/chrome-namespace keys are "1D-owned" and MUST live in a `STORY_1D_*_KEYS` array by namespace (precedents: 7.2b, 7.3b, 2.7 all do this). Refiling into a `STORY_9_4_KEYS` array would BREAK the parity script. No change.
+- [x] [Review][Patch] Stale doc comment referencing deleted `EmptyStatePlaceholder` corrected. [classlite-web/src/test/fixtures/error-state-placeholder.tsx]
+- [x] [Review][Patch] `headlineAccent` dropped when `headline` omitted → gate now `headline || headlineAccent`; accent renders standalone in the `<h2>` (no stray leading space). Added `EmptyState.test.tsx` coverage. [classlite-web/src/components/domain/EmptyState.tsx]
+- [x] [Review][Patch] Guided + `live` with only `aria-hidden` children (latent) → hardened the `live` prop docstring to a call-site invariant (a runtime guard would regress my-perf, which legitimately passes `live` with a visible-child banner and no headline/description; the component can't cheaply tell an announceable child from a hidden-only one). [classlite-web/src/components/domain/EmptyState.tsx]
+- [x] [Review][Patch] Inbox lens-absence test → each other-lens absence assertion now guarded on the accent being lexically distinct from the student's, so a future shared-accent copy edit can't flip it to a false failure. [classlite-web/src/features/inbox/components/__tests__/InboxView.test.tsx]
+- [x] [Review][Patch] English-only negative regex `/your next session/i` → derives the locale's own next-session prefix from the template via a sentinel split (guards under a non-EN default locale). [classlite-web/src/features/dashboard/components/__tests__/StudentWelcome.test.tsx]
 
 ## Dev Notes
 

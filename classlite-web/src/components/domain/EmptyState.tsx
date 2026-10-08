@@ -57,6 +57,14 @@ export interface EmptyStateProps {
    * first-paint empty is NOT announced as if it just arrived; `true` promotes it
    * to `role="status"` (which implies `aria-live="polite"`) for an empty that
    * materializes after a fetch resolves.
+   *
+   * CONTRACT: a `live` surface MUST carry announceable (non-`aria-hidden`)
+   * content — a `headline`/`description`, or a visible child (e.g. the amber
+   * threshold banner at the `MyPerformanceContainer` call site). Pairing `live`
+   * with ONLY an `aria-hidden` child (a lone `GhostedChartFrame` and nothing
+   * else) produces a `role="status"` region with no accessible name, so a screen
+   * reader announces an empty update. The component cannot cheaply tell an
+   * announceable child from a hidden-only one, so this is a call-site invariant.
    */
   live?: boolean
   'data-testid'?: string
@@ -100,12 +108,12 @@ export function EmptyState({
           {icon}
         </span>
       ) : null}
-      {headline ? (
+      {headline || headlineAccent ? (
         <h2 className="font-[var(--cl-font-display)] text-2xl text-[color:var(--cl-ink)]">
           {headline}
           {headlineAccent ? (
             <>
-              {' '}
+              {headline ? ' ' : null}
               <span className="italic text-[color:var(--cl-accent)]">
                 {headlineAccent}
               </span>

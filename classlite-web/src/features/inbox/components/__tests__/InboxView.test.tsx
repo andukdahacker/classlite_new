@@ -104,16 +104,20 @@ describe('InboxView — three-state trilogy (AC2)', () => {
     renderView('student', 'student')
     expect(await screen.findByTestId('inbox-empty')).toBeInTheDocument()
     // the §6.4 italic-accent brand word renders.
-    expect(screen.getByText(i18n.t('inbox.empty.student.titleAccent'))).toBeInTheDocument()
+    const studentAccent = i18n.t('inbox.empty.student.titleAccent')
+    expect(screen.getByText(studentAccent)).toBeInTheDocument()
     // TEST-FE-6 (Story 10.3 AC7) — the OTHER lenses' copy must be ABSENT from the
     // DOM on a student render, not merely hidden (the lens decorator is at the call
-    // site; the shared EmptyState must not leak another role's words).
-    expect(
-      screen.queryByText(i18n.t('inbox.empty.teacher.titleAccent')),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(i18n.t('inbox.empty.ownerAdmin.titleAccent')),
-    ).not.toBeInTheDocument()
+    // site; the shared EmptyState must not leak another role's words). Guard each
+    // absence on the accent being lexically DISTINCT from the student's: if a
+    // future copy edit makes two lenses share an accent word, the student render
+    // above stays the real assertion and this never flips to a false failure.
+    for (const key of ['inbox.empty.teacher.titleAccent', 'inbox.empty.ownerAdmin.titleAccent']) {
+      const otherAccent = i18n.t(key)
+      if (otherAccent !== studentAccent) {
+        expect(screen.queryByText(otherAccent)).not.toBeInTheDocument()
+      }
+    }
     expect(screen.queryByTestId('inbox-header-count')).not.toBeInTheDocument()
   })
 })

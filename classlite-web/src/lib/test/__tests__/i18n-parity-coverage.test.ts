@@ -2097,7 +2097,6 @@ const STORY_7_4B_KEYS = [
   'questions.empty.student.title',
   'questions.empty.student.body',
   'questions.empty.teacher.title',
-  'questions.empty.teacher.body',
   'questions.console.title',
   'questions.console.openCount',
   'questions.console.unansweredFilter',

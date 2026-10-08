@@ -62,7 +62,16 @@ describe('StudentWelcome — pinned content (pre-refactor characterization)', ()
   test('omits the next-session line when no label is supplied', () => {
     renderWelcome(null)
     // The interpolated prefix must be absent entirely (no bare label leak).
-    expect(screen.queryByText(/your next session/i)).not.toBeInTheDocument()
+    // Derive the locale's OWN prefix from the template rather than hard-coding the
+    // English phrasing, so the assertion still guards under a non-EN default
+    // locale or a copy change (TEST-FE-4).
+    const SENTINEL = '@@SESSION@@'
+    const resolved = i18n.t('dashboard.welcome.nextSession', { session: SENTINEL }) as string
+    const prefix = resolved.split(SENTINEL)[0].trim()
+    expect(prefix.length).toBeGreaterThan(0)
+    expect(
+      screen.queryByText((content) => content.includes(prefix)),
+    ).not.toBeInTheDocument()
   })
 
   test('the dismiss CTA fires onDismiss exactly once', async () => {

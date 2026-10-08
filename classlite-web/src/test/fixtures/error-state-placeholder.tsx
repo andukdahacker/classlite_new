@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button'
  * ErrorStatePlaceholder — Story 1d-1 AC3.
  *
  * Pre-Epic-10 stand-in for the real `ErrorState` component (ships in
- * Epic 10 Story 10.4). Same lifecycle as `EmptyStatePlaceholder` — when
- * 10.4 lands, a find-replace swaps imports and this file is deleted.
+ * Epic 10 Story 10.4). Follows the same lifecycle the now-deleted
+ * `EmptyStatePlaceholder` did (retired in Story 10.3 once the canonical
+ * `EmptyState` landed) — when 10.4 lands, a find-replace swaps imports and
+ * this file is deleted.
  *
  * Shape mirrors `ErrorBoundary.tsx`'s `ErrorFallback` (alert role + i18n
  * heading + retry button via the shared `Button` primitive) so styling,
