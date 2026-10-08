@@ -29,6 +29,12 @@ const config: StorybookConfig = {
     '../src/components/ui/**/*.stories.@(ts|tsx)',
     '../src/components/domain/**/*.stories.@(ts|tsx)',
     '../src/features/*/components/**/*.stories.@(ts|tsx)',
+    // Route-page tier (Story 10.3 convention amendment, Ducdo 2026-10-08):
+    // page components live at `features/<area>/` root (route targets imported
+    // by routes.tsx), so their co-located stories do too. They render in
+    // Storybook like any other tier; the three-state trilogy does not apply to
+    // a route page, so each opts out via `// storybook-rule: no-three-state`.
+    '../src/features/*/*.stories.@(ts|tsx)',
   ],
   addons: ['@storybook/addon-a11y', '@storybook/addon-docs'],
   framework: {

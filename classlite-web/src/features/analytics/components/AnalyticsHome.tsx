@@ -17,6 +17,9 @@ import type { ReactElement } from 'react'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { AnalyticsHomeShell } from '@/components/domain/AnalyticsHomeShell'
+import { EmptyState } from '@/components/domain/EmptyState'
+import { GhostedChartFrame } from '@/components/domain/GhostedChartFrame'
+import { Button } from '@/components/ui/button'
 import type { AnalyticsScope } from '@/components/domain/ScopeBar'
 import type { Role } from '@/hooks/useRole'
 import type { components } from '@/lib/api/client'
@@ -79,35 +82,34 @@ export function AnalyticsHome({ data }: AnalyticsHomeProps): ReactElement {
         {t('analytics.desktopHint')}
       </p>
       {data.classes.length === 0 ? (
-        <div
-          data-testid="analytics-home-empty"
-          className="col-span-full flex flex-col items-center gap-3 rounded-xl border border-dashed border-[var(--cl-border)] bg-[var(--cl-surface)] px-6 py-12 text-center"
-        >
-          <span aria-hidden="true" className="text-4xl">
-            📊
-          </span>
-          <h2 className="text-base font-semibold text-[var(--cl-ink)]">
-            {t('analytics.home.empty.headline')}
-          </h2>
-          {isOwnerOrAdmin ? (
-            // Owner/admin can create classes → an actionable CTA (UX-1).
-            <button
-              type="button"
-              onClick={() => navigate('/classes')}
-              className="rounded-lg border border-[var(--cl-border)] px-3 py-1.5 text-sm font-medium text-[var(--cl-ink)] hover:border-[var(--cl-ink-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {t('analytics.home.empty.action')}
-            </button>
-          ) : (
-            // Teachers don't create classes (D12 / AC6a — role-appropriate): a
-            // hint that assigned classes will appear here, no misleading CTA.
-            <p
-              data-testid="analytics-home-empty-teacher-hint"
-              className="max-w-sm text-sm text-[var(--cl-ink-soft)]"
-            >
-              {t('analytics.home.empty.teacherHint')}
-            </p>
-          )}
+        // s61 rebuild (Story 10.3 AC3): EmptyState tone='guided' + GhostedChartFrame.
+        // Role branch PRESERVED — owner/admin get the actionable CTA (a deliberate
+        // product departure from the mock, kept), a teacher gets the non-actionable
+        // hint. The chip is suppressed (guided + no icon); the frame is the visual.
+        <div className="col-span-full">
+          <EmptyState
+            data-testid="analytics-home-empty"
+            tone="guided"
+            live
+            headline={t('analytics.home.empty.headline')}
+            actions={
+              isOwnerOrAdmin ? (
+                <Button variant="outline" onClick={() => navigate('/classes')}>
+                  {t('analytics.home.empty.action')}
+                </Button>
+              ) : undefined
+            }
+          >
+            <GhostedChartFrame />
+            {isOwnerOrAdmin ? null : (
+              <p
+                data-testid="analytics-home-empty-teacher-hint"
+                className="max-w-sm text-sm text-[var(--cl-ink-soft)]"
+              >
+                {t('analytics.home.empty.teacherHint')}
+              </p>
+            )}
+          </EmptyState>
         </div>
       ) : (
         <>

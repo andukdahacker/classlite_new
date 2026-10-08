@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * PersonaSelectPage stories — Story 2-3a Task 6.5 (R1-P37 backfill).
  *
@@ -6,7 +8,7 @@
  *   LocaleVi / Error500.
  *
  * Mock seam (TEST-FE-1): `parameters.msw.handlers` overrides per story.
- * Session cache is seeded via `queryClient.setQueryData(authKeys.session(), ...)`
+ * Session cache is seeded into the preview's own client via `SeedSession`
  * so the OnboardingLayout guard resolves to "authenticated + verified + no
  * center" and mounts this page.
  */
@@ -14,40 +16,62 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, within } from 'storybook/test'
 import { Route, Routes } from 'react-router'
 import { HttpResponse, delay, http } from 'msw'
-import { queryClient } from '@/lib/query-client'
-import { authKeys } from '@/features/auth/api/authKeys'
+import { useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import OnboardingLayout from '@/features/onboarding/OnboardingLayout'
 import PersonaSelectPage from '@/features/onboarding/PersonaSelectPage'
 import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
 
-function seedAuthenticatedSession() {
-  queryClient.setQueryData(authKeys.session(), {
-    user: {
-      id: 'sb-user',
-      email: 'trang@example.com',
-      fullName: 'Storybook User',
-      emailVerified: true,
-    },
-    accessToken: 'sb.jwt',
-    center: null,
-    // Story 2.6 (AC2). Pre-onboarding seeder → null role.
-    role: null,
-  })
+const SB_USER = {
+  id: 'sb-user',
+  email: 'trang@example.com',
+  fullName: 'Storybook User',
+  emailVerified: true,
 }
 
-function seedSessionWithCenter() {
-  queryClient.setQueryData(authKeys.session(), {
-    user: {
-      id: 'sb-user',
-      email: 'trang@example.com',
-      fullName: 'Storybook User',
-      emailVerified: true,
-    },
-    accessToken: 'sb.jwt',
-    center: null,
-    // Story 2.6 (AC2). Pre-onboarding seeder → null role.
-    role: null,
+// Pre-onboarding (no center) → null role.
+const NO_CENTER_SESSION: Session = {
+  user: SB_USER,
+  accessToken: 'sb.jwt',
+  center: null,
+  role: null,
+}
+
+// Center-attached → Owner (AlreadyHasCenter guard branch).
+const WITH_CENTER_SESSION: Session = {
+  user: SB_USER,
+  accessToken: 'sb.jwt',
+  center: {
+    id: 'center-1',
+    name: 'Saigon English Center',
+    shortCode: 'saigon-english-center',
+    brandColor: null,
+    logoUrl: null,
+    timezone: 'Asia/Ho_Chi_Minh',
+  },
+  role: 'owner',
+}
+
+// Seed the session into the SAME client the preview provides (NOT the global
+// `queryClient` singleton — the preview wraps every story in a fresh
+// `createTestQueryClient()`). `useQueryClient()` inside a decorator resolves to
+// that client; the lazy `useState` seeds once before the page renders, so
+// `useAuth()` reads a populated cache instead of hanging on the skeleton.
+// (Story 10.3 — surfaced when page stories became first-class.)
+function SeedSession({
+  session,
+  children,
+}: {
+  session: Session
+  children: ReactNode
+}): ReactNode {
+  const client = useQueryClient()
+  useState(() => {
+    client.setQueryData(authKeys.session(), session)
+    return null
   })
+  return children
 }
 
 function WelcomeRoute() {
@@ -70,10 +94,11 @@ const meta = {
     msw: { handlers: onboardingHandlers },
   },
   decorators: [
-    (Story) => {
-      seedAuthenticatedSession()
-      return <Story />
-    },
+    (Story) => (
+      <SeedSession session={NO_CENTER_SESSION}>
+        <Story />
+      </SeedSession>
+    ),
   ],
 } satisfies Meta<typeof WelcomeRoute>
 
@@ -221,28 +246,10 @@ export const Error500: Story = {
  * /dashboard. Visual smoke of the guard branch (d). */
 export const AlreadyHasCenter: Story = {
   decorators: [
-    (Story) => {
-      seedSessionWithCenter()
-      queryClient.setQueryData(authKeys.session(), {
-        user: {
-          id: 'sb-user',
-          email: 'trang@example.com',
-          fullName: 'Storybook User',
-          emailVerified: true,
-        },
-        accessToken: 'sb.jwt',
-        center: {
-          id: 'center-1',
-          name: 'Saigon English Center',
-          shortCode: 'saigon-english-center',
-          brandColor: null,
-          logoUrl: null,
-          timezone: 'Asia/Ho_Chi_Minh',
-        },
-        // Story 2.6 (AC2). Center-attached seeder → Owner.
-        role: 'owner',
-      })
-      return <Story />
-    },
+    (Story) => (
+      <SeedSession session={WITH_CENTER_SESSION}>
+        <Story />
+      </SeedSession>
+    ),
   ],
 }

@@ -105,6 +105,15 @@ describe('InboxView — three-state trilogy (AC2)', () => {
     expect(await screen.findByTestId('inbox-empty')).toBeInTheDocument()
     // the §6.4 italic-accent brand word renders.
     expect(screen.getByText(i18n.t('inbox.empty.student.titleAccent'))).toBeInTheDocument()
+    // TEST-FE-6 (Story 10.3 AC7) — the OTHER lenses' copy must be ABSENT from the
+    // DOM on a student render, not merely hidden (the lens decorator is at the call
+    // site; the shared EmptyState must not leak another role's words).
+    expect(
+      screen.queryByText(i18n.t('inbox.empty.teacher.titleAccent')),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(i18n.t('inbox.empty.ownerAdmin.titleAccent')),
+    ).not.toBeInTheDocument()
     expect(screen.queryByTestId('inbox-header-count')).not.toBeInTheDocument()
   })
 })

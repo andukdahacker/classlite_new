@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { Inbox } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/domain/EmptyState'
 
 /** The three empty "lenses" — student encouragement, teacher activation,
  *  owner/admin reassurance (admin shares the owner lens). */
@@ -81,30 +82,20 @@ export interface InboxEmptyProps {
   lens: InboxEmptyLens
 }
 
-/** Role-toned empty state (s56) — ghost nav glyph + italic-accent headline + line. */
+/** Role-toned empty state (s56) — ghost nav glyph + italic-accent headline + line.
+ *  Re-platformed onto the canonical `EmptyState` (Story 10.3 AC3, the proving
+ *  oracle): the role-decorator stays here (the component never calls `t()`), the
+ *  `inbox-empty` test-id + `role="status"` (via `live`) + copy are preserved. */
 export function InboxEmpty({ lens }: InboxEmptyProps): ReactElement {
   const { t } = useTranslation()
   return (
-    <div
+    <EmptyState
       data-testid="inbox-empty"
-      role="status"
-      className="flex flex-col items-center gap-3 px-6 py-12 text-center"
-    >
-      <span
-        aria-hidden="true"
-        className="inline-flex size-14 items-center justify-center rounded-full bg-muted/50 text-[color:var(--cl-muted)]"
-      >
-        <Inbox className="size-7" />
-      </span>
-      <h2 className="font-[var(--cl-font-display)] text-2xl text-[color:var(--cl-ink)]">
-        {t(`inbox.empty.${lens}.title`)}{' '}
-        <span className="italic text-[color:var(--cl-accent)]">
-          {t(`inbox.empty.${lens}.titleAccent`)}
-        </span>
-      </h2>
-      <p className="max-w-sm text-sm text-[color:var(--cl-ink-soft)]">
-        {t(`inbox.empty.${lens}.body`)}
-      </p>
-    </div>
+      live
+      icon={<Inbox className="size-7" />}
+      headline={t(`inbox.empty.${lens}.title`)}
+      headlineAccent={t(`inbox.empty.${lens}.titleAccent`)}
+      description={t(`inbox.empty.${lens}.body`)}
+    />
   )
 }

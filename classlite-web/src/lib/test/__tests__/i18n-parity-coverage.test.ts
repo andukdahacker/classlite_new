@@ -39,6 +39,7 @@ import { STORY_8_4B_KEYS } from '@/features/search/__tests__/searchI18nKeys'
 import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
 import { STORY_10_1C_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys10c'
 import { STORY_10_2_KEYS } from '@/features/archive/__tests__/archiveI18nKeys'
+import { STORY_10_3_KEYS } from '@/lib/test/story10_3Keys'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -227,6 +228,14 @@ export const STORY_1D_3_KEYS = [
   'sidebar.student.questions',
   'sidebar.student.myPerformance',
   'sidebar.student.inbox',
+
+  // Sidebar — per-role Profile nav (added by the Story 9-4 profile surface;
+  // claimed here to close the `sidebar.` orphan gate the 9-4 change left open —
+  // the CI i18n-parity script was red on these at 41b9fd9).
+  'sidebar.owner.profile',
+  'sidebar.admin.profile',
+  'sidebar.teacher.profile',
+  'sidebar.student.profile',
 
   // Topbar
   'topbar.breadcrumb.label',
@@ -2245,5 +2254,29 @@ describe('Story 10.2 i18n parity (master ratchet)', () => {
 
   test.each(STORY_10_2_KEYS)('%s belongs to the archive.* namespace', (key) => {
     expect(key.startsWith('archive.')).toBe(true)
+  })
+})
+
+/**
+ * Story 10.3 — Empty States (consolidation). Net-new keys are only the THREE the
+ * canonical `EmptyState` re-platform genuinely adds: the s54 classes brand accent
+ * word (hoisted out of the existing headline, rendered copy unchanged), and the
+ * s58 questions Q&A-vs-Inbox explainer + Open-Inbox CTA. All other empty-state
+ * keys already ship (owned by their origin stories) — NOT re-listed here (the
+ * exhaustive-net-new rule + per-prefix check keep this honest).
+ */
+const STORY_10_3_ALLOWED_PREFIXES = ['classes.empty.', 'questions.empty.'] as const
+
+describe('Story 10.3 i18n parity (master ratchet)', () => {
+  test('every new Story 10.3 empty-state key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_3_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.3 keys', () => {
+    assertI18nInterpolationParity(STORY_10_3_KEYS)
+  })
+
+  test.each(STORY_10_3_KEYS)('%s belongs to a 10.3 allowed prefix', (key) => {
+    expect(STORY_10_3_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))).toBe(true)
   })
 })

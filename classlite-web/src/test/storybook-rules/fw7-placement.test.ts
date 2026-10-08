@@ -14,6 +14,9 @@ describe('checkFw7Placement — permitted tiers', () => {
     'src/components/domain/SidebarShell.stories.tsx',
     'src/features/grading/components/GradingCard.stories.tsx',
     'src/features/students/components/StudentTable.stories.tsx',
+    // Route-page tier (Story 10.3 amendment) — a page story one segment below
+    // the feature area is allowed (the page component lives there too).
+    'src/features/auth/LoginPage.stories.tsx',
     // Repo-relative or absolute paths both work because the check
     // anchors on the `src/...` segment rather than the full prefix.
     '/abs/path/classlite-web/src/components/ui/Input.stories.tsx',
@@ -35,8 +38,7 @@ describe('checkFw7Placement — forbidden placements', () => {
     'src/test/fixtures/lint-bait/MissingEmptyTable.stories.tsx', // negative fixture lives outside the discovery roots
     'src/utils/Helper.stories.tsx',
     'src/components/Button.stories.tsx', // skipped a tier level
-    'src/features/grading/GradingCard.stories.tsx', // missing /components/ segment
-    'src/features/grading/widgets/Foo.stories.tsx', // wrong subdir under feature
+    'src/features/grading/widgets/Foo.stories.tsx', // wrong subdir under feature (2+ segments below area — the route-page tier is ONE segment only)
   ])('%s is rejected', (path) => {
     const result = checkFw7Placement(path)
     expect(result.ok).toBe(false)

@@ -9,7 +9,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { InboxListShell, type InboxFilterChip } from './InboxListShell'
@@ -341,9 +341,9 @@ export const Empty: Story = {
     activeFilters: ['inboxList.filter.all'],
   },
   render: () => (
-    <EmptyStatePlaceholder
+    <EmptyState
       headline="Inbox zero"
-      body="You're all caught up. New messages appear here as students engage."
+      description="You're all caught up. New messages appear here as students engage."
     />
   ),
 }

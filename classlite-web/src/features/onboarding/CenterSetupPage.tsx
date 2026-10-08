@@ -32,7 +32,7 @@ import {
   type CenterSetupFormValues,
 } from './lib/centerSetupSchema'
 import { slugifyPreview } from './lib/slugPreview'
-import { getInitials } from './lib/letterMark'
+import { getInitials, readableTextColor } from './lib/letterMark'
 import { useCurrentCenter } from '@/hooks/useCurrentCenter'
 import { useCreateCenter } from './api/useCreateCenter'
 import { useOnboardingProgress } from './api/useOnboardingProgress'
@@ -470,11 +470,14 @@ export default function CenterSetupPage() {
             <span
               aria-hidden="true"
               className={
-                'flex h-14 w-14 items-center justify-center rounded-md font-serif text-lg text-white ' +
+                'flex h-14 w-14 items-center justify-center rounded-md font-serif text-lg ' +
                 (initials === '' ? 'border border-dashed border-slate-300' : '')
               }
               style={{
                 backgroundColor: initials === '' ? undefined : watchedBrandColor,
+                // Legible foreground per brand-color luminance — hardcoded white
+                // failed WCAG contrast on mid-tone brand colors (e.g. amber).
+                color: initials === '' ? undefined : readableTextColor(watchedBrandColor),
               }}
             >
               {initials}

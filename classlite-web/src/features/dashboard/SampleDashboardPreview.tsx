@@ -32,16 +32,17 @@ export default function SampleDashboardPreview() {
         {t('dashboard.samplePreview.thresholdBanner')}
       </p>
 
-      <ul
-        className="grid grid-cols-2 gap-4 opacity-50 md:grid-cols-4"
-        aria-hidden="false"
-      >
+      {/* The placeholder tiles read as "ghosted" via the muted fill, the em-dash
+          values, and the amber threshold banner — NOT via `opacity`, which halves
+          text contrast below the 4.5:1 a11y floor (storybook test-runner axe,
+          surfaced Story 10.3). Labels stay slate-500+ on slate-50 (≈4.7:1). */}
+      <ul className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-hidden="false">
         {sampleOwnerPreview.map((tile) => (
           <li
             key={tile.key}
             className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-center"
           >
-            <p className="text-3xl font-semibold text-slate-400">
+            <p className="text-3xl font-semibold text-slate-500">
               {OWNER_PREVIEW_PLACEHOLDER}
             </p>
             <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">

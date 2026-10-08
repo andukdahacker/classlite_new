@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { AnalyticsHomeShell } from './AnalyticsHomeShell'
@@ -206,13 +206,13 @@ export const Empty: Story = {
   args: { ...TEACHER_ARGS, children: null },
   render: () => (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <EmptyStatePlaceholder
+      <EmptyState
         headline="No analytics yet"
-        body="Once students start submitting, charts populate here."
+        description="Once students start submitting, charts populate here."
       />
-      <EmptyStatePlaceholder
+      <EmptyState
         headline="No engagement data"
-        body="Engagement metrics appear after the first week of sessions."
+        description="Engagement metrics appear after the first week of sessions."
       />
     </div>
   ),

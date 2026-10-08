@@ -14,6 +14,8 @@ import {
   DashboardSkeleton,
 } from '@/features/dashboard/components/DashboardStates'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { EmptyState } from '@/components/domain/EmptyState'
+import { GhostedChartFrame } from '@/components/domain/GhostedChartFrame'
 import { useMyPerformance } from '../api/useMyPerformance'
 import { StudentPerformanceOverview } from './StudentPerformanceOverview'
 import { StudentPatternsList } from './StudentPatternsList'
@@ -55,12 +57,19 @@ export function MyPerformanceContainer(): ReactElement {
       </header>
 
       {belowThreshold ? (
-        <p
-          data-testid="my-performance-ghosted-banner"
-          className="rounded-lg border border-dashed border-[var(--cl-border)] bg-[var(--cl-muted)] px-3 py-2 text-sm text-[var(--cl-ink-soft)]"
-        >
-          {t('analytics.myPerformance.ghosted.banner')}
-        </p>
+        // s57 rebuild (Story 10.3 AC3): EmptyState tone='guided' (NO stamped
+        // headline — the page <h1> carries the title) + GhostedChartFrame. The
+        // amber threshold banner stays here (its own test-id, a per-surface
+        // concept) rather than being pushed into the shared component.
+        <EmptyState tone="guided" live data-testid="my-performance-empty">
+          <GhostedChartFrame />
+          <p
+            data-testid="my-performance-ghosted-banner"
+            className="rounded-lg border border-dashed border-[var(--cl-border)] bg-[var(--cl-muted)] px-3 py-2 text-sm text-[var(--cl-ink-soft)]"
+          >
+            {t('analytics.myPerformance.ghosted.banner')}
+          </p>
+        </EmptyState>
       ) : null}
 
       <Tabs defaultValue="overview" className="flex flex-col gap-4">

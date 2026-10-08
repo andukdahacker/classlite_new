@@ -3,14 +3,14 @@
  *
  * Static-shells discipline: every callback prop defaults to a no-op; no
  * MSW handler, no `useState`, no `useEffect`. Empty / Error / Loading
- * states reuse 1d-1's `EmptyStatePlaceholder` / `ErrorStatePlaceholder`
- * until Epic 10 ships the canonical shape. Loading is a skeleton — the
+ * states use the canonical `EmptyState` (Story 10.3) / 1d-1's
+ * `ErrorStatePlaceholder` (until Story 10.4). Loading is a skeleton — the
  * three-state lint rule from 1d-1 expects this file to export Default +
  * Loading + Empty + Error.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { WriteDocSurface } from './WriteDocSurface'
@@ -119,9 +119,9 @@ export const Empty: Story = {
   args: {
     title: 'Untitled essay',
     content: (
-      <EmptyStatePlaceholder
+      <EmptyState
         headline="Start writing your response"
-        body="Your draft will save automatically as you type."
+        description="Your draft will save automatically as you type."
       />
     ),
     saveState: 'saved',

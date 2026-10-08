@@ -94,6 +94,36 @@ describe('AnalyticsHome — AC6a empty-classes state (D12, P1)', () => {
   })
 })
 
+describe('AnalyticsHome — Story 10.3 AC7 empty-path a11y (net-new)', () => {
+  // The pre-existing axe coverage runs on POPULATED data only; the s61 rebuild
+  // adds a GhostedChartFrame whose aria-hidden boundary was unasserted.
+  test('empty render (teacher) has no axe violations', async () => {
+    const { container } = renderHome(teacherHomeEmpty)
+    expect(await screen.findByTestId('analytics-home-empty')).toBeInTheDocument()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  test('empty render (owner, with CTA) has no axe violations', async () => {
+    const ownerEmpty = { ...teacherHomeEmpty, role: 'owner' } as AnalyticsHomeData
+    const { container } = renderHome(ownerEmpty)
+    expect(
+      screen.getByRole('button', { name: i18n.t('analytics.home.empty.action') as string }),
+    ).toBeInTheDocument()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  test("the ghosted frame is aria-hidden and the region's name comes only from the EmptyState copy", () => {
+    renderHome(teacherHomeEmpty)
+    const region = screen.getByTestId('analytics-home-empty')
+    // The region's accessible text is the headline, never the dash fill.
+    expect(region).toHaveTextContent(i18n.t('analytics.home.empty.headline') as string)
+    expect(region).not.toHaveTextContent('— — — —')
+    // The chart silhouette subtree is aria-hidden (name never "dash dash dash").
+    const hidden = region.querySelector('[aria-hidden="true"]')
+    expect(hidden).not.toBeNull()
+  })
+})
+
 describe('AnalyticsHome — AC8/AC22c owner-only card DOM-absence (P0, positive-control-paired)', () => {
   test('P0 OWNER render: the Teacher-performance card IS present (the positive control)', () => {
     renderHome(ownerHomeData)

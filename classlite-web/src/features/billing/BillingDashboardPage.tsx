@@ -53,7 +53,15 @@ export function BillingDashboardPage(): ReactElement {
   const summaryQuery = useBillingSummary()
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [addonsOpen, setAddonsOpen] = useState(false)
-  const [reconciling, setReconciling] = useState(false)
+  // Seed the reconcile affordance from the return URL at mount via a lazy
+  // initializer (read once) — so the effect below never calls setState
+  // synchronously in its body (react-hooks: no cascading-render setState). The
+  // effect only CLEARS the flag, and only inside the async `.finally`.
+  const [reconciling, setReconciling] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get(CHECKOUT_RETURN_PARAM) ===
+      CHECKOUT_RETURN_SUCCESS,
+  )
 
   // AC3: the Polar hosted checkout returns via a full-page redirect carrying
   // `?checkout=success`. The subscription/credit change is webhook-confirmed, so
@@ -66,7 +74,6 @@ export function BillingDashboardPage(): ReactElement {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get(CHECKOUT_RETURN_PARAM) !== CHECKOUT_RETURN_SUCCESS) return
-    setReconciling(true)
     // Keep the affordance up until the fresh summary read settles (deterministic —
     // no isFetching race), then clear it whether the refetch succeeded or not.
     void queryClient

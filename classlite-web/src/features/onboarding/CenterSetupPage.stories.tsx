@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * CenterSetupPage stories — Story 2-3a Task 7.7 (R1-P37 backfill).
  *
@@ -6,22 +8,23 @@
  *   Error500 / LocaleVi / LocaleViCramped (Sally-S5 720px viewport).
  *
  * Mock seam (TEST-FE-1): `parameters.msw.handlers` overrides per story.
- * Session cache is seeded via `queryClient.setQueryData(authKeys.session(), ...)`
+ * Session cache is seeded into the preview's own client via `SeedSession`
  * so the OnboardingLayout guard resolves to "authenticated + verified + no
  * center" and mounts this page.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { Route, Routes } from 'react-router'
 import { HttpResponse, http } from 'msw'
-import { queryClient } from '@/lib/query-client'
+import { useState, type ReactNode } from 'react'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { authKeys } from '@/features/auth/api/authKeys'
 import OnboardingLayout from '@/features/onboarding/OnboardingLayout'
 import CenterSetupPage from '@/features/onboarding/CenterSetupPage'
 import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
 
-function seedAuthenticatedSession() {
-  queryClient.setQueryData(authKeys.session(), {
+function seedAuthenticatedSession(client: QueryClient) {
+  client.setQueryData(authKeys.session(), {
     user: {
       id: 'sb-user',
       email: 'trang@example.com',
@@ -35,6 +38,23 @@ function seedAuthenticatedSession() {
     // Session field. Pre-center-creation → null.
     role: null,
   })
+}
+
+// Seed the session into the SAME client the Storybook preview provides
+// (`createTestQueryClient()` per mount) — NOT the global `queryClient`
+// singleton. `useQueryClient()` inside a decorator resolves to the preview's
+// client (the global ChromeDecorator wraps outside this one); the lazy
+// `useState` initializer seeds exactly once, synchronously, before the page
+// renders, so `useAuth()` reads a populated cache instead of hanging on the
+// onboarding skeleton. (Story 10.3 — surfaced when page stories became
+// first-class in Storybook.)
+function SeedSession({ children }: { children: ReactNode }): ReactNode {
+  const client = useQueryClient()
+  useState(() => {
+    seedAuthenticatedSession(client)
+    return null
+  })
+  return children
 }
 
 const withCenterStepHandlers = [
@@ -77,10 +97,11 @@ const meta = {
     msw: { handlers: withCenterStepHandlers },
   },
   decorators: [
-    (Story) => {
-      seedAuthenticatedSession()
-      return <Story />
-    },
+    (Story) => (
+      <SeedSession>
+        <Story />
+      </SeedSession>
+    ),
   ],
 } satisfies Meta<typeof SetupCenterRoute>
 
@@ -129,9 +150,11 @@ export const WithDraft: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const nameInput = (await canvas.findByLabelText(/center name/i)) as
-      | HTMLInputElement
-    await expect(nameInput.value).toBe('Saigon English Center')
+    const nameInput = (await canvas.findByLabelText(/center name/i)) as HTMLInputElement
+    // The draft value is applied by a `form.reset(draftDefaults)` effect that runs
+    // a tick AFTER progress resolves and the input first paints — so poll the value
+    // rather than asserting it synchronously the instant the input appears.
+    await waitFor(() => expect(nameInput.value).toBe('Saigon English Center'))
   },
 }
 

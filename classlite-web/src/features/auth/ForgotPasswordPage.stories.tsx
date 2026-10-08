@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * ForgotPasswordPage stories — Story 1-9b AC8.
  *

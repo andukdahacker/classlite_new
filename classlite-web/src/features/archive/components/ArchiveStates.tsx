@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { Archive } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/domain/EmptyState'
 
 /** List-shaped skeleton rows mirroring a loaded archive table (UX-1 loading). */
 export function ArchiveSkeleton(): ReactElement {
@@ -53,30 +54,20 @@ export function ArchiveErrorAlert({ onRetry }: ArchiveErrorAlertProps): ReactEle
   )
 }
 
-/** Role-toned empty state (s60) — ghost Archive glyph + italic-accent headline + line. */
+/** Role-toned empty state (s60) — ghost Archive glyph + italic-accent headline + line.
+ *  Re-platformed onto the canonical `EmptyState` (Story 10.3 AC3, the second
+ *  oracle): no actions, `archive-empty` test-id + `role="status"` (via `live`) +
+ *  copy preserved; the component never calls `t()`. */
 export function ArchiveEmpty(): ReactElement {
   const { t } = useTranslation()
   return (
-    <div
+    <EmptyState
       data-testid="archive-empty"
-      role="status"
-      className="flex flex-col items-center gap-3 px-6 py-12 text-center"
-    >
-      <span
-        aria-hidden="true"
-        className="inline-flex size-14 items-center justify-center rounded-full bg-muted/50 text-[color:var(--cl-muted)]"
-      >
-        <Archive className="size-7" />
-      </span>
-      <h2 className="font-[var(--cl-font-display)] text-2xl text-[color:var(--cl-ink)]">
-        {t('archive.empty.title')}{' '}
-        <span className="italic text-[color:var(--cl-accent)]">
-          {t('archive.empty.titleAccent')}
-        </span>
-      </h2>
-      <p className="max-w-sm text-sm text-[color:var(--cl-ink-soft)]">
-        {t('archive.empty.body')}
-      </p>
-    </div>
+      live
+      icon={<Archive className="size-7" />}
+      headline={t('archive.empty.title')}
+      headlineAccent={t('archive.empty.titleAccent')}
+      description={t('archive.empty.body')}
+    />
   )
 }

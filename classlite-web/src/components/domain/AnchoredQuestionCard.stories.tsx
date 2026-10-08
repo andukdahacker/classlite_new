@@ -9,7 +9,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { AnchoredQuestionCard, type AnchoredQuestion } from './AnchoredQuestionCard'
@@ -154,9 +154,9 @@ export const Loading: Story = {
 export const Empty: Story = {
   args: { question: BASE_QUESTION },
   render: () => (
-    <EmptyStatePlaceholder
+    <EmptyState
       headline="No questions yet"
-      body="This student hasn't asked any anchored questions on this exercise."
+      description="This student hasn't asked any anchored questions on this exercise."
     />
   ),
 }

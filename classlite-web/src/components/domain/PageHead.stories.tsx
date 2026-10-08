@@ -1,15 +1,15 @@
 /**
  * PageHead — `s06` page header. 1d-3 AC1.
  *
- * Three-state coverage uses 1d-1's `EmptyStatePlaceholder` /
- * `ErrorStatePlaceholder` until Epic 10 ships the canonical
- * `EmptyState` / `ErrorState`. Per Murat (party-mode 2026-06-18):
+ * Three-state coverage uses the canonical `EmptyState` (Story 10.3) /
+ * 1d-1's `ErrorStatePlaceholder` (until Story 10.4 ships the canonical
+ * error shape). Per Murat (party-mode 2026-06-18):
  * these stories cover the VISUAL SHAPE of those states for design
  * review; the loading-state correctness of any consumer fetch is
  * verified at the CONSUMER story (Epic 2+) — no MSW handler here.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 import { PageHead } from './PageHead'
 
@@ -46,7 +46,7 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   args: { titleKey: 'pageHead.fixture.title' },
-  render: () => <EmptyStatePlaceholder />,
+  render: () => <EmptyState headline="Nothing here yet" />,
 }
 
 export const Error: Story = {

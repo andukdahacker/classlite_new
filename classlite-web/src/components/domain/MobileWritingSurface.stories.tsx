@@ -7,7 +7,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { MobileWritingSurface } from './MobileWritingSurface'
@@ -86,9 +86,9 @@ export const Empty: Story = {
   args: {
     title: 'Untitled essay',
     content: (
-      <EmptyStatePlaceholder
+      <EmptyState
         headline="Start writing"
-        body="Your draft will save automatically."
+        description="Your draft will save automatically."
       />
     ),
     saveState: 'saved',

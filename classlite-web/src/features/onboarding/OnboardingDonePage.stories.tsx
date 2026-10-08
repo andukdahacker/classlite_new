@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * OnboardingDonePage stories — Story 2-3c Task 2.5.
  *
@@ -10,18 +12,21 @@
  *     discipline at md viewport)
  *
  * Mock seam (TEST-FE-1): `parameters.msw.handlers` per-story overrides.
- * Session cache is seeded via `queryClient.setQueryData(authKeys.session(), ...)`
+ * Session cache is seeded into the preview's own client via `SeedSession`
  * with `center` populated so OnboardingLayout mounts /setup/done.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { Route, Routes } from 'react-router'
 import { HttpResponse, http } from 'msw'
-import { queryClient } from '@/lib/query-client'
+import { useState, type ReactNode } from 'react'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { authKeys } from '@/features/auth/api/authKeys'
 import OnboardingLayout from '@/features/onboarding/OnboardingLayout'
 import OnboardingDonePage from '@/features/onboarding/OnboardingDonePage'
 import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers'
+
+type SeedOverrides = { centerName?: string; shortCode?: string; email?: string }
 
 const CENTER = {
   id: 'sb-center',
@@ -33,12 +38,8 @@ const CENTER = {
   timezone: 'Asia/Ho_Chi_Minh',
 }
 
-function seedAuthenticatedSession(overrides: {
-  centerName?: string
-  shortCode?: string
-  email?: string
-} = {}) {
-  queryClient.setQueryData(authKeys.session(), {
+function seedAuthenticatedSession(client: QueryClient, overrides: SeedOverrides = {}) {
+  client.setQueryData(authKeys.session(), {
     user: {
       id: 'sb-user',
       email: overrides.email ?? 'owner@example.com',
@@ -55,6 +56,27 @@ function seedAuthenticatedSession(overrides: {
     // must populate role explicitly per Task 6.2 grep contract.
     role: 'owner',
   })
+}
+
+// Seed into the preview's own client (NOT the global `queryClient` singleton —
+// the preview wraps every story in a fresh `createTestQueryClient()`).
+// `useQueryClient()` inside a decorator resolves to that client; the lazy
+// `useState` seeds once before the page renders, so `useAuth()` reads a
+// populated cache (with `center`) instead of hanging on the onboarding
+// skeleton. (Story 10.3 — surfaced when page stories became first-class.)
+function SeedSession({
+  overrides,
+  children,
+}: {
+  overrides?: SeedOverrides
+  children: ReactNode
+}): ReactNode {
+  const client = useQueryClient()
+  useState(() => {
+    seedAuthenticatedSession(client, overrides)
+    return null
+  })
+  return children
 }
 
 interface DoneProgressArgs {
@@ -114,10 +136,11 @@ const meta = {
     router: { initialEntries: ['/setup/done'] },
   },
   decorators: [
-    (Story) => {
-      seedAuthenticatedSession()
-      return <Story />
-    },
+    (Story) => (
+      <SeedSession>
+        <Story />
+      </SeedSession>
+    ),
   ],
 } satisfies Meta<typeof DoneRoute>
 
@@ -273,15 +296,19 @@ export const Error500Persistent: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const retryButton = await canvas.findByRole('button', { name: /try again/i })
+    // The retry button is `disabled={progress.isFetching}`. A click only yields a
+    // settled error refetch (which ratchets `retryCount`) once the PRIOR fetch has
+    // settled — so wait for the button to re-enable before each click, otherwise
+    // rapid clicks coalesce into one request and the threshold (3) is never hit.
     for (let i = 0; i < 3; i++) {
+      const retryButton = await canvas.findByRole('button', { name: /try again/i })
+      await waitFor(() => expect(retryButton).toBeEnabled())
       await userEvent.click(retryButton)
-      // Wait for the refetch to settle before the next click so the
-      // fetching→settled transition is observed by the ratchet effect.
-      await canvas.findByRole('button', { name: /try again/i })
     }
-    const persistent = await canvas.findByTestId('done-error-persistent')
-    await expect(persistent).toBeInTheDocument()
+    await waitFor(
+      () => expect(canvas.getByTestId('done-error-persistent')).toBeInTheDocument(),
+      { timeout: 5000 },
+    )
   },
 }
 
@@ -433,18 +460,19 @@ export const LocaleViCramped720: Story = {
     i18n: { locale: 'vi' },
   },
   decorators: [
-    (Story) => {
+    (Story) => (
       // Long Vietnamese center name to exercise the min-w-0 break-words
       // responsive step-down at md viewport (S-S1).
-      seedAuthenticatedSession({
-        centerName: 'Trung tâm Anh ngữ Quốc tế Hà Nội',
-        shortCode: 'trung-tam-ha-noi',
-      })
-      return (
+      <SeedSession
+        overrides={{
+          centerName: 'Trung tâm Anh ngữ Quốc tế Hà Nội',
+          shortCode: 'trung-tam-ha-noi',
+        }}
+      >
         <ViWrapper>
           <Story />
         </ViWrapper>
-      )
-    },
+      </SeedSession>
+    ),
   ],
 }

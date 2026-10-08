@@ -7,6 +7,10 @@
  *   - `src/components/ui/`           — shadcn primitives (auto-generated).
  *   - `src/components/domain/`       — business-aware reusable components.
  *   - `src/features/<area>/components/` — feature-local components.
+ *   - `src/features/<area>/`         — route-page tier (Story 10.3 amendment,
+ *     Ducdo 2026-10-08): page components are route targets that live at the
+ *     feature root (imported by routes.tsx), so their co-located stories do too.
+ *     ONE segment below the area only — deeper misplacement still fails.
  *
  * Anywhere else is a violation. Exception: `src/test/fixtures/lint-bait/`
  * — that directory holds the AC3 negative fixture and is intentionally
@@ -28,6 +32,10 @@ const ALLOWED_PATTERNS: readonly RegExp[] = [
   /(?:^|\/)src\/components\/ui\/.+\.stories\.tsx?$/,
   /(?:^|\/)src\/components\/domain\/.+\.stories\.tsx?$/,
   /(?:^|\/)src\/features\/[^/]+\/components\/.+\.stories\.tsx?$/,
+  // Route-page tier — exactly one segment below the feature area (the page
+  // component + its story live at `features/<area>/`). A deeper nested story
+  // (e.g. `features/<area>/foo/Bar.stories.tsx`) still fails.
+  /(?:^|\/)src\/features\/[^/]+\/[^/]+\.stories\.tsx?$/,
 ]
 
 export function checkFw7Placement(storyFilePath: string): Fw7PlacementCheck {

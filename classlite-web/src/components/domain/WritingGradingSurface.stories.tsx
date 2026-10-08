@@ -8,7 +8,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { asSafeHtml } from '@/lib/safe-html'
@@ -187,9 +187,9 @@ export const Empty: Story = {
     score: { primary: 0, criteria: BASELINE_SCORE.criteria.map((c) => ({ ...c, score: 0 })) },
   },
   render: () => (
-    <EmptyStatePlaceholder
+    <EmptyState
       headline="Awaiting submission"
-      body="This student has not yet submitted their writing response."
+      description="This student has not yet submitted their writing response."
     />
   ),
 }

@@ -22,7 +22,9 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
+import { Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PerfPill } from '@/components/domain/PerfPill'
 import { perfToneFromStatus, type PerfTone } from '@/components/domain/perfTone'
@@ -231,7 +233,14 @@ export function StudentRosterView({ variant }: StudentRosterViewProps): ReactEle
           onRetry={() => rosterQuery.refetch()}
         />
       ) : isEmpty ? (
-        <EmptyState />
+        // s55 — action-less (enrolment UI is Epic 7.3, D14); preserve copy + test-id.
+        <EmptyState
+          data-testid="student-empty"
+          live
+          icon={<Users className="size-7" />}
+          headline={t('people.student.list.empty.headline')}
+          description={t('people.student.list.empty.body')}
+        />
       ) : (
         <>
           {classOptions.length > 0 ? (
@@ -570,20 +579,3 @@ function ErrorAlert({
   )
 }
 
-function EmptyState(): ReactElement {
-  const { t } = useTranslation()
-  // No invite/add action — enrolment is Story 7.3 (D14).
-  return (
-    <div
-      className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-200 px-6 py-16 text-center"
-      data-testid="student-empty"
-    >
-      <h2 className="font-fraunces text-xl text-slate-900">
-        {t('people.student.list.empty.headline')}
-      </h2>
-      <p className="max-w-sm text-sm text-slate-500">
-        {t('people.student.list.empty.body')}
-      </p>
-    </div>
-  )
-}

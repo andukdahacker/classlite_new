@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * VerifyEmailPage stories — Story 1-9a AC8.
  *
@@ -13,10 +15,12 @@
  * Mock seam: parameters.msw.handlers overrides per story (TEST-FE-1).
  * Per-story router initialEntries seeds the searchParams.
  */
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import type { Meta, StoryObj, Decorator } from '@storybook/react-vite'
+import { useState } from 'react'
+import { expect, waitFor, within } from 'storybook/test'
 import { HttpResponse, delay, http } from 'msw'
-import { queryClient } from '@/lib/query-client'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createTestQueryClient, queryClient } from '@/lib/query-client'
 import { authKeys } from '@/features/auth/api/authKeys'
 import VerifyEmailPage from '@/features/auth/VerifyEmailPage'
 
@@ -43,6 +47,39 @@ function seedSession(email: string) {
 
 function clearSession() {
   queryClient.setQueryData(authKeys.session(), null)
+}
+
+/**
+ * Seed the session into the QueryClient that `useAuth()` actually subscribes to.
+ * The preview decorator creates its OWN `createTestQueryClient()` per mount, so
+ * the module-singleton `seedSession()` above never reaches the rendered page
+ * (its `verify-email-display` depends on `useAuth().user.email`). This nested
+ * provider sits inside the preview's provider, so `useQueryClient()` resolves to
+ * this seeded client.
+ */
+function withSeededSession(email: string): Decorator {
+  return function SeededSession(Story) {
+    const [client] = useState(() => {
+      const seeded = createTestQueryClient()
+      seeded.setQueryData(authKeys.session(), {
+        user: {
+          id: 'sb-user',
+          email,
+          fullName: 'Storybook User',
+          emailVerified: false,
+        },
+        accessToken: null,
+        center: null,
+        role: null,
+      })
+      return seeded
+    })
+    return (
+      <QueryClientProvider client={client}>
+        <Story />
+      </QueryClientProvider>
+    )
+  }
 }
 
 const meta = {
@@ -163,9 +200,13 @@ export const Expired: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      await canvas.findByTestId('verify-expired'),
-    ).toBeTruthy()
+    // `usePolling` uses setInterval with NO leading call, so the first poll
+    // (the 404 that flips to expired) fires one interval (5s) after mount —
+    // past the default 1s findBy timeout. Wait past the interval.
+    // usePolling's first poll (the 404 → expired) fires one 5s interval after
+    // mount — past findBy's default 1s timeout — so retry via waitFor up to 9s
+    // (well under the test-runner's 15s per-test cap).
+    await waitFor(() => canvas.getByTestId('verify-expired'), { timeout: 9000 })
   },
 }
 
@@ -328,6 +369,8 @@ export const Mobile390: Story = {
  * the resend button below the fold (Sally amendment 2026-06-25).
  */
 export const Mobile390LongEmail: Story = {
+  // Seed via a nested provider (not the singleton) so useAuth sees the email.
+  decorators: [withSeededSession(LONG_EMAIL)],
   parameters: {
     router: { initialEntries: ['/verify-email?pollId=sb-long-email'] },
     viewport: { defaultViewport: 'mobile1' },
@@ -342,12 +385,6 @@ export const Mobile390LongEmail: Story = {
       ],
     },
   },
-  loaders: [
-    async () => {
-      seedSession(LONG_EMAIL)
-      return {}
-    },
-  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const display = await canvas.findByTestId('verify-email-display')

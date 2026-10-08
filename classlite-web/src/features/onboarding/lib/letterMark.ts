@@ -23,6 +23,52 @@
  * Zero tokens / whitespace-only → empty string.
  */
 
+/* eslint-disable no-restricted-syntax -- a WCAG contrast utility: raw hex is its
+   domain. It reads the (hex) brand-color palette and returns a legible dark/white
+   foreground. The two foreground literals are not themable design surfaces — they
+   are the black/white contrast anchors the algorithm chooses between. */
+/**
+ * readableTextColor — pick a WCAG-legible foreground (dark slate or white) for
+ * text drawn on a solid `backgroundHex`. Uses the relative-luminance crossover
+ * (~0.179) where black and white give equal contrast: lighter backgrounds get
+ * dark text, darker backgrounds get white. Fixes the letter-mark chip, whose
+ * hardcoded white text failed contrast on the mid-tone brand colors (e.g. the
+ * default amber `#d97706` → 3.2:1). Accepts `#rgb` / `#rrggbb`.
+ */
+const DARK_TEXT = '#0f172a' // slate-900
+const LIGHT_TEXT = '#ffffff'
+const LUMINANCE_CROSSOVER = 0.179
+
+export function readableTextColor(backgroundHex: string): string {
+  const rgb = parseHex(backgroundHex)
+  if (rgb === null) return LIGHT_TEXT
+  const toLinear = (channel: number): number => {
+    const value = channel / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  const luminance =
+    0.2126 * toLinear(rgb.r) + 0.7152 * toLinear(rgb.g) + 0.0722 * toLinear(rgb.b)
+  return luminance > LUMINANCE_CROSSOVER ? DARK_TEXT : LIGHT_TEXT
+}
+
+function parseHex(hex: string): { r: number; g: number; b: number } | null {
+  const match = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim())
+  if (match === null) return null
+  let body = match[1]
+  if (body.length === 3) {
+    body = body
+      .split('')
+      .map((c) => c + c)
+      .join('')
+  }
+  return {
+    r: parseInt(body.slice(0, 2), 16),
+    g: parseInt(body.slice(2, 4), 16),
+    b: parseInt(body.slice(4, 6), 16),
+  }
+}
+/* eslint-enable no-restricted-syntax */
+
 const NON_DECOMPOSING_DIACRITICS: Record<string, string> = {
   đ: 'd',
   Đ: 'D',

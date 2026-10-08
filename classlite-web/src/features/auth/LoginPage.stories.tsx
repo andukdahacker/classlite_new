@@ -1,3 +1,5 @@
+// storybook-rule: no-three-state
+// Route-page / presentational tier (Story 10.3): the data three-state trilogy does not apply.
 /**
  * LoginPage stories — Story 1-9b AC8 addition.
  *
@@ -13,9 +15,25 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, within } from 'storybook/test'
 import LoginPage from '@/features/auth/LoginPage'
 
+const LOCKOUT_STORAGE_KEY = 'classlite_login_lockout_until'
+
 const meta = {
   title: 'features/auth/LoginPage',
   component: LoginPage,
+  // Clear the lockout localStorage key synchronously before EVERY story mounts.
+  // The Lockout / LockoutMobile390 stories seed this key (synchronously, for the
+  // page's mount-time lazy `readLockoutUntilMs()`), and localStorage persists
+  // across stories in the test-runner's single page — so without this reset the
+  // seeded lockout leaks into later stories, forcing mode='lockout' and masking
+  // the oauthMismatch / workspaceBlocked / session-expired surfaces. This meta
+  // decorator is OUTERMOST, so it runs before a story's own (inner) seeding
+  // decorator — lockout stories still render locked; everyone else renders clean.
+  decorators: [
+    (Story) => {
+      window.localStorage.removeItem(LOCKOUT_STORAGE_KEY)
+      return <Story />
+    },
+  ],
   parameters: {
     a11y: { test: 'error' },
     layout: 'fullscreen',
@@ -82,8 +100,6 @@ export const InvitedBanner: Story = {
 }
 
 // ===== Story 1-9d AC7 variants =====
-
-const LOCKOUT_STORAGE_KEY = 'classlite_login_lockout_until'
 
 /**
  * `/login` with lockoutStorage pre-seeded to 10 minutes ahead — exercises

@@ -11,12 +11,12 @@
 //  - multi-tab foreign submit → overlay + disabled + ZERO subsequent PUT
 //  - 413 → Error status, text preserved; flush-on-unmount → one final PUT
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { configure, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { axe } from 'vitest-axe'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
@@ -171,6 +171,15 @@ function renderShell(opts: HarnessOpts = {}) {
   )
   return { ...utils, onSubmitted, perfNowRef, client }
 }
+
+// This suite drives the REAL autosave interval (40ms), real MSW round-trips, and
+// a real BroadcastChannel — no fake timers (it's the integration seam). Under the
+// full parallel suite those real timers get starved, so an autosave PUT or an
+// async focus-move can land later than RTL's default 1s `waitFor`. Raise the async
+// timeout for THIS file (vitest isolates module state per file, so this does not
+// leak to other suites) to absorb the contention without changing any assertion.
+beforeAll(() => configure({ asyncUtilTimeout: 5000 }))
+afterAll(() => configure({ asyncUtilTimeout: 1000 }))
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -460,7 +469,11 @@ describe('WritingAttemptShell — multi-tab (AC13, BLOCKER)', () => {
       expect(screen.getByTestId('submitted-elsewhere-overlay')).toBeInTheDocument(),
     )
     expect(screen.getByTestId('writing-editor-leaf')).toBeDisabled()
-    expect(screen.getByTestId('submitted-elsewhere-view-result')).toHaveFocus()
+    // Focus moves to the CTA via an effect — poll it (it can land a tick after the
+    // overlay paints, especially under load) rather than asserting synchronously.
+    await waitFor(() =>
+      expect(screen.getByTestId('submitted-elsewhere-view-result')).toHaveFocus(),
+    )
     // No pending edits (never typed) → the orphan-loss warning must NOT show.
     expect(
       screen.queryByTestId('submitted-elsewhere-orphan-warning'),

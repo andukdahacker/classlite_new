@@ -7,7 +7,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { EmptyStatePlaceholder } from '@/test/fixtures/empty-state-placeholder'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
 
 import { SpeakingGradingSurface, type TimestampedComment } from './SpeakingGradingSurface'
@@ -160,9 +160,9 @@ export const Empty: Story = {
     score: { primary: 0, criteria: SPEAKING_CRITERIA.criteria.map((c) => ({ ...c, score: 0 })) },
   },
   render: () => (
-    <EmptyStatePlaceholder
+    <EmptyState
       headline="No recording yet"
-      body="This student has not submitted a speaking response."
+      description="This student has not submitted a speaking response."
     />
   ),
 }

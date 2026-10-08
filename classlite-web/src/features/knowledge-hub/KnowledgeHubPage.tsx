@@ -27,6 +27,7 @@ import {
 import { queryClient } from '@/lib/query-client'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -192,7 +193,14 @@ export function KnowledgeHubPage(): ReactElement {
           ) : isError ? (
             <ErrorAlert onRetry={() => { foldersQuery.refetch(); filesQuery.refetch() }} />
           ) : hubEmpty ? (
-            <TrueEmptyHero onUpload={openUpload} />
+            <EmptyState
+              data-testid="kh-empty-hero"
+              live
+              icon={<UploadCloud className="size-7" />}
+              headline={t('knowledgeHub.empty.true.headline')}
+              description={t('knowledgeHub.empty.true.body')}
+              actions={<Button onClick={openUpload}>{t('knowledgeHub.empty.true.cta')}</Button>}
+            />
           ) : viewEmpty ? (
             <EmptyFolder />
           ) : (
@@ -581,21 +589,6 @@ function ErrorAlert({ onRetry }: { onRetry: () => void }): ReactElement {
       <Button size="sm" variant="outline" onClick={onRetry}>
         {t('knowledgeHub.error.retry')}
       </Button>
-    </div>
-  )
-}
-
-function TrueEmptyHero({ onUpload }: { onUpload: () => void }): ReactElement {
-  const { t } = useTranslation()
-  return (
-    <div
-      className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-200 px-6 py-16 text-center"
-      data-testid="kh-empty-hero"
-    >
-      <UploadCloud className="size-8 text-slate-400" aria-hidden="true" />
-      <h2 className="font-fraunces text-xl text-slate-900">{t('knowledgeHub.empty.true.headline')}</h2>
-      <p className="max-w-sm text-sm text-slate-500">{t('knowledgeHub.empty.true.body')}</p>
-      <Button onClick={onUpload}>{t('knowledgeHub.empty.true.cta')}</Button>
     </div>
   )
 }

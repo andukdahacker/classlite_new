@@ -11,9 +11,11 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
+import { MessagesSquare } from 'lucide-react'
 import { AnchoredQuestionsRailShell } from '@/components/domain/AnchoredQuestionsRailShell'
 import { BatchActionBar } from '@/components/domain/BatchActionBar'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api-fetch'
 import { useQuestions } from './api/useQuestions'
@@ -40,6 +42,7 @@ function batchErrorKey(error: unknown): string | null {
 
 export function QuestionsConsolePage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const unanswered = searchParams.get(UNANSWERED_PARAM) === 'true'
   const [page, setPage] = useState(1)
@@ -190,13 +193,18 @@ export function QuestionsConsolePage() {
             </Button>
           </div>
         ) : rows.length === 0 ? (
-          <div
+          <EmptyState
             data-testid="questions-console-empty"
-            className="rounded-xl border border-dashed border-[color:var(--cl-line)] p-8 text-center text-sm text-[var(--cl-ink-soft)]"
-          >
-            <p className="font-medium text-foreground">{t('questions.empty.teacher.title')}</p>
-            <p>{t('questions.empty.teacher.body')}</p>
-          </div>
+            live
+            icon={<MessagesSquare className="size-7" />}
+            headline={t('questions.empty.teacher.title')}
+            description={t('questions.empty.teacher.explainer')}
+            actions={
+              <Button variant="outline" onClick={() => navigate('/inbox')}>
+                {t('questions.empty.teacher.openInbox')}
+              </Button>
+            }
+          />
         ) : (
           rows.map((question) => (
             <TeacherQuestionCard

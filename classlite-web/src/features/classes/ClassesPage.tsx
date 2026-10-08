@@ -20,11 +20,12 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router'
-import { MoreHorizontal } from 'lucide-react'
+import { GraduationCap, MoreHorizontal } from 'lucide-react'
 import { useRole } from '@/hooks/useRole'
 import { queryClient } from '@/lib/query-client'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/domain/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -204,11 +205,18 @@ export function ClassesPage(): ReactElement {
       ) : classesQuery.isError ? (
         <ErrorAlert onRetry={() => classesQuery.refetch()} message={t('classes.error.body')} retryLabel={t('classes.error.retry')} />
       ) : classes.length === 0 ? (
-        <EmptyHero
+        <EmptyState
+          data-testid="classes-empty-hero"
+          live
+          icon={<GraduationCap className="size-7" />}
           headline={t('classes.empty.headline')}
-          body={t('classes.empty.body')}
-          cta={t('classes.empty.cta')}
-          onCta={() => setDialog({ open: true, cls: null })}
+          headlineAccent={t('classes.empty.headlineAccent')}
+          description={t('classes.empty.body')}
+          actions={
+            <Button onClick={() => setDialog({ open: true, cls: null })}>
+              {t('classes.empty.cta')}
+            </Button>
+          }
         />
       ) : visible.length === 0 ? (
         <p
@@ -395,29 +403,6 @@ function ErrorAlert({
       <Button size="sm" variant="outline" onClick={onRetry}>
         {retryLabel}
       </Button>
-    </div>
-  )
-}
-
-function EmptyHero({
-  headline,
-  body,
-  cta,
-  onCta,
-}: {
-  headline: string
-  body: string
-  cta: string
-  onCta: () => void
-}): ReactElement {
-  return (
-    <div
-      className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-200 px-6 py-16 text-center"
-      data-testid="classes-empty-hero"
-    >
-      <h2 className="font-fraunces text-xl text-slate-900">{headline}</h2>
-      <p className="max-w-sm text-sm text-slate-500">{body}</p>
-      <Button onClick={onCta}>{cta}</Button>
     </div>
   )
 }

@@ -1,20 +1,23 @@
 /**
- * StudentWelcome — the s62 first-login guided welcome (Story 8-1b, §6.4, D12).
- * A forward-looking hero (ghost icon + Fraunces display headline with one
- * italic-accent word + a muted one-liner + a short starter checklist + a single
- * primary action). It is ADDITIVE — it coexists with real data as it arrives and
- * never blocks the cards.
+ * StudentWelcome — the s62 first-login guided welcome (Story 8-1b, §6.4, D12);
+ * re-platformed onto the canonical `EmptyState` (`tone='guided'`) in Story 10.3
+ * (AC3, Task 5). A forward-looking hero: ghost icon + Fraunces display headline
+ * with one italic-accent word + a muted one-liner + a short starter checklist +
+ * a single primary action. It is ADDITIVE — the parent `StudentDashboard` owns
+ * the durable per-user gating (`useStudentWelcome`), so it coexists with real
+ * data and never blocks the cards.
  *
  * The primary action doubles as the explicit dismissal (`data-testid=
- * "student-welcome-dismiss"`): clicking it persists the durable per-user flag
- * (via the parent's `onDismiss`) so a returning student never sees it again on
- * this device. Encouraging student tone (§6.4).
+ * "student-welcome-dismiss"`): clicking it persists the durable flag (via the
+ * parent's `onDismiss`) so a returning student never sees it again on this
+ * device. No `live` role — the welcome is mount-present/gated, not an
+ * async-arrived empty, so it must not announce as if it just loaded.
  */
 import type { ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GraduationCap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/domain/EmptyState'
 
 export interface StudentWelcomeProps {
   /** Persists the durable welcome flag and hides the hero. */
@@ -29,38 +32,31 @@ export function StudentWelcome({
 }: StudentWelcomeProps): ReactElement {
   const { t } = useTranslation()
   return (
-    <Card
+    <EmptyState
       data-testid="student-welcome"
-      className="border-[var(--cl-accent)] bg-[var(--cl-tint-blue)]"
-    >
-      <CardContent className="flex flex-col items-start gap-3 py-6">
-        <GraduationCap
-          aria-hidden="true"
-          className="size-8 text-[var(--cl-accent)]"
-        />
-        <h2 className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)]">
-          {t('dashboard.welcome.headline')}{' '}
-          <span className="italic text-[var(--cl-accent)]">
-            {t('dashboard.welcome.headlineAccent')}
-          </span>
-        </h2>
-        <p className="text-sm text-[var(--cl-ink-soft)]">
-          {t('dashboard.welcome.subtext')}
-        </p>
-        {nextSessionLabel ? (
-          <p className="text-sm font-medium text-[var(--cl-ink)]">
-            {t('dashboard.welcome.nextSession', { session: nextSessionLabel })}
-          </p>
-        ) : null}
-        <ul className="list-inside list-disc text-sm text-[var(--cl-ink-soft)]">
-          <li>{t('dashboard.welcome.step1')}</li>
-          <li>{t('dashboard.welcome.step2')}</li>
-          <li>{t('dashboard.welcome.step3')}</li>
-        </ul>
+      tone="guided"
+      icon={<GraduationCap className="size-7" />}
+      headline={t('dashboard.welcome.headline')}
+      headlineAccent={t('dashboard.welcome.headlineAccent')}
+      actions={
         <Button data-testid="student-welcome-dismiss" onClick={onDismiss}>
           {t('dashboard.welcome.cta')}
         </Button>
-      </CardContent>
-    </Card>
+      }
+    >
+      <p className="text-sm text-[color:var(--cl-ink-soft)]">
+        {t('dashboard.welcome.subtext')}
+      </p>
+      {nextSessionLabel ? (
+        <p className="text-sm font-medium text-[color:var(--cl-ink)]">
+          {t('dashboard.welcome.nextSession', { session: nextSessionLabel })}
+        </p>
+      ) : null}
+      <ul className="flex flex-col gap-1 text-sm text-[color:var(--cl-ink-soft)]">
+        <li>{t('dashboard.welcome.step1')}</li>
+        <li>{t('dashboard.welcome.step2')}</li>
+        <li>{t('dashboard.welcome.step3')}</li>
+      </ul>
+    </EmptyState>
   )
 }
