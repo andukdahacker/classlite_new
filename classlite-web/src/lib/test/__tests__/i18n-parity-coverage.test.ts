@@ -40,6 +40,7 @@ import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
 import { STORY_10_1C_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys10c'
 import { STORY_10_2_KEYS } from '@/features/archive/__tests__/archiveI18nKeys'
 import { STORY_10_3_KEYS } from '@/lib/test/story10_3Keys'
+import { STORY_10_5_KEYS } from '@/features/dashboard/__tests__/dayOneI18nKeys'
 
 /**
  * Every i18n key Story 1-7c introduces. Grouped by surface for readability.
@@ -2277,5 +2278,25 @@ describe('Story 10.3 i18n parity (master ratchet)', () => {
 
   test.each(STORY_10_3_KEYS)('%s belongs to a 10.3 allowed prefix', (key) => {
     expect(STORY_10_3_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))).toBe(true)
+  })
+})
+
+/**
+ * Story 10.5 — Teacher Day-One Guided Start (s53). Net-new activation-surface
+ * copy, all under the `dashboard.teacher.dayOne.*` namespace. VN prose is ★
+ * REVIEWER-MANDATORY; the ratchet guards existence + interpolation-token shape
+ * only ({{n}} on the eyebrow).
+ */
+describe('Story 10.5 i18n parity (master ratchet)', () => {
+  test('every new Story 10.5 day-one key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_5_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.5 keys', () => {
+    assertI18nInterpolationParity(STORY_10_5_KEYS)
+  })
+
+  test.each(STORY_10_5_KEYS)('%s belongs to the dashboard.teacher.dayOne.* namespace', (key) => {
+    expect(key.startsWith('dashboard.teacher.dayOne.')).toBe(true)
   })
 })

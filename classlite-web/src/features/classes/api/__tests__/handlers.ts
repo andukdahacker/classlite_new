@@ -94,6 +94,15 @@ export const teacherScopedClassesHandlers = [
   ),
 ]
 
+/**
+ * Parametrized list handler — an explicit class list (empty or not). Story 10.5
+ * uses the empty case to drive the teacher day-one guided start, and a single-
+ * class list for the ≥1-class negative.
+ */
+export function classListHandlers(classes: ClassWire[]) {
+  return [http.get('/api/classes', () => HttpResponse.json(envelope(classes)))]
+}
+
 export const errorHandlers = {
   listClasses500: () =>
     http.get('/api/classes', () =>

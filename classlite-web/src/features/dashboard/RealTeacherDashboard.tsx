@@ -12,7 +12,7 @@
  * (D11), no inline grading/reply. Owns the UX-1 trilogy over the single
  * `useDashboard` fetch.
  */
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionCenter, useSessionUser } from '@/hooks/useRole'
 import { useDashboard } from '@/features/dashboard/api/useDashboard'
@@ -24,7 +24,9 @@ import {
   DashboardErrorAlert,
   DashboardSkeleton,
 } from '@/features/dashboard/components/DashboardStates'
+import { TeacherDayOneStart } from '@/features/dashboard/components/TeacherDayOneStart'
 import FinishSetupCard from '@/features/dashboard/FinishSetupCard'
+import { useClasses, ClassFormDialog, type ClassListScope } from '@/features/classes'
 import type {
   ChecklistCtx,
   Persona,
@@ -48,10 +50,18 @@ export function RealTeacherDashboard({
 }: RealTeacherDashboardProps = {}): ReactElement {
   const { t } = useTranslation()
   const user = useSessionUser()
-  const timezone = useSessionCenter()?.timezone ?? FALLBACK_TIMEZONE
+  const center = useSessionCenter()
+  const centerId = center?.id ?? null
+  const timezone = center?.timezone ?? FALLBACK_TIMEZONE
   const query = useDashboard()
+  // Story 10.5 — the day-one trigger. A SECOND, deliberate teacher-scoped fetch
+  // (the dashboard payload carries no class count, so rail-emptiness is not a
+  // valid proxy — AC3). `data.length === 0` once loaded ⇒ the guided start.
+  const teacherScope: ClassListScope = `teacher:${user?.id ?? 'self'}`
+  const classesQuery = useClasses(centerId, teacherScope)
+  const [createClassOpen, setCreateClassOpen] = useState(false)
 
-  if (query.isLoading) return <DashboardSkeleton />
+  if (query.isLoading || classesQuery.isLoading) return <DashboardSkeleton />
 
   if (query.isError || query.data == null || query.data.data.teacher == null) {
     return (
@@ -60,6 +70,68 @@ export function RealTeacherDashboard({
         retryLabelKey="dashboard.teacher.retry"
         onRetry={() => void query.refetch()}
       />
+    )
+  }
+
+  // Story 10.5 review (Option 1) — the day-one trigger fetch has its own error
+  // surface. Without it, a failed teacher-scoped /api/classes leaves
+  // `classesQuery.data` undefined ⇒ `isDayOne` false ⇒ a 0-class teacher falls
+  // silently through to the empty-rails dead-end this story exists to kill.
+  // Scoped inline retry (re-issues ONLY the classes fetch), not a full-page
+  // error; the common no-error path is untouched (UX-1).
+  if (classesQuery.isError) {
+    return (
+      <DashboardErrorAlert
+        messageKey="dashboard.teacher.errorMessage"
+        retryLabelKey="dashboard.teacher.retry"
+        onRetry={() => void classesQuery.refetch()}
+      />
+    )
+  }
+
+  const displayName = user?.fullName ?? user?.email ?? ''
+
+  // Day-one guided start: an onboarded teacher with zero classes. Additive to
+  // the onboarding checklist (AC2) and replaces the dead empty-rails dead-end;
+  // it disappears once ≥1 class exists (the create-class mutation invalidates
+  // the list, flipping this branch off).
+  const isDayOne =
+    classesQuery.data != null && classesQuery.data.length === 0
+
+  if (isDayOne) {
+    return (
+      <div data-testid="teacher-dashboard" className="space-y-6">
+        <h1
+          data-testid="teacher-dashboard-heading"
+          className="font-[var(--cl-font-display)] text-2xl text-[var(--cl-ink)]"
+        >
+          {t('dashboard.teacher.dayOne.title')}{' '}
+          <span className="italic text-[color:var(--cl-accent)]">
+            {displayName}
+          </span>
+        </h1>
+
+        <TeacherDayOneStart
+          profileDone={Boolean(user?.fullName)}
+          onCreateClass={() => setCreateClassOpen(true)}
+        />
+
+        {persona !== null && checklistCtx !== null ? (
+          <FinishSetupCard
+            persona={persona}
+            userId={user?.id ?? null}
+            ctx={checklistCtx}
+          />
+        ) : null}
+
+        {createClassOpen && centerId !== null ? (
+          <ClassFormDialog
+            centerId={centerId}
+            initial={null}
+            onClose={() => setCreateClassOpen(false)}
+          />
+        ) : null}
+      </div>
     )
   }
 

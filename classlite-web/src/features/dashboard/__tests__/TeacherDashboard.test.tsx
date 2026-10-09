@@ -57,6 +57,10 @@ import { onboardingHandlers } from '@/features/onboarding/api/__tests__/handlers
 // this fetch; the onboarding-INCOMPLETE shell below is preserved. The
 // done-state → real-dashboard behavior is owned by TeacherDashboard.realDashboard.test.tsx.
 import { teacherHandlers } from '@/features/dashboard/api/__tests__/handlers'
+// Story 10.5: RealTeacherDashboard now fires a second teacher-scoped
+// GET /api/classes (the day-one trigger). A non-empty list keeps these
+// onboarding-complete renders in the normal-dashboard branch (≥1 class).
+import { teacherScopedClassesHandlers } from '@/features/classes/api/__tests__/handlers'
 
 beforeEach(() => {
   server.use(...onboardingHandlers)
@@ -331,7 +335,7 @@ describe('TeacherDashboard — welcome heading [AC12]', () => {
   test('welcome heading interpolates user.displayName (on the real dashboard)', async () => {
     // Story 8-1b (D2): onboarding-complete now renders the real s06 dashboard;
     // the welcome heading moved onto it. Seed the dashboard fetch so it loads.
-    server.use(...teacherHandlers)
+    server.use(...teacherHandlers, ...teacherScopedClassesHandlers)
     await renderShell({
       session: makeSession(),
       progressArgs: { persona: 'operator', currentStep: 'done', spawnedClassIds: ['c1'] },
@@ -458,7 +462,7 @@ describe('TeacherDashboard — AC12 3-way mutex', () => {
 // ---------------------------------------------------------------------------
 describe('TeacherDashboard — onboarding-complete: real dashboard + finish-setup strip', () => {
   test('done + persona + not snoozed → real week-strip AND the checklist strip coexist', async () => {
-    server.use(...teacherHandlers)
+    server.use(...teacherHandlers, ...teacherScopedClassesHandlers)
     await renderShell({
       session: makeSession(),
       progressArgs: {
@@ -485,7 +489,7 @@ describe('TeacherDashboard — onboarding-complete: real dashboard + finish-setu
       `classlite_finish_setup_v1_${USER_ID}`,
       JSON.stringify({ snoozedUntil: Date.now() + 7 * 24 * 3600 * 1000 }),
     )
-    server.use(...teacherHandlers)
+    server.use(...teacherHandlers, ...teacherScopedClassesHandlers)
     await renderShell({
       session: makeSession(),
       progressArgs: { persona: 'operator', currentStep: 'done', spawnedClassIds: ['c1'] },
