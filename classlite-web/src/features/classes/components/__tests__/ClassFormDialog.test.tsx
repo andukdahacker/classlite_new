@@ -6,14 +6,68 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, test, vi } from 'vitest'
 import i18n from '@/lib/i18n'
 import { server } from '@/test/msw-server'
 import { createTestQueryClient } from '@/lib/query-client'
 import { BillingErrorDialogHost } from '@/features/billing'
 import { useBillingErrorDialogStore } from '@/features/billing/store/useBillingErrorDialogStore'
+import { RoleContext } from '@/hooks/RoleContext'
+import type { Role } from '@/hooks/useRole'
+import type { components } from '@/lib/api/client'
 import { ClassFormDialog } from '../ClassFormDialog'
 import { classWire } from '../../api/__tests__/handlers'
+
+type BillingSummary = components['schemas']['BillingSummary']
+
+/** A minimal owner BillingSummary with a per-class cap (Story 10.4 AC6). */
+function billingSummary(studentsPerClass: number | null): BillingSummary {
+  return {
+    plan: 'free',
+    billingCycle: 'monthly',
+    status: 'active',
+    isFree: true,
+    creditsApplicable: false,
+    currentPeriodStart: '2026-09-01T00:00:00+07:00',
+    currentPeriodEnd: null,
+    limits: { teachers: 1, classes: null, studentsPerClass, aiCreditsPerMonth: null, storageBytes: 1 },
+    usage: {
+      teacherSeats: { current: 1, max: 1, approaching: false },
+      classes: { current: 0, max: null, approaching: false },
+      aiCredits: { monthlyAllocation: 0, monthlyUsed: 0, addonRemaining: 0, available: 0, resetAt: '2026-10-01T00:00:00+07:00' },
+      storage: { usedBytes: 0, limitBytes: 1, percentUsed: 0, approaching: false },
+    },
+    nextInvoice: null,
+    paymentMethod: null,
+    pendingDowngrade: null,
+    grace: null,
+  }
+}
+
+function renderDialogWith(options: {
+  role?: Role | null
+  existingNames?: readonly string[]
+  onClose?: () => void
+}) {
+  const client = createTestQueryClient()
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <RoleContext.Provider value={options.role ?? null}>
+          <MemoryRouter>
+            <ClassFormDialog
+              centerId="c-1"
+              initial={null}
+              existingNames={options.existingNames ?? []}
+              onClose={options.onClose ?? vi.fn()}
+            />
+          </MemoryRouter>
+        </RoleContext.Provider>
+      </QueryClientProvider>
+    </I18nextProvider>,
+  )
+}
 
 const TEMPLATE = {
   id: '11111111-2222-3333-4444-555555555501',
@@ -207,5 +261,115 @@ describe('ClassFormDialog — billing 409 wiring (AC14)', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
     expect(await screen.findByTestId('plan-limit-exceeded-dialog')).toBeInTheDocument()
     useBillingErrorDialogStore.getState().reset()
+  })
+})
+
+// Story 10.4 (AC6, s65) — FormValidationBanner + InlineFieldError + client
+// name-conflict + owner-gated capacity cap + 422 field mapping.
+describe('ClassFormDialog — s65 validation (Story 10.4 AC6)', () => {
+  test('owner: capacity over the plan cap shows an inline error + Upgrade link; submit is blocked', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    let posted = false
+    server.use(
+      http.get('/api/templates', () => HttpResponse.json(tplEnvelope())),
+      http.get('*/api/billing', () =>
+        HttpResponse.json({ data: billingSummary(5), meta: { requestId: 't' } }),
+      ),
+      http.post('/api/classes', () => {
+        posted = true
+        return HttpResponse.json({ data: classWire({ id: 'x' }), meta: {} }, { status: 201 })
+      }),
+    )
+    renderDialogWith({ role: 'owner', onClose })
+    await user.type(await screen.findByTestId('class-field-name'), 'Big Class')
+    await user.type(screen.getByTestId('class-field-capacity'), '10') // > cap 5
+    // The inline over-plan nudge appears once billing loads.
+    const over = await screen.findByTestId('class-capacity-over-plan')
+    expect(over).toHaveTextContent(
+      i18n.t('classes.form.errors.capacityOverPlan', { cap: 5, planName: 'Free' }),
+    )
+    expect(screen.getByTestId('class-capacity-upgrade')).toHaveAttribute(
+      'href',
+      '/settings/billing/plans',
+    )
+    // Submitting is blocked client-side — no POST, dialog stays open.
+    await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
+    expect(posted).toBe(false)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  test('teacher: NO inline capacity cap (billing is owner-only) — defers to the server 409', async () => {
+    const user = userEvent.setup()
+    let posted = false
+    server.use(
+      http.get('/api/templates', () => HttpResponse.json(tplEnvelope())),
+      http.post('/api/classes', () => {
+        posted = true
+        return HttpResponse.json({ data: classWire({ id: 'x' }), meta: {} }, { status: 201 })
+      }),
+    )
+    renderDialogWith({ role: 'teacher' })
+    await user.type(await screen.findByTestId('class-field-name'), 'Big Class')
+    await user.type(screen.getByTestId('class-field-capacity'), '10')
+    await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
+    // No client-side cap for a teacher — the create proceeds to the server.
+    await waitFor(() => expect(posted).toBe(true))
+    expect(screen.queryByTestId('class-capacity-over-plan')).not.toBeInTheDocument()
+  })
+
+  test('a client-side name-conflict surfaces an inline field error; no POST fires', async () => {
+    const user = userEvent.setup()
+    let posted = false
+    server.use(
+      http.get('/api/templates', () => HttpResponse.json(tplEnvelope())),
+      http.post('/api/classes', () => {
+        posted = true
+        return HttpResponse.json({ data: classWire({ id: 'x' }), meta: {} }, { status: 201 })
+      }),
+    )
+    renderDialogWith({ existingNames: ['Existing Class'] })
+    await user.type(await screen.findByTestId('class-field-name'), 'existing class') // case-insensitive
+    await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
+    // The conflict surfaces BOTH inline (under the field) and in the top banner.
+    const hits = await screen.findAllByText(i18n.t('classes.form.errors.nameConflict'))
+    expect(hits.length).toBeGreaterThanOrEqual(1)
+    expect(posted).toBe(false)
+  })
+
+  test('simultaneous errors surface in the top-of-form banner with the count', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/api/templates', () => HttpResponse.json(tplEnvelope())))
+    renderDialogWith({})
+    // Submit empty → RHF surfaces the name-required error (zodResolver, all at once).
+    await user.click(await screen.findByRole('button', { name: i18n.t('classes.form.create') }))
+    const banner = await screen.findByTestId('class-form-validation-banner')
+    expect(banner).toHaveAttribute('role', 'alert')
+    expect(banner).toHaveTextContent(i18n.t('classes.form.errors.nameRequired'))
+  })
+
+  test('a 422 ValidationError maps its field errors inline (setError), not a generic banner', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/templates', () => HttpResponse.json(tplEnvelope())),
+      http.post('/api/classes', () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'invalid',
+              requestId: 'r',
+              details: [{ field: 'name', code: '', message: 'Name rejected by server.' }],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    renderDialogWith({})
+    await user.type(await screen.findByTestId('class-field-name'), 'Fresh Class')
+    await user.click(screen.getByRole('button', { name: i18n.t('classes.form.create') }))
+    const hits = await screen.findAllByText('Name rejected by server.')
+    expect(hits.length).toBeGreaterThanOrEqual(1)
   })
 })

@@ -4,14 +4,14 @@
  * Static-shells discipline: every callback prop defaults to a no-op; no
  * MSW handler, no `useState`, no `useEffect`. Empty / Error / Loading
  * states use the canonical `EmptyState` (Story 10.3) / 1d-1's
- * `ErrorStatePlaceholder` (until Story 10.4). Loading is a skeleton — the
+ * `ErrorState` (until Story 10.4). Loading is a skeleton — the
  * three-state lint rule from 1d-1 expects this file to export Default +
  * Loading + Empty + Error.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { WriteDocSurface } from './WriteDocSurface'
 
@@ -134,7 +134,7 @@ export const Error: Story = {
   args: {
     title: 'How the university week is built',
     content: (
-      <ErrorStatePlaceholder
+      <ErrorState
         message="We couldn't load this draft. Try again."
         retryLabel="Reload draft"
         onRetry={() => {}}

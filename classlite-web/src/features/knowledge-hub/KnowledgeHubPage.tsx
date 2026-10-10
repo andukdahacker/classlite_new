@@ -28,6 +28,7 @@ import { queryClient } from '@/lib/query-client'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/domain/EmptyState'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -191,7 +192,15 @@ export function KnowledgeHubPage(): ReactElement {
           {isPending ? (
             <TileSkeletons />
           ) : isError ? (
-            <ErrorAlert onRetry={() => { foldersQuery.refetch(); filesQuery.refetch() }} />
+            <ErrorState
+              data-testid="kh-error"
+              message={t('knowledgeHub.error.body')}
+              retryLabel={t('knowledgeHub.error.retry')}
+              onRetry={() => {
+                foldersQuery.refetch()
+                filesQuery.refetch()
+              }}
+            />
           ) : hubEmpty ? (
             <EmptyState
               data-testid="kh-empty-hero"
@@ -573,22 +582,6 @@ function TileSkeletons(): ReactElement {
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <Skeleton key={i} className="h-20 w-full" />
       ))}
-    </div>
-  )
-}
-
-function ErrorAlert({ onRetry }: { onRetry: () => void }): ReactElement {
-  const { t } = useTranslation()
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-      data-testid="kh-error"
-    >
-      <span>{t('knowledgeHub.error.body')}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {t('knowledgeHub.error.retry')}
-      </Button>
     </div>
   )
 }

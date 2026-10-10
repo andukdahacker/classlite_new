@@ -66,8 +66,8 @@ export function RealTeacherDashboard({
   if (query.isError || query.data == null || query.data.data.teacher == null) {
     return (
       <DashboardErrorAlert
-        messageKey="dashboard.teacher.errorMessage"
-        retryLabelKey="dashboard.teacher.retry"
+        message={t('dashboard.teacher.errorMessage')}
+        retryLabel={t('dashboard.teacher.retry')}
         onRetry={() => void query.refetch()}
       />
     )
@@ -82,8 +82,8 @@ export function RealTeacherDashboard({
   if (classesQuery.isError) {
     return (
       <DashboardErrorAlert
-        messageKey="dashboard.teacher.errorMessage"
-        retryLabelKey="dashboard.teacher.retry"
+        message={t('dashboard.teacher.errorMessage')}
+        retryLabel={t('dashboard.teacher.retry')}
         onRetry={() => void classesQuery.refetch()}
       />
     )

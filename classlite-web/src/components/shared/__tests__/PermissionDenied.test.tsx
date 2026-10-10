@@ -9,6 +9,7 @@ import { describe, expect, test } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import PermissionDenied from '@/components/shared/PermissionDenied'
+import { RoleContext } from '@/hooks/RoleContext'
 import { assertI18nParity } from '@/lib/test/i18n-parity'
 import i18n from '@/lib/i18n'
 
@@ -64,9 +65,37 @@ describe('PermissionDenied', () => {
     expect(summary.getAttribute('role')).toBe('note')
   })
 
+  // Story 10.4 AC8 (s67) — the current-role line completes the required+current+escape triad.
+  test('renders the current role when the viewer has one (triad: required + current + escape)', () => {
+    render(
+      <RoleContext.Provider value="teacher">
+        <PermissionDenied requiredRoles={['owner', 'admin']} />
+      </RoleContext.Provider>,
+    )
+    const current = screen.getByTestId('permission-denied-current-role')
+    expect(current).toHaveTextContent(
+      i18n.t('app.permissionDenied.currentRole', { role: i18n.t('userPill.role.teacher') }),
+    )
+    // The required-role summary + dashboard escape remain (unchanged).
+    expect(
+      screen.getByText(i18n.t('app.permissionDenied.requiredRoleSummaryOwnerAdmin')),
+    ).toBeDefined()
+    expect(
+      screen.getByRole('link', { name: i18n.t('app.permissionDenied.homeLinkCta') }),
+    ).toBeDefined()
+    // The deferred "who has access" directory (FU-10-4-S67-DIRECTORY) is NOT built.
+    expect(screen.queryByTestId('permission-denied-directory')).not.toBeInTheDocument()
+  })
+
+  test('omits the current-role line for an unauthenticated viewer (null role)', () => {
+    render(<PermissionDenied requiredRoles={['owner']} />)
+    expect(screen.queryByTestId('permission-denied-current-role')).not.toBeInTheDocument()
+  })
+
   test('all PermissionDenied i18n keys exist in en + vi', () => {
     assertI18nParity([
       'app.permissionDenied.title',
+      'app.permissionDenied.currentRole',
       'app.permissionDenied.bodyOwnerAdmin',
       'app.permissionDenied.bodyOwner',
       'app.permissionDenied.contactLinkCta',

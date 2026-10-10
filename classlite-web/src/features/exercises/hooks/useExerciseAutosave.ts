@@ -42,6 +42,9 @@ import type { EditorDocument } from '../lib/editorTypes'
 
 export const DEBOUNCE_MS = 1500
 const CONFLICT_STATUS = 409
+/** Story 10.4 AC7 — a 409 with this code means the exercise was finalized
+ *  mid-session (not a recoverable write-conflict); the page flips to locked. */
+const EXERCISE_LOCKED_CODE = 'EXERCISE_LOCKED'
 
 /** The full-replace PATCH body — metadata + content. Explicit nulls (TS-1). */
 function toPatchBody(doc: EditorDocument) {
@@ -123,6 +126,18 @@ export function useExerciseAutosave(
         markSavedAt(updated.updatedAt)
       } catch (err) {
         if (!isMountedRef.current || mySeq < latestSeqRef.current) return
+        if (
+          err instanceof ApiError &&
+          err.status === CONFLICT_STATUS &&
+          err.code === EXERCISE_LOCKED_CODE
+        ) {
+          // Story 10.4 AC7 — finalized mid-session: NOT a recoverable write
+          // conflict. Force a detail refetch so the page swaps to the locked
+          // read-only view; no reload-loop, no toast, no raw 500.
+          void queryClient.invalidateQueries({ queryKey: exerciseKeys.detail(exerciseId) })
+          setSaveStatus('idle')
+          return
+        }
         if (err instanceof ApiError && err.status === CONFLICT_STATUS) {
           // Loud, recoverable conflict (Winston) — the page reloads fresh state.
           conflictRef.current = true

@@ -26,6 +26,7 @@ import { queryClient } from '@/lib/query-client'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/domain/EmptyState'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -203,7 +204,7 @@ export function ClassesPage(): ReactElement {
       {classesQuery.isPending ? (
         <ClassRowSkeletons />
       ) : classesQuery.isError ? (
-        <ErrorAlert onRetry={() => classesQuery.refetch()} message={t('classes.error.body')} retryLabel={t('classes.error.retry')} />
+        <ErrorState onRetry={() => classesQuery.refetch()} message={t('classes.error.body')} retryLabel={t('classes.error.retry')} />
       ) : classes.length === 0 ? (
         <EmptyState
           data-testid="classes-empty-hero"
@@ -261,6 +262,7 @@ export function ClassesPage(): ReactElement {
           centerId={centerId ?? ''}
           initial={dialog.cls}
           initialTemplateId={dialog.cls === null ? initialTemplateId : null}
+          existingNames={classes.map((c) => c.name)}
           onClose={() => {
             setDialog({ open: false, cls: null })
             setInitialTemplateId(null)
@@ -381,28 +383,6 @@ function ClassRowSkeletons(): ReactElement {
           data-testid={`class-row-skeleton-${i}`}
         />
       ))}
-    </div>
-  )
-}
-
-function ErrorAlert({
-  onRetry,
-  message,
-  retryLabel,
-}: {
-  onRetry: () => void
-  message: string
-  retryLabel: string
-}): ReactElement {
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-    >
-      <span>{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {retryLabel}
-      </Button>
     </div>
   )
 }

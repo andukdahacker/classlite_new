@@ -37,7 +37,7 @@ import {
   clearStoredDraft,
   deriveReadOnly,
   mapWriteError,
-  readOnlyReasonKey,
+  readOnlyBannerCopy,
   SaveStatusIndicator,
   AttemptExpiredOverlay,
   TimerChip,
@@ -494,16 +494,34 @@ export function ExerciseAttemptShell({
         </p>
       ) : null}
 
-      {/* Read-only inline banner (AC15) — not only a toast. */}
-      {readOnly && readOnlyReason ? (
-        <div
-          role="alert"
-          data-testid="attempt-readonly-banner"
-          className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)]"
-        >
-          {t(readOnlyReasonKey(readOnlyReason))}
-        </div>
-      ) : null}
+      {/* Read-only inline banner (AC15) — not only a toast. Story 10.4 AC5 (s64):
+          a hard-deadline-passed lock reframes to deadline copy + extension hint. */}
+      {readOnly && readOnlyReason
+        ? (() => {
+            const bannerCopy = readOnlyBannerCopy(
+              readOnlyReason,
+              assignment.hardDeadlineAt,
+              serverNow(),
+            )
+            return (
+              <div
+                role="alert"
+                data-testid="attempt-readonly-banner"
+                className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)]"
+              >
+                <p>{t(bannerCopy.messageKey)}</p>
+                {bannerCopy.hintKey ? (
+                  <p
+                    data-testid="attempt-readonly-hint"
+                    className="mt-1 text-xs text-[var(--cl-ink-soft)]"
+                  >
+                    {t(bannerCopy.hintKey)}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })()
+        : null}
 
       {/* Timed attempts render the abandoned-tab note (AC19 accepted-risk). */}
       {timer.remainingSeconds !== null ? (

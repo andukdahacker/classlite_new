@@ -42,7 +42,7 @@ import {
   useAttemptTimer,
   createServerClock,
   clearStoredDraft,
-  readOnlyReasonKey,
+  readOnlyBannerCopy,
   attemptKeys,
   SaveStatusIndicator,
   AttemptExpiredOverlay,
@@ -477,17 +477,35 @@ export function SpeakingAttemptShell({
         inert={foreign.submitted ? true : undefined}
         data-testid="speaking-shell-content"
       >
-      {readOnly && reason ? (
-        <div
-          ref={bannerRef}
-          tabIndex={-1}
-          role="alert"
-          data-testid="speaking-readonly-banner"
-          className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)] outline-none"
-        >
-          {t(readOnlyReasonKey(reason))}
-        </div>
-      ) : null}
+      {readOnly && reason
+        ? (() => {
+            // Story 10.4 AC5 (s64): deadline-passed reframing + extension hint.
+            const bannerCopy = readOnlyBannerCopy(
+              reason,
+              assignment.hardDeadlineAt,
+              serverNow(),
+            )
+            return (
+              <div
+                ref={bannerRef}
+                tabIndex={-1}
+                role="alert"
+                data-testid="speaking-readonly-banner"
+                className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)] outline-none"
+              >
+                <p>{t(bannerCopy.messageKey)}</p>
+                {bannerCopy.hintKey ? (
+                  <p
+                    data-testid="speaking-readonly-hint"
+                    className="mt-1 text-xs text-[var(--cl-ink-soft)]"
+                  >
+                    {t(bannerCopy.hintKey)}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })()
+        : null}
 
       {strandedTake ? (
         <div

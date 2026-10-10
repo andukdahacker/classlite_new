@@ -311,6 +311,32 @@ describe('WritingAttemptShell — read-only (AC16)', () => {
     expect(rec.events.filter((e) => e === 'PUT')).toHaveLength(0)
   })
 
+  test('Story 10.4 AC5 (s64): a passed hard deadline shows deadline-framed copy + a text extension next-step (not the timer copy)', async () => {
+    installHandlers({})
+    const perfNowRef = { current: 0 }
+    renderShell({
+      perfNowRef,
+      bundle: bundle({ assignment: { hardDeadlineAt: '2026-08-04T00:00:05Z' } }),
+    })
+    perfNowRef.current = 10_000
+    const banner = await screen.findByTestId('writing-readonly-banner')
+    await waitFor(() =>
+      expect(banner).toHaveTextContent(i18n.t('attempt.readonly.deadlinePassed')),
+    )
+    // The single next-step is text-level guidance, not a functional button.
+    expect(screen.getByTestId('writing-readonly-hint')).toHaveTextContent(
+      i18n.t('attempt.readonly.extensionHint'),
+    )
+    expect(
+      screen.queryByRole('button', { name: i18n.t('attempt.readonly.extensionHint') }),
+    ).not.toBeInTheDocument()
+    // The timer-framed copy must NOT appear on a deadline-caused lock.
+    expect(banner).not.toHaveTextContent(i18n.t('attempt.readonly.timeExpired'))
+    // Mechanism unchanged: editor disabled, Submit hidden.
+    expect(screen.getByTestId('writing-editor-leaf')).toBeDisabled()
+    expect(screen.queryByTestId('writing-submit-open')).not.toBeInTheDocument()
+  })
+
   test('unsaved PRE-deadline edits are flushed once when the read-only clock flips (no-loss)', async () => {
     // autosave interval huge → autosave will NOT fire during the test, so the
     // only way the pre-deadline text reaches the server is the flush-on-flip.

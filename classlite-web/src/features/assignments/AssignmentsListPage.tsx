@@ -16,6 +16,7 @@
 import { useMemo, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AssignmentRow } from './AssignmentRow'
 import { useStudentAssignments } from './api/useStudentAssignments'
@@ -62,7 +63,7 @@ export function AssignmentsListPage(): ReactElement {
       {listQuery.isPending ? (
         <AssignmentRowSkeletons />
       ) : listQuery.isError ? (
-        <ErrorAlert
+        <ErrorState
           onRetry={() => listQuery.refetch()}
           message={t('assignments.error.body')}
           retryLabel={t('assignments.error.retry')}
@@ -128,28 +129,6 @@ function AssignmentRowSkeletons(): ReactElement {
       {[0, 1, 2, 3].map((i) => (
         <Skeleton key={i} className="h-16 w-full" data-testid={`assignment-row-skeleton-${i}`} />
       ))}
-    </div>
-  )
-}
-
-function ErrorAlert({
-  onRetry,
-  message,
-  retryLabel,
-}: {
-  onRetry: () => void
-  message: string
-  retryLabel: string
-}): ReactElement {
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-    >
-      <span>{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {retryLabel}
-      </Button>
     </div>
   )
 }

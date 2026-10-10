@@ -142,4 +142,18 @@ describe('UploadDialog', () => {
     expect(block).toHaveTextContent(i18n.t('knowledgeHub.storage.full.memberBody'))
     expect(block).not.toHaveTextContent(i18n.t('knowledgeHub.storage.full.ownerBody'))
   })
+
+  // Story 10.4 AC9 (s66 storage) — the "View storage" CTA completes the three-part
+  // close; owner-gated (Settings → Storage is owner-only; a member can't manage it).
+  test('owner at 100% sees a "View storage" CTA linking to Settings → Storage', () => {
+    renderDialog('owner', { storageFull: true })
+    const cta = screen.getByTestId('kh-upload-view-storage')
+    expect(cta).toHaveTextContent(i18n.t('knowledgeHub.storage.full.viewStorageCta'))
+    expect(cta).toHaveAttribute('href', '/settings?tab=storage')
+  })
+
+  test('teacher at 100% does NOT see the "View storage" CTA (owner-only surface)', () => {
+    renderDialog('teacher', { storageFull: true })
+    expect(screen.queryByTestId('kh-upload-view-storage')).not.toBeInTheDocument()
+  })
 })

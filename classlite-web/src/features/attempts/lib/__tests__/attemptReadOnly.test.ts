@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api-fetch'
 import {
   deriveReadOnly,
   mapWriteError,
+  readOnlyBannerCopy,
   readOnlyReasonKey,
 } from '../attemptReadOnly'
 
@@ -102,5 +103,49 @@ describe('mapWriteError — the three 409 subcodes + 413 (AC15)', () => {
       kind: 'unknown',
     })
     expect(mapWriteError(new Error('x'))).toEqual({ kind: 'unknown' })
+  })
+})
+
+describe('readOnlyBannerCopy (Story 10.4 AC5, s64)', () => {
+  const PAST = '2026-08-01T00:00:00Z' // before NOW
+  const FUTURE = '2026-08-10T00:00:00Z' // after NOW
+
+  test('timeExpired + a PASSED hard deadline → deadline-framed copy + extension hint', () => {
+    expect(readOnlyBannerCopy('timeExpired', PAST, NOW)).toEqual({
+      messageKey: 'attempt.readonly.deadlinePassed',
+      hintKey: 'attempt.readonly.extensionHint',
+    })
+  })
+
+  test('timeExpired with NO hard deadline (timer/racing-write) → keeps the timer copy, no hint', () => {
+    expect(readOnlyBannerCopy('timeExpired', null, NOW)).toEqual({
+      messageKey: 'attempt.readonly.timeExpired',
+      hintKey: null,
+    })
+  })
+
+  test('timeExpired + a FUTURE hard deadline (not yet passed) → keeps the timer copy', () => {
+    expect(readOnlyBannerCopy('timeExpired', FUTURE, NOW)).toEqual({
+      messageKey: 'attempt.readonly.timeExpired',
+      hintKey: null,
+    })
+  })
+
+  test('a malformed hard deadline is treated as already-passed (mirrors deriveReadOnly)', () => {
+    expect(readOnlyBannerCopy('timeExpired', 'not-a-date', NOW)).toEqual({
+      messageKey: 'attempt.readonly.deadlinePassed',
+      hintKey: 'attempt.readonly.extensionHint',
+    })
+  })
+
+  test('submitted / locked keep their own key regardless of the deadline, no hint', () => {
+    expect(readOnlyBannerCopy('submitted', PAST, NOW)).toEqual({
+      messageKey: 'attempt.readonly.submitted',
+      hintKey: null,
+    })
+    expect(readOnlyBannerCopy('locked', PAST, NOW)).toEqual({
+      messageKey: 'attempt.readonly.locked',
+      hintKey: null,
+    })
   })
 })

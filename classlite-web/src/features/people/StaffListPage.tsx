@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { LoadMeter } from '@/components/domain/LoadMeter'
 import { StatusPill } from '@/components/domain/StatusPill'
@@ -163,7 +164,7 @@ export function StaffListPage(): ReactElement {
       {rosterQuery.isPending ? (
         <StaffRowSkeletons />
       ) : rosterQuery.isError ? (
-        <ErrorAlert
+        <ErrorState
           message={t('people.staff.list.error')}
           retryLabel={t('people.staff.list.retry')}
           onRetry={() => rosterQuery.refetch()}
@@ -389,28 +390,6 @@ function StaffRowSkeletons(): ReactElement {
           data-testid={`staff-row-skeleton-${i}`}
         />
       ))}
-    </div>
-  )
-}
-
-function ErrorAlert({
-  message,
-  retryLabel,
-  onRetry,
-}: {
-  message: string
-  retryLabel: string
-  onRetry: () => void
-}): ReactElement {
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-    >
-      <span>{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {retryLabel}
-      </Button>
     </div>
   )
 }

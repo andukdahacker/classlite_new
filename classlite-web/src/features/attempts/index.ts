@@ -66,8 +66,10 @@ export {
   deriveReadOnly,
   mapWriteError,
   readOnlyReasonKey,
+  readOnlyBannerCopy,
   type ReadOnlyReason,
   type ReadOnlyState,
+  type ReadOnlyBannerCopy,
   type WriteErrorOutcome,
 } from './lib/attemptReadOnly'
 export {

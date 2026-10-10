@@ -25,6 +25,7 @@ import { Link } from 'react-router'
 import { Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/domain/EmptyState'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PerfPill } from '@/components/domain/PerfPill'
 import { perfToneFromStatus, type PerfTone } from '@/components/domain/perfTone'
@@ -227,7 +228,7 @@ export function StudentRosterView({ variant }: StudentRosterViewProps): ReactEle
       {rosterQuery.isPending ? (
         <RosterSkeletons />
       ) : rosterQuery.isError ? (
-        <ErrorAlert
+        <ErrorState
           message={t('people.student.list.error')}
           retryLabel={t('people.student.list.retry')}
           onRetry={() => rosterQuery.refetch()}
@@ -557,25 +558,4 @@ function RosterSkeletons(): ReactElement {
   )
 }
 
-function ErrorAlert({
-  message,
-  retryLabel,
-  onRetry,
-}: {
-  message: string
-  retryLabel: string
-  onRetry: () => void
-}): ReactElement {
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-    >
-      <span>{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {retryLabel}
-      </Button>
-    </div>
-  )
-}
 

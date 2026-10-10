@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { AnalyticsHomeShell } from './AnalyticsHomeShell'
 
@@ -222,12 +222,12 @@ export const Error: Story = {
   args: { ...TEACHER_ARGS, children: null },
   render: () => (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <ErrorStatePlaceholder
+      <ErrorState
         message="Could not load analytics."
         retryLabel="Retry"
         onRetry={() => {}}
       />
-      <ErrorStatePlaceholder
+      <ErrorState
         message="Could not load engagement."
         retryLabel="Retry"
         onRetry={() => {}}

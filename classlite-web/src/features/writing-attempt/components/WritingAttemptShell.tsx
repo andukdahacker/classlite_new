@@ -32,7 +32,7 @@ import {
   useAttemptTimer,
   createServerClock,
   clearStoredDraft,
-  readOnlyReasonKey,
+  readOnlyBannerCopy,
   SaveStatusIndicator,
   AttemptExpiredOverlay,
   useOnlineStatus,
@@ -341,18 +341,37 @@ export function WritingAttemptShell({
         <SubmittedElsewhereOverlay assignmentId={assignment.id} hadUnsavedText={foreign.hadUnsaved} />
       ) : null}
 
-      {/* Read-only inline banner (AC16) — focusable so the flip can move focus. */}
-      {readOnly && reason ? (
-        <div
-          ref={bannerRef}
-          tabIndex={-1}
-          role="alert"
-          data-testid="writing-readonly-banner"
-          className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)] outline-none"
-        >
-          {t(readOnlyReasonKey(reason))}
-        </div>
-      ) : null}
+      {/* Read-only inline banner (AC16) — focusable so the flip can move focus.
+          Story 10.4 AC5 (s64): a hard-deadline-passed lock reframes to deadline
+          copy + a text extension next-step; all other reasons keep their key. */}
+      {readOnly && reason
+        ? (() => {
+            const bannerCopy = readOnlyBannerCopy(
+              reason,
+              assignment.hardDeadlineAt,
+              serverNow(),
+            )
+            return (
+              <div
+                ref={bannerRef}
+                tabIndex={-1}
+                role="alert"
+                data-testid="writing-readonly-banner"
+                className="border-b border-[var(--cl-amber)] bg-[var(--cl-amber)]/10 px-4 py-2 text-sm text-[var(--cl-ink)] outline-none"
+              >
+                <p>{t(bannerCopy.messageKey)}</p>
+                {bannerCopy.hintKey ? (
+                  <p
+                    data-testid="writing-readonly-hint"
+                    className="mt-1 text-xs text-[var(--cl-ink-soft)]"
+                  >
+                    {t(bannerCopy.hintKey)}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })()
+        : null}
 
       {/* Offline reassurance — its OWN visible line, not a recolored pill (AC12). */}
       {!online && !editorReadOnly ? (

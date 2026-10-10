@@ -38,6 +38,40 @@ export function readOnlyReasonKey(reason: ReadOnlyReason): string {
   return `attempt.readonly.${reason}`
 }
 
+export interface ReadOnlyBannerCopy {
+  /** i18n key for the "what happened" banner line. */
+  messageKey: string
+  /** i18n key for a single text-level next-step hint, or null when none applies. */
+  hintKey: string | null
+}
+
+/**
+ * Pick the read-only banner copy (Story 10.4 AC5, s64). A `timeExpired` reason
+ * whose CAUSE is a passed hard deadline (not a running timer) is reframed from the
+ * timer copy ("Time's up…") to deadline-framed copy plus a single text next-step
+ * ("Contact your teacher to request an extension."). The cause test mirrors
+ * `deriveReadOnly`'s hard-deadline branch exactly (same NaN-as-passed guard), so a
+ * deadline-derived lock and the timer countdown never share wording. All other
+ * reasons (submitted / locked / a timer-derived timeExpired) keep the shipped
+ * `attempt.readonly.<reason>` key with no hint.
+ */
+export function readOnlyBannerCopy(
+  reason: ReadOnlyReason,
+  hardDeadlineAt: string | null,
+  serverNowMs: number,
+): ReadOnlyBannerCopy {
+  if (reason === 'timeExpired' && hardDeadlineAt !== null) {
+    const deadlineMs = Date.parse(hardDeadlineAt)
+    if (Number.isNaN(deadlineMs) || serverNowMs >= deadlineMs) {
+      return {
+        messageKey: 'attempt.readonly.deadlinePassed',
+        hintKey: 'attempt.readonly.extensionHint',
+      }
+    }
+  }
+  return { messageKey: readOnlyReasonKey(reason), hintKey: null }
+}
+
 /** Derive whether the attempt is read-only from the loaded bundle (AC15). */
 export function deriveReadOnly({
   submissionStatus,

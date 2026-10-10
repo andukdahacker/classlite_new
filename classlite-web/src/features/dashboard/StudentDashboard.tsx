@@ -52,8 +52,8 @@ export default function StudentDashboard(): ReactElement {
   if (query.isError || query.data == null || query.data.data.student == null) {
     return (
       <DashboardErrorAlert
-        messageKey="dashboard.student.errorMessage"
-        retryLabelKey="dashboard.student.retry"
+        message={t('dashboard.student.errorMessage')}
+        retryLabel={t('dashboard.student.retry')}
         onRetry={() => void query.refetch()}
       />
     )

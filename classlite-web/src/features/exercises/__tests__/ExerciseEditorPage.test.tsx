@@ -456,3 +456,92 @@ describe('ExerciseEditorPage — gating, a11y, i18n (TEST-FE-4/5/6)', () => {
     ])
   })
 })
+
+// Story 10.4 (AC7, s66) — a finalized (locked) exercise renders read-only with
+// the Clone-only unlock path. No editing surface mounts; no Unfinalize.
+describe('ExerciseEditorPage — s66 locked (Story 10.4 AC7)', () => {
+  const CLONE_ID = 'ex-2'
+
+  test('a locked exercise renders the read-only ReadOnlyStrip (indicator + why), NOT the editor, and no Unfinalize', async () => {
+    seedSession('owner')
+    server.use(
+      http.get('/api/exercises/:id', () =>
+        HttpResponse.json({
+          data: exercise({ locked: true, lockReason: 'has_submissions' }),
+          meta: { serverTime: T0 },
+        }),
+      ),
+    )
+    const client = createTestQueryClient()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={[`/exercises/${EX_ID}/edit`]}>
+            <Routes>
+              <Route path="/exercises/:id/edit" element={<ExerciseEditorPage />} />
+              <Route path="/exercises" element={<div>library</div>} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+    expect(await screen.findByTestId('exercise-locked-strip')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('exercises.locked.indicator'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('exercises.locked.strip.body'))).toBeInTheDocument()
+    // No editable surface mounted — a locked edit is impossible.
+    expect(screen.queryByTestId('exercise-editor')).not.toBeInTheDocument()
+    // Clone-only (D2/D5) — never an Unfinalize affordance.
+    expect(screen.queryByText(/unfinalize/i)).not.toBeInTheDocument()
+  })
+
+  test('Clone duplicates the exercise and opens the editable copy', async () => {
+    const user = userEvent.setup()
+    seedSession('owner')
+    let duplicated = false
+    server.use(
+      http.get('/api/exercises/:id', ({ params }) =>
+        HttpResponse.json({
+          data:
+            params.id === CLONE_ID
+              ? exercise({ id: CLONE_ID, code: 'EX-R002', locked: false })
+              : exercise({ locked: true, lockReason: 'has_submissions' }),
+          meta: { serverTime: T0 },
+        }),
+      ),
+      http.post('/api/exercises/:id/duplicate', () => {
+        duplicated = true
+        return HttpResponse.json(
+          { data: exercise({ id: CLONE_ID, code: 'EX-R002', locked: false }), meta: { serverTime: T0 } },
+          { status: 201 },
+        )
+      }),
+    )
+    const client = createTestQueryClient()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={[`/exercises/${EX_ID}/edit`]}>
+            <Routes>
+              <Route path="/exercises/:id/edit" element={<ExerciseEditorPage />} />
+              <Route path="/exercises" element={<div>library</div>} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </I18nextProvider>,
+    )
+    await user.click(await screen.findByTestId('exercise-clone-cta'))
+    await waitFor(() => expect(duplicated).toBe(true))
+    // Navigated to the editable copy → the editor mounts (copy is unlocked).
+    expect(await screen.findByTestId('exercise-editor')).toBeInTheDocument()
+    expect(screen.queryByTestId('exercise-locked-strip')).not.toBeInTheDocument()
+  })
+
+  test('locked i18n keys exist in en + vi (parity)', () => {
+    assertI18nParity([
+      'exercises.locked.indicator',
+      'exercises.locked.strip.title',
+      'exercises.locked.strip.body',
+      'exercises.locked.clone.cta',
+    ])
+  })
+})

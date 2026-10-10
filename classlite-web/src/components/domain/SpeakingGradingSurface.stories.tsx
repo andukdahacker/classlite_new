@@ -8,7 +8,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { SpeakingGradingSurface, type TimestampedComment } from './SpeakingGradingSurface'
 import type { BandScoreBreakdown } from './WritingGradingSurface'
@@ -175,7 +175,7 @@ export const Error: Story = {
     score: SPEAKING_CRITERIA,
   },
   render: () => (
-    <ErrorStatePlaceholder
+    <ErrorState
       message="The recording failed to load. Try again."
       retryLabel="Reload recording"
       onRetry={() => {}}

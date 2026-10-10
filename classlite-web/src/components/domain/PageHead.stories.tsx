@@ -2,7 +2,7 @@
  * PageHead — `s06` page header. 1d-3 AC1.
  *
  * Three-state coverage uses the canonical `EmptyState` (Story 10.3) /
- * 1d-1's `ErrorStatePlaceholder` (until Story 10.4 ships the canonical
+ * 1d-1's `ErrorState` (until Story 10.4 ships the canonical
  * error shape). Per Murat (party-mode 2026-06-18):
  * these stories cover the VISUAL SHAPE of those states for design
  * review; the loading-state correctness of any consumer fetch is
@@ -10,7 +10,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 import { PageHead } from './PageHead'
 
 const meta = {
@@ -51,5 +51,5 @@ export const Empty: Story = {
 
 export const Error: Story = {
   args: { titleKey: 'pageHead.fixture.title' },
-  render: () => <ErrorStatePlaceholder />,
+  render: () => <ErrorState message="We couldn't load this page. Try again." />,
 }

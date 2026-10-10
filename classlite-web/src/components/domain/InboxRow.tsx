@@ -170,9 +170,14 @@ export function InboxRow({ row, role, onPrimaryAction, onArchive }: InboxRowProp
         </p>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Story 10.4 AC10 (10.3 D4) — the visual stays compact (ghost/xs) but the
+            TAP TARGET is forced to the ≥44px floor (TEST-UX-4) via min-h/min-w-11
+            (44px); min-height/width override the smaller size-xs h-/w- without
+            changing the rendered density. */}
         <Button
           size="xs"
           variant="ghost"
+          className="min-h-11 min-w-11"
           data-testid={`inbox-row-${row.id}-primary`}
           onClick={onPrimaryAction}
         >
@@ -182,6 +187,7 @@ export function InboxRow({ row, role, onPrimaryAction, onArchive }: InboxRowProp
           <Button
             size="icon-xs"
             variant="ghost"
+            className="min-h-11 min-w-11"
             aria-label={`${t('inboxRow.action.archive')}: ${t(row.mainTextKey, row.mainTextVars)}`}
             data-testid={`inbox-row-${row.id}-archive`}
             onClick={onArchive}

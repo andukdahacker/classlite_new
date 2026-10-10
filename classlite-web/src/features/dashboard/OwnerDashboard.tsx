@@ -40,8 +40,8 @@ export function OwnerDashboard(): ReactElement {
   if (query.isError || query.data == null || query.data.data.owner == null) {
     return (
       <DashboardErrorAlert
-        messageKey="dashboard.owner.errorMessage"
-        retryLabelKey="dashboard.owner.retry"
+        message={t('dashboard.owner.errorMessage')}
+        retryLabel={t('dashboard.owner.retry')}
         onRetry={() => void query.refetch()}
       />
     )

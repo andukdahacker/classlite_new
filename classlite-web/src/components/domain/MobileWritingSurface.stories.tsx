@@ -8,7 +8,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { MobileWritingSurface } from './MobileWritingSurface'
 
@@ -125,7 +125,7 @@ export const Error: Story = {
   },
   render: () => (
     <div className="flex h-[844px] w-[390px] items-center justify-center bg-[color:var(--cl-paper)]">
-      <ErrorStatePlaceholder
+      <ErrorState
         message="Couldn't sync this draft."
         retryLabel="Try again"
         onRetry={() => {}}

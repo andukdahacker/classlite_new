@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
 import { UploadCloud, AlertTriangle } from 'lucide-react'
 import { useRole } from '@/hooks/useRole'
 import {
@@ -193,7 +194,7 @@ export function UploadDialog({
         />
 
         {storageFull ? (
-          <StorageFullBlock bodyKey={storageFullBodyKey(role)} />
+          <StorageFullBlock bodyKey={storageFullBodyKey(role)} isOwner={role === 'owner'} />
         ) : phase.status === 'idle' ? (
           <IdlePicker onPick={openPicker} />
         ) : phase.status === 'error' ? (
@@ -307,7 +308,13 @@ function ErrorState({
   )
 }
 
-function StorageFullBlock({ bodyKey }: { bodyKey: string }): ReactElement {
+function StorageFullBlock({
+  bodyKey,
+  isOwner,
+}: {
+  bodyKey: string
+  isOwner: boolean
+}): ReactElement {
   const { t } = useTranslation()
   return (
     <div
@@ -317,6 +324,18 @@ function StorageFullBlock({ bodyKey }: { bodyKey: string }): ReactElement {
     >
       <p className="font-medium text-[color:var(--cl-amber)]">{t('knowledgeHub.storage.full.title')}</p>
       <p className="text-slate-600">{t(bodyKey)}</p>
+      {/* Story 10.4 AC9 — the three-part close's "what to do next" escape. Owner
+          only: Settings → Storage is owner-only, and only the owner controls the
+          plan (a member's body already says "ask your owner"). */}
+      {isOwner ? (
+        <Link
+          to="/settings?tab=storage"
+          className="inline-block font-medium text-[color:var(--cl-accent)] underline"
+          data-testid="kh-upload-view-storage"
+        >
+          {t('knowledgeHub.storage.full.viewStorageCta')}
+        </Link>
+      ) : null}
     </div>
   )
 }

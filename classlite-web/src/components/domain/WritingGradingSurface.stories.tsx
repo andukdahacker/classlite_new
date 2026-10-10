@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { asSafeHtml } from '@/lib/safe-html'
 
@@ -201,7 +201,7 @@ export const Error: Story = {
     score: BASELINE_SCORE,
   },
   render: () => (
-    <ErrorStatePlaceholder
+    <ErrorState
       message="We couldn't load this submission. Try again."
       retryLabel="Reload"
       onRetry={() => {}}

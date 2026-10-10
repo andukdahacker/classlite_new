@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { InboxListShell, type InboxFilterChip } from './InboxListShell'
 import type { InboxRowData } from './InboxRow'
@@ -356,7 +356,7 @@ export const Error: Story = {
     activeFilters: [],
   },
   render: () => (
-    <ErrorStatePlaceholder
+    <ErrorState
       message="We couldn't load your inbox. Try again."
       retryLabel="Reload inbox"
       onRetry={() => {}}

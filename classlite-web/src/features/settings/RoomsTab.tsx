@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -77,7 +78,11 @@ export function RoomsTab({ centerId }: Props): ReactElement {
       {roomsQuery.isPending ? (
         <SkeletonList prefix="room-row-skeleton" />
       ) : roomsQuery.isError ? (
-        <ErrorAlert onRetry={() => roomsQuery.refetch()} />
+        <ErrorState
+          message={t('settings.error.fetch')}
+          retryLabel={t('settings.error.tryAgain')}
+          onRetry={() => roomsQuery.refetch()}
+        />
       ) : roomsQuery.data && roomsQuery.data.length === 0 ? (
         <EmptyState
           headline={t('settings.rooms.empty.headline')}
@@ -414,25 +419,6 @@ function EmptyState({ headline, body, cta, onCta }: EmptyStateProps): ReactEleme
   )
 }
 
-interface ErrorAlertProps {
-  onRetry: () => void
-}
-
-function ErrorAlert({ onRetry }: ErrorAlertProps): ReactElement {
-  const { t } = useTranslation()
-  return (
-    <div
-      role="alert"
-      className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900"
-    >
-      <p>{t('settings.error.fetch')}</p>
-      <Button size="sm" variant="outline" className="mt-3" onClick={onRetry}>
-        {t('settings.error.tryAgain')}
-      </Button>
-    </div>
-  )
-}
-
 interface FormFieldProps {
   id: string
   label: string
@@ -523,21 +509,11 @@ function SaveErrorAlert({ error, onRetry, testId }: SaveErrorAlertProps): ReactE
       break
   }
   return (
-    <div
-      role="alert"
+    <ErrorState
       data-testid={testId}
-      className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900"
-    >
-      <p>{message}</p>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="mt-2"
-        onClick={onRetry}
-      >
-        {t('settings.error.tryAgain')}
-      </Button>
-    </div>
+      message={message}
+      retryLabel={t('settings.error.tryAgain')}
+      onRetry={onRetry}
+    />
   )
 }

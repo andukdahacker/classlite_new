@@ -10,8 +10,8 @@ import type { ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Inbox } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/domain/EmptyState'
+import { ErrorState } from '@/components/domain/ErrorState'
 
 /** The three empty "lenses" — student encouragement, teacher activation,
  *  owner/admin reassurance (admin shares the owner lens). */
@@ -42,19 +42,19 @@ export interface InboxErrorAlertProps {
   onRetry: () => void
 }
 
-/** Inline `role="alert"` with a single retry — the UX-1 error branch. */
+/**
+ * Inline `role="alert"` with a single retry — the UX-1 error branch. Story 10.4
+ * (AC2): re-platformed onto the canonical `ErrorState`. Kept as a named inbox
+ * wrapper that resolves its own copy (ErrorState never calls `t()`).
+ */
 export function InboxErrorAlert({ onRetry }: InboxErrorAlertProps): ReactElement {
   const { t } = useTranslation()
   return (
-    <div
-      role="alert"
-      className="flex flex-col items-start gap-3 rounded-xl border border-[color:var(--cl-line-soft)] bg-card p-4 text-sm text-foreground"
-    >
-      <p>{t('inbox.error.message')}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        {t('inbox.error.retry')}
-      </Button>
-    </div>
+    <ErrorState
+      message={t('inbox.error.message')}
+      retryLabel={t('inbox.error.retry')}
+      onRetry={onRetry}
+    />
   )
 }
 

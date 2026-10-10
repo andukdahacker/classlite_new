@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { EmptyState } from '@/components/domain/EmptyState'
-import { ErrorStatePlaceholder } from '@/test/fixtures/error-state-placeholder'
+import { ErrorState } from './ErrorState'
 
 import { AnchoredQuestionCard, type AnchoredQuestion } from './AnchoredQuestionCard'
 
@@ -164,7 +164,7 @@ export const Empty: Story = {
 export const Error: Story = {
   args: { question: BASE_QUESTION },
   render: () => (
-    <ErrorStatePlaceholder
+    <ErrorState
       message="Could not load this question. Try again."
       retryLabel="Reload"
       onRetry={() => {}}

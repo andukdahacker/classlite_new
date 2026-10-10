@@ -28,6 +28,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { useRole } from '@/hooks/useRole'
 
 export type PermissionDeniedRoles = ['owner', 'admin'] | ['owner'] | ['teacher']
 
@@ -95,6 +96,10 @@ export default function PermissionDenied({
   sectionNameKey,
 }: PermissionDeniedProps) {
   const { t } = useTranslation()
+  // Story 10.4 AC8 (s67) — the user's CURRENT role completes the "required +
+  // current + escape" triad. Read at the call site (never hardcoded); null for
+  // an unauthenticated viewer, where the line is simply omitted.
+  const role = useRole()
   return (
     <main
       role="main"
@@ -135,6 +140,15 @@ export default function PermissionDenied({
       >
         {t(requiredRoleSummaryKey(requiredRoles))}
       </p>
+      {role ? (
+        <p
+          role="note"
+          data-testid="permission-denied-current-role"
+          className="mt-1 font-[var(--cl-font-body)] text-xs text-[var(--cl-muted)]"
+        >
+          {t('app.permissionDenied.currentRole', { role: t(`userPill.role.${role}`) })}
+        </p>
+      ) : null}
     </main>
   )
 }

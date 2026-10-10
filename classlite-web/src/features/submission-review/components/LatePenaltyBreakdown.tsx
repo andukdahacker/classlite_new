@@ -25,8 +25,12 @@ export function LatePenaltyBreakdown({ submission, overallBand }: LatePenaltyBre
   if (!submission.isLate || submission.appliedPenalty <= 0) return null
 
   const original = overallBand
-  const penalty = submission.appliedPenalty
-  const final = Math.max(0, original - penalty)
+  // Clamp the DISPLAYED penalty to the original band so the three shown numbers
+  // always re-sum (Story 10.4 AC4). A raw penalty larger than the band would
+  // render a false equation — "Original 1.0 − Late penalty 2.0 = Final 0.0" —
+  // because only `final` was floored. Clamping the penalty makes the line honest.
+  const penalty = Math.min(submission.appliedPenalty, original)
+  const final = original - penalty
 
   return (
     <div

@@ -5,10 +5,16 @@
  * single retry that re-issues the fetch — never a full-page error) so the
  * teacher/owner/student surfaces stay visually consistent and each keeps its own
  * i18n copy.
+ *
+ * Story 10.4 (AC2 oracle): the error alert is re-platformed onto the canonical
+ * `ErrorState` leaf. `DashboardErrorAlert` is now a thin dashboard-semantic
+ * wrapper that takes i18n-RESOLVED strings (callers resolve the keys via `t()`)
+ * and delegates rendering to `ErrorState` — the component itself no longer calls
+ * `t()` (ErrorState never does; resolution lives at the call site, UX-3).
  */
 import type { ReactElement } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+
+import { ErrorState } from '@/components/domain/ErrorState'
 
 /** Row + strip-shaped skeletons mirroring a loaded dashboard (UX-1 loading). */
 export function DashboardSkeleton(): ReactElement {
@@ -26,30 +32,19 @@ export function DashboardSkeleton(): ReactElement {
 }
 
 export interface DashboardErrorAlertProps {
-  /** i18n key for the human error message (never an HTTP code / stack trace). */
-  messageKey: string
-  /** i18n key for the retry button label. */
-  retryLabelKey: string
+  /** i18n-RESOLVED human error message (never an HTTP code / stack trace). */
+  message: string
+  /** i18n-RESOLVED retry button label. */
+  retryLabel: string
   /** Re-issues the dashboard fetch (TanStack Query `refetch`). */
   onRetry: () => void
 }
 
-/** Inline `role="alert"` with a single retry — the UX-1 error branch. */
+/** Inline `role="alert"` with a single retry — the UX-1 error branch, via `ErrorState`. */
 export function DashboardErrorAlert({
-  messageKey,
-  retryLabelKey,
+  message,
+  retryLabel,
   onRetry,
 }: DashboardErrorAlertProps): ReactElement {
-  const { t } = useTranslation()
-  return (
-    <div
-      role="alert"
-      className="flex flex-col items-start gap-3 rounded-xl border border-[var(--cl-border)] bg-[var(--cl-surface)] p-4 text-sm text-[var(--cl-ink)]"
-    >
-      <p>{t(messageKey)}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        {t(retryLabelKey)}
-      </Button>
-    </div>
-  )
+  return <ErrorState message={message} retryLabel={retryLabel} onRetry={onRetry} />
 }

@@ -67,8 +67,8 @@ export function StudentPerformanceDetail(): ReactElement {
     }
     return (
       <DashboardErrorAlert
-        messageKey="analytics.error.message"
-        retryLabelKey="analytics.error.retry"
+        message={t('analytics.error.message')}
+        retryLabel={t('analytics.error.retry')}
         onRetry={() => {
           void query.refetch()
         }}

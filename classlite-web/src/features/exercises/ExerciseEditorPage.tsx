@@ -12,14 +12,17 @@
  * callbacks so any consumer effect stays safe too.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { apiFetch, ApiError } from '@/lib/api-fetch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { ReadOnlyStrip } from '@/components/domain/ReadOnlyStrip'
 import { useEditorStore } from '@/stores/editorStore'
 import { useExercise, type Exercise } from './api/useExercise'
+import { useDuplicateExercise } from './api/useDuplicateExercise'
 import { exerciseKeys } from './api/exercisesKeys'
 import { useExerciseAutosave } from './hooks/useExerciseAutosave'
 import {
@@ -85,8 +88,67 @@ export function ExerciseEditorPage() {
 
   if (!query.data || !id) return <EditorSkeleton />
 
+  // Story 10.4 AC7 (s66) — a finalized exercise (≥1 submission) is locked: the
+  // editor renders read-only with the Clone-only unlock path. This gate also
+  // catches a MID-SESSION lock: a racing-write 409 EXERCISE_LOCKED invalidates
+  // the detail query, the refetch flips `locked` true, and the page swaps here.
+  if (query.data.locked) {
+    return <ExerciseLockedView exerciseId={id} />
+  }
+
   // `key` on the id so navigating between exercises re-seeds cleanly.
   return <ExerciseEditor key={id} exerciseId={id} exercise={query.data} />
+}
+
+/**
+ * ExerciseLockedView — the s66 locked read-only surface (Story 10.4 AC7, D2).
+ * Clone-only: "Unfinalize" was struck from FR-23 (D5), so the single sanctioned
+ * unlock path is Clone (the shipped `useDuplicateExercise`), which opens the
+ * editable copy. No editing surface is mounted, so a locked edit cannot be made.
+ */
+function ExerciseLockedView({ exerciseId }: { exerciseId: string }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const duplicate = useDuplicateExercise()
+
+  function onClone(): void {
+    if (duplicate.isPending) return
+    duplicate.mutate(exerciseId, {
+      onSuccess: (created) => navigate(`/exercises/${created.id}/edit`),
+      // Clone is the ONLY sanctioned unlock path (D2) — surface a failure so it
+      // never silently dead-ends (review patch, 2026-10-10).
+      onError: () => toast.error(t('exercises.locked.clone.error')),
+    })
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-3xl p-4" data-testid="exercise-locked">
+      <header className="mb-4">
+        <Link
+          to={EXERCISES_PATH}
+          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+          data-testid="editor-back-link"
+        >
+          ← {t('exercises.editor.backToLibrary')}
+        </Link>
+      </header>
+      <ReadOnlyStrip
+        data-testid="exercise-locked-strip"
+        indicator={t('exercises.locked.indicator')}
+        title={t('exercises.locked.strip.title')}
+        body={t('exercises.locked.strip.body')}
+        action={
+          <Button
+            onClick={onClone}
+            disabled={duplicate.isPending}
+            data-testid="exercise-clone-cta"
+          >
+            {t('exercises.locked.clone.cta')}
+          </Button>
+        }
+      />
+    </div>
+  )
 }
 
 function EditorSkeleton() {

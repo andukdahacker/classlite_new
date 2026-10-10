@@ -15,16 +15,20 @@
  * enabling is an explicit PATCH). Teacher assignment uses a pending-email input
  * (full AssignChip/AssignTeacherComposer reuse deferred — FU-3-1-B).
  */
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useForm, useWatch, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
 import { ApiError } from '@/lib/api-fetch'
-import { reportBillingError } from '@/features/billing'
+import { reportBillingError, useBillingSummary, planDisplayName } from '@/features/billing'
+import { useRole } from '@/hooks/useRole'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { InlineFieldError } from '@/components/domain/InlineFieldError'
+import { FormValidationBanner } from '@/components/domain/FormValidationBanner'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +46,25 @@ import type { ClassWire } from '../api/useClasses'
 const PREFILL_FIELDS = ['targetBand', 'primarySkill', 'sessionCount', 'color'] as const
 type PrefillField = (typeof PREFILL_FIELDS)[number]
 
+/** Owner-only Upgrade destination for the over-plan capacity nudge (Story 10.4 AC6). */
+const PLANS_PATH = '/settings/billing/plans'
+
+/**
+ * Server 422 field names that map 1:1 to an RHF form field (Story 10.4 AC6). A
+ * server field outside this set is ignored by the inline mapper and falls through
+ * to the generic inline error, so a stray/unknown field can never silently vanish.
+ */
+const FIELD_ERROR_TARGETS: Record<string, true> = {
+  name: true,
+  description: true,
+  capacity: true,
+  startDate: true,
+  endDate: true,
+  targetBand: true,
+  sessionCount: true,
+  pendingTeacherEmail: true,
+}
+
 interface ClassFormDialogProps {
   centerId: string
   initial: ClassWire | null
@@ -51,6 +74,12 @@ interface ClassFormDialogProps {
    * template" affordance routes here with the id). Ignored in edit mode.
    */
   initialTemplateId?: string | null
+  /**
+   * Story 10.4 (AC6) — the already-loaded class names, for the client-side
+   * name-conflict check (there is no distinct server name-conflict code). In edit
+   * mode the class keeping its own name does not conflict (its own name is excluded).
+   */
+  existingNames?: readonly string[]
 }
 
 export function ClassFormDialog({
@@ -58,9 +87,18 @@ export function ClassFormDialog({
   initial,
   onClose,
   initialTemplateId = null,
+  existingNames = [],
 }: ClassFormDialogProps): ReactElement {
   const { t } = useTranslation()
   const isEdit = initial !== null
+  // Story 10.4 AC6 — owner-only client capacity cap. `limits.studentsPerClass`
+  // lives ONLY on the owner-only GET /api/billing; a teacher cannot fetch it, so
+  // the inline capacity check + Upgrade link is owner-gated (teacher over-cap
+  // defers to the 9.2-armed server 409 → PlanLimitExceededDialog, FU-10-4-CAPACITY-TEACHER).
+  const isOwner = useRole() === 'owner'
+  const billingSummary = useBillingSummary(isOwner)
+  const perClassCap = billingSummary.data?.limits.studentsPerClass ?? null
+  const planName = billingSummary.data ? planDisplayName(billingSummary.data.plan) : ''
   const schema = useClassSchema()
   const templatesQuery = useListTemplates()
   const createClass = useCreateClass(centerId)
@@ -78,6 +116,7 @@ export function ClassFormDialog({
     register,
     handleSubmit,
     setValue,
+    setError,
     getValues,
     control,
     formState: { errors, isSubmitting },
@@ -88,6 +127,18 @@ export function ClassFormDialog({
 
   const selectedTemplateId = useWatch({ control, name: 'templateId' })
   const dueDatesEnabled = useWatch({ control, name: 'dueDatesEnabled' })
+  const capacityValue = useWatch({ control, name: 'capacity' })
+
+  // Owner-only: entered capacity exceeds the plan's per-class cap (AC6). Live off
+  // the watched value so the Upgrade nudge appears as the owner types.
+  const capacityOverPlan =
+    isOwner &&
+    perClassCap != null &&
+    typeof capacityValue === 'number' &&
+    capacityValue > perClassCap
+  const capacityOverPlanMessage = capacityOverPlan
+    ? t('classes.form.errors.capacityOverPlan', { cap: perClassCap ?? 0, planName })
+    : null
 
   // Story 3.3 "Use this template" — imperative one-time RHF sync of the
   // preselected template once the (Query-owned) template list has loaded.
@@ -150,6 +201,24 @@ export function ClassFormDialog({
 
   const onSubmit: SubmitHandler<ClassFormValues> = async (values) => {
     setServerError(null)
+
+    // AC6 — client-side name-conflict (no distinct server code). Case-insensitive
+    // against the already-loaded names, excluding this class's own name in edit mode.
+    const typed = values.name.trim().toLowerCase()
+    const ownName = initial?.name.trim().toLowerCase()
+    const conflict = existingNames.some((name) => {
+      const other = name.trim().toLowerCase()
+      return other === typed && other !== ownName
+    })
+    if (conflict) {
+      setError('name', { message: t('classes.form.errors.nameConflict') })
+      return
+    }
+
+    // AC6 — owner over-plan capacity: block client-side with the Upgrade nudge
+    // already rendered inline (the teacher path defers to the server 409).
+    if (capacityOverPlan) return
+
     try {
       if (isEdit && initial) {
         await updateClass.mutateAsync({ id: initial.id, body: buildUpdatePayload(values) })
@@ -161,12 +230,33 @@ export function ClassFormDialog({
       // A 409 PLAN_LIMIT_EXCEEDED / CLASSES hard-block (create path only) opens the
       // global billing dialog (D-9-1b-3 / FU-9-1B-DIALOG-WIRING); other errors inline.
       if (reportBillingError(err)) return
+      // AC6 — a 422 ValidationError maps its field errors inline (setError) so a
+      // field-targeted server error surfaces under the right input, not as a
+      // generic banner. Fall back to the generic inline error otherwise.
+      if (err instanceof ApiError && err.status === 422 && Array.isArray(err.details)) {
+        const fields = err.details as ReadonlyArray<{ field?: string; message?: string }>
+        let mapped = false
+        for (const entry of fields) {
+          if (entry.field && entry.field in FIELD_ERROR_TARGETS && entry.message) {
+            setError(entry.field as keyof ClassFormValues, { message: entry.message })
+            mapped = true
+          }
+        }
+        if (mapped) return
+      }
       setServerError(err instanceof ApiError ? err.message : t('classes.error.body'))
     }
   }
 
   const selectedTemplate =
     templatesQuery.data?.find((tpl) => tpl.id === selectedTemplateId) ?? null
+
+  // AC6 — the top-of-form summary enumerates every live field error plus the
+  // owner over-plan capacity nudge (its own message, not an RHF error).
+  const bannerMessages = [
+    ...Object.values(errors).map((fieldError) => fieldError?.message),
+    capacityOverPlanMessage,
+  ].filter((message): message is string => typeof message === 'string' && message.length > 0)
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -178,6 +268,12 @@ export function ClassFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <FormValidationBanner
+            data-testid="class-form-validation-banner"
+            title={t('classes.form.validationBanner.title', { count: bannerMessages.length })}
+            messages={bannerMessages}
+          />
+
           {!isEdit ? (
             <div className="space-y-2 rounded-md border border-slate-200 p-3">
               <Label>{t('classes.form.templateLabel')}</Label>
@@ -275,10 +371,28 @@ export function ClassFormDialog({
           <Field label={t('classes.form.capacityLabel')} error={errors.capacity?.message}>
             <Input
               type="number"
+              aria-invalid={capacityOverPlan || errors.capacity != null ? true : undefined}
               {...register('capacity', { setValueAs: numberOrUndefined })}
               data-testid="class-field-capacity"
             />
           </Field>
+
+          {capacityOverPlan ? (
+            <div
+              role="alert"
+              data-testid="class-capacity-over-plan"
+              className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--cl-red)]"
+            >
+              <span>{capacityOverPlanMessage}</span>
+              <Link
+                to={PLANS_PATH}
+                className="font-medium underline"
+                data-testid="class-capacity-upgrade"
+              >
+                {t('classes.form.errors.capacityUpgradeCta')}
+              </Link>
+            </div>
+          ) : null}
 
           <Field label={t('classes.form.startDateLabel')} error={errors.startDate?.message}>
             <Input type="date" {...register('startDate')} data-testid="class-field-startDate" />
@@ -330,17 +444,20 @@ function Field({
 }: {
   label: string
   error?: string
-  children: ReactElement
+  children: ReactElement<{ 'aria-invalid'?: boolean }>
 }): ReactElement {
+  // AC6 "red-bordered input state": a field with an error drives `aria-invalid`
+  // on its control (the shadcn Input renders the red border off it), unless the
+  // call site already set it explicitly (capacity's owner-over-plan case).
+  const control =
+    error != null && children.props['aria-invalid'] === undefined
+      ? cloneElement(children, { 'aria-invalid': true })
+      : children
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
-      {children}
-      {error ? (
-        <p className="text-xs text-[color:var(--cl-red)]" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {control}
+      {error ? <InlineFieldError message={error} /> : null}
     </div>
   )
 }

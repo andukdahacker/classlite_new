@@ -29,6 +29,7 @@ import { useRole } from '@/hooks/useRole'
 import { queryClient } from '@/lib/query-client'
 import { authKeys, type Session } from '@/features/auth/api/authKeys'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/domain/ErrorState'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -247,7 +248,7 @@ export function ExerciseLibraryPage(): ReactElement {
       {listQuery.isPending ? (
         <ExerciseRowSkeletons />
       ) : listQuery.isError ? (
-        <ErrorAlert
+        <ErrorState
           onRetry={() => listQuery.refetch()}
           message={t('exercises.error.body')}
           retryLabel={t('exercises.error.retry')}
@@ -482,28 +483,6 @@ function ExerciseRowSkeletons(): ReactElement {
       {[0, 1, 2, 3].map((i) => (
         <Skeleton key={i} className="h-12 w-full" data-testid={`exercise-row-skeleton-${i}`} />
       ))}
-    </div>
-  )
-}
-
-function ErrorAlert({
-  onRetry,
-  message,
-  retryLabel,
-}: {
-  onRetry: () => void
-  message: string
-  retryLabel: string
-}): ReactElement {
-  return (
-    <div
-      role="alert"
-      className="flex items-center justify-between rounded-md border border-[color:var(--cl-red)] bg-[color:var(--cl-tint-red)] px-4 py-3 text-sm text-[color:var(--cl-red)]"
-    >
-      <span>{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        {retryLabel}
-      </Button>
     </div>
   )
 }

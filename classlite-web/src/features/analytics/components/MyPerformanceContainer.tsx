@@ -31,8 +31,8 @@ export function MyPerformanceContainer(): ReactElement {
   if (query.isError) {
     return (
       <DashboardErrorAlert
-        messageKey="analytics.error.message"
-        retryLabelKey="analytics.error.retry"
+        message={t('analytics.error.message')}
+        retryLabel={t('analytics.error.retry')}
         onRetry={() => {
           void query.refetch()
         }}

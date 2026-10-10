@@ -10,6 +10,7 @@
  * presentational home over `query.data.data` (the unwrapped envelope block).
  */
 import type { ReactElement } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   DashboardErrorAlert,
   DashboardSkeleton,
@@ -18,14 +19,15 @@ import { useAnalyticsHome } from '../api/useAnalyticsHome'
 import { AnalyticsHome } from './AnalyticsHome'
 
 export function AnalyticsHomeContainer(): ReactElement {
+  const { t } = useTranslation()
   const query = useAnalyticsHome()
 
   if (query.isPending) return <DashboardSkeleton />
   if (query.isError) {
     return (
       <DashboardErrorAlert
-        messageKey="analytics.error.message"
-        retryLabelKey="analytics.error.retry"
+        message={t('analytics.error.message')}
+        retryLabel={t('analytics.error.retry')}
         onRetry={() => {
           void query.refetch()
         }}

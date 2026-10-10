@@ -10,8 +10,8 @@ import type { ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/domain/EmptyState'
+import { ErrorState } from '@/components/domain/ErrorState'
 
 /** List-shaped skeleton rows mirroring a loaded archive table (UX-1 loading). */
 export function ArchiveSkeleton(): ReactElement {
@@ -38,19 +38,19 @@ export interface ArchiveErrorAlertProps {
   onRetry: () => void
 }
 
-/** Inline `role="alert"` with a single retry — the UX-1 error branch. */
+/**
+ * Inline `role="alert"` with a single retry — the UX-1 error branch. Story 10.4
+ * (AC2): re-platformed onto the canonical `ErrorState`. Kept as a named archive
+ * wrapper that resolves its own copy (ErrorState never calls `t()`).
+ */
 export function ArchiveErrorAlert({ onRetry }: ArchiveErrorAlertProps): ReactElement {
   const { t } = useTranslation()
   return (
-    <div
-      role="alert"
-      className="flex flex-col items-start gap-3 rounded-xl border border-[color:var(--cl-line-soft)] bg-card p-4 text-sm text-foreground"
-    >
-      <p>{t('archive.error.message')}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        {t('archive.error.retry')}
-      </Button>
-    </div>
+    <ErrorState
+      message={t('archive.error.message')}
+      retryLabel={t('archive.error.retry')}
+      onRetry={onRetry}
+    />
   )
 }
 

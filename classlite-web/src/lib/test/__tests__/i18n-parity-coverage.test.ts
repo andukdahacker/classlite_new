@@ -40,6 +40,7 @@ import { STORY_10_1B_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys'
 import { STORY_10_1C_KEYS } from '@/features/inbox/__tests__/inboxI18nKeys10c'
 import { STORY_10_2_KEYS } from '@/features/archive/__tests__/archiveI18nKeys'
 import { STORY_10_3_KEYS } from '@/lib/test/story10_3Keys'
+import { STORY_10_4_KEYS } from '@/lib/test/story10_4Keys'
 import { STORY_10_5_KEYS } from '@/features/dashboard/__tests__/dayOneI18nKeys'
 
 /**
@@ -2298,5 +2299,38 @@ describe('Story 10.5 i18n parity (master ratchet)', () => {
 
   test.each(STORY_10_5_KEYS)('%s belongs to the dashboard.teacher.dayOne.* namespace', (key) => {
     expect(key.startsWith('dashboard.teacher.dayOne.')).toBe(true)
+  })
+})
+
+/**
+ * Story 10.4 — Error States (consolidation + gap-fill). Net-new keys span the s64
+ * deadline lock (attempt.readonly.*), the s65 class-form validation
+ * (classes.form.validationBanner.* / classes.form.errors.*), the s66 locked
+ * exercise (exercises.locked.*), the s67 current-role line
+ * (app.permissionDenied.currentRole), and the storage "View storage" CTA
+ * (knowledgeHub.storage.full.viewStorageCta). The re-platformed ErrorAlerts reuse
+ * EXISTING copy (owned by their origin stories) — NOT re-listed here. VN prose is
+ * ★ REVIEWER-MANDATORY; the ratchet guards existence + interpolation-token shape.
+ */
+const STORY_10_4_ALLOWED_PREFIXES = [
+  'attempt.readonly.',
+  'classes.form.validationBanner.',
+  'classes.form.errors.',
+  'exercises.locked.',
+  'app.permissionDenied.',
+  'knowledgeHub.storage.full.',
+] as const
+
+describe('Story 10.4 i18n parity (master ratchet)', () => {
+  test('every new Story 10.4 error-state key exists in both en.json and vi.json', () => {
+    assertI18nParity(STORY_10_4_KEYS)
+  })
+
+  test('interpolation-token parity holds across en / vi for ALL Story 10.4 keys', () => {
+    assertI18nInterpolationParity(STORY_10_4_KEYS)
+  })
+
+  test.each(STORY_10_4_KEYS)('%s belongs to a 10.4 allowed prefix', (key) => {
+    expect(STORY_10_4_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))).toBe(true)
   })
 })

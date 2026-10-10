@@ -45,6 +45,10 @@ import {
   adminHandlers,
   studentHandlers,
 } from '@/features/dashboard/api/__tests__/handlers'
+// Story 10.5: RealTeacherDashboard fires a second teacher-scoped GET /api/classes
+// (the day-one trigger). A non-empty list keeps the teacher branch in the normal
+// (≥1 class) dashboard render rather than the day-one start or an error alert.
+import { teacherScopedClassesHandlers } from '@/features/classes/api/__tests__/handlers'
 
 const STUB_USER: UserSummary = {
   id: 'user-1',
@@ -97,7 +101,7 @@ afterEach(() => {
 
 describe('DashboardRoute — AC1 role branch (exactly one dashboard)', () => {
   test('P0 teacher role mounts <TeacherDashboard> only', async () => {
-    server.use(...teacherHandlers)
+    server.use(...teacherHandlers, ...teacherScopedClassesHandlers)
     seedSession('teacher')
     renderDashboard()
     expect(await screen.findByTestId('teacher-dashboard')).toBeInTheDocument()
@@ -188,7 +192,7 @@ describe('DashboardRoute — AC20 TEST-FE-6 role-branch assert-ABSENCE (the spin
   })
 
   test('P0 a teacher payload renders teacher rails — owner pulse + student cards ABSENT', async () => {
-    server.use(...teacherHandlers)
+    server.use(...teacherHandlers, ...teacherScopedClassesHandlers)
     seedSession('teacher')
     renderDashboard()
     await screen.findByTestId('teacher-dashboard')
