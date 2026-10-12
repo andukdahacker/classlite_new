@@ -171,6 +171,27 @@ The API runtime now **requires `ffmpeg`**. The AI speaking-grade worker (Epic 6)
 
 ---
 
+## Sentry — Error Tracking & Telemetry (Story 11-0a)
+
+Backend + frontend error tracking. The code reads the DSNs from env and **no-ops when unset** (empty DSN = silent no-op, both services — DD4), so setting the env var in a deployed environment **activates capture with no further code change** — the backend already reads `SENTRY_DSN` (`observability.Init`) and the frontend already reads `VITE_SENTRY_DSN` (`src/lib/sentry.ts`). Create **two** Sentry projects (one backend Go, one frontend React) and wire their DSNs:
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| `SENTRY_DSN` (api — backend project DSN) | [ ] | [ ] | [ ] |
+| `VITE_SENTRY_DSN` (web — frontend project DSN; **baked into the Cloudflare Pages build**) | [ ] | [ ] | [ ] |
+| `RELEASE_SHA` (api — commit SHA → Sentry Release; optional, attributes an error to a deploy) | [ ] | [ ] | [ ] |
+| `VITE_RELEASE_SHA` (web — commit SHA → FE Release; optional) | [ ] | [ ] | [ ] |
+| **Session replay DISABLED — verify** in BOTH Sentry projects' settings. No replay SDK ships (locked by `sentry-replay-off.test.ts`); this confirms it is not enabled server-side either. Replay stays OFF in EVERY env until PII masking is verified (education product, minors plausible, VN jurisdiction/consent). | [ ] | [ ] | [ ] |
+| **Log-retention decision** — Sentry captures errors; triage also needs the request-scoped stdout logs, joined by `request_id`. Railway stdout retention is short. DECIDE + record the target here: a Railway **log drain** to a searchable sink, OR an explicit accepted retention window. | [ ] | [ ] | [ ] |
+
+**Wiring notes:**
+- Backend errors are captured at the `ErrorMapper` HTTP funnel + the worker dispatcher funnels, tagged by `request_id` / `center_id` / `user_id` / `route` / `method` / `status`, with student PII / submission text / grades / Gemini prompt + API key **scrubbed** (`observability.ScrubEvent`, the R-11-6 guardrail). Only panics + unhandled 500s are captured — mapped 4xx are not.
+- Frontend: `VITE_*` vars are **inlined by Vite at build time** — a runtime-only var will NOT reach the bundle. `VITE_SENTRY_DSN` (and optionally `VITE_RELEASE_SHA`=commit SHA) must be set in the Cloudflare Pages **build** environment. The `.env.example` comment claims CI sets `VITE_RELEASE_SHA` — it does not yet; wire it in the Pages build or track as a follow-up.
+
+> **Prod columns stay `[ ]` until cutover (WF-9 — never pre-mark prod).**
+
+---
+
 ## Cross-cutting env vars
 
 | Task | Dev | Staging | Prod |
@@ -181,7 +202,7 @@ The API runtime now **requires `ffmpeg`**. The AI speaking-grade worker (Epic 6)
 | `APP_APEX_HOST` | [x] | [ ] | [ ] |
 | `APP_POST_LOGIN_URL` | [x] | [ ] | [ ] |
 | `APP_LOGIN_ERROR_URL_BASE` | [x] | [ ] | [ ] |
-| `SENTRY_DSN` | [ ] | [ ] | [ ] |
+| Sentry DSNs (`SENTRY_DSN`, `VITE_SENTRY_DSN`, `RELEASE_SHA`) — see **Sentry (Story 11-0a)** above | → | → | → |
 | `/etc/hosts`: `127.0.0.1 classlite.localhost my.classlite.localhost` | [ ] | — | — |
 
 ---

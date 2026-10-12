@@ -25,6 +25,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/media"
 	"github.com/ducdo/classlite-api/internal/middleware"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/observability"
 	"github.com/ducdo/classlite-api/internal/polar"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store"
@@ -51,6 +52,15 @@ func main() {
 	}
 
 	cfg.LogSummary()
+
+	// Story 11-0a — activate backend error tracking (Sentry). An empty DSN is a
+	// silent no-op (DD4: dev/local unaffected); a bad DSN warns and continues —
+	// the API serving without telemetry beats the API not serving. The returned
+	// flush drains buffered events on graceful shutdown (AC6).
+	flushSentry, err := observability.Init(cfg)
+	if err != nil {
+		slog.Warn("sentry init failed — continuing without error tracking", "error", err)
+	}
 
 	// Story 6.3b0 — fail fast if the bundled ffmpeg is missing/unrunnable. The
 	// AI speaking-grade worker (6-3b) transcodes every student recording through
@@ -1164,6 +1174,10 @@ func main() {
 		slog.Error("server shutdown error", "error", err)
 	}
 	cancelWorker()
+	// Story 11-0a AC6 — drain buffered Sentry events (bounded) before exit, else
+	// an error captured moments before a deploy is dropped. No-op when the DSN is
+	// unset. Uses shutdownCtx so the flush is clamped to the remaining budget.
+	flushSentry(shutdownCtx)
 	slog.Info("server stopped")
 }
 

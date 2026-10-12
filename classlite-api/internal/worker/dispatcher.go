@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,6 +27,7 @@ import (
 	"github.com/ducdo/classlite-api/internal/clock"
 	"github.com/ducdo/classlite-api/internal/gemini"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/observability"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 )
@@ -43,6 +45,12 @@ const (
 	maxJobsPerDrain = 50
 	// resultSchemaVersion stamps jobs.result_schema_version (GO-7).
 	resultSchemaVersion = 1
+	// infraCaptureInterval throttles worker INFRASTRUCTURE-error capture (Story
+	// 11-0a). A sustained outage fails claim/discovery every tick across 3 loops;
+	// without a throttle that floods Sentry. One event per funnel key per interval
+	// is enough to surface the outage — per-job and terminal captures are bounded by
+	// job volume and are not throttled.
+	infraCaptureInterval = 1 * time.Minute
 )
 
 // Dispatcher routes claimed jobs to their handlers. db is the direct-exec handle
@@ -59,6 +67,35 @@ type Dispatcher struct {
 	// nil in the unit/harness path and until SetBilling is called — the refund then uses
 	// the legacy 4.3a ledger reversal (code-review 2026-09-29 F1).
 	billing *service.BillingService
+	// captureMu guards lastCapture, the per-funnel last-sent clock for throttled
+	// worker infra-error capture (Story 11-0a). Zero value is ready to use.
+	captureMu   sync.Mutex
+	lastCapture map[string]time.Time
+}
+
+// captureInfra sends a worker INFRASTRUCTURE error (claim / discovery / sweep /
+// loop-panic) to Sentry, throttled to one event per funnel key per
+// infraCaptureInterval so a sustained DB outage surfaces once rather than
+// thousands of times (Story 11-0a). ctx carries the job-row tenant where one
+// exists (claim / sweep); cross-tenant discovery and the loop-panic recover have
+// none, which is expected for that scaffolding. Shutdown-driven cancellation is
+// NOT an incident — it is skipped so a graceful stop stays quiet.
+func (d *Dispatcher) captureInfra(ctx context.Context, key string, err error) {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	now := d.clk.Now()
+	d.captureMu.Lock()
+	if d.lastCapture == nil {
+		d.lastCapture = make(map[string]time.Time)
+	}
+	if last, seen := d.lastCapture[key]; seen && now.Sub(last) < infraCaptureInterval {
+		d.captureMu.Unlock()
+		return
+	}
+	d.lastCapture[key] = now
+	d.captureMu.Unlock()
+	observability.CaptureError(ctx, err)
 }
 
 // SetBilling wires the credit gate so terminal-fail reverses the armed ai_credits spend
@@ -255,9 +292,20 @@ func (d *Dispatcher) terminalFail(ctx context.Context, q *generated.Queries, job
 	if err := d.refundCredit(ctx, q, job); err != nil {
 		return fmt.Errorf("refund: %w", err)
 	}
+	centerID := pgUUIDToString(job.CenterID)
 	slog.Info("ai_generation_failed",
-		"center_id", pgUUIDToString(job.CenterID), "job_id", pgUUIDToString(job.ID),
+		"center_id", centerID, "job_id", pgUUIDToString(job.ID),
 		"error_details", detail)
+	// Story 11-0a AC5 — a terminally-failed AI job is a student's grading/exercise
+	// that never completed ("a lost submission in front of a pilot center"): capture
+	// it, tagged with the job row's center_id (SEC-6). `detail` is a stable reason
+	// label (no content) — surfaced as the operator-safe `reason` tag so terminal
+	// causes (invalid_ai_response, stuck_timeout, …) stay distinguishable in Sentry
+	// even though the scrubber blanks the free-form exception value.
+	observability.CaptureError(
+		observability.WithReason(workerTenantCtx(ctx, centerID), detail),
+		fmt.Errorf("job terminal: %s", detail),
+	)
 	return nil
 }
 
@@ -370,7 +418,7 @@ func (d *Dispatcher) sweepLoop(ctx context.Context) {
 // guards the discovery/scan scaffolding (which runs outside processClaimed's
 // per-job recover) so a panic there cannot crash the worker process.
 func (d *Dispatcher) drainReady(ctx context.Context) {
-	defer recoverLoop("drainReady")
+	defer d.recoverLoop(ctx, "drainReady")
 	for i := 0; i < maxJobsPerDrain; i++ {
 		if ctx.Err() != nil {
 			return
@@ -390,10 +438,11 @@ func (d *Dispatcher) drainReady(ctx context.Context) {
 }
 
 func (d *Dispatcher) sweepAllTenants(ctx context.Context) {
-	defer recoverLoop("sweepAllTenants")
+	defer d.recoverLoop(ctx, "sweepAllTenants")
 	rows, err := d.pool.Query(ctx, `SELECT stuck_job_centers($1)`, pgTime(d.clk.Now().Add(-model.StuckJobTimeout)))
 	if err != nil {
 		slog.Error("stuck sweep: discover centers", "error", err)
+		d.captureInfra(ctx, "sweep_discover", fmt.Errorf("stuck sweep discover centers: %w", err))
 		return
 	}
 	var centers []string
@@ -401,6 +450,7 @@ func (d *Dispatcher) sweepAllTenants(ctx context.Context) {
 		var c pgtype.UUID
 		if err := rows.Scan(&c); err != nil {
 			slog.Error("stuck sweep: scan center", "error", err)
+			d.captureInfra(ctx, "sweep_scan", fmt.Errorf("stuck sweep scan center: %w", err))
 			continue
 		}
 		centers = append(centers, pgUUIDToString(c))
@@ -424,12 +474,14 @@ func (d *Dispatcher) claimJob(ctx context.Context, centerID string) (generated.J
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		slog.Error("dispatcher: begin claim tx", "center_id", centerID, "error", err)
+		d.captureInfra(workerTenantCtx(ctx, centerID), "claim_begin", fmt.Errorf("begin claim tx: %w", err))
 		return generated.Job{}, false
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	if err := setTenant(ctx, tx, centerID); err != nil {
 		slog.Error("dispatcher: set tenant (claim)", "center_id", centerID, "error", err)
+		d.captureInfra(workerTenantCtx(ctx, centerID), "claim_set_tenant", fmt.Errorf("set tenant (claim): %w", err))
 		return generated.Job{}, false
 	}
 	job, err := generated.New(tx).ClaimNextJob(ctx, pgTime(d.clk.Now()))
@@ -438,10 +490,12 @@ func (d *Dispatcher) claimJob(ctx context.Context, centerID string) (generated.J
 	}
 	if err != nil {
 		slog.Error("dispatcher: claim next job", "center_id", centerID, "error", err)
+		d.captureInfra(workerTenantCtx(ctx, centerID), "claim_next", fmt.Errorf("claim next job: %w", err))
 		return generated.Job{}, false
 	}
 	if err := tx.Commit(ctx); err != nil {
 		slog.Error("dispatcher: commit claim", "center_id", centerID, "error", err)
+		d.captureInfra(workerTenantCtx(ctx, centerID), "claim_commit", fmt.Errorf("commit claim: %w", err))
 		return generated.Job{}, false
 	}
 	return job, true
@@ -474,6 +528,11 @@ func (d *Dispatcher) processClaimed(ctx context.Context, job generated.Job) {
 		// + refunds it (no poison-pill re-claim loop).
 		slog.Error("dispatcher: process job", "center_id", centerID,
 			"job_id", pgUUIDToString(job.ID), "error", err)
+		// Story 11-0a AC5 — the worker unhandled-error funnel (a job panic surfaced
+		// by runRecovered, or an infra error from dispatch). Tag with the job row's
+		// center_id (SEC-6 — the Go ctx carries no tenant; tenant lives in the SQL
+		// session). The scrubber blanks any submission/prompt text in the error.
+		observability.CaptureError(workerTenantCtx(ctx, centerID), err)
 		return
 	}
 	if err := tx.Commit(context.WithoutCancel(ctx)); err != nil {
@@ -488,6 +547,10 @@ func (d *Dispatcher) nextReadyCenter(ctx context.Context) (string, bool) {
 	var center pgtype.UUID
 	if err := d.pool.QueryRow(ctx, `SELECT next_ready_job_center($1)`, pgTime(d.clk.Now())).Scan(&center); err != nil {
 		slog.Error("dispatcher: discover next ready center", "error", err)
+		// Story 11-0a — a failing cross-tenant discovery query is a worker-availability
+		// incident (the queue looks idle while jobs pile up); capture it (throttled).
+		// No tenant: discovery runs before any center is known.
+		d.captureInfra(ctx, "discover_ready_center", fmt.Errorf("discover next ready center: %w", err))
 		return "", false
 	}
 	if !center.Valid {
@@ -514,6 +577,9 @@ func (d *Dispatcher) runInTenantTx(ctx context.Context, centerID string, fn func
 	}
 	if err := runRecovered(fn, ctx, tx); err != nil {
 		slog.Error("dispatcher: process job", "center_id", centerID, "error", err)
+		// Story 11-0a AC5 — same worker funnel as processClaimed, for the stuck-sweep
+		// path (a panic in the sweep body surfaces here).
+		observability.CaptureError(workerTenantCtx(ctx, centerID), err)
 		return
 	}
 	if err := tx.Commit(context.WithoutCancel(ctx)); err != nil {
@@ -521,11 +587,23 @@ func (d *Dispatcher) runInTenantTx(ctx context.Context, centerID string, fn func
 	}
 }
 
+// workerTenantCtx returns ctx carrying the job row's center_id as a
+// TenantContext so observability capture tags the event with center_id (SEC-6).
+// The worker's incoming ctx is propagated (GO-4) — only the tenant identity,
+// which lives in the SQL session not the Go ctx, is added.
+func workerTenantCtx(ctx context.Context, centerID string) context.Context {
+	return model.WithTenantContext(ctx, model.TenantContext{CenterID: centerID})
+}
+
 // recoverLoop converts a panic in a discovery/scan loop body into a logged error
 // so the worker process survives (the ticker fires the loop again next interval).
-func recoverLoop(name string) {
+// Story 11-0a: a panic in the cross-tenant scaffolding is a worker-availability
+// incident, so it is also captured (throttled). %v folds rec into the error value,
+// which ScrubEvent blanks — no content leak. No per-job tenant exists here.
+func (d *Dispatcher) recoverLoop(ctx context.Context, name string) {
 	if rec := recover(); rec != nil {
 		slog.Error("dispatcher: loop panic recovered", "loop", name, "panic", rec)
+		d.captureInfra(ctx, "loop_panic_"+name, fmt.Errorf("worker loop panic (%s): %v", name, rec))
 	}
 }
 

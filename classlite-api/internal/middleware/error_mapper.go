@@ -10,6 +10,7 @@ import (
 
 	"github.com/ducdo/classlite-api/internal/handler"
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/observability"
 	"github.com/ducdo/classlite-api/internal/service"
 )
 
@@ -77,11 +78,17 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 		defer func() {
 			if rec := recover(); rec != nil {
 				requestID, _ := r.Context().Value(model.RequestID).(string)
+				stack := debug.Stack()
 				slog.Error("panic recovered",
 					"panic", rec,
-					"stack", string(debug.Stack()),
+					"stack", string(stack),
 					"request_id", requestID,
 				)
+				// Story 11-0a AC2 — a panic is an incident: capture it tagged with
+				// request_id/tenant/route/method/status (status is always 500 here).
+				observability.CapturePanic(
+					observability.WithHTTPTags(r.Context(), r.Method, r.Pattern, http.StatusInternalServerError),
+					rec, stack)
 				handler.WriteError(w, r, http.StatusInternalServerError,
 					"INTERNAL_ERROR", "An unexpected error occurred.", nil)
 			}
@@ -535,6 +542,13 @@ func ErrorMapper(h HandlerWithError) http.HandlerFunc {
 			handler.WriteError(w, r, http.StatusGone,
 				gone.Code, gone.Reason, nil)
 		default:
+			// Story 11-0a AC2/AC3 — ONLY the unmapped (unexpected) error reaches
+			// here; every mapped 4xx arm above returned already, so they are never
+			// captured (a 403 is not an incident). This is the HTTP unhandled-error
+			// funnel — capture it with the request_id/tenant/route/method/status tags.
+			observability.CaptureError(
+				observability.WithHTTPTags(r.Context(), r.Method, r.Pattern, http.StatusInternalServerError),
+				err)
 			slog.Error("unhandled error",
 				"error", err,
 				"request_id", requestID,

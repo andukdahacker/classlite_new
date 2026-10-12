@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/ducdo/classlite-api/internal/model"
+	"github.com/ducdo/classlite-api/internal/observability"
 	"github.com/ducdo/classlite-api/internal/service"
 	"github.com/ducdo/classlite-api/internal/store"
 	"github.com/ducdo/classlite-api/internal/store/generated"
@@ -63,6 +64,9 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 					writeMiddlewareJSON(w, r, http.StatusUnauthorized, "AUTH_USER_GONE", "Authentication failed.")
 					return
 				}
+				// Story 11-0a — an auth-DB flake in front of the pilot is the
+				// blindness Mary named; capture the transient 500 (request_id-tagged).
+				observability.CaptureError(r.Context(), err)
 				writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
 				return
 			}
@@ -85,6 +89,7 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 				// (mirrors the AdminInviteStaff pattern in auth_admin.go).
 				tx, err := db.Begin(r.Context())
 				if err != nil {
+					observability.CaptureError(r.Context(), err)
 					writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
 					return
 				}
@@ -94,6 +99,7 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 				// parsed successfully above, so no new failure surface).
 				if err := store.SetTenantContext(r.Context(), tx, model.TenantContext{CenterID: centerUUID.String()}); err != nil {
 					_ = tx.Rollback(context.WithoutCancel(r.Context()))
+					observability.CaptureError(r.Context(), err)
 					writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
 					return
 				}
@@ -115,6 +121,7 @@ func ExtractTenant(db service.AuthDB, jwt service.JWTSigner) func(http.Handler) 
 					// surface 500 WITHOUT writing the invalid_tenant_claim
 					// audit row — a flaky DB read shouldn't pollute the
 					// forensic trail with a "stale claim" event.
+					observability.CaptureError(r.Context(), err)
 					writeMiddlewareJSON(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
 					return
 				}

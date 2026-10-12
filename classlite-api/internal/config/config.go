@@ -10,13 +10,17 @@ import (
 
 // Config holds all configuration values for the API server.
 type Config struct {
-	AppEnv            string // development, staging, production
-	Port              string
-	DatabaseURL       string
-	JWTSecret         string
-	CookieDomain      string
-	CORSOrigins       string
-	SentryDSN         string
+	AppEnv       string // development, staging, production
+	Port         string
+	DatabaseURL  string
+	JWTSecret    string
+	CookieDomain string
+	CORSOrigins  string
+	SentryDSN    string
+	// ReleaseSHA is the backend build's commit SHA, reported to Sentry as the
+	// event Release so an error is attributable to a deploy (Story 11-0a). Optional
+	// (empty in dev); a SHA is not a secret, so LogSummary() prints it raw.
+	ReleaseSHA        string
 	ResendAPIKey      string
 	ResendFromEmail   string
 	R2AccountID       string
@@ -161,6 +165,7 @@ func Load() Config {
 		CookieDomain:              getEnv("COOKIE_DOMAIN", "localhost"),
 		CORSOrigins:               getEnv("CORS_ORIGINS", "http://localhost:5173"),
 		SentryDSN:                 getEnv("SENTRY_DSN", ""),
+		ReleaseSHA:                getEnv("RELEASE_SHA", ""),
 		ResendAPIKey:              getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail:           getEnv("RESEND_FROM_EMAIL", "noreply@classlite.app"),
 		R2AccountID:               getEnv("R2_ACCOUNT_ID", ""),
@@ -380,6 +385,7 @@ func (c Config) LogSummary() {
 		"cookie_domain", c.CookieDomain,
 		"cors_origins", c.CORSOrigins,
 		"sentry_dsn_set", c.SentryDSN != "",
+		"release_sha", c.ReleaseSHA,
 		"resend_api_key_set", c.ResendAPIKey != "",
 		"resend_from_email", c.ResendFromEmail,
 		"r2_account_id_set", c.R2AccountID != "",

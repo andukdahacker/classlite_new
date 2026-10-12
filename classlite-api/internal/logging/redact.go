@@ -71,6 +71,20 @@ func (h redactingHandler) WithGroup(name string) slog.Handler {
 	return redactingHandler{h.Handler.WithGroup(name)}
 }
 
+// RedactString masks a leaked presigned-storage URL / SigV4 credential string,
+// returning RedactedPlaceholder when the pattern matches and s unchanged
+// otherwise. It exists for call sites outside the slog pipeline — the Sentry
+// beforeSend scrubber (Story 11-0a) must apply the SAME redaction so a signed
+// R2 URL that reaches an error event is masked exactly as it is in logs. A
+// signed URL is worthless in fragments, so a match blanks the whole value,
+// mirroring redactValue.
+func RedactString(s string) string {
+	if redactPattern.MatchString(s) {
+		return RedactedPlaceholder
+	}
+	return s
+}
+
 // redactValue masks a leaked URL/signature in a string, recurses into groups,
 // and stringifies+scans arbitrary values (a struct or error that embeds a URL).
 func redactValue(v slog.Value) slog.Value {
