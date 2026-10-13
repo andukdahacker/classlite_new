@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "id": "anchor-writing-01",
+      "skill": "writing",
+      "taskType": "task2",
+      "source": "center",
+      "examinerOverall": 7.0,
+      "examinerCriteria": {
+        "taskResponse": 7.0,
+        "coherenceCohesion": 7.0,
+        "lexicalResource": 7.0,
+        "grammaticalRange": 6.5
+      },
+      "language": "en",
+      "contentRef": "content/anchor-writing-01.txt",
+      "contentHash": "6a93694906901cdc430f9b272fd60b58971703f79bac45955746e610b97b74ca",
+      "piiProbes": []
+    },
+    {
+      "id": "anchor-writing-02",
+      "skill": "writing",
+      "taskType": "task2",
+      "source": "center",
+      "examinerOverall": 5.0,
+      "examinerCriteria": {
+        "taskResponse": 5.0,
+        "coherenceCohesion": 5.0,
+        "lexicalResource": 4.5,
+        "grammaticalRange": 4.5
+      },
+      "language": "en",
+      "contentRef": "content/anchor-writing-02.txt",
+      "contentHash": "d369e114deb28749abc8c042aa381dfbeddb8dfcaf4dc2e36079e26259b106c6",
+      "piiProbes": []
+    }
+  ]
+}

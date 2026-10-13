@@ -80,6 +80,18 @@ func (h *GradeWritingHandler) ProcessTask(ctx context.Context, tc model.TenantCo
 	return err
 }
 
+// GenerateResult is the exported, READ-ONLY twin of generate for the Story 11-0b
+// calibration harness (DD3). ProcessTask discards the fragment and the shared worker
+// test harness never persists job.result, so calibration — which grades the GRADER, not
+// the dispatcher — needs the computed fragment read at its source, with nothing to drift.
+// It is exactly generate's call against the handler's bound DB + Gemini client; it changes
+// no grading behavior and does NOT replay the dispatcher's MarkJobComplete choreography
+// (the serialize→persist→deserialize round-trip is covered separately by one cheap
+// dispatcher test). The persist path stays the dispatcher's concern.
+func (h *GradeWritingHandler) GenerateResult(ctx context.Context, tc model.TenantContext, payload json.RawMessage) (json.RawMessage, error) {
+	return h.generate(ctx, h.db, h.gem, tc, payload)
+}
+
 func (h *GradeWritingHandler) generate(
 	ctx context.Context, db generated.DBTX, gem gemini.Client, tc model.TenantContext, payload json.RawMessage,
 ) (json.RawMessage, error) {

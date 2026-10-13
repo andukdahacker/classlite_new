@@ -117,6 +117,15 @@ func (h *GradeSpeakingHandler) ProcessTask(ctx context.Context, tc model.TenantC
 	return err
 }
 
+// GenerateResult is the exported, READ-ONLY twin of generate for the Story 11-0b
+// calibration harness (DD3) — the speaking counterpart of GradeWritingHandler.GenerateResult.
+// It returns the already-computed result fragment the grader produced (the measurement
+// target), changing no grading behavior. Speaking's real-data run is schema-ready but its
+// dataset is deferred (DD4); the accessor keeps the harness skill-generic for when it lands.
+func (h *GradeSpeakingHandler) GenerateResult(ctx context.Context, tc model.TenantContext, payload json.RawMessage) (json.RawMessage, error) {
+	return h.generate(ctx, h.db, h.gem, tc, payload)
+}
+
 func (h *GradeSpeakingHandler) generate(
 	ctx context.Context, db generated.DBTX, gem gemini.Client, tc model.TenantContext, payload json.RawMessage,
 ) (json.RawMessage, error) {

@@ -28,6 +28,16 @@ import (
 // for the RLS-scoped inserts.
 func SeedWritingSubmissionForTenant(t *testing.T, db *TxDB, centerID uuid.UUID) uuid.UUID {
 	t.Helper()
+	return SeedWritingSubmissionWithContent(t, db, centerID, gemini.WritingGradeFixtureEssay)
+}
+
+// SeedWritingSubmissionWithContent is the parametrized twin of
+// SeedWritingSubmissionForTenant (Story 11-0b): it seeds the SAME class → exercise →
+// assignment → student → submission chain under centerID but with an arbitrary essay text
+// as content.text, so the calibration harness can grade a real gold-set essay through the
+// identical RLS-scoped seed shape. Returns the submission id.
+func SeedWritingSubmissionWithContent(t *testing.T, db *TxDB, centerID uuid.UUID, essayText string) uuid.UUID {
+	t.Helper()
 	ctx := context.Background()
 	TenantContext(t, db, pgtype.UUID{Bytes: centerID, Valid: true})
 
@@ -61,7 +71,7 @@ func SeedWritingSubmissionForTenant(t *testing.T, db *TxDB, centerID uuid.UUID) 
 	}
 
 	submissionID := uuid.New()
-	content, err := json.Marshal(map[string]string{"text": gemini.WritingGradeFixtureEssay})
+	content, err := json.Marshal(map[string]string{"text": essayText})
 	if err != nil {
 		t.Fatalf("seed writing submission: marshal content: %v", err)
 	}
