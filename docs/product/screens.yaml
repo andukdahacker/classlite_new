@@ -18,8 +18,8 @@
 # THIS manifest, not on classlite-ia.md's path, so an archive move never orphans it.
 
 version: 1
-source: "docs/classlite-entry/classlite-ia.md"   # 11-3a re-points this on archive (DD17)
-source_verified_sha: "6a4eb4d"
+source: "docs/product/"   # 11-3a re-pointed to the absorbed oracle on archive (DD17)
+source_verified_sha: "e4904b6"
 screens:
   - id: s00
     title: "Persona pick"
@@ -28,10 +28,11 @@ screens:
     chapter: 1
     roles: [all]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s00--persona-pick"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s01
     title: "Center setup"
     route: "/setup/center"
@@ -39,10 +40,11 @@ screens:
     chapter: 1
     roles: [operator, founder]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s01--center-setup"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s02
     title: "Build template"
     route: "/setup/template"
@@ -50,10 +52,11 @@ screens:
     chapter: 1
     roles: [operator, founder]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s02--build-template"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s03
     title: "Spawn classes"
     route: "/setup/spawn"
@@ -61,10 +64,11 @@ screens:
     chapter: 1
     roles: [operator, founder]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s03--spawn-classes"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s04
     title: "Done — Operator/Founder"
     route: "/setup/done"
@@ -72,10 +76,11 @@ screens:
     chapter: 1
     roles: [operator, founder]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s04--done--operatorfounder"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s05
     title: "Solo first class"
     route: "/setup/first-class"
@@ -83,10 +88,11 @@ screens:
     chapter: 1
     roles: [solo]
     implementation_status: shipped
-    provenance: asserted-from-design-intent
-    detailDoc: null
-    last-verified: "2026-10-12"
-    verified-by: 11-1a
+    provenance: verified-against-build
+    detailDoc: "docs/product/01-onboarding.md#s05--solo-first-class"
+    verified-sha: "e4904b6"
+    last-verified: "2026-10-13"
+    verified-by: 11-3a
   - id: s06
     title: "Teacher dashboard"
     route: "/dashboard"
