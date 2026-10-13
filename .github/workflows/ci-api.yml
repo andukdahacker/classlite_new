@@ -72,10 +72,36 @@ jobs:
           else
             echo "No query files yet, skipping sqlc vet"
           fi
+      - name: Bootstrap + migrate test DB (Story 11-1a / AC6 / DD16)
+        # Prepares classlite_test for the WHOLE `go test ./...` run (not just the
+        # internal/test package, which owns its own TestMain lifecycle). Mirrors
+        # internal/test/testdb.go's EnsureTestDB operations — they must stay in
+        # sync as "the test-DB lifecycle". Migrations run as the dedicated
+        # NON-superuser classlite_migrator (DD16b); BYPASSRLS is required because
+        # the Epic-9 polar tenant-resolution SECURITY DEFINER functions resolve
+        # across tenants (FU-11-1A-MIGRATOR-BYPASSRLS). A throwaway classlite_dev
+        # exists so the immutable 20260601110000 GRANT replays clean (DD16d).
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/migrate
+          export PGPASSWORD=test
+          PSQL="psql -h localhost -U classlite -v ON_ERROR_STOP=1"
+          $PSQL -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='classlite_migrator') THEN CREATE ROLE classlite_migrator LOGIN PASSWORD 'classlite_migrator_dev_password' NOSUPERUSER CREATEROLE BYPASSRLS; END IF; END \$\$;"
+          $PSQL -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='classlite_dev'" | grep -q 1 || $PSQL -d postgres -c "CREATE DATABASE classlite_dev"
+          $PSQL -d postgres -c "ALTER DATABASE classlite_test OWNER TO classlite_migrator"
+          $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
+          migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
       - name: Test
         run: cd classlite-api && go test ./... -race -v
         env:
-          DATABASE_URL: postgres://classlite:test@localhost:5432/classlite_test?sslmode=disable
+          # App role (non-superuser, RLS-enforced) against the migrated test DB.
+          DATABASE_URL: postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_test?sslmode=disable
+          # Superuser pool (RLS-bypassing seed/reset helpers) against the same DB.
+          MIGRATION_DATABASE_URL: postgres://classlite:test@localhost:5432/classlite_test?sslmode=disable
+          # The DB is already bootstrapped+migrated by the step above; TestMain
+          # trusts it instead of re-bootstrapping (it would need superuser creds).
+          SKIP_TEST_DB_BOOTSTRAP: "1"
       - name: Verify audio transcode tests ran (AC7 — no silent skip)
         # Guards the Story 6.3b0 requirement that the FFmpegTranscoder integration
         # tests are NOT silently skipped in CI. If ffmpeg were somehow absent the

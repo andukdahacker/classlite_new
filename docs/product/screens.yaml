@@ -1,0 +1,1002 @@
+# ClassLite screen manifest — Story 11-1a (AC4 / DD6/DD7/DD15/DD17).
+#
+# One entry per sNN screen-ID token (s00–s87 + the inserted s10a = 89 entries).
+# This is the provenance RATCHET for the 88+1 screen vocabulary that 86 story
+# files speak in. The CI s-ID lint (scripts/screens-lint.mjs) fails the build
+# bidirectionally: any sNN token in the repo with no entry here, OR any entry
+# here unreachable from a doc. It checks SHAPE / uniqueness / referential
+# integrity + valid enums — NOT provenance correctness (DD8).
+#
+# provenance is a RATCHET, not a label (DD15): every entry currently reads
+# `asserted-from-design-intent`. A later wave (11-3a/b reconciliation lint) must
+# be able to FAIL if an entry reaches post-reconciliation still asserted without
+# a dated exemption — the enum below is the structural hook for that gate.
+#
+# DD17 — source race: this manifest is derived from docs/classlite-entry/
+# classlite-ia.md, which 11-3a ARCHIVES. 11-3a owns re-pointing `source` to the
+# new docs/product/ chapter docs it creates when it archives. The lint keys on
+# THIS manifest, not on classlite-ia.md's path, so an archive move never orphans it.
+
+version: 1
+source: "docs/classlite-entry/classlite-ia.md"   # 11-3a re-points this on archive (DD17)
+source_verified_sha: "6a4eb4d"
+screens:
+  - id: s00
+    title: "Persona pick"
+    route: "/welcome"
+    section: "Onboarding"
+    chapter: 1
+    roles: [all]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s01
+    title: "Center setup"
+    route: "/setup/center"
+    section: "Onboarding"
+    chapter: 1
+    roles: [operator, founder]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s02
+    title: "Build template"
+    route: "/setup/template"
+    section: "Onboarding"
+    chapter: 1
+    roles: [operator, founder]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s03
+    title: "Spawn classes"
+    route: "/setup/spawn"
+    section: "Onboarding"
+    chapter: 1
+    roles: [operator, founder]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s04
+    title: "Done — Operator/Founder"
+    route: "/setup/done"
+    section: "Onboarding"
+    chapter: 1
+    roles: [operator, founder]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s05
+    title: "Solo first class"
+    route: "/setup/first-class"
+    section: "Onboarding"
+    chapter: 1
+    roles: [solo]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s06
+    title: "Teacher dashboard"
+    route: "/dashboard"
+    section: "Dashboard"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s07
+    title: "Classes index"
+    route: "/classes"
+    section: "Classes"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s08
+    title: "Class detail — Overview"
+    route: "/classes/{id}"
+    section: "Class detail"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s09
+    title: "Class detail — tabs"
+    route: "/classes/{id}"
+    section: "Class detail"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s10
+    title: "Student detail"
+    route: "/classes/{id}/students/{sid}"
+    section: "Student detail"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s10a
+    title: "Students — across my classes"
+    route: "/students"
+    section: "Students"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s11
+    title: "Sessions list"
+    route: "/classes/{id}/sessions"
+    section: "Sessions"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s12
+    title: "Session detail"
+    route: "/classes/{id}/sessions/{ssid}"
+    section: "Session detail"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s13
+    title: "Schedule workspace"
+    route: "/schedule"
+    section: "Schedule"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s14
+    title: "Create/edit session modal"
+    route: "/schedule?session=edit"
+    section: "Schedule"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s15
+    title: "Exercises library"
+    route: "/exercises"
+    section: "Exercises"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s16
+    title: "Exercise editor"
+    route: "/exercises/{id}/edit"
+    section: "Exercises"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s17
+    title: "AI dialog"
+    route: "/exercises/{id}/edit?ai=section"
+    section: "Exercises"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s18
+    title: "Anchored Q&A — teacher"
+    route: "/exercises/{id}?questions=open"
+    section: "Questions"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s19
+    title: "Class templates index"
+    route: "/classes/templates"
+    section: "Templates"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s20
+    title: "Template detail"
+    route: "/classes/templates/{id}"
+    section: "Templates"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s21
+    title: "Edit template"
+    route: "/classes/templates/{id}/edit"
+    section: "Templates"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s22
+    title: "Create class from template"
+    route: "/classes/new?from={tpl}"
+    section: "Templates"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s23
+    title: "Writing grading"
+    route: "/classes/{id}/grading/{aid}/{sid}"
+    section: "Grading"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s24
+    title: "Speaking grading"
+    route: "/classes/{id}/grading/{aid}/{sid}"
+    section: "Grading"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s25
+    title: "Auto-grade review"
+    route: "/classes/{id}/grading/{aid}/{sid}"
+    section: "Grading"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s26
+    title: "Knowledge hub"
+    route: "/knowledge-hub"
+    section: "Knowledge hub"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s27
+    title: "Document detail"
+    route: "/knowledge-hub/files/{slug}"
+    section: "Knowledge hub"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s28
+    title: "Archive"
+    route: "/archive"
+    section: "Archive"
+    chapter: 2
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s29
+    title: "Student dashboard"
+    route: "/dashboard"
+    section: "Dashboard"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s30
+    title: "My classes"
+    route: "/my-classes"
+    section: "Classes"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s31
+    title: "Class detail — student"
+    route: "/my-classes/{id}"
+    section: "Class detail"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s32
+    title: "My schedule"
+    route: "/my-schedule"
+    section: "Schedule"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s33
+    title: "Exercise attempt"
+    route: "/exercises/{id}/attempt"
+    section: "Exercises"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s34
+    title: "Writing attempt editor"
+    route: "/assignments/{id}/write"
+    section: "Assignments"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s35
+    title: "Submission & result"
+    route: "/assignments/{id}/result"
+    section: "Assignments"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s36
+    title: "Anchored Q&A — student"
+    route: "/exercises/{id}/attempt?questions=open"
+    section: "Questions"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s37
+    title: "My performance"
+    route: "/my-performance"
+    section: "Analytics"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s38
+    title: "Profile & settings"
+    route: "/profile"
+    section: "Profile"
+    chapter: 3
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s39
+    title: "Staff list"
+    route: "/people/staff"
+    section: "People"
+    chapter: 4
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s40
+    title: "Staff detail"
+    route: "/people/staff/{id}"
+    section: "People"
+    chapter: 4
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s41
+    title: "Invite staff modal"
+    route: "/people/staff?invite=new"
+    section: "People"
+    chapter: 4
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s42
+    title: "Students — center-wide"
+    route: "/people/students"
+    section: "People"
+    chapter: 4
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s43
+    title: "Enrolment"
+    route: "/people/enrolment"
+    section: "People"
+    chapter: 4
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s44
+    title: "Roles & permissions"
+    route: "/people/permissions"
+    section: "People"
+    chapter: 4
+    roles: [owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s45
+    title: "Analytics home"
+    route: "/analytics"
+    section: "Analytics"
+    chapter: 5
+    roles: [all]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s46
+    title: "Class performance"
+    route: "/analytics/class/{id}"
+    section: "Analytics"
+    chapter: 5
+    roles: [all]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s47
+    title: "Student performance"
+    route: "/analytics/student/{id}"
+    section: "Analytics"
+    chapter: 5
+    roles: [all]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s48
+    title: "Admin/Owner dashboard"
+    route: "/dashboard"
+    section: "Dashboard"
+    chapter: 5
+    roles: [admin, owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s49
+    title: "Center settings"
+    route: "/settings"
+    section: "Settings"
+    chapter: 5
+    roles: [owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s50
+    title: "Inbox — teacher"
+    route: "/inbox"
+    section: "Inbox"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s51
+    title: "Inbox — student"
+    route: "/inbox"
+    section: "Inbox"
+    chapter: 6
+    roles: [student]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s52
+    title: "Inbox — admin/owner"
+    route: "/inbox"
+    section: "Inbox"
+    chapter: 6
+    roles: [admin, owner]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s53
+    title: "Dashboard day-one empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s54
+    title: "Classes empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s55
+    title: "Class roster empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s56
+    title: "Inbox empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [all]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s57
+    title: "My performance empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [student]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s58
+    title: "Questions empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s59
+    title: "Knowledge hub empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s60
+    title: "Archive empty"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s61
+    title: "Analytics no-data"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s62
+    title: "Student dashboard first login"
+    route: null
+    section: "Empty state"
+    chapter: 6
+    roles: [student]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s63
+    title: "Late-with-penalty graded view"
+    route: null
+    section: "Assignments"
+    chapter: 6
+    roles: [student]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s64
+    title: "Submission past deadline"
+    route: null
+    section: "Assignments"
+    chapter: 6
+    roles: [student]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s65
+    title: "Form validation"
+    route: null
+    section: "Classes"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s66
+    title: "Locked finalized assignment"
+    route: null
+    section: "Exercises"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s67
+    title: "Permission denied"
+    route: null
+    section: "Settings"
+    chapter: 6
+    roles: [teacher]
+    implementation_status: unbuilt-epic-10
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s68
+    title: "Plan picker"
+    route: "/settings/billing/plans"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s69
+    title: "Billing dashboard"
+    route: "/settings/billing"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s70
+    title: "Invoice history"
+    route: "/settings/billing/invoices"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s71
+    title: "Upgrade modal"
+    route: "/settings/billing"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s72
+    title: "Plan limit soft warning"
+    route: "/people/students"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s73
+    title: "Payment declined · grace"
+    route: "/settings/billing"
+    section: "Billing"
+    chapter: 7
+    roles: [owner]
+    implementation_status: unbuilt-epic-9
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s74
+    title: "Mobile student dashboard"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s75
+    title: "Mobile inbox"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s76
+    title: "Mobile assignments"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s77
+    title: "Mobile class detail"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s78
+    title: "Mobile essay write"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s79
+    title: "Mobile result + feedback"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s80
+    title: "Mobile Q&A thread"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s81
+    title: "Mobile my performance"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [student]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s82
+    title: "Mobile teacher dashboard"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s83
+    title: "Mobile class detail — teacher"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s84
+    title: "Mobile inbox — teacher"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s85
+    title: "Mobile question reply"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [teacher]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s86
+    title: "Mobile owner approve enrolment"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [owner]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a
+  - id: s87
+    title: "Mobile coverage map"
+    route: null
+    section: "Mobile"
+    chapter: 8
+    roles: [all]
+    implementation_status: shipped
+    provenance: asserted-from-design-intent
+    detailDoc: null
+    last-verified: "2026-10-12"
+    verified-by: 11-1a

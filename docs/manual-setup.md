@@ -264,3 +264,129 @@ charge is possible until it is set). Secrets are never logged (R49 — `LogSumma
 - VN VAT e-invoice compliance (epic:120 — "Polar-generated invoice uses standard Vietnamese VAT
   format") is an **ops/legal open question** (owner: Ducdo/ops), verified by NO 9-2a AC — not a
   code item (D29c).
+
+---
+
+## Calibration gold set (Story 11-0b)
+
+The AI-grading calibration harness MEASURES the shipped grader (6-2a writing) against a frozen,
+examiner-banded gold set. The **mechanism** (schema, loader, the four assertions, the perturbation
+teeth self-test, the report renderer) ships in code and runs green in CI with synthetic anchors.
+The **real-data run** is manual, build-tagged, and gated — it spends Gemini credits, so it never
+runs in CI. This section is the one-time toil to make the real run possible; **running the
+mechanism needs no code change once the dataset is placed and the key is set** (AC8).
+
+> **Nothing here commits student work or copyrighted samples.** Real essays (minors) + published
+> Cambridge/IDP samples live ONLY under `CALIBRATION_DATASET_DIR` (gitignored). The committed
+> manifest carries examiner bands + metadata + per-sample content **hashes**, never raw content
+> (R-11-6 / DD2). Generated reports under `_bmad-output/test-artifacts/calibration/` are gitignored.
+
+### Dataset assembly (OQ-11-5 — two milestones, DD7)
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| **Interim (sanity, NOT done):** obtain published Cambridge/IDP writing samples with examiner bands | [ ] | [-] | [-] |
+| **Authoritative (the DONE gate):** teacher-band the center's own **bands-4-6** submissions (a pilot byproduct — matures through the L1 pilot) | [ ] | [-] | [-] |
+| Inter-rater overlap (AC9/DD9): ≥5 of the 4–6 scripts banded by **both** center teacher **and** a certified examiner; agreement reported ([template](../_bmad-output/test-artifacts/calibration/inter-rater-overlap-template.md)) | [ ] | [-] | [-] |
+| Stratify per half-band (≥3 per bucket across the range students sit — AC1) | [ ] | [-] | [-] |
+
+### Placing the dataset
+
+1. Create a directory OUTSIDE the repo (or a gitignored `calibration-dataset/` inside it).
+2. Put each sample's essay text in its own file (e.g. `content/<id>.txt`).
+3. Write `<dir>/manifest.json` — same shape as the committed synthetic anchors
+   (`classlite-api/internal/calibration/testdata/goldset-anchors.json`): per sample `id`, `skill`
+   (`writing`), `source` (`cambridge`|`idp`|`center`), `examinerOverall`, `examinerCriteria`
+   (keyed `taskResponse`/`coherenceCohesion`/`lexicalResource`/`grammaticalRange`), `language`
+   (`en` — the product emits no Vietnamese output, DD6), `contentRef` (path relative to the dir),
+   `contentHash` (sha256 hex of the content file), and `piiProbes` (the student's known
+   name/email/phone — the harness asserts these NEVER appear in feedback, AC4).
+4. Compute each hash exactly as the loader verifies it: `shasum -a 256 content/<id>.txt` (or
+   `calibration.HashContent`). A hash mismatch at run start is a HARD ERROR, never a silent
+   re-baseline (AC6/DD2).
+
+### Running the real-data calibration
+
+```sh
+GEMINI_API_KEY=<key> \
+CALIBRATION_DATASET_DIR=/abs/path/to/goldset \
+CALIBRATION_RUN_DATE=$(date +%F) \
+  go test -tags=calibration ./internal/calibration/ -run Calibration -v
+```
+
+- Without `GEMINI_API_KEY` **or** `CALIBRATION_DATASET_DIR`, the run **LOUD-SKIPs** (CI stays
+  green, no credits). The `calibration` build tag keeps it out of the default suite entirely.
+- Report is written to `_bmad-output/test-artifacts/calibration/calibration-report-<date>.md`
+  (override the dir with `CALIBRATION_REPORT_DIR`). It carries per-criterion + overall band
+  deltas, MAE per band bucket, worst miss, over-score direction, and stability.
+- A Gemini 429/network/timeout is a **transport failure** (retried, then skipped) — NEVER a
+  quality red (DD10). The quality numbers are recorded **evidence**, not a CI gate (DD7).
+
+### Pinned tolerances (DD5 — override only with a written reason)
+
+| Const | Value | Meaning |
+|---|---|---|
+| `PerCriterionTol` | 1.0 | HARD accuracy gate: `|AI − examiner|` per criterion, **inclusive** (≤1.0 passes; Ducdo ruling 2026-10-12) |
+| `OverallBandTol` | 0.5 | SECONDARY overall-band check (averaging hides compensating per-criterion errors) |
+| `MaxAcceptableMAE` | 0.5 | ABSOLUTE examiner-truth floor (the DONE gate — NOT a self-baseline) |
+| `StabilityReGrades` | 5 | re-grades of one sample (range-of-3 is a biased spread estimator) |
+| `StabilityCriterionRangeTol` | 1.0 | per-criterion regrade range gate |
+| `StabilityOverallStddevTol` | 0.25 | overall-band stddev gate |
+
+> **Temperature (AC2/Task-4b):** the shipped writing worker sends **no temperature** to Gemini
+> (`gemini.GenerateRequest` has no temperature field; the request config sends only
+> `responseMimeType` + `maxOutputTokens`), so the model default (≈1.0 for `gemini-2.0-flash`)
+> governs run-to-run variance. Stability is therefore partly a sampler property; if AC2 fails,
+> pinning temperature in the worker is the candidate fix — a grading-behaviour change, a separate
+> story, out of 11-0b scope.
+
+### The VN-teacher parent-veto (AC7/DD6)
+
+When real feedback exists, a bilingual teacher gives a **binary veto + reason** ("would you let
+this go home to a parent — yes/no; if no, why"), NOT a numeric score. Capture it in the
+[parent-veto template](../_bmad-output/test-artifacts/calibration/parent-veto-template.md). The
+product emits no Vietnamese output today (DD6 → **FU-11-0B-VN-FEEDBACK**).
+
+### Closing to `done` (DD7)
+
+11-0b holds at **`review`** (knowingly, through the pilot if need be) until the **authoritative**
+bands-4-6 run passes (AC1 per-criterion within tolerance + MAE under the absolute floor), is
+**stable** (AC2), its own banding is **inter-rater-checked** (AC9), and the **parent-veto** (AC7)
+is captured. The interim published-anchor run is a sanity checkpoint only (necessary-not-sufficient
+— the samples skew high and are plausibly in training data).
+
+---
+
+## Local resource budget (Story 11-1a / AC5 / DD10)
+
+The full stack can OOM a developer laptop if every service plus a Vite dev server
+plus a multi-worker Playwright run compete for memory at once (it happened
+2026-09-27). Run within this budget:
+
+| Component | How to run locally | Notes |
+|---|---|---|
+| Postgres | `docker compose up postgres` (the shared container) | One instance; the Go suite runs against the disposable `classlite_test`, not `classlite_dev`. |
+| API | `go run ./cmd/api` (or `scripts/dev.sh`) | Single process. |
+| Web | **built preview**, not the dev server: `cd classlite-web && npm run build && npm run preview` | The Vite **dev** server is NOT used under test — it holds the whole module graph in memory and is the biggest single contributor to OOM (epic-11.md:424). |
+| Playwright | `--workers=1` locally | One browser worker. The full multi-worker matrix is **CI-only**; locally run a documented subset (a single project/spec) so you never fan out N Chromium processes on a laptop. |
+
+**Go tests** run against the disposable `classlite_test` database, which `TestMain`
+(internal/test) creates and migrates automatically — no separate step. The DB is
+dropped/recreated cheaply; nothing accumulates in your `classlite_dev`.
+
+**Destructive dev-DB reset** (wipe all app data) is guarded by three POSITIVE
+proofs (DD13) and refuses to run otherwise:
+
+```bash
+# Only proceeds when the target PROVES it is disposable:
+#   (1) database name is literally classlite_test,
+#   (2) the __disposable_fixture_db__ sentinel object exists, AND
+#   (3) an explicit opt-in is set.
+ALLOW_DESTRUCTIVE_RESET=1 \
+  DATABASE_URL="postgres://classlite:...@localhost:5432/classlite_test?sslmode=disable" \
+  go run ./cmd/seed -destructive
+```
+
+It never relies on prod-shape URL detection (which fails open the first time
+staging looks local-ish); a production database cannot grow the sentinel and is
+refused.

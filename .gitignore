@@ -56,3 +56,18 @@ Thumbs.db
 classlite-web/.playwright/
 classlite-web/test-results/
 classlite-web/playwright-report/
+
+# Seed-emitted raw login credentials (Story 11-1a / DD3) — NEVER committed.
+# These are the raw email+password inputs 11-2 POSTs to /api/auth/login,
+# distinct from the .playwright/auth.json session storageState. Synthetic
+# (@example.test) but still kept out of version control on principle.
+classlite-web/tests/e2e/.auth/
+tests/e2e/.auth/
+
+# Calibration gold set (Story 11-0b) — real student work (minors) + copyrighted
+# Cambridge/IDP samples live ONLY in the external CALIBRATION_DATASET_DIR and are
+# NEVER committed (R-11-6/DD2). The committed synthetic anchors under
+# internal/calibration/testdata/ ARE tracked (no PII, no copyright). Generated
+# calibration reports under the evidence dir are run byproducts, not committed.
+calibration-dataset/
+_bmad-output/test-artifacts/calibration/calibration-report-*.md

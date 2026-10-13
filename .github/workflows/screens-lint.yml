@@ -1,0 +1,36 @@
+name: Screens Lint (s-ID vocabulary)
+
+# Story 11-1a / AC4 / DD8. Pins the s00–s87 + s10a screen-ID vocabulary that 86
+# story files speak in. Its OWN workflow with REPO-WIDE path triggers: ci-web.yml
+# fires only on classlite-web/** and would miss a docs-only or api-only commit
+# that orphans an id — exactly the commit this guards. Read-only: fails the
+# build, never rewrites a story file.
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - '_bmad-output/**'
+      - 'classlite-web/**'
+      - 'classlite-api/**'
+      - 'scripts/screens-lint.mjs'
+      - '.github/workflows/screens-lint.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '_bmad-output/**'
+      - 'classlite-web/**'
+      - 'classlite-api/**'
+      - 'scripts/screens-lint.mjs'
+      - '.github/workflows/screens-lint.yml'
+
+jobs:
+  screens-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Lint screen-ID manifest + references
+        run: node scripts/screens-lint.mjs
