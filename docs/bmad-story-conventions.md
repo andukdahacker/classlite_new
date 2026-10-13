@@ -98,3 +98,41 @@ The `internal/plan` Go catalog (Free/Pro/Studio limits + VND prices + VAT) is **
 - The VAT split is **10% inclusive, round-half-up on the integer VND**: `subtotal = round(price / 1.1)`, `vat = price - subtotal`, so the two always re-sum to the price exactly. This rule is identical in Go (`internal/plan.Subtotal`/`VAT`), the FE, and Polar.
 - Money is **integer VND** everywhere — never a float.
 - A documented reconcile follow-up (catalog vs Polar-charged) belongs to Epic 9's payment stories, not here.
+
+## E2E red-phase convention (Story 11-2; mandated by epic-11.md:453)
+
+The repo's general red-phase convention (see `reference_atdd_red_convention`) has
+two language-specific forms. This section documents the **E2E / Playwright +
+harness** form so later E2E stories don't invent a new one.
+
+**The red signal for an E2E or harness story is a compile-fail / assertion-fail
+on a not-yet-existing seam — never `test.skip` and never a bare TODO.**
+
+- **Playwright `*.spec.ts` and harness modules → `tsc -b` TS2307.** A new spec
+  (or a vitest harness `*.test.ts`) imports the not-yet-created harness module
+  (e.g. `../lib/auth-harness`). `tsc -b` covers `tests/e2e/**` via
+  `tsconfig.e2e.json` (the root `tsconfig.json` references it), so the missing
+  module turns the typecheck RED with `TS2307`. `tsc -b` — not `tsc --noEmit` —
+  is the real gate (see `reference_web_typecheck_gate_is_tsc_b`); `tsc --noEmit`
+  on the solution root is an empty-program false-green.
+- **Vitest harness `*.test.ts` → red-by-assertion.** Pure-logic / filesystem
+  harness tests (guard predicates, bundle-exclusion scans, no-stub scans) run
+  under vitest and fail by assertion against the current tree — a BEHAVIORAL red
+  that survives as a permanent regression guard once green (e.g. the no-stub
+  guard reds against today's fabricated session and stays green after).
+- **Runner split.** Playwright owns `tests/e2e/**/*.spec.ts`; vitest owns
+  `tests/e2e/**/*.test.ts` (added to vitest `include`). Never widen vitest to
+  `*.spec.ts` or it will try to collect Playwright specs.
+- **WF-8 harness-story gate is vitest/Go on the harness code, NOT
+  Playwright-on-Playwright** (`test-design-architecture.md:242`). A harness
+  story discharges its ≥6 risk with unit tests on the harness logic — the
+  Playwright spec is the convention demo + the live behavioral proof, run
+  locally against a seeded stack.
+- **Data-dependent assertions skip-with-reason when the external artifact is
+  absent.** A harness test that consumes a DB-dependent, gitignored seed output
+  (e.g. `credentials.json`) skips-with-reason when it is missing (so the unit
+  gate is green in a DB-less CI) and asserts fully when present — the same idiom
+  as an env-gated spec (`test.skip(!process.env.X, …)`). The pure-logic WF-8
+  guards never skip.
+- **Document every green-phase SEAM** in the spec/test header block so the dev
+  has one place to reconcile.

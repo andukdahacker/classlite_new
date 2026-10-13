@@ -53,13 +53,19 @@ func buildTenant(ctx context.Context, pool *pgxpool.Pool, p tenantPlan, password
 			n     int
 			local string
 			name  string
+			creds bool // emit a credentials.json login row for this identity
 		}
 		roles := []roleSpec{
-			{"owner", 1, "owner", "Owner Fixture"},
-			{"admin", 2, "admin", "Admin Fixture"},
-			{"teacher", 3, "teacher", "Teacher Fixture"},
-			{"student", 4, "student1", "Student Fixture"},
-			{"student", 5, "student2", "Student Fixture"},
+			{"owner", 1, "owner", "Owner Fixture", true},
+			{"admin", 2, "admin", "Admin Fixture", true},
+			{"teacher", 3, "teacher", "Teacher Fixture", true},
+			// teacher2 (D1, Story 11-2): a SECOND teacher in the SAME center assigned
+			// to NO class, so it is out-of-scope for every student here. This lets
+			// 11-2's AC2 prove a TRUE same-tenant role-scope 404 (STUDENT_NOT_FOUND),
+			// not the weaker cross-tenant RLS 404. Reaches credentials.json via creds.
+			{"teacher", 6, "teacher2", "Teacher Two Fixture", true},
+			{"student", 4, "student1", "Student Fixture", true},
+			{"student", 5, "student2", "Student Fixture", false},
 		}
 		for _, r := range roles {
 			uid := seedUUID(blockUser, p.letter, r.n)
@@ -79,8 +85,11 @@ func buildTenant(ctx context.Context, pool *pgxpool.Pool, p tenantPlan, password
 			); err != nil {
 				return err
 			}
-			// One credential per role identity (student2 is extra coverage, not a creds row).
-			if r.n <= 4 {
+			// One credential per creds-flagged identity. student2 is extra coverage
+			// (not a creds row); teacher2 (D1) IS a creds row so 11-2's AC2 can
+			// authenticate it. An explicit flag, not a positional index, so adding
+			// a non-consecutive identity never silently drops it from the manifest.
+			if r.creds {
 				center.Members = append(center.Members, SeededMember{
 					Role: r.role, Email: email, Password: seedPassword, UserID: uid,
 				})

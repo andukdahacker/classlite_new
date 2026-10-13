@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { sessionSlug } from './tests/e2e/lib/auth-harness'
 
 /**
  * Playwright config.
@@ -8,8 +9,9 @@ import { defineConfig, devices } from '@playwright/test'
  *   A) Cross-subdomain auth foundation (Phase 0.4 / Story 1.5 work)
  *      - Projects: setup / landing / dashboard / cross-subdomain / mobile-*
  *      - Test files under `tests/e2e/`
- *      - Requires dev servers on `*.classlite.localhost` hostnames
- *      - Auth stub via `auth.setup.ts`
+ *      - Requires dev servers on `*.classlite.localhost` hostnames + a
+ *        running, seeded API on :8080 (Story 11-2)
+ *      - Real login via `auth.setup.ts` (per-identity storageState)
  *
  *   B) Design system contracts (Story 1.7a — theme + typography resolution)
  *      - Project: `design-system`
@@ -31,7 +33,19 @@ const BASE_URL_DESIGN_SYSTEM =
 const BASE_URL_STORYBOOK =
   process.env.BASE_URL_STORYBOOK ?? 'http://127.0.0.1:6006'
 
-const STORAGE_STATE = '.playwright/auth.json'
+// Story 11-2 retired the shared rotating `.playwright/auth.json` stub (the
+// family-revocation landmine). Each authenticated project reads a REAL
+// per-identity storageState written by `auth.setup.ts`. The tenant-A `teacher`
+// state is the shared read-only default for projects whose specs only inspect
+// the cookie jar (cross-subdomain) or mint their own fresh per-context session
+// (dashboard/role-scope). A persisted token is single-use against the rotating
+// refresh endpoint, so a SPA-booting spec must NOT reuse a frozen file — it
+// mints fresh via the harness. Run the authenticated lane with `--workers=1`
+// (see tests/e2e/README.md + docs/manual-setup.md) so these projects serialize.
+const AUTH_STATE_TEACHER = `.playwright/${sessionSlug(
+  'SEEDFAKEA',
+  'seed-fake-teacher-a@example.test',
+)}.json`
 
 export default defineConfig({
   fullyParallel: true,
@@ -59,7 +73,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL_LANDING,
-        storageState: STORAGE_STATE,
+        storageState: AUTH_STATE_TEACHER,
       },
     },
     {
@@ -70,7 +84,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL_DASHBOARD,
-        storageState: STORAGE_STATE,
+        storageState: AUTH_STATE_TEACHER,
       },
     },
     {
@@ -81,7 +95,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL_DASHBOARD,
-        storageState: STORAGE_STATE,
+        storageState: AUTH_STATE_TEACHER,
       },
     },
     {
@@ -92,7 +106,7 @@ export default defineConfig({
       use: {
         ...devices['iPhone 13'],
         baseURL: BASE_URL_DASHBOARD,
-        storageState: STORAGE_STATE,
+        storageState: AUTH_STATE_TEACHER,
       },
     },
     {
@@ -103,7 +117,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         baseURL: BASE_URL_DASHBOARD,
-        storageState: STORAGE_STATE,
+        storageState: AUTH_STATE_TEACHER,
       },
     },
     {

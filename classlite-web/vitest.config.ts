@@ -19,7 +19,14 @@ export default defineConfig({
     },
     globals: false,
     css: false,
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // src app/unit tests PLUS the Story 11-2 E2E-harness unit tests. Only
+    // `*.test.ts` under tests/e2e is vitest's — Playwright owns `*.spec.ts`
+    // there (the runner split). Never widen this to `*.spec.ts` or vitest will
+    // try to collect Playwright specs.
+    include: [
+      'src/**/*.{test,spec}.{ts,tsx}',
+      'tests/e2e/**/*.test.ts',
+    ],
     setupFiles: ['src/test/vitest-setup.ts'],
     // Node 22.4+/26 ships a global WebStorage `localStorage`/`sessionStorage`
     // that returns `undefined` (+ warns) unless `--localstorage-file` is set,

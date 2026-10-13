@@ -390,3 +390,22 @@ ALLOW_DESTRUCTIVE_RESET=1 \
 It never relies on prod-shape URL detection (which fails open the first time
 staging looks local-ish); a production database cannot grow the sentinel and is
 refused.
+
+### Real-auth E2E lane (Story 11-2)
+
+The authenticated Playwright projects log in through the real
+`POST /api/auth/login` and capture the real `refresh_token`. Three hard
+preconditions (asserted fail-fast in `auth.setup.ts`, not just documented):
+
+| Precondition | Why | How |
+|---|---|---|
+| **Seeded API on `:8080`** | Playwright's `webServer` starts only Vite; the API is not started for you, and the login manifest comes from the seed. | From the repo root: `./scripts/seed.sh` (reads `DATABASE_URL` from `.env`, runs `cmd/seed`, emits `classlite-web/tests/e2e/.auth/credentials.json`), then `cd classlite-api && go run ./cmd/api` with the two env vars below. |
+| **`COOKIE_DOMAIN=.classlite.localhost`** on the API | The dev default emits an explicit `Domain=localhost`, whose reach to `my.classlite.localhost` is RFC-6265-ambiguous → a silent logged-out boot. The explicit `.classlite.localhost` domain-matches every `*.classlite.localhost` host. | Set on the API process **and** exported in the Playwright shell (the cross-subdomain cookie specs skip-with-reason when it is unset). |
+| **`APP_ENV=development`** on the API | Any other value flips the refresh cookie to `Secure`, which `http://…localhost` can't send → again a silent logged-out boot. | Set on the API process. |
+| **`CORS_ORIGINS`** includes the E2E hosts | The server's `OriginCheck` 403s any state-changing POST (incl. `/api/auth/login` + `/api/auth/refresh`) whose `Origin` is not allow-listed; the default `http://localhost:5173` does not cover `*.classlite.localhost`. | `CORS_ORIGINS=http://my.classlite.localhost:5173,http://classlite.localhost:4321` on the API. The harness sends an explicit `Origin` on its login POSTs (an APIRequestContext sends none by default). |
+
+Run the authenticated lane with `--workers=1` (see the Playwright row in the
+resource budget above and `classlite-web/tests/e2e/README.md`): a persisted
+`refresh_token` is single-use against the rotating refresh endpoint, so the
+authenticated projects must serialize. The WF-8 unit gate needs none of this —
+`cd classlite-web && npx tsc -b && npx vitest run tests/e2e/lib`.

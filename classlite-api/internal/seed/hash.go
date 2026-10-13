@@ -18,7 +18,14 @@ import (
 // failure modes row-count equality misses: re-randomized FKs, a partial first
 // run masked by ON CONFLICT DO NOTHING, or a drifted updatable column. It is
 // regenerated whenever the seeded dataset's deterministic shape changes.
-const GoldenDigest = "ea51380547ae2c174d7bb7220503113ce1ee580d5984cf4da4163af9f64304d5"
+//
+// Regenerated 2026-10-13 (Story 11-2, D1) for the added `teacher2` identity.
+// Delta-checked, not blind-swapped (Winston): a seed + superuser row audit
+// confirmed the ONLY change vs the prior digest is one users row + one
+// center_members row (teacher2, UUID suffix …006) per tenant — every other
+// hashed table (classes/sessions/enrollments/exercises/assignments/submissions/
+// current_grades/attendance/files) was unchanged.
+const GoldenDigest = "c45d0f6b0f3dff76aff5671c6f29a1710567afc42d828348b59fd40c792a5272"
 
 // hashQueries is the fixed, ordered set of SELECTs whose canonical text
 // serialization forms the content hash. Every column is cast to text and every
