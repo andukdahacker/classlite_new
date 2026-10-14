@@ -5,6 +5,13 @@ on:
     paths: ['classlite-api/**', '.github/workflows/ci-api.yml']
   pull_request:
     paths: ['classlite-api/**', '.github/workflows/ci-api.yml']
+  # Nightly (+ manual) full -race run. -race over the whole DB-integration suite
+  # is ~50m serially (-p 1 is mandatory — see the Test step), far too slow for the
+  # push critical path, so race detection runs off it on a schedule. Scheduled runs
+  # fire only on the default branch.
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -104,17 +111,25 @@ jobs:
           $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
           migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
       - name: Test
-        # -p 1 serializes PACKAGE test binaries (one at a time). The DB-integration
-        # packages all hit a single shared Postgres and take pg_advisory_xact_lock
-        # (9-1a write enforcement) + committed-pool fixtures; running their -race
-        # binaries CONCURRENTLY (default -p = nCPU) on the constrained CI runner
-        # starved/contended one package (internal/handler) into the Go test timeout
-        # (1500s), though every local config — serial, parallel, even forced 6-way
-        # concurrency under GOMAXPROCS=2 — completes in <20s. -p 1 removes the
-        # cross-package contention (and the shared-DB cross-package flakiness) while
-        # keeping -race. This step had never run in CI until the golangci-lint
-        # toolchain was fixed (lint blocked the job), so this was latent.
-        run: cd classlite-api && go test ./... -race -v -p 1 -timeout 25m
+        # -p 1 serializes PACKAGE test binaries (one at a time) — MANDATORY: the
+        # DB-integration packages all hit one shared Postgres and take
+        # pg_advisory_xact_lock (9-1a) + committed-pool fixtures, so running their
+        # binaries concurrently (default -p = nCPU) cross-contends (and under -race
+        # on the constrained runner, starved internal/handler into the 25m Go test
+        # timeout — a CI-only contention, not a code deadlock: every local config,
+        # incl. forced 6-way concurrency under GOMAXPROCS=2, finishes in <20s).
+        #
+        # -race is applied ONLY on the nightly schedule / manual dispatch — the full
+        # serial -race suite is ~50m, too slow for every push. Push/PR runs are
+        # race-free (fast); race detection runs nightly off the critical path.
+        run: |
+          cd classlite-api
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "nightly/manual → full -race run"
+            go test ./... -race -v -p 1 -timeout 55m
+          else
+            go test ./... -v -p 1 -timeout 15m
+          fi
         env:
           # App role (non-superuser, RLS-enforced) against the migrated test DB.
           DATABASE_URL: postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_test?sslmode=disable
