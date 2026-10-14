@@ -212,6 +212,14 @@ jobs:
         run: |
           go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
           cd classlite-api && sqlc generate
+      - name: Install ffmpeg
+        # The API fails its startup self-check (CheckFFmpegAvailable, Story 6.3b0)
+        # and never becomes healthy if ffmpeg is absent — so the /health poll times
+        # out. ci-api installs it for the transcode tests; the money-path API needs
+        # it to boot at all.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - name: Resolve *.classlite.localhost to loopback
         # GitHub runners resolve only `localhost`, not `*.classlite.localhost`.
         # The preview baseURL + the cross-subdomain host must map to 127.0.0.1 so

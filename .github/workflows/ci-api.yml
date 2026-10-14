@@ -28,6 +28,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate sqlc store
+        # internal/store/generated is gitignored (sqlc output), so a fresh checkout
+        # has no Go store — the Lint (type-check) and Test steps below both import it.
+        # Must run BEFORE golangci-lint, or lint reports the missing package as issues.
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+          cd classlite-api && sqlc generate
       - name: Install ffmpeg (Story 6.3b0 — audio transcode integration tests)
         # The internal/media FFmpegTranscoder tests are INTEGRATION tests against
         # a real ffmpeg (webm/mp4 → Opus/Ogg). Install it explicitly rather than
