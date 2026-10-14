@@ -31,7 +31,10 @@ import (
 )
 
 // rlsCompileFailAnchor references the 9-2a apply seam so this RLS file COMPILE-fails with the
-// rest of the red set. Never called.
+// rest of the red set. Never called — kept as the documented green-phase SEAM (header block)
+// per the ATDD red-phase convention.
+//
+//nolint:unused // intentional ATDD compile-anchor / green-phase SEAM (see file header); never invoked.
 func rlsCompileFailAnchor(ctx context.Context, tc model.TenantContext) error {
 	var svc *service.BillingService
 	return svc.SetPlanFromPolar(ctx, tc, plan.Pro, "monthly", newPolarSubID(),

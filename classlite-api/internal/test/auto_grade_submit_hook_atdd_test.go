@@ -69,13 +69,12 @@ func (poisonAutoGrader) GradeOnSubmit(ctx context.Context, tx pgx.Tx, _ model.Te
 }
 
 type autoGradeHookEnv struct {
-	db           *TxDB
-	centerID     uuid.UUID
-	studentTC    model.TenantContext
-	assignmentID uuid.UUID
-	classID      uuid.UUID
-	studentID    uuid.UUID
-	audit        service.AuditLogger
+	db        *TxDB
+	centerID  uuid.UUID
+	studentTC model.TenantContext
+	classID   uuid.UUID
+	studentID uuid.UUID
+	audit     service.AuditLogger
 }
 
 // objectiveExerciseContent is a reading section with one multiple_choice question

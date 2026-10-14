@@ -44,7 +44,9 @@ func TestPresign_ValidPDF(t *testing.T) {
 			Key string `json:"key"`
 		} `json:"data"`
 	}
-	json.NewDecoder(rec.Body).Decode(&resp)
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 
 	if resp.Data.URL == "" {
 		t.Error("expected presigned URL")
@@ -164,7 +166,9 @@ func TestConfirm_ObjectExists(t *testing.T) {
 	var resp struct {
 		Data service.ObjectMeta `json:"data"`
 	}
-	json.NewDecoder(rec.Body).Decode(&resp)
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 
 	if resp.Data.Size != 12345 {
 		t.Errorf("expected size 12345, got %d", resp.Data.Size)

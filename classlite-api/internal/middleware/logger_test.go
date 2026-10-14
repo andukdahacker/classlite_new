@@ -59,7 +59,7 @@ func TestLogger_DefaultStatus200(t *testing.T) {
 
 	handler := middleware.Logger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// No explicit WriteHeader — defaults to 200.
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

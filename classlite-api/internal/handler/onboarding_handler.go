@@ -87,7 +87,7 @@ func (h *OnboardingHandler) SetPersona(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 
-	WriteEnvelope(w, http.StatusOK, h.clk, personaResult{Persona: body.Persona})
+	WriteEnvelope(w, http.StatusOK, h.clk, personaResult(body))
 	return nil
 }
 

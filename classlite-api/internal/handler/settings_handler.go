@@ -68,15 +68,6 @@ type centerProfileResponse struct {
 // it as read-only per AC3; any client that sends it is silently ignored.
 type updateCenterProfileRequestBody map[string]json.RawMessage
 
-// nullableFields enumerates the columns whose wire `null` means "clear to
-// NULL" instead of "422 not-nullable". Kept in sync with the SQL query's
-// clear_fields array whitelist (queries/centers.sql).
-var nullableFields = map[string]string{
-	"contactEmail": "contact_email",
-	"brandColor":   "brand_color",
-	"logoUrl":      "logo_url",
-}
-
 var jsonNullBytes = []byte("null")
 
 // Get returns the caller's center profile (AC1 + AC7 GET).

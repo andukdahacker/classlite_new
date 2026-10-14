@@ -135,12 +135,6 @@ func NormalizeComments(in []Comment, essayText string) ([]Comment, error) {
 	return out, nil
 }
 
-// utf16Len returns the number of UTF-16 code units in s (D3 — the unit the browser
-// produces and consumes for anchor offsets).
-func utf16Len(s string) int {
-	return len(utf16.Encode([]rune(s)))
-}
-
 // splitsSurrogatePair reports whether the boundary at code-unit offset p falls
 // between the high and low half of a surrogate pair in units. Slicing on such a
 // boundary would yield a lone surrogate (D3), so an anchor there is demoted. The

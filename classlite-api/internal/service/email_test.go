@@ -98,7 +98,9 @@ func TestMockEmailSender_SimulatesError(t *testing.T) {
 
 func TestMockEmailSender_Reset(t *testing.T) {
 	mock := &MockEmailSender{}
-	mock.Send(context.Background(), "a@b.com", "Test", "<p>test</p>")
+	if err := mock.Send(context.Background(), "a@b.com", "Test", "<p>test</p>"); err != nil {
+		t.Fatalf("mock send: %v", err)
+	}
 	mock.Reset()
 
 	if len(mock.SentEmails) != 0 {

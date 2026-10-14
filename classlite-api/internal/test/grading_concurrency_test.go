@@ -119,8 +119,12 @@ func TestGradeWriting_ConcurrentDoubleGrade_OneWins(t *testing.T) {
 	}
 	// Exactly one grade row + one outbox job (the loser committed zero side effects).
 	var grades, jobs int
-	su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades)
-	su.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE center_id=$1 AND type='grade_release_email'`, env.centerID).Scan(&jobs)
+	if err := su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades); err != nil {
+		t.Fatalf("scan grades: %v", err)
+	}
+	if err := su.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE center_id=$1 AND type='grade_release_email'`, env.centerID).Scan(&jobs); err != nil {
+		t.Fatalf("scan jobs: %v", err)
+	}
 	if grades != 1 {
 		t.Errorf("expected 1 grade row after concurrent grade, got %d", grades)
 	}
@@ -151,9 +155,15 @@ func TestGradeWriting_NonWritingSubmission_Rejected(t *testing.T) {
 	// Zero side effects: no grade, no outbox job, submission untouched.
 	var grades, jobs int
 	var status string
-	su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades)
-	su.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE center_id=$1 AND type='grade_release_email'`, env.centerID).Scan(&jobs)
-	su.QueryRow(ctx, `SELECT status FROM submissions WHERE id=$1`, env.submissionID).Scan(&status)
+	if err := su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades); err != nil {
+		t.Fatalf("scan grades: %v", err)
+	}
+	if err := su.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE center_id=$1 AND type='grade_release_email'`, env.centerID).Scan(&jobs); err != nil {
+		t.Fatalf("scan jobs: %v", err)
+	}
+	if err := su.QueryRow(ctx, `SELECT status FROM submissions WHERE id=$1`, env.submissionID).Scan(&status); err != nil {
+		t.Fatalf("scan status: %v", err)
+	}
 	if grades != 0 || jobs != 0 {
 		t.Errorf("rejected grade left side effects: grades=%d jobs=%d, want 0/0", grades, jobs)
 	}
@@ -209,7 +219,9 @@ func TestReviseGrade_ConcurrentRevise_UniqueRejectsLoser(t *testing.T) {
 	}
 	// Versions are exactly {1, 2} — the UNIQUE index prevented a duplicate v2.
 	var maxVersion, count int
-	su.QueryRow(ctx, `SELECT COALESCE(MAX(version),0), COUNT(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&maxVersion, &count)
+	if err := su.QueryRow(ctx, `SELECT COALESCE(MAX(version),0), COUNT(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&maxVersion, &count); err != nil {
+		t.Fatalf("scan versions: %v", err)
+	}
 	if maxVersion != 2 || count != 2 {
 		t.Errorf("after concurrent revise: maxVersion=%d count=%d, want 2/2", maxVersion, count)
 	}

@@ -321,6 +321,6 @@ func purgeMember(t *testing.T, userID pgtype.UUID) {
 	t.Helper()
 	super := test.SuperuserPool(t)
 	ctx := context.Background()
-	super.Exec(ctx, `DELETE FROM center_members WHERE user_id = $1`, userID)
-	super.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	_, _ = super.Exec(ctx, `DELETE FROM center_members WHERE user_id = $1`, userID)
+	_, _ = super.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
 }

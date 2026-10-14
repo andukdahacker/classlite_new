@@ -41,7 +41,9 @@ func TestErrorMapper_NotFoundError(t *testing.T) {
 		t.Errorf("expected 404, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "NOT_FOUND" {
 		t.Errorf("expected NOT_FOUND, got %s", body.Error.Code)
 	}
@@ -62,7 +64,9 @@ func TestErrorMapper_ForbiddenError(t *testing.T) {
 		t.Errorf("expected 403, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "FORBIDDEN" {
 		t.Errorf("expected FORBIDDEN, got %s", body.Error.Code)
 	}
@@ -83,7 +87,9 @@ func TestErrorMapper_ValidationError(t *testing.T) {
 		t.Errorf("expected 422, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "VALIDATION_ERROR" {
 		t.Errorf("expected VALIDATION_ERROR, got %s", body.Error.Code)
 	}
@@ -105,7 +111,9 @@ func TestErrorMapper_ConflictError(t *testing.T) {
 		t.Errorf("expected 409, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "CONFLICT" {
 		t.Errorf("expected CONFLICT, got %s", body.Error.Code)
 	}
@@ -123,7 +131,9 @@ func TestErrorMapper_UnknownError(t *testing.T) {
 		t.Errorf("expected 500, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "INTERNAL_ERROR" {
 		t.Errorf("expected INTERNAL_ERROR, got %s", body.Error.Code)
 	}
@@ -144,7 +154,9 @@ func TestErrorMapper_PanicRecovery(t *testing.T) {
 		t.Errorf("expected 500, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "INTERNAL_ERROR" {
 		t.Errorf("expected INTERNAL_ERROR, got %s", body.Error.Code)
 	}
@@ -162,7 +174,9 @@ func TestErrorMapper_NotFoundError_CustomCode(t *testing.T) {
 		t.Errorf("expected 404, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "VERIFICATION_TOKEN_INVALID" {
 		t.Errorf("expected VERIFICATION_TOKEN_INVALID, got %s", body.Error.Code)
 	}
@@ -184,7 +198,9 @@ func TestErrorMapper_ConflictError_CustomCodeAndMessage(t *testing.T) {
 		t.Errorf("expected 409, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "EMAIL_ALREADY_REGISTERED" {
 		t.Errorf("expected EMAIL_ALREADY_REGISTERED, got %s", body.Error.Code)
 	}
@@ -205,7 +221,9 @@ func TestErrorMapper_GoneError(t *testing.T) {
 		t.Errorf("expected 410, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "VERIFICATION_TOKEN_EXPIRED" {
 		t.Errorf("expected VERIFICATION_TOKEN_EXPIRED, got %s", body.Error.Code)
 	}
@@ -249,7 +267,9 @@ func TestErrorMapper_OAuthStateInvalidError(t *testing.T) {
 		t.Errorf("expected 400, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "OAUTH_STATE_INVALID" {
 		t.Errorf("expected OAUTH_STATE_INVALID, got %s", body.Error.Code)
 	}
@@ -265,7 +285,9 @@ func TestErrorMapper_OAuthStateExpiredError(t *testing.T) {
 		t.Errorf("expected 400, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "OAUTH_STATE_EXPIRED" {
 		t.Errorf("expected OAUTH_STATE_EXPIRED, got %s", body.Error.Code)
 	}
@@ -286,7 +308,9 @@ func TestErrorMapper_OAuthStateMismatchError_DoesNotLeakReason(t *testing.T) {
 		t.Errorf("expected 403, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "OAUTH_STATE_MISMATCH" {
 		t.Errorf("expected OAUTH_STATE_MISMATCH, got %s", body.Error.Code)
 	}
@@ -308,7 +332,9 @@ func TestErrorMapper_OAuthMembershipRevokedError(t *testing.T) {
 		t.Errorf("expected 403, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "OAUTH_MEMBERSHIP_REVOKED" {
 		t.Errorf("expected OAUTH_MEMBERSHIP_REVOKED, got %s", body.Error.Code)
 	}
@@ -327,7 +353,9 @@ func TestErrorMapper_IntegrationConnectFailedError(t *testing.T) {
 		t.Errorf("expected 502, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "INTEGRATION_CONNECT_FAILED" {
 		t.Errorf("expected INTEGRATION_CONNECT_FAILED, got %s", body.Error.Code)
 	}
@@ -349,7 +377,9 @@ func TestErrorMapper_OAuthNotConfiguredError(t *testing.T) {
 		t.Errorf("expected 503, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "OAUTH_NOT_CONFIGURED" {
 		t.Errorf("expected OAUTH_NOT_CONFIGURED, got %s", body.Error.Code)
 	}
@@ -369,7 +399,9 @@ func TestErrorMapper_RoleAssignmentForbiddenError(t *testing.T) {
 		t.Errorf("expected 403, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "ROLE_ASSIGNMENT_FORBIDDEN" {
 		t.Errorf("expected ROLE_ASSIGNMENT_FORBIDDEN, got %s", body.Error.Code)
 	}
@@ -395,7 +427,9 @@ func TestErrorMapper_InviteEmailTakenError_InlineFieldError(t *testing.T) {
 		t.Errorf("expected 409, got %d", rec.Code)
 	}
 	var body errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&body)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if body.Error.Code != "INVITE_EMAIL_TAKEN" {
 		t.Errorf("expected INVITE_EMAIL_TAKEN, got %s", body.Error.Code)
 	}

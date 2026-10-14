@@ -449,7 +449,7 @@ func (s *StudentService) GetStudentDetail(
 			OnTimeRate:          ratePtr(subStats.OnTimeCount, subStats.SubmittedCount),
 			CurrentVsFirstDelta: deltaPtr(delta.CurrentAvg, delta.FirstAvg),
 		},
-		AtRisk: StudentAtRisk{Status: atRisk.Status, Reasons: atRisk.Reasons},
+		AtRisk: StudentAtRisk(atRisk),
 		Notes:  make([]StudentNoteView, 0, len(noteRows)),
 	}
 	for _, c := range classesRows {

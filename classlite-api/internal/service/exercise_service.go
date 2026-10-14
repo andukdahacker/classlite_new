@@ -230,24 +230,9 @@ func duplicatedTitle(srcTitle string) string {
 func teacherRowsToListRows(rows []generated.ListExercisesByTeacherRow) []generated.ListExercisesRow {
 	out := make([]generated.ListExercisesRow, len(rows))
 	for i, r := range rows {
-		out[i] = generated.ListExercisesRow{
-			ID:            r.ID,
-			CenterID:      r.CenterID,
-			CreatedBy:     r.CreatedBy,
-			Code:          r.Code,
-			Title:         r.Title,
-			Description:   r.Description,
-			Skill:         r.Skill,
-			Tags:          r.Tags,
-			TargetBand:    r.TargetBand,
-			SchemaVersion: r.SchemaVersion,
-			DeletedAt:     r.DeletedAt,
-			CreatedAt:     r.CreatedAt,
-			UpdatedAt:     r.UpdatedAt,
-			SectionCount:  r.SectionCount,
-			QuestionCount: r.QuestionCount,
-			Locked:        r.Locked,
-		}
+		// sqlc emits distinct-but-field-identical row types per query, so a direct
+		// struct conversion is equivalent to a field-by-field copy (staticcheck S1016).
+		out[i] = generated.ListExercisesRow(r)
 	}
 	return out
 }

@@ -49,7 +49,9 @@ func TestLoginHandler_AC10_NonDevCookieAttributes_AllFourPresent(t *testing.T) {
 	req.Header.Set("Origin", "https://my.classlite.app")
 	rec := httptest.NewRecorder()
 
-	h.Login(rec, req)
+	if err := h.Login(rec, req); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", rec.Code, rec.Body.String())
@@ -106,7 +108,9 @@ func TestLoginHandler_AC01_SuccessEnvelopeShape(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	h.Login(rec, req)
+	if err := h.Login(rec, req); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -160,7 +164,9 @@ func TestLoginHandler_ReturnsCenterForSingleMembershipOwner(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	h.Login(rec, req)
+	if err := h.Login(rec, req); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", rec.Code, rec.Body.String())
@@ -215,7 +221,9 @@ func TestLoginHandler_CenterNullForUserWithoutMembership(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	h.Login(rec, req)
+	if err := h.Login(rec, req); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", rec.Code, rec.Body.String())

@@ -181,7 +181,7 @@ func coalesceChanges(c any) any {
 		return Changes{}
 	}
 	v := reflect.ValueOf(c)
-	if v.Kind() == reflect.Ptr && v.IsNil() {
+	if v.Kind() == reflect.Pointer && v.IsNil() {
 		return Changes{}
 	}
 	return c

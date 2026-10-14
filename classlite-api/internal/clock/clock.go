@@ -52,10 +52,9 @@ func (RealClock) Sleep(d time.Duration) { time.Sleep(d) }
 //	c.Advance(24 * time.Hour) // day 4 — nothing should fire
 //	c.Advance(24 * time.Hour) // day 5 — second retry
 type MockClock struct {
-	mu      sync.Mutex
-	now     time.Time
-	sleeps  []time.Duration
-	advance chan time.Duration
+	mu     sync.Mutex
+	now    time.Time
+	sleeps []time.Duration
 }
 
 // NewMockClock creates a MockClock anchored at start. Callers can pick any

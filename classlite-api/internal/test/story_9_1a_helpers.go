@@ -32,12 +32,6 @@ import (
 // Date.now()-free (deterministic).
 var billingEpoch = time.Date(2026, 9, 15, 3, 0, 0, 0, time.UTC)
 
-// ownerTC returns an owner tenant context for centerID (no user). Retained for callers
-// that don't need a persisted actor; newBillingCenter builds a richer tc with UserID.
-func ownerTC(centerID pgtype.UUID) model.TenantContext {
-	return model.TenantContext{CenterID: UUIDString(centerID), Role: string(model.RoleOwner)}
-}
-
 // seedSubscriptionRaw inserts a subscription row for centerID (superuser/raw — no
 // RLS). current_period_end is NULL for free.
 func seedSubscriptionRaw(t *testing.T, pool *pgxpool.Pool, centerID pgtype.UUID, planName string) {

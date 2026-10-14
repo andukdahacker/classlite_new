@@ -44,9 +44,13 @@ jobs:
         # (errcheck / govet / staticcheck / unused / ineffassign). Replaces the
         # prior standalone `go vet` + `staticcheck` steps — same underlying
         # tools, one binary, one AST walk.
-        uses: golangci/golangci-lint-action@v6
+        # v8 action + golangci-lint v2 (built with a current Go): the v6 action caps
+        # to golangci-lint v1 (built with go1.24), which REFUSES a go1.25 module
+        # ("Go language version used to build golangci-lint is lower than target").
+        # .golangci.yml is v2-format (migrated via `golangci-lint migrate`).
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.14.0
           working-directory: classlite-api
       - name: Tenantcheck (R1 mitigation A — GO-1 enforcement)
         # Custom analyzer that fails the build if any method on a *Store type

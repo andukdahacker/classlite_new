@@ -164,15 +164,6 @@ func insertWorkingRow(t *testing.T, db *TxDB, centerID, submissionID uuid.UUID, 
 	}
 }
 
-func (e agReleaseEnv) gradeRowCount(t *testing.T, subID uuid.UUID) int {
-	t.Helper()
-	var n int
-	if err := e.db.QueryRow(context.Background(), `SELECT count(*) FROM grades WHERE submission_id=$1`, subID).Scan(&n); err != nil {
-		t.Fatalf("count grades: %v", err)
-	}
-	return n
-}
-
 func (e agReleaseEnv) outboxJobCount(t *testing.T) int {
 	t.Helper()
 	var n int
@@ -446,7 +437,9 @@ func TestAutoGradeRelease_ConcurrentRelease_OneWins_ATDD(t *testing.T) {
 		t.Fatalf("concurrent release: %d wins / %d conflicts, want 1/1", successes, conflicts)
 	}
 	var grades int
-	su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades)
+	if err := su.QueryRow(ctx, `SELECT count(*) FROM grades WHERE submission_id=$1`, env.submissionID).Scan(&grades); err != nil {
+		t.Fatalf("scan grades: %v", err)
+	}
 	if grades != 1 {
 		t.Errorf("after concurrent release: %d grade rows, want exactly 1", grades)
 	}

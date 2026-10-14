@@ -37,7 +37,10 @@ import (
 )
 
 // reasonAddonPurchase is the ai_credit_ledger reason for a paid add-on top-up (4.3a CHECK
-// already admits it; the reserved 9-1a hook this story populates).
+// already admits it; the reserved 9-1a hook a later story wires — kept deliberately as the
+// single source of the ledger-reason string so the add-on path has no magic literal).
+//
+//nolint:unused // reserved ledger-reason const for the add-on top-up path (4.3a CHECK admits it); wired by a later billing story.
 const reasonAddonPurchase = "addon_purchase"
 
 // polarPaymentFailedEventType is the Polar event that STARTS our grace clock (Story 9.3,

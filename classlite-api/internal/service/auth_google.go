@@ -756,7 +756,6 @@ func loadInviteByTokenHash(ctx context.Context, db generated.DBTX, tokenHash str
 	// name in the details payload, so fetch it before returning.
 	if acceptedAtPg.Valid {
 		t := acceptedAtPg.Time
-		acceptedAt = &t
 		centerName, _ := fetchCenterName(ctx, db, centerPg)
 		return uuid.Nil, uuid.Nil, uuid.Nil, "", "", nil, &t,
 			&InviteAlreadyAcceptedError{CenterName: centerName}

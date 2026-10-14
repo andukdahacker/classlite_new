@@ -38,7 +38,9 @@ func TestLogoutHandler_AC05_InvalidatesRefreshAndClearsCookie(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: loginResult.RefreshToken})
 	rec := httptest.NewRecorder()
 
-	h.Logout(rec, req)
+	if err := h.Logout(rec, req); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
 
 	if rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 200 or 204, got %d", rec.Code)

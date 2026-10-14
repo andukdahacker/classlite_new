@@ -102,12 +102,6 @@ func rangeRowToResponse(r generated.ListSessionsByRangeRow) sessionResponse {
 		r.CreatedAt, r.UpdatedAt, r.ClassName, r.ClassColor)
 }
 
-func classRowToResponse(r generated.ListSessionsByClassRow) sessionResponse {
-	return buildSessionResponse(r.ID, r.CenterID, r.ClassID, r.Topic, r.StartsAt, r.EndsAt,
-		r.Status, r.CancelledAt, r.RecurrenceGroupID, r.RecurrencePattern, r.RecurrenceTz,
-		r.CreatedAt, r.UpdatedAt, r.ClassName, r.ClassColor)
-}
-
 func detailRowToResponse(r generated.GetSessionByIDRow) sessionResponse {
 	return buildSessionResponse(r.ID, r.CenterID, r.ClassID, r.Topic, r.StartsAt, r.EndsAt,
 		r.Status, r.CancelledAt, r.RecurrenceGroupID, r.RecurrencePattern, r.RecurrenceTz,

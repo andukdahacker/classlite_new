@@ -136,7 +136,9 @@ func TestAuthHandler_Register_409DuplicateEmail(t *testing.T) {
 		t.Fatalf("duplicate: expected 409, got %d", rec.Code)
 	}
 	var env errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if env.Error.Code != "EMAIL_ALREADY_REGISTERED" {
 		t.Errorf("code = %q, want EMAIL_ALREADY_REGISTERED", env.Error.Code)
 	}
@@ -164,7 +166,9 @@ func TestAuthHandler_Register_422Validation(t *testing.T) {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var env errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if env.Error.Code != "VALIDATION_ERROR" {
 		t.Errorf("code = %q", env.Error.Code)
 	}
@@ -214,7 +218,9 @@ func TestAuthHandler_VerifyEmail_200Success(t *testing.T) {
 		Verified bool   `json:"verified"`
 		Email    string `json:"email"`
 	}]
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if !env.Data.Verified || env.Data.Email != "vh@example.com" {
 		t.Errorf("unexpected data: %+v", env.Data)
 	}
@@ -229,12 +235,16 @@ func TestAuthHandler_VerifyEmail_410Expired(t *testing.T) {
 		`{"email":"exp@example.com","password":"supersecret","fullName":"E"}`))
 
 	// Force-expire
-	db.Tx.Exec(context.Background(),
-		`UPDATE email_verifications SET expires_at = now() - INTERVAL '1 hour' WHERE user_id = (SELECT id FROM users WHERE email = 'exp@example.com')`)
+	if _, err := db.Tx.Exec(context.Background(),
+		`UPDATE email_verifications SET expires_at = now() - INTERVAL '1 hour' WHERE user_id = (SELECT id FROM users WHERE email = 'exp@example.com')`); err != nil {
+		t.Fatalf("force-expire: %v", err)
+	}
 
 	var token string
-	db.Tx.QueryRow(context.Background(),
-		`SELECT token FROM email_verifications WHERE user_id = (SELECT id FROM users WHERE email = 'exp@example.com')`).Scan(&token)
+	if err := db.Tx.QueryRow(context.Background(),
+		`SELECT token FROM email_verifications WHERE user_id = (SELECT id FROM users WHERE email = 'exp@example.com')`).Scan(&token); err != nil {
+		t.Fatalf("scan token: %v", err)
+	}
 
 	verify := middleware.ErrorMapper(h.VerifyEmail)
 	rec = httptest.NewRecorder()
@@ -244,7 +254,9 @@ func TestAuthHandler_VerifyEmail_410Expired(t *testing.T) {
 		t.Fatalf("expected 410, got %d", rec.Code)
 	}
 	var env errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if env.Error.Code != "VERIFICATION_TOKEN_EXPIRED" {
 		t.Errorf("code = %q", env.Error.Code)
 	}
@@ -261,7 +273,9 @@ func TestAuthHandler_VerifyEmail_404Unknown(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 	var env errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if env.Error.Code != "VERIFICATION_TOKEN_INVALID" {
 		t.Errorf("code = %q", env.Error.Code)
 	}
@@ -280,7 +294,9 @@ func TestAuthHandler_VerifyStatus_404MalformedPollID(t *testing.T) {
 		t.Fatalf("expected 404 for malformed pollId, got %d", rec.Code)
 	}
 	var env errorEnvelope
-	json.NewDecoder(rec.Body).Decode(&env)
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if env.Error.Code != "POLL_ID_NOT_FOUND" {
 		t.Errorf("code = %q", env.Error.Code)
 	}

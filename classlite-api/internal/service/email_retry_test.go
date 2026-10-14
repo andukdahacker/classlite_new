@@ -44,12 +44,6 @@ func (c *fakeClock) Sleep(d time.Duration) {
 	}
 }
 
-func (c *fakeClock) advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-}
-
 // scriptedSender returns the queued error for each Send call. nil = success.
 type scriptedSender struct {
 	mu        sync.Mutex

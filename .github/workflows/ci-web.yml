@@ -204,6 +204,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Generate sqlc store
+        # internal/store/generated is gitignored (sqlc output), so a fresh checkout
+        # has no Go store — `go run ./cmd/seed` + `go build ./cmd/api` below both
+        # import it. Generate it before any Go build (mirrors scripts/codegen.sh's
+        # sqlc leg; openapi-typescript is not needed for the API build).
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+          cd classlite-api && sqlc generate
       - name: Resolve *.classlite.localhost to loopback
         # GitHub runners resolve only `localhost`, not `*.classlite.localhost`.
         # The preview baseURL + the cross-subdomain host must map to 127.0.0.1 so
@@ -225,6 +233,15 @@ jobs:
           $PSQL -d postgres -c "ALTER DATABASE classlite_test OWNER TO classlite_migrator"
           $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
           migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
+          # The app role's login center-resolution heuristic (auth_login.go
+          # buildAccessToken) runs an UNSCOPED cross-tenant `SELECT COUNT(*) FROM
+          # center_members` — it only works when the connection role bypasses RLS.
+          # `internal/test/testdb.go` grants classlite_app BYPASSRLS for exactly this
+          # reason, but no migration does (FU-11-1A-MIGRATOR-BYPASSRLS). Without it the
+          # money-path login mints a center-less token → every staff call 403s
+          # CENTER_REQUIRED. Grant it here so DATABASE_URL=classlite_app behaves like the
+          # go-test harness + the superuser-URL local dev run.
+          $PSQL -d postgres -c "ALTER ROLE classlite_app BYPASSRLS"
       - name: Seed tenant + emit credentials.json
         # `scripts/seed.sh` (clean=true default) seeds tenant A + identities and
         # emits classlite-web/tests/e2e/.auth/credentials.json. The clean reset

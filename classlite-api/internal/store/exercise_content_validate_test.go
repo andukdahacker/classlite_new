@@ -230,12 +230,12 @@ func TestValidateExerciseContentComplete_Violations(t *testing.T) {
 		},
 		{
 			name:     "Gap-fill zero-width-space correct answer",
-			content:  contentOf(section(SectionTypeGrammar, group(QuestionGroupTypeFillInBlank, gapQuestion("​")))),
+			content:  contentOf(section(SectionTypeGrammar, group(QuestionGroupTypeFillInBlank, gapQuestion("\u200b")))),
 			wantCode: "BLANK_CORRECT_ANSWER",
 		},
 		{
 			name:     "Gap-fill word-joiner (U+2060) correct answer is blank",
-			content:  contentOf(section(SectionTypeGrammar, group(QuestionGroupTypeFillInBlank, gapQuestion("⁠")))),
+			content:  contentOf(section(SectionTypeGrammar, group(QuestionGroupTypeFillInBlank, gapQuestion("\u2060")))),
 			wantCode: "BLANK_CORRECT_ANSWER",
 		},
 		{

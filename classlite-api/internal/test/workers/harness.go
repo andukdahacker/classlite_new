@@ -165,7 +165,10 @@ func (h *WorkerHarness) ProcessSpecific(ctx context.Context, t *testing.T, jobID
 	if err != nil {
 		t.Fatalf("ProcessSpecific: parse center %q: %v", meta.CenterID, err)
 	}
-	ctx = testpkg.TenantContext(t, h.DB, centerPg)
+	// TenantContext sets the tenant GUC on the shared tx (session-level); its
+	// returned ctx carries nothing the caller's does not, so keep the incoming ctx
+	// (honor its deadline/values) rather than overwrite it with a bare Background.
+	testpkg.TenantContext(t, h.DB, centerPg)
 	tc := model.TenantContext{CenterID: meta.CenterID}
 
 	handlerErr := handler.ProcessTask(ctx, tc, meta.Payload)

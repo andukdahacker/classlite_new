@@ -146,7 +146,7 @@ func TestCenters_SlugCollisionRegeneration(t *testing.T) {
 	// Exactly one goroutine keeps the base slug; the other carries a
 	// random suffix (`<base>-<4 chars>`). We do NOT assert which
 	// goroutine won — the pool assignment is non-deterministic.
-	if !(outcomes[0].short == baseSlug || outcomes[1].short == baseSlug) {
+	if outcomes[0].short != baseSlug && outcomes[1].short != baseSlug {
 		t.Errorf("neither goroutine kept the base slug %q; got %+v", baseSlug, outcomes)
 	}
 	suffixed := outcomes[0].short

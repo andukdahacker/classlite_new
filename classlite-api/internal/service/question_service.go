@@ -44,9 +44,6 @@ const (
 	visibilityPersonal = "personal"
 	visibilityShared   = "shared"
 
-	questionStatusOpen     = "open"
-	questionStatusResolved = "resolved"
-
 	anchorSchemaVersion = 1
 
 	// maxBatchReply caps POST /api/questions/batch-reply (AC12) — above it → 422.

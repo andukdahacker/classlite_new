@@ -168,7 +168,9 @@ func TestAuthService_Register_DuplicateEmailCaseInsensitive(t *testing.T) {
 
 	// Exactly one user row, exactly one email_verifications row
 	var userCount int
-	db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM users WHERE email = 'dup@example.com'`).Scan(&userCount)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM users WHERE email = 'dup@example.com'`).Scan(&userCount); err != nil {
+		t.Fatalf("scan user count: %v", err)
+	}
 	if userCount != 1 {
 		t.Errorf("expected 1 user row, got %d", userCount)
 	}
@@ -207,7 +209,9 @@ func TestAuthService_Register_ValidationFailures_HasherNotInvoked(t *testing.T) 
 			}
 			// No user row created
 			var n int
-			db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM users WHERE email = $1`, strings.ToLower(strings.TrimSpace(tc.req.Email))).Scan(&n)
+			if err := db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM users WHERE email = $1`, strings.ToLower(strings.TrimSpace(tc.req.Email))).Scan(&n); err != nil {
+				t.Fatalf("scan user count: %v", err)
+			}
 			if n != 0 {
 				t.Errorf("no user row should exist, got %d", n)
 			}
@@ -244,26 +248,6 @@ func TestAuthService_Register_EmailDelivery_FailedWhenQueueFull(t *testing.T) {
 
 // ---------- VerifyEmail ----------
 
-func registerAndGetToken(t *testing.T, db *test.TxDB) (*service.RegisterResult, string) {
-	t.Helper()
-	svc, _, _, _ := newAuthService(db)
-	res, err := svc.Register(context.Background(), service.RegisterRequest{
-		Email:    "verify@example.com",
-		Password: "supersecret",
-		FullName: "Verify User",
-	})
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	var token string
-	if err := db.Tx.QueryRow(context.Background(),
-		`SELECT token FROM email_verifications WHERE user_id = $1`,
-		res.User.ID).Scan(&token); err != nil {
-		t.Fatalf("fetch token: %v", err)
-	}
-	return res, token
-}
-
 func TestAuthService_VerifyEmail_HappyPath(t *testing.T) {
 	db := test.SetupDB(t)
 	svc, _, _, _ := newAuthService(db)
@@ -276,7 +260,9 @@ func TestAuthService_VerifyEmail_HappyPath(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 	var token string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token); err != nil {
+		t.Fatalf("scan token: %v", err)
+	}
 
 	verifyRes, err := svc.VerifyEmail(context.Background(), token)
 	if err != nil {
@@ -291,14 +277,18 @@ func TestAuthService_VerifyEmail_HappyPath(t *testing.T) {
 
 	// user.email_verified flipped
 	var ev bool
-	db.Tx.QueryRow(context.Background(), `SELECT email_verified FROM users WHERE id = $1`, res.User.ID).Scan(&ev)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT email_verified FROM users WHERE id = $1`, res.User.ID).Scan(&ev); err != nil {
+		t.Fatalf("scan email_verified: %v", err)
+	}
 	if !ev {
 		t.Error("users.email_verified should be true")
 	}
 
 	// audit row for email_verified event
 	var n int
-	db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND event = 'user.email_verified'`, res.User.ID).Scan(&n)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT COUNT(*) FROM auth_audit_logs WHERE user_id = $1 AND event = 'user.email_verified'`, res.User.ID).Scan(&n); err != nil {
+		t.Fatalf("scan audit count: %v", err)
+	}
 	if n != 1 {
 		t.Errorf("expected 1 email_verified audit row, got %d", n)
 	}
@@ -311,7 +301,9 @@ func TestAuthService_VerifyEmail_IdempotentAfterVerify(t *testing.T) {
 		Email: "idem@example.com", Password: "supersecret", FullName: "Idem",
 	})
 	var token string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token); err != nil {
+		t.Fatalf("scan token: %v", err)
+	}
 
 	if _, err := svc.VerifyEmail(context.Background(), token); err != nil {
 		t.Fatalf("first verify: %v", err)
@@ -336,14 +328,18 @@ func TestAuthService_VerifyEmail_OlderTokenAfterResend_StillIdempotent(t *testin
 		Email: "rotate@example.com", Password: "supersecret", FullName: "Rotate",
 	})
 	var oldToken string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&oldToken)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&oldToken); err != nil {
+		t.Fatalf("scan old token: %v", err)
+	}
 
 	if _, err := svc.ResendVerification(context.Background(), "rotate@example.com"); err != nil {
 		t.Fatalf("Resend: %v", err)
 	}
 
 	var newToken string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1 AND verified_at IS NULL ORDER BY created_at DESC LIMIT 1`, res.User.ID).Scan(&newToken)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1 AND verified_at IS NULL ORDER BY created_at DESC LIMIT 1`, res.User.ID).Scan(&newToken); err != nil {
+		t.Fatalf("scan new token: %v", err)
+	}
 
 	if _, err := svc.VerifyEmail(context.Background(), newToken); err != nil {
 		t.Fatalf("verify new token: %v", err)
@@ -371,7 +367,9 @@ func TestAuthService_VerifyEmail_ExpiredToken(t *testing.T) {
 		t.Fatalf("force expire: %v", err)
 	}
 	var token string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token); err != nil {
+		t.Fatalf("scan token: %v", err)
+	}
 
 	_, err := svc.VerifyEmail(context.Background(), token)
 	var gone model.GoneError
@@ -417,7 +415,9 @@ func TestAuthService_Resend_UnverifiedUser_NewToken(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 	var oldToken string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&oldToken)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&oldToken); err != nil {
+		t.Fatalf("scan old token: %v", err)
+	}
 
 	r, err := svc.ResendVerification(context.Background(), "resend@example.com")
 	if err != nil {
@@ -463,8 +463,12 @@ func TestAuthService_Resend_VerifiedUser_ReturnsNilPollID(t *testing.T) {
 	})
 	// Verify the user
 	var token string
-	db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token)
-	svc.VerifyEmail(context.Background(), token)
+	if err := db.Tx.QueryRow(context.Background(), `SELECT token FROM email_verifications WHERE user_id = $1`, res.User.ID).Scan(&token); err != nil {
+		t.Fatalf("scan token: %v", err)
+	}
+	if _, err := svc.VerifyEmail(context.Background(), token); err != nil {
+		t.Fatalf("VerifyEmail (setup): %v", err)
+	}
 
 	r, err := svc.ResendVerification(context.Background(), "ver@example.com")
 	if err != nil {
