@@ -117,6 +117,14 @@ const SCORES: CriterionScores = {
   grammaticalRange: 6.5,
 }
 
+type SpeakingCriterionScores = components['schemas']['SpeakingCriterionScores']
+const SPEAKING_SCORES: SpeakingCriterionScores = {
+  fluencyCoherence: 6,
+  lexicalResource: 5,
+  grammaticalRange: 6.5,
+  pronunciation: 7,
+}
+
 function grade(overrides: Partial<StudentGradeView> = {}): StudentGradeView {
   return {
     overallBand: 6,
@@ -446,30 +454,54 @@ describe('5.5b — permanent omissions survive released:true (AC11/Murat DOM-neg
   })
 })
 
-describe('5.5b — non-writing released: skill-gate, buildEssayHtml NEVER called (AC/D6/Winston)', () => {
-  test.each<ExerciseSkill>(['speaking', 'reading'])(
+describe('5.5b / 11-5a AC4 — non-writing released: skill-gate, buildEssayHtml NEVER called (AC/D6/Winston)', () => {
+  // Objective (quiz) grade layouts are still deferred → the "coming soon" placeholder.
+  test.each<ExerciseSkill>(['reading'])(
     'a released %s grade renders "coming soon" and never enters the essay-anchor machinery',
     async (skill) => {
       installResult(
         result({
           exercise: exercise(skill),
-          submission: submission({
-            content:
-              skill === 'speaking'
-                ? { schemaVersion: 1, audioKey: 'c-1/rec.m4a', contentType: 'audio/mp4', durationSec: 30 }
-                : { schemaVersion: 1, answers: {} },
-          }),
-          audioUrl: skill === 'speaking' ? 'https://r2/inline.m4a' : null,
+          submission: submission({ content: { schemaVersion: 1, answers: {} } }),
+          audioUrl: null,
         }),
       )
       renderPage()
       await screen.findByTestId('student-grade-coming-soon')
       expect(screen.queryByTestId('student-grade-block')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('student-grade-block-speaking')).not.toBeInTheDocument()
       expect(screen.queryByTestId('graded-essay')).not.toBeInTheDocument()
       // The stronger assertion: the builder is never called on a non-writing grade.
       expect(vi.mocked(buildEssayHtml)).not.toHaveBeenCalled()
     },
   )
+
+  // Story 11-5a AC4 (FU-11-5A-SPEAKING-GRADEVIEW): a released SPEAKING grade now renders
+  // the speaking grade block (band + the four speaking criteria), NOT the "coming soon"
+  // placeholder — and still never enters the writing essay-anchor machinery.
+  test('a released speaking grade renders the speaking grade block, not "coming soon"', async () => {
+    installResult(
+      result({
+        exercise: exercise('speaking'),
+        submission: submission({
+          content: { schemaVersion: 1, audioKey: 'c-1/rec.m4a', contentType: 'audio/mp4', durationSec: 30 },
+        }),
+        grade: grade({ criterionScores: SPEAKING_SCORES, comments: [] }),
+        audioUrl: 'https://r2/inline.m4a',
+      }),
+    )
+    renderPage()
+    const block = await screen.findByTestId('student-grade-block-speaking')
+    expect(screen.queryByTestId('student-grade-coming-soon')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('student-grade-block')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('graded-essay')).not.toBeInTheDocument()
+    // The four speaking criteria render with their server-authoritative values.
+    expect(within(block).getByTestId('student-grade-criterion-fluencyCoherence-value')).toHaveTextContent('6.0')
+    expect(within(block).getByTestId('student-grade-criterion-pronunciation-value')).toHaveTextContent('7.0')
+    expect(within(block).getByTestId('student-grade-band-value')).toHaveTextContent('6.0')
+    // The writing essay-anchor builder is NEVER called on a speaking grade.
+    expect(vi.mocked(buildEssayHtml)).not.toHaveBeenCalled()
+  })
 })
 
 describe('5.5b — late-penalty math (AC9/FR-31)', () => {
@@ -569,6 +601,7 @@ describe('5.5b — a11y (AC14) + i18n (AC13)', () => {
       'submissionReview.grade.feedbackLabel',
       'submissionReview.grade.feedbackAttribution',
       'submissionReview.grade.ack',
+      'submissionReview.grade.ackSpeaking',
       'submissionReview.grade.generalNotes',
       'submissionReview.grade.commentsLabel',
       'submissionReview.grade.penaltyBreakdown',

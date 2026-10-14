@@ -150,7 +150,19 @@ func (h *UploadHandler) Presign(w http.ResponseWriter, r *http.Request) error {
 	// told "ok" then rejected after uploading. EXPLICITLY non-authoritative: the
 	// binding ceiling is re-checked under a per-center lock at confirm. Skipped
 	// when no FileService is wired (the presign-only canary).
-	if h.Files != nil {
+	//
+	// STORAGE-COUNTED FEATURES ONLY (Story 11-5a bug fix + code-review 3b):
+	// `StorageUsage` is staff-gated (`assertClassRole`), and only storage-counted
+	// features (those that write a `files` row — Knowledge Hub today) can meaningfully
+	// exceed the center limit. A student presigning their OWN speaking recording
+	// (feature=speaking, verify-only, not storage-counted) must NOT be run through this
+	// staff-gated pre-check — doing so 403s INSUFFICIENT_ROLE and breaks every student
+	// speaking upload (caught by the first full-stack smoke; the authoritative confirm
+	// HeadObject + the layer-2 413 cap still run, so skipping the advisory check loosens
+	// nothing). Gating on the FeatureCountsTowardStorage CONCEPT (not a hardcoded
+	// `== FeatureKnowledge`) means a future storage-counted feature keeps the pre-check
+	// automatically rather than silently losing it.
+	if h.Files != nil && service.FeatureCountsTowardStorage(req.Feature) {
 		used, limit, uerr := h.Files.StorageUsage(r.Context(), tc)
 		if uerr != nil {
 			return uerr

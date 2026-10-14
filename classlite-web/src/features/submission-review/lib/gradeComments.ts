@@ -9,7 +9,29 @@ import type { components } from '@/lib/api/client'
 import { normalizeAnchor, type EssayAnchor } from '@/lib/essayAnchors'
 
 type AnchoredComment = components['schemas']['AnchoredComment']
+type TimestampedComment = components['schemas']['TimestampedComment']
+/** A released-grade comment is skill-polymorphic (story 6.3a): essay-anchored (writing)
+ * or audio-timestamped (speaking). This module only consumes the writing-anchored ones. */
+type GradeComment = AnchoredComment | TimestampedComment
 type CriterionScores = components['schemas']['CriterionScores']
+type SpeakingCriterionScores = components['schemas']['SpeakingCriterionScores']
+
+/** The skill-polymorphic released-grade scores (story 6.3a): writing or speaking. */
+export type AnyCriterionScores = CriterionScores | SpeakingCriterionScores
+
+/** Narrow the scores union to the WRITING shape. A user-defined predicate (not a bare
+ * `in` check) is required: TS's structural `in`-narrowing produces an intersection
+ * fallback (object types are not sealed) that fails to select the union member. */
+export function isWritingScores(cs: AnyCriterionScores): cs is CriterionScores {
+  return 'taskResponse' in cs
+}
+
+/** Narrow the scores union to the SPEAKING shape (see isWritingScores). */
+export function isSpeakingScores(
+  cs: AnyCriterionScores,
+): cs is SpeakingCriterionScores {
+  return 'fluencyCoherence' in cs
+}
 
 /** The four IELTS criterion keys, in canonical (spec) order. */
 export type CriterionKey = keyof CriterionScores
@@ -71,10 +93,16 @@ export interface PreparedComment {
  * @returns one `PreparedComment` per input, in order.
  */
 export function prepareComments(
-  comments: AnchoredComment[],
+  comments: GradeComment[],
   essayText: string,
 ): PreparedComment[] {
-  return comments.map((comment, index) => {
+  // The writing graded block consumes only essay-anchored comments; a speaking grade's
+  // timestamped comments (skill-polymorphic union — story 6.3a) are not rendered here.
+  // Writing grades carry only anchored comments, so order + index are preserved.
+  const anchored = comments.filter(
+    (comment): comment is AnchoredComment => 'anchorStart' in comment,
+  )
+  return anchored.map((comment, index) => {
     const anchor =
       comment.anchorStart !== null && comment.anchorEnd !== null
         ? normalizeAnchor(essayText, comment.anchorStart, comment.anchorEnd)

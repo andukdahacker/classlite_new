@@ -1,5 +1,19 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 import { sessionSlug } from './tests/e2e/lib/auth-harness'
+
+// Story 11-5a — the committed speaking audio fixture fed to chromium's fake
+// audio capture so `MediaRecorder` produces a deterministic non-empty blob
+// headless (AC2: a real audio fixture through the real R2 leg, not a no-audio
+// fallback). Absolute path (ESM-safe) so the flag resolves regardless of cwd.
+const SPEAKING_AUDIO_FIXTURE = fileURLToPath(
+  new URL('./tests/e2e/money-path/fixtures/speaking-fixture.wav', import.meta.url),
+)
+const FAKE_MEDIA_ARGS = [
+  '--use-fake-ui-for-media-stream',
+  '--use-fake-device-for-media-stream',
+  `--use-file-for-fake-audio-capture=${SPEAKING_AUDIO_FIXTURE}`,
+]
 
 /**
  * Playwright config.
@@ -121,6 +135,26 @@ export default defineConfig({
       },
     },
     {
+      // Story 11-5a — THE deterministic money-path smoke (real seeded stack).
+      // Runs ONLY this spec dir, against a BUILT preview (AC5, not the dev
+      // server — OOM budget). Deliberately NO `dependencies: ['setup']`: the
+      // lane mints its OWN fresh per-context sessions (auth.setup consumes only
+      // teacher+teacher2 and would burn 2 logins this lane never uses, AC5).
+      // `retries` is PROJECT-SCOPED CI×1 / local 0 — editing the global l52
+      // (CI?2) would regress design-system/storybook-a11y (party-mode Amelia F5).
+      // Launches chromium with the fake-media flags so the speaking MediaRecorder
+      // captures the committed .wav deterministically (AC2).
+      name: 'money-path',
+      testDir: './tests/e2e',
+      testMatch: /money-path\/.*\.spec\.ts/,
+      retries: process.env.CI ? 1 : 0,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: BASE_URL_DASHBOARD,
+        launchOptions: { args: FAKE_MEDIA_ARGS },
+      },
+    },
+    {
       // Story 1.7a — design system contract project.
       // Uses plain localhost:5173 to avoid the cross-subdomain wiring; the
       // theme-resolution route is dev-only and does not exercise auth.
@@ -164,7 +198,24 @@ export default defineConfig({
   // serves localhost AND my.classlite.localhost (which both resolve to
   // 127.0.0.1) — the cross-subdomain projects can reuse it without a
   // Host-header rejection.
-  webServer: [
+  // Story 11-5a — when MONEY_PATH_PREVIEW is set (the money-path CI lane), serve
+  // ONLY the BUILT Vite preview (AC5) and suppress the dev + storybook servers
+  // so nothing else races port 5173. Playwright polls `url` for readiness, so no
+  // separate readiness step is needed. The preview must serve under the
+  // `*.classlite.localhost` host + proxy `/api` → :8080 — configured in
+  // vite.config.ts (`preview.allowedHosts` + `preview.proxy`), so the captured
+  // refresh cookie (Domain=.classlite.localhost) carries and every `/api` call
+  // (incl. the dev mock-R2 PUT sink) stays same-origin.
+  webServer: process.env.MONEY_PATH_PREVIEW
+    ? [
+        {
+          command: 'npm run build && npm run preview',
+          url: BASE_URL_DASHBOARD,
+          reuseExistingServer: !process.env.CI,
+          timeout: 240_000,
+        },
+      ]
+    : [
     ...(process.env.BASE_URL_DESIGN_SYSTEM
       ? []
       : [

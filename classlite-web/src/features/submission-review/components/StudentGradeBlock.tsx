@@ -14,6 +14,7 @@ import { readWritingText } from '../lib/submissionContent'
 import {
   CRITERION_KEYS,
   criterionInsight,
+  isWritingScores,
   pinnedByCriterion,
   prepareComments,
 } from '../lib/gradeComments'
@@ -35,11 +36,18 @@ function formatBand(value: number): string {
 
 export function StudentGradeBlock({ grade, submission }: StudentGradeBlockProps) {
   const { t } = useTranslation()
+  // The shell renders this block for writing only; narrow the skill-polymorphic
+  // criterionScores union (Story 11-5a AC4) to the writing shape. A speaking grade is
+  // routed to SpeakingGradeBlock and never reaches here (defensive null fallback).
+  const criterionScores = isWritingScores(grade.criterionScores)
+    ? grade.criterionScores
+    : null
   const essayText = readWritingText(submission)
   const prepared = prepareComments(grade.comments, essayText)
   const pins = pinnedByCriterion(prepared)
-  const insight = criterionInsight(grade.criterionScores)
   const bandText = formatBand(grade.overallBand)
+  if (criterionScores === null) return null
+  const insight = criterionInsight(criterionScores)
 
   return (
     <section
@@ -82,7 +90,7 @@ export function StudentGradeBlock({ grade, submission }: StudentGradeBlockProps)
         </h3>
         <ul className="flex flex-col gap-2">
           {CRITERION_KEYS.map((key) => {
-            const score = grade.criterionScores[key]
+            const score = criterionScores[key]
             const pin = pins[key]
             return (
               <li

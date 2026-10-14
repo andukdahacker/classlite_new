@@ -2180,6 +2180,7 @@
   "submissionReview.grade.feedbackLabel": "Nhận xét của giáo viên",
   "submissionReview.grade.feedbackAttribution": "Giáo viên của bạn",
   "submissionReview.grade.ack": "Giáo viên đã để lại những ghi chú này trên bài viết của bạn — hãy mang câu hỏi đến buổi học tiếp theo.",
+  "submissionReview.grade.ackSpeaking": "Giáo viên đã để lại những ghi chú này trên phần nói của bạn — hãy mang câu hỏi đến buổi học tiếp theo.",
   "submissionReview.grade.generalNotes": "Ghi chú chung",
   "submissionReview.grade.commentsLabel": "Nhận xét trên bài viết của bạn",
   "submissionReview.grade.penaltyBreakdown": "Ban đầu: {{original}} − Trừ điểm nộp muộn: {{penalty}} = Cuối cùng: {{final}}",

@@ -2180,6 +2180,7 @@
   "submissionReview.grade.feedbackLabel": "Your teacher's feedback",
   "submissionReview.grade.feedbackAttribution": "Your teacher",
   "submissionReview.grade.ack": "Your teacher left these notes on your writing — bring any questions to your next class.",
+  "submissionReview.grade.ackSpeaking": "Your teacher left these notes on your speaking — bring any questions to your next class.",
   "submissionReview.grade.generalNotes": "General notes",
   "submissionReview.grade.commentsLabel": "Comments on your writing",
   "submissionReview.grade.penaltyBreakdown": "Original: {{original}} − Late penalty: {{penalty}} = Final: {{final}}",

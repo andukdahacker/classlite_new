@@ -176,25 +176,6 @@ func readGradeBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 
 // --- response shapes (api.yaml Grade / TeacherGradingView / GradingQueueRow) ---
 
-// criterionScoresResponse is the writing criterion_scores wire (shared with the
-// student result view — attempt_handler.go). The teacher grade response passes the
-// raw JSONB through instead (skill-agnostic, story 6.3a).
-type criterionScoresResponse struct {
-	TaskResponse      float64 `json:"taskResponse"`
-	CoherenceCohesion float64 `json:"coherenceCohesion"`
-	LexicalResource   float64 `json:"lexicalResource"`
-	GrammaticalRange  float64 `json:"grammaticalRange"`
-}
-
-func criterionScoresToResponse(cs grading.CriterionScores) criterionScoresResponse {
-	return criterionScoresResponse{
-		TaskResponse:      cs.TaskResponse,
-		CoherenceCohesion: cs.CoherenceCohesion,
-		LexicalResource:   cs.LexicalResource,
-		GrammaticalRange:  cs.GrammaticalRange,
-	}
-}
-
 // gradeResponse is skill-agnostic: criterionScores + comments are the stored JSONB
 // passed through VERBATIM (story 6.3a) — a Writing grade emits the four writing keys +
 // text-anchored comments, a Speaking grade the four speaking keys + timestamp-pinned

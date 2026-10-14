@@ -164,9 +164,17 @@ func main() {
 	// (Story 6.3b) so the speaking grader can download the recording server-side
 	// (SEC-8 GetObjectOwned). Also consumed by the hardened upload endpoints (Story
 	// 4.4a) and the Story 2.7 bulk-import parser.
-	var uploadStorage service.StorageService = service.NewMockStorageService()
+	// mockUploadStorage is a concrete handle to the in-process mock, non-nil ONLY
+	// when no R2 is configured. Story 11-5a uses it to wire a dev-only presigned-
+	// PUT sink (below, at the root mux) so the browser-driven speaking upload leg
+	// round-trips in a credentials-free E2E stack.
+	var mockUploadStorage *service.MockStorageService
+	var uploadStorage service.StorageService
 	if cfg.R2AccountID != "" {
 		uploadStorage = service.NewR2StorageService(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName)
+	} else {
+		mockUploadStorage = service.NewMockStorageService()
+		uploadStorage = mockUploadStorage
 	}
 
 	// Story 6.3b0 — the bundled ffmpeg transcoder (webm/mp4 → ogg). Injected into
@@ -1139,6 +1147,25 @@ func main() {
 	root := http.NewServeMux()
 	root.Handle("/", protected)
 	root.Handle("POST /api/webhooks/polar", polarWebhookHandler)
+
+	// Story 11-5a (DEV ONLY) — in a credentials-free stack the upload storage is
+	// the in-process mock, whose presign URL otherwise points at a dead host. Wire
+	// a PUT-able sink at /api/__mock_r2/{key...} and aim the mock presign at it, so
+	// the browser-driven speaking presign→PUT→confirm→playback leg round-trips end
+	// to end with no R2 secrets. Mounted on the root mux (like the Polar webhook)
+	// so it bypasses auth/OriginCheck exactly as a real signed-URL PUT does; the
+	// object key carries the tenant prefix and the route is unreachable in prod.
+	//
+	// THREE independent gates (code-review 4b defense-in-depth): APP_ENV=development
+	// AND mock storage (no R2 configured) AND the explicit ENABLE_DEV_MOCK_R2_SINK
+	// opt-in — so an accidental prod/staging boot as `development` with R2 env unset
+	// cannot silently expose an unauthenticated object-write endpoint.
+	if cfg.AppEnv == "development" && cfg.EnableDevMockR2Sink && mockUploadStorage != nil {
+		mockUploadStorage.SetSinkBase("/api/__mock_r2")
+		mockR2Sink := handler.NewMockR2SinkHandler(mockUploadStorage)
+		root.HandleFunc("PUT /api/__mock_r2/{key...}", mockR2Sink.Put)
+		slog.Warn("DEV-ONLY mock R2 sink mounted at PUT /api/__mock_r2/{key...} — presigned uploads land in-process (ENABLE_DEV_MOCK_R2_SINK=true, no R2 configured, APP_ENV=development)")
+	}
 
 	wrapped := middleware.RequestID(
 		middleware.ClientIP(

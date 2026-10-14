@@ -13501,16 +13501,28 @@ components:
       # The student-facing grade (in /result — 5.5b renders it). EXCLUDES graded_by
       # teacher identity (privacy default — D1/Winston §7). gradedAt is the grade
       # row's created_at.
+      #
+      # criterionScores + comments are SKILL-POLYMORPHIC (story 6.3a — mirrors the
+      # teacher Grade): a Writing grade carries the four writing keys + text-anchored
+      # comments, a Speaking grade the four speaking keys + timestamp-pinned comments.
+      # Modelled as a oneOf so the generated client is a discriminable union (the prior
+      # writing-only typing silently dropped speaking's fluencyCoherence/pronunciation —
+      # Story 11-5a AC4 / FU-11-5A-SPEAKING-GRADEVIEW); consumers narrow on the disjoint
+      # keys (taskResponse vs fluencyCoherence; anchorStart vs timestampMs).
       required: [overallBand, criterionScores, comments, feedback, gradedAt]
       properties:
         overallBand:
           type: number
         criterionScores:
-          $ref: '#/components/schemas/CriterionScores'
+          oneOf:
+            - $ref: '#/components/schemas/CriterionScores'
+            - $ref: '#/components/schemas/SpeakingCriterionScores'
         comments:
           type: array
           items:
-            $ref: '#/components/schemas/AnchoredComment'
+            oneOf:
+              - $ref: '#/components/schemas/AnchoredComment'
+              - $ref: '#/components/schemas/TimestampedComment'
         feedback:
           type: string
           nullable: true

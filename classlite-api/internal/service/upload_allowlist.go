@@ -69,6 +69,26 @@ var AllowedFeatures = map[string]bool{
 	"imports":        true, // Story 2.7 — bulk student import uploads.
 }
 
+// storageCountedFeatures is the set of features whose confirmed uploads count
+// toward the center storage limit — i.e. features that write a `files` row. Only
+// Knowledge Hub does today (speaking/avatars/imports are verify-only, no `files`
+// row). This is the CONCEPT the advisory storage pre-check gates on, so a future
+// storage-counted feature keeps the pre-check automatically (Story 11-5a code-review
+// 3b — the prior `== FeatureKnowledge` literal silently dropped the check for every
+// other feature). It is DELIBERATELY not the same axis as the student-owned
+// staff-gate: a student-owned feature must never be storage-counted here without
+// also decoupling StorageUsage's assertClassRole gate.
+var storageCountedFeatures = map[string]bool{
+	FeatureKnowledge: true,
+}
+
+// FeatureCountsTowardStorage reports whether a confirmed upload for `feature`
+// counts against the center storage limit (and therefore warrants the advisory
+// over-limit pre-check at presign time).
+func FeatureCountsTowardStorage(feature string) bool {
+	return storageCountedFeatures[feature]
+}
+
 // FeatureAllowedExtensions restricts specific features to a SUBSET of the global
 // AllowedExtensions. The global map asserts "this ext↔MIME pair is valid
 // somewhere"; a per-feature entry asserts "this feature accepts ONLY these

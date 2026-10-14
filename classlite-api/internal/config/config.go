@@ -84,6 +84,12 @@ type Config struct {
 	// (CheckFFmpegAvailable) so a missing binary fails fast instead of surfacing
 	// three retries deep in a production speaking-grade job (AC5/D3).
 	FFmpegPath string
+	// EnableDevMockR2Sink gates the DEV-ONLY in-process presigned-PUT sink (Story 11-5a).
+	// It is a SECOND, independent opt-in on top of APP_ENV=development + no-R2-configured
+	// (code-review 4b defense-in-depth): an accidental prod/staging boot as `development`
+	// with R2 env unset must not silently expose an unauthenticated object-write endpoint.
+	// Default OFF; the E2E CI job sets ENABLE_DEV_MOCK_R2_SINK=true explicitly.
+	EnableDevMockR2Sink bool
 	// Story 9.2a — Polar.sh billing (the first real payment integration). PolarAPIKey lives
 	// in env only and is NEVER logged/serialized (EDGE-4/R49) — LogSummary shows only a bool.
 	// PolarWebhookSecret / PolarWebhookSecretPrevious drive the Standard-Webhooks HMAC verifier
@@ -190,6 +196,7 @@ func Load() Config {
 		GradeReleaseEmailEnabled:  getEnvBool("GRADE_RELEASE_EMAIL_ENABLED", false),
 		AppResultURLBase:          getEnv("APP_RESULT_URL_BASE", "http://localhost:5173"),
 		FFmpegPath:                getEnv("CLASSLITE_FFMPEG_PATH", "ffmpeg"),
+		EnableDevMockR2Sink:       getEnvBool("ENABLE_DEV_MOCK_R2_SINK", false),
 		// Story 9.2a — Polar billing. Optional until arming (D3/D29). Enforcement flag
 		// promoted here (prod default OFF); billing_service still reads it at call time.
 		PolarAPIKey:                getEnv("POLAR_API_KEY", ""),

@@ -161,9 +161,17 @@ test.describe('Onboarding — persona pick + center setup happy path', () => {
       page.getByText('saigon-english-center.classlite.app'),
     ).toBeVisible()
 
-    // AC4: auto-save affordance visible (Sally-B2 idle copy or saved-after-debounce)
+    // AC4: auto-save affordance visible (Sally-B2 idle copy or saved-after-debounce).
+    // The AutoSaveIndicator renders the SAME text twice — an sr-only live region
+    // (announcement) + an aria-hidden visible label — so a bare getByText(...)
+    // strict-mode-violates on the double match. Scope to the VISIBLE node
+    // (aria-hidden) per the dual-rendered-text query convention
+    // (docs/bmad-story-conventions.md#Dual-rendered-text-query-convention; .first() is banned).
     await expect(
-      page.getByText(/Auto-save|Auto-saving|Saved|Đã lưu|Tự động lưu/i),
+      page
+        .getByTestId('auto-save-indicator')
+        .locator('[aria-hidden="true"]')
+        .filter({ hasText: /Auto-save|Auto-saving|Saved|Đã lưu|Tự động lưu/i }),
     ).toBeVisible({ timeout: 3000 })
 
     // AC7 happy path: click Save & continue → /setup/template (2.3b renders NotFound)

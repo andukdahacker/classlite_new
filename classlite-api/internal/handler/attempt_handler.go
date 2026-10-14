@@ -7,11 +7,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/ducdo/classlite-api/internal/service"
-	"github.com/ducdo/classlite-api/internal/service/grading"
 	"github.com/ducdo/classlite-api/internal/store/generated"
 )
 
@@ -139,12 +139,19 @@ type studentSubmissionResultResponse struct {
 
 // studentGradeViewResponse is the api.yaml StudentGradeView (Story 6.1) — the
 // student-facing grade. It EXCLUDES graded_by teacher identity (privacy — D1).
+//
+// criterionScores + comments are SKILL-POLYMORPHIC, passed through as the stored
+// JSONB VERBATIM (story 6.3a — mirrors the teacher gradeResponse): a Writing grade
+// emits the four writing keys + text-anchored comments, a Speaking grade the four
+// speaking keys (fluencyCoherence/pronunciation) + timestamp-pinned comments. The
+// prior writing-only projection silently dropped speaking's criteria (Story 11-5a
+// AC4 — FU-11-5A-SPEAKING-GRADEVIEW).
 type studentGradeViewResponse struct {
-	OverallBand     float64                 `json:"overallBand"`
-	CriterionScores criterionScoresResponse `json:"criterionScores"`
-	Comments        []grading.Comment       `json:"comments"`
-	Feedback        *string                 `json:"feedback"`
-	GradedAt        string                  `json:"gradedAt"`
+	OverallBand     float64         `json:"overallBand"`
+	CriterionScores json.RawMessage `json:"criterionScores"`
+	Comments        json.RawMessage `json:"comments"`
+	Feedback        *string         `json:"feedback"`
+	GradedAt        string          `json:"gradedAt"`
 }
 
 func studentSubmissionResultToResponse(res service.StudentSubmissionReviewResult) studentSubmissionResultResponse {
@@ -162,14 +169,20 @@ func studentSubmissionResultToResponse(res service.StudentSubmissionReviewResult
 		out.Exercise = &exercise
 	}
 	// Story 6.1 (AC10): a released grade is surfaced student-safe (no graded_by).
+	// Scores + comments pass through as the stored JSONB verbatim (skill-agnostic —
+	// Story 11-5a AC4), with the same empty-fallbacks as the teacher gradeResponse.
 	if res.Grade != nil {
-		comments := res.Grade.Comments
-		if comments == nil {
-			comments = []grading.Comment{}
+		scores := res.Grade.ScoresRaw
+		if len(scores) == 0 {
+			scores = json.RawMessage("{}")
+		}
+		comments := res.Grade.CommentsRaw
+		if len(comments) == 0 {
+			comments = json.RawMessage("[]")
 		}
 		out.Grade = &studentGradeViewResponse{
 			OverallBand:     res.Grade.OverallBand,
-			CriterionScores: criterionScoresToResponse(res.Grade.Scores),
+			CriterionScores: scores,
 			Comments:        comments,
 			Feedback:        res.Grade.Feedback,
 			GradedAt:        res.Grade.CreatedAt.UTC().Format(time.RFC3339Nano),

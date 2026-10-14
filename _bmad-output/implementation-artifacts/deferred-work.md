@@ -86,6 +86,11 @@ once its Epic 11 story exists. Do not invent a fourth form.
   takes traffic. Priority: **P0.**
   [`.github/workflows/deploy.yml`, `classlite-api/migrations/`, `docs/manual-setup.md`]
 
+- **FU-11-TSC — ✅ CLOSED-by-11-5a (2026-10-13, Amelia /bmad-dev-story 11-5a).** `ci-web.yml`'s
+  "Type check" step is now `npx tsc -b` (was `npx tsc --noEmit`), so CI checks `src` AND
+  `tests/e2e` via `tsconfig.e2e.json` instead of false-greening against the solution root. Original
+  entry retained below.
+
 - **FU-11-TSC (→ do now; one line)** — **`ci-web.yml` type-checks with `npx tsc --noEmit`, which
   false-greens.** This project has already ruled `tsc -b` the real gate: `--noEmit` resolves
   against the solution-style root config and does not check test files. `tsc -b` passes today so
@@ -114,6 +119,15 @@ once its Epic 11 story exists. Do not invent a fourth form.
   education product, minors possible. Priority: **P1.**
   [`classlite-api/internal/config/config.go`, `classlite-api/go.mod`, `docs/manual-setup.md`]
 
+- **FU-11-CI — ✅ SUPERSEDED-by-11-5a (2026-10-13, Amelia /bmad-dev-story 11-5a).** The real
+  full-stack gate landed: a new `money-path` job in `ci-web.yml` stands up Postgres + migrated
+  schema + seeded tenant + the Go API and runs the deterministic money-path Playwright journey
+  against a built preview, with trigger `paths` extended to `classlite-api/**` + `migrations/**` so
+  an API-side regression trips it. The interim quarantine-allowlist idea was NOT needed — the
+  decay spec (`onboarding-persona-center`) was fixed under the new dual-rendered-text convention,
+  and the shrink-only quarantine lane shipped for future flake management. Original entry retained
+  below for the record of why it was pulled forward.
+
 - **FU-11-CI (→ interim gate; Story 11.5 supersedes)** — **Playwright never runs in CI for the
   dashboard.** `ci-web.yml` runs eslint, stylelint, `tsc --noEmit`, vitest, build, Lighthouse and
   the Storybook a11y job, but never `playwright test`. (`ci-landing.yml` *does* run its specs.)
@@ -129,6 +143,79 @@ once its Epic 11 story exists. Do not invent a fourth form.
   `tsc -b`, which false-greens against the solution-style root config (`tsc -b` passes today, so
   no live damage — but the gate is wrong). Priority: **P1.**
   [`.github/workflows/ci-web.yml`, `classlite-web/e2e/`, `classlite-web/tests/e2e/`]
+
+## FU-11-5A-* — Discovered during Story 11-5a dev (2026-10-13, Amelia /bmad-dev-story 11-5a)
+
+- **FU-11-5A-ASSIGN-UI (→ a teacher-authoring story; product gap, NOT a test detail) — P1.**
+  **A teacher cannot assign an exercise to a class through the app.** The backend endpoint
+  exists and works (`POST /api/assignments`, operation `createAssignment` + `CreateAssignmentRequest`
+  schema, generated into the TS client at `client.ts:2226`/`:13757`), but **no app source calls it** —
+  every `/api/assignments` reference in `classlite-web/src/**` is a READ (student assignment list,
+  result read-back, audio URL). There is no button/dialog/page for a teacher to pick an exercise +
+  class + deadline and create an assignment. This is a direct cause of "no full-stack path has ever
+  been exercised" (11-5a premise): the teacher authoring chain has a hole between "author exercise"
+  and "student sees assignment." Story 11-5a's money-path smoke API-drives assignment creation
+  (Ducdo ruling 2026-10-13, option (a)) — the smoke is a check over SHIPPED features, not a reason to
+  build a new one — and files this as the tracked product work. Same category as the already-owed
+  class-create + student-enrollment coverage (11-5a Out of Scope → 11-5b). **How to apply:** build a
+  teacher "assign exercise to class" surface (exercise detail or class detail → dialog → `POST /api/assignments`
+  {exerciseId, classId, deadlineAt, …}) with the mutation hook + i18n (en/vi) + three-state + role
+  gate + tests; then 11-5b (or a follow-on E2E) can browser-drive the leg the smoke currently
+  API-drives. Seam: `classlite-web/src/features/assignments/` (new) or `features/exercises/` detail;
+  endpoint already live. Related: [[project_epic_11_docs_and_qa_loop]].
+
+- **FU-11-5A-SPEAKING-UPLOAD-403 — ✅ FIXED-by-11-5a (2026-10-14, Amelia; Ducdo ruling).** The
+  money-path smoke found that `POST /api/uploads/presign` 403'd `INSUFFICIENT_ROLE` for a STUDENT
+  presigning their own speaking recording — the advisory storage pre-check called the staff-gated
+  `FileService.StorageUsage` (`assertClassRole`) for ALL features. Student speaking uploads were
+  broken in production. Fixed: the advisory pre-check is now scoped to `feature == FeatureKnowledge`
+  (`upload_handler.go` Presign) — speaking/avatars skip it (they write no `files` row + aren't
+  storage-counted; the authoritative confirm HeadObject + layer-2 413 cap still run, so nothing is
+  loosened). Regression coverage added. Recorded here as the discovery, now closed.
+
+- **FU-11-5A-SPEAKING-GRADEVIEW — ✅ CLOSED 2026-10-14 (11-5a code review, ruled B).** Fixed as the full
+  cross-service feature: the student result now passes `grade.criterionScores`/`comments` through as the
+  stored JSONB VERBATIM (skill-agnostic, mirroring the teacher 6.3a read — `attempt_handler.go`
+  `studentGradeViewResponse` now `json.RawMessage`; the dead writing-only `criterionScoresResponse`/
+  `criterionScoresToResponse` deleted), `api.yaml` `StudentGradeView.criterionScores`/`comments` are now
+  skill-polymorphic `oneOf` (codegen regenerated), and the FE ships a net-new `SpeakingGradeBlock`
+  (band ring + 4 speaking criteria) wired into `SubmissionReviewShell` for `skill==='speaking'` —
+  `GradeComingSoon` now only covers still-deferred objective/quiz grades. The D6 "coming soon" test was
+  split (speaking asserts the block; reading stays coming-soon) and the money-path smoke asserts speaking
+  `criterionScores` VERBATIM. Original finding (kept for history):
+  **A student cannot see 2 of their 4 speaking grade criteria.** The money-path smoke found that the
+  student result view (`GET /api/assignments/{id}/result`) projects `grade.criterionScores` through a
+  WRITING-only shape — handler `criterionScoresResponse` + `criterionScoresToResponse` are hardcoded
+  to `{taskResponse, coherenceCohesion, lexicalResource, grammaticalRange}`, and
+  `StudentSubmissionReviewResult.Grade.Scores` is typed `grading.CriterionScores` (writing twin).
+  A SPEAKING grade is STORED correctly (all 4 of `fluencyCoherence/lexicalResource/grammaticalRange/
+  pronunciation` — verified in `grades.criterion_scores` + the teacher grading read), but the student
+  view drops `fluencyCoherence` + `pronunciation` and shows two bogus 0-valued writing criteria.
+  **Broader D6 gap (same area):** `SubmissionReviewShell` only implements the student band-block grade
+  LAYOUT for writing — a released SPEAKING (or objective) grade renders a `GradeComingSoon`
+  placeholder (`student-grade-coming-soon`) instead of the band ring/bars (`showComingSoon = hasGrade
+  && !isWriting`, SubmissionReviewShell.tsx:90). So a student sees "grade coming soon" + their audio
+  playback, never their speaking band/criteria, even though the band IS released (API `overallBand`
+  correct). Fixing the criterionScores shape (above) and lighting up the non-writing grade layout are
+  the same piece of work. **How to apply:** make the student grade-view criterionScores carry EITHER
+  shape (writing OR speaking) — a discriminated/union or raw-map passthrough in the service
+  (`attempt_service` `StudentSubmissionReviewResult.Grade`), the handler (`studentGradeViewResponse`),
+  `api.yaml` (the student grade `CriterionScores` schema), codegen, and the FE SubmissionReviewPage
+  speaking-criteria render. Not a smoke-test side-fix (cross-layer contract change). The 11-5a smoke
+  narrows its speaking student-view oracle to overallBand + audioUrl + graded_by-absent accordingly;
+  writing still asserts criterionScores verbatim. Seam: `classlite-api/internal/handler/{attempt,grading}_handler.go`
+  (`criterionScoresResponse`), `internal/service/attempt_service.go`, `api.yaml`, `classlite-web/src/features/submission-review/`.
+
+- **FU-11-5A-ASSIGN-LIST-STALE (→ a small FE polish; minor UX wart) — P3.**
+  The student assignments list (`useStudentAssignments`, `staleTime: 30s`) is **not invalidated
+  when an attempt is submitted** (`useSubmitAttempt` has no `invalidateQueries`). A student who
+  submits and returns to the list keeps seeing the old status ("Not started"/"Continue") — and the
+  "Review submission" CTA is absent — for up to 30s until the query goes stale and a later mount
+  refetches. Harmless (self-heals on refetch) but reads as a missed submission. Surfaced by the
+  money-path smoke, which has to wait out the 30s staleTime before the result-render pass. **How to
+  apply:** invalidate `assignmentKeys.list` in the attempt submit `onSuccess` (or add a short
+  `refetchInterval`/`refetchOnMount: 'always'` on the list). Seam:
+  `classlite-web/src/features/attempts/api/useSubmitAttempt.ts`, `features/assignments/api/useStudentAssignments.ts`.
 
 ## Deferred from: code review of story-7-4b (2026-09-11)
 
@@ -1308,3 +1395,6 @@ Implementation-note follow-ups (thinner-coverage areas to revisit at epic TEA / 
 
 ## Deferred from: code review of 11-3a-product-doc-schema-and-chapter-1-pilot (2026-10-13)
 - Low-severity theoretical lint hardening in `scripts/screens-lint.mjs`: (1) the top-level `source:` prefix test (`startsWith("docs/product/")`, line ~105) is purely lexical and accepts path traversal like `docs/product/../../etc`; (2) the hardcoded `89` entry count (line ~157) double-reports on a malformed/duplicate id — a second, misleading "expected 89 entries" fires on top of the real grammar/duplicate error; (3) the second manifest re-read for top-level `source` (line ~100) is not wrapped in try/catch, so a manifest deleted between the two reads throws and exits 1 instead of the documented exit 2 ("bad manifest path"). All three are author-controlled inputs with negligible real-world impact; deferred from the 11-3a code review as a low-priority hardening pass (candidate for 11-3b when the lint is next touched).
+
+## Deferred from: code review of story-11-5a (2026-10-14)
+- **Preview `allowedHosts`/`port` hardcoded vs overridable `BASE_URL_DASHBOARD`** [classlite-web/vite.config.ts:439-448 + classlite-web/playwright.config.ts:43-44] — `preview.allowedHosts` is the fixed `['my.classlite.localhost','classlite.localhost']` pair and `preview.port` is fixed `5173`, while the money-path `baseURL` comes from `process.env.BASE_URL_DASHBOARD`. A staging/non-default host override would 403 at `vite preview` or serve on the wrong port and boot a silent logged-out guest shell. Latent config coupling only triggered off the default path; partly documented in the story's Dev Notes "Preview host alignment". Derive `allowedHosts`/`port` from the env (or guard loudly) when the deploy-host work lands (coordinate with 11-8a/11-8b).

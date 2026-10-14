@@ -5907,8 +5907,8 @@ export interface components {
         };
         StudentGradeView: {
             overallBand: number;
-            criterionScores: components["schemas"]["CriterionScores"];
-            comments: components["schemas"]["AnchoredComment"][];
+            criterionScores: components["schemas"]["CriterionScores"] | components["schemas"]["SpeakingCriterionScores"];
+            comments: (components["schemas"]["AnchoredComment"] | components["schemas"]["TimestampedComment"])[];
             feedback: string | null;
             /** Format: date-time */
             gradedAt: string;

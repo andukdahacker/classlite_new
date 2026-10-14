@@ -136,3 +136,38 @@ on a not-yet-existing seam — never `test.skip` and never a bare TODO.**
   guards never skip.
 - **Document every green-phase SEAM** in the spec/test header block so the dev
   has one place to reconcile.
+
+## Dual-rendered-text query convention (Story 11-5a; AC8)
+
+When a component renders the SAME text in two nodes — a visually-hidden
+`sr-only` live-region (what a screen reader announces) AND an `aria-hidden="true"`
+visible label (what a sighted user sees) — a bare `getByText('…')` matches BOTH
+and **strict-mode-violates**. This double match is a **class, not a bug**: it is
+*correct* accessibility. The live region announces state TRANSITIONS only; the
+visible label carries detail (e.g. a ticking "last saved Ns ago") that must
+NEVER be announced, so the two legitimately co-exist with identical text in an
+idle state.
+
+Known instances (both resolve to **"Auto-save on"** in `idle`):
+`onboarding/AutoSaveIndicator.tsx:70` (`onboarding.wizard.autoSaving.idle`) and
+`exercises/.../EditorAutoSaveIndicator.tsx:64` (`exercises.editor.autosave.idle`).
+
+**Query the VISIBLE node by excluding `sr-only`** — scope to `[aria-hidden="true"]`
+(both indicators put the visible label there), or to a `data-status` attribute
+(the editor indicator exposes one), or to a scoped `data-testid`:
+
+```ts
+// correct — scope to the visible (aria-hidden) node inside the indicator
+await expect(
+  page.getByTestId('auto-save-indicator').locator('[aria-hidden="true"]'),
+).toBeVisible()
+
+// incorrect — matches BOTH the sr-only announcement AND the visible label
+await expect(page.getByText('Auto-save on')).toBeVisible() // strict-mode violation
+```
+
+**`.first()` is BANNED** as the fix — it masks the real node count and silently
+re-breaks the moment another a11y node (a second live region, a tooltip) is
+added. Scope to the structural marker instead. Proven on the live rot it names:
+`e2e/onboarding-persona-center.spec.ts`'s `sr-only` "Auto-save on" strict-mode
+violation (`deferred-work.md:122`), fixed under this convention.

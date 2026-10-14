@@ -7,12 +7,23 @@ on:
       - 'classlite-landing/src/styles/tokens.css'
       - 'scripts/sync-tokens.sh'
       - '.github/workflows/ci-web.yml'
+      # Story 11-5a (AC6, party-mode Winston #1) — the money-path job exercises
+      # the REAL API half (submission lifecycle + grading + /result). Trigger on
+      # API + migration changes too, or an API-side regression ships to Railway
+      # (ci-api green) while this gate never fires — making "a regression stops
+      # shipping" false for exactly the half where grading lives.
+      - 'classlite-api/**'
+      - 'classlite-api/migrations/**'
+      - 'scripts/seed.sh'
   pull_request:
     paths:
       - 'classlite-web/**'
       - 'classlite-landing/src/styles/tokens.css'
       - 'scripts/sync-tokens.sh'
       - '.github/workflows/ci-web.yml'
+      - 'classlite-api/**'
+      - 'classlite-api/migrations/**'
+      - 'scripts/seed.sh'
 
 jobs:
   test:
@@ -65,7 +76,11 @@ jobs:
       - name: Lint (Stylelint)
         run: cd classlite-web && npm run lint:css
       - name: Type check
-        run: cd classlite-web && npx tsc --noEmit
+        # Story 11-5a (closes FU-11-TSC) — `tsc -b` is the real gate: it checks
+        # the test projects (src AND tests/e2e via tsconfig.e2e.json), whereas
+        # `tsc --noEmit` resolves against the solution-style root config and
+        # false-greens on test files ([[reference_web_typecheck_gate_is_tsc_b]]).
+        run: cd classlite-web && npx tsc -b
       - name: i18n parity (Story 1.7c AC9 — R38 mitigation)
         # Blocks merge when en.json and vi.json key sets diverge or any
         # locale value is empty. Vietnamese is co-primary; a missing key
@@ -137,3 +152,118 @@ jobs:
           path: classlite-web/storybook-static
           retention-days: 14
           if-no-files-found: error
+
+  money-path:
+    # Story 11-5a (AC6) — THE deterministic money-path gate. Stands up the FULL
+    # real stack (Postgres + migrated schema + seeded tenant + the Go API) and
+    # runs the single Playwright journey (owner/teacher → class → assign → all 4
+    # attempt types → deterministic grade → student reads result) against a BUILT
+    # Vite preview. Lives in THIS workflow (CI — Web Dashboard) so a failure
+    # auto-gates the web deploy: deploy.yml fires deploy-web only on this
+    # workflow's `success` (deploy.yml:23). Runs with NO GEMINI_API_KEY — the
+    # deterministic path never touches Gemini (AC3); the API boots fine without
+    # it in APP_ENV=development (gemini.NewClient makes no network call at
+    # construction).
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: classlite_test
+          POSTGRES_USER: classlite
+          POSTGRES_PASSWORD: test
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # App role (RLS-enforced) + superuser pool (seed reset cascade over the
+      # DELETE-revoked grades table). Both created/established by `migrate up`.
+      DATABASE_URL: postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_test?sslmode=disable
+      MIGRATION_DATABASE_URL: postgres://classlite:test@localhost:5432/classlite_test?sslmode=disable
+      # The API must emit the refresh cookie on `.classlite.localhost` and NOT as
+      # Secure (http preview) — else every boot is a silent logged-out guest.
+      COOKIE_DOMAIN: .classlite.localhost
+      APP_ENV: development
+      CORS_ORIGINS: http://my.classlite.localhost:5173,http://classlite.localhost:4321
+      PORT: '8080'
+      # Explicit opt-in (code-review 4b) for the DEV-ONLY mock-R2 presigned-PUT sink —
+      # the speaking money-path leg round-trips through it in this credentials-free stack.
+      ENABLE_DEV_MOCK_R2_SINK: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve *.classlite.localhost to loopback
+        # GitHub runners resolve only `localhost`, not `*.classlite.localhost`.
+        # The preview baseURL + the cross-subdomain host must map to 127.0.0.1 so
+        # the refresh cookie (Domain=.classlite.localhost) carries.
+        run: |
+          echo "127.0.0.1 my.classlite.localhost classlite.localhost" | sudo tee -a /etc/hosts
+      - name: Bootstrap + migrate test DB (mirrors ci-api.yml)
+        # Same 3-role bootstrap as ci-api: classlite_migrator (owns + migrates),
+        # a throwaway classlite_dev so the immutable GRANT replays, then
+        # `migrate up` (which also establishes classlite_app, used by DATABASE_URL).
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/migrate
+          export PGPASSWORD=test
+          PSQL="psql -h localhost -U classlite -v ON_ERROR_STOP=1"
+          $PSQL -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='classlite_migrator') THEN CREATE ROLE classlite_migrator LOGIN PASSWORD 'classlite_migrator_dev_password' NOSUPERUSER CREATEROLE BYPASSRLS; END IF; END \$\$;"
+          $PSQL -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='classlite_dev'" | grep -q 1 || $PSQL -d postgres -c "CREATE DATABASE classlite_dev"
+          $PSQL -d postgres -c "ALTER DATABASE classlite_test OWNER TO classlite_migrator"
+          $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
+          migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
+      - name: Seed tenant + emit credentials.json
+        # `scripts/seed.sh` (clean=true default) seeds tenant A + identities and
+        # emits classlite-web/tests/e2e/.auth/credentials.json. The clean reset
+        # cascades over the DELETE-revoked grades table, so it needs the superuser
+        # MIGRATION_DATABASE_URL (provided via job env).
+        run: bash scripts/seed.sh
+      - name: Build + start the API (go build → run binary, not go run)
+        # A built binary (not fire-and-forget `go run`) so the process is a stable
+        # pid we can background; nohup survives into the later steps on the runner.
+        run: |
+          cd classlite-api && go build -o /tmp/classlite-api ./cmd/api
+          nohup /tmp/classlite-api > /tmp/api.log 2>&1 &
+          echo "API started (pid $!)"
+      - name: Wait for /health = 200
+        # /health is 503 until the pool pings Postgres (health_handler.go:19), so
+        # this is the real readiness gate before Playwright drives the stack.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "API healthy"; cat /tmp/api.log | tail -5; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::API did not become healthy in time"; cat /tmp/api.log; exit 1
+      - name: Install web deps
+        run: cd classlite-web && npm ci
+      - name: Install Playwright chromium (+ deps for headless fake media)
+        run: cd classlite-web && npx playwright install --with-deps chromium
+      - name: Money-path smoke (built preview, workers=1, NO GEMINI_API_KEY)
+        # MONEY_PATH_PREVIEW makes playwright.config serve ONLY the built preview
+        # (npm run build && npm run preview, proxying /api → :8080). The money-path
+        # project carries project-scoped retries (CI×1) + the fake-media launch
+        # flags. GEMINI_API_KEY is intentionally UNSET.
+        run: cd classlite-web && MONEY_PATH_PREVIEW=1 npx playwright test --project=money-path --workers=1
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: money-path-playwright-report
+          path: classlite-web/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore

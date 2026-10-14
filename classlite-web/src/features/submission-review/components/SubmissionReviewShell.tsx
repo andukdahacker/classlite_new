@@ -18,6 +18,7 @@ import { ResultWritingReadback } from './ResultWritingReadback'
 import { ResultQuizReceipt } from './ResultQuizReceipt'
 import { ResultSpeakingPlayback } from './ResultSpeakingPlayback'
 import { StudentGradeBlock } from './StudentGradeBlock'
+import { SpeakingGradeBlock } from './SpeakingGradeBlock'
 import { GradedEssay } from './GradedEssay'
 
 type Submission = components['schemas']['Submission']
@@ -63,8 +64,8 @@ function ReadBack({
   }
 }
 
-/** The non-writing released state (D6 — only writing can be released in v1; speaking
- * 6.3 / quiz 6.4 grade layouts are follow-ups). The IELTS-criteria / essay-anchor
+/** The still-deferred released state — quiz/objective (6.4) grade layouts are follow-ups
+ * (writing: StudentGradeBlock; speaking: SpeakingGradeBlock — both ship). The essay-anchor
  * machinery is NEVER fed a non-writing grade — `buildEssayHtml` is not called here. */
 function GradeComingSoon() {
   const { t } = useTranslation()
@@ -83,12 +84,16 @@ export function SubmissionReviewShell(props: SubmissionReviewShellProps) {
   const isDesktop = useIsDesktop()
 
   const isWriting = props.exercise.skill === 'writing'
+  const isSpeaking = props.exercise.skill === 'speaking'
   // `released && grade === null` is a type-allowed contradiction → treat as pending
   // (render the NotReleasedNote path), never an empty grade block (AC12 invalid-state).
   const hasGrade = props.released && props.grade !== null
   const showWritingGrade = hasGrade && isWriting
-  const showComingSoon = hasGrade && !isWriting
-  const graded = showWritingGrade || showComingSoon
+  const showSpeakingGrade = hasGrade && isSpeaking
+  // Quiz/objective grade layouts are still deferred (Story 11-5a AC4 shipped writing +
+  // speaking; 6.4 objective remains a follow-up).
+  const showComingSoon = hasGrade && !isWriting && !isSpeaking
+  const graded = showWritingGrade || showSpeakingGrade || showComingSoon
 
   return (
     <div data-testid="submission-review-shell" className="flex flex-col">
@@ -108,6 +113,9 @@ export function SubmissionReviewShell(props: SubmissionReviewShellProps) {
         </div>
         {showWritingGrade && props.grade !== null ? (
           <StudentGradeBlock grade={props.grade} submission={props.submission} />
+        ) : null}
+        {showSpeakingGrade && props.grade !== null ? (
+          <SpeakingGradeBlock grade={props.grade} submission={props.submission} />
         ) : null}
         {showComingSoon ? <GradeComingSoon /> : null}
         <div

@@ -44,6 +44,22 @@ type MockStorageService struct {
 	// the owned download under the CORRECT tenant on EACH attempt (not assumed-sticky),
 	// so the retry test asserts every entry is tenant A.
 	GetObjectOwnedTenants []string
+
+	// sinkBase, when non-empty, makes Presign return a PUT-able URL under this base
+	// instead of the dead `mock-r2.example.com` host (Story 11-5a). It is set ONLY
+	// in APP_ENV=development with no R2 configured (cmd/api/main.go), so a browser-
+	// driven presign→PUT→confirm speaking upload can round-trip against an in-process
+	// sink with zero external credentials. Default empty → unchanged legacy behavior.
+	sinkBase string
+}
+
+// SetSinkBase points Presign at an in-process, PUT-able sink base (e.g.
+// `/api/__mock_r2`) so the real upload leg can complete in a credentials-free
+// dev/E2E stack (Story 11-5a). Dev-only; never set when R2 is configured.
+func (m *MockStorageService) SetSinkBase(base string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sinkBase = base
 }
 
 // NewMockStorageService creates a mock with an empty object store.
@@ -58,10 +74,23 @@ func NewMockStorageService() *MockStorageService {
 // test-side equivalent of a completed presigned upload (Story 2.7). A HeadObject
 // entry is recorded too so the head/confirm path finds the object.
 func (m *MockStorageService) SeedObject(key string, content []byte) {
+	m.SeedObjectWithContentType(key, content, "application/octet-stream")
+}
+
+// SeedObjectWithContentType records raw bytes AND the stored Content-Type for a key,
+// mirroring R2 which preserves the Content-Type signed into the presigned PUT (Story
+// 11-5a code-review P9 — the dev mock-R2 sink threads the request Content-Type through
+// here so a confirm path that validates stored Content-Type via HeadObject matches the
+// real store instead of always seeing octet-stream). An empty contentType falls back to
+// application/octet-stream.
+func (m *MockStorageService) SeedObjectWithContentType(key string, content []byte, contentType string) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.contents[key] = content
-	m.Objects[key] = &ObjectMeta{Key: key, ContentType: "application/octet-stream", Size: int64(len(content))}
+	m.Objects[key] = &ObjectMeta{Key: key, ContentType: contentType, Size: int64(len(content))}
 }
 
 // GetObject returns the seeded bytes for a key, or an error if the key was never
@@ -112,6 +141,13 @@ func (m *MockStorageService) Presign(ctx context.Context, key, contentType strin
 	// Record the key so HeadObject can find it in presign→confirm flow.
 	if _, exists := m.Objects[key]; !exists {
 		m.Objects[key] = &ObjectMeta{Key: key, ContentType: contentType, Size: 0}
+	}
+
+	// Story 11-5a — when a sink base is configured (dev/E2E, no R2), return a
+	// PUT-able URL at that base so the browser upload actually lands (the sink
+	// handler calls SeedObject with the real bytes → confirm sees the real size).
+	if m.sinkBase != "" {
+		return fmt.Sprintf("%s/%s", m.sinkBase, key), nil
 	}
 
 	return fmt.Sprintf("https://mock-r2.example.com/%s?presigned=true", key), nil

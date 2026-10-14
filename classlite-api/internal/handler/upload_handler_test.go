@@ -57,6 +57,50 @@ func TestPresign_ValidPDF(t *testing.T) {
 	}
 }
 
+// TestPresign_SpeakingSkipsStaffStorageGate is the Story 11-5a regression guard.
+// BEFORE the fix, Presign ran the advisory storage pre-check (FileService.StorageUsage
+// → assertClassRole, staff-only) for ALL features, so a STUDENT presigning their own
+// speaking recording got 403 INSUFFICIENT_ROLE — student speaking uploads were broken
+// (caught by the first full-stack money-path smoke). The fix scopes the advisory check
+// to feature=="knowledge". Files is wired with a nil-db FileService whose StorageUsage
+// role-gates a student BEFORE any DB access, so if the advisory ran for speaking the
+// student would 403; it must NOT. The knowledge control proves the check is STILL wired
+// there (so speaking's 200 is the skip, not a no-op that silently dropped the gate).
+func TestPresign_SpeakingSkipsStaffStorageGate(t *testing.T) {
+	h := &handler.UploadHandler{
+		Storage: service.NewMockStorageService(),
+		Files:   service.NewFileService(nil, service.NewMockStorageService(), nil, nil),
+	}
+	mapped := middleware.ErrorMapper(h.Presign)
+
+	studentReq := func(body string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/uploads/presign", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		tc := model.TenantContext{
+			CenterID: "11111111-1111-1111-1111-111111111111",
+			Role:     model.RoleStudent,
+			UserID:   "22222222-2222-2222-2222-222222222222",
+		}
+		ctx := model.WithTenantContext(req.Context(), tc)
+		ctx = context.WithValue(ctx, model.RequestID, "req-test")
+		return req.WithContext(ctx)
+	}
+
+	// Speaking: advisory storage check SKIPPED → the student gets a presigned URL.
+	recS := httptest.NewRecorder()
+	mapped.ServeHTTP(recS, studentReq(`{"filename":"take.webm","contentType":"audio/webm","feature":"speaking"}`))
+	if recS.Code != http.StatusOK {
+		t.Fatalf("student speaking presign: expected 200 (advisory storage check must be skipped for speaking), got %d: %s", recS.Code, recS.Body.String())
+	}
+
+	// Knowledge control: advisory storage check RUNS → the student is role-gated (403).
+	recK := httptest.NewRecorder()
+	mapped.ServeHTTP(recK, studentReq(`{"filename":"notes.pdf","contentType":"application/pdf","feature":"knowledge"}`))
+	if recK.Code != http.StatusForbidden {
+		t.Fatalf("student knowledge presign: expected 403 (advisory storage check still role-gates non-staff for knowledge), got %d: %s", recK.Code, recK.Body.String())
+	}
+}
+
 func TestPresign_DisallowedExtension(t *testing.T) {
 	h := middleware.ErrorMapper(uploadHandler().Presign)
 	req := presignReq(`{"filename":"virus.exe","contentType":"application/octet-stream","feature":"knowledge"}`)
