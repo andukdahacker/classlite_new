@@ -104,7 +104,11 @@ jobs:
           $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
           migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
       - name: Test
-        run: cd classlite-api && go test ./... -race -v
+        # -timeout 25m: the full -race suite over the DB integration tests exceeds
+        # Go's default 10m (it was progressing, not hung, when it timed out). This
+        # step had never run in CI until the golangci-lint toolchain was fixed (lint
+        # blocked the job), so the default-timeout shortfall was latent.
+        run: cd classlite-api && go test ./... -race -v -timeout 25m
         env:
           # App role (non-superuser, RLS-enforced) against the migrated test DB.
           DATABASE_URL: postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_test?sslmode=disable
