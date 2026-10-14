@@ -104,11 +104,17 @@ jobs:
           $PSQL -d postgres -c "GRANT CONNECT ON DATABASE classlite_dev TO classlite_migrator WITH GRANT OPTION"
           migrate -path classlite-api/migrations -database "postgres://classlite_migrator:classlite_migrator_dev_password@localhost:5432/classlite_test?sslmode=disable" up
       - name: Test
-        # -timeout 25m: the full -race suite over the DB integration tests exceeds
-        # Go's default 10m (it was progressing, not hung, when it timed out). This
-        # step had never run in CI until the golangci-lint toolchain was fixed (lint
-        # blocked the job), so the default-timeout shortfall was latent.
-        run: cd classlite-api && go test ./... -race -v -timeout 25m
+        # -p 1 serializes PACKAGE test binaries (one at a time). The DB-integration
+        # packages all hit a single shared Postgres and take pg_advisory_xact_lock
+        # (9-1a write enforcement) + committed-pool fixtures; running their -race
+        # binaries CONCURRENTLY (default -p = nCPU) on the constrained CI runner
+        # starved/contended one package (internal/handler) into the Go test timeout
+        # (1500s), though every local config — serial, parallel, even forced 6-way
+        # concurrency under GOMAXPROCS=2 — completes in <20s. -p 1 removes the
+        # cross-package contention (and the shared-DB cross-package flakiness) while
+        # keeping -race. This step had never run in CI until the golangci-lint
+        # toolchain was fixed (lint blocked the job), so this was latent.
+        run: cd classlite-api && go test ./... -race -v -p 1 -timeout 25m
         env:
           # App role (non-superuser, RLS-enforced) against the migrated test DB.
           DATABASE_URL: postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_test?sslmode=disable
