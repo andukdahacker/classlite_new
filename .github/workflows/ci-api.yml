@@ -2,9 +2,9 @@ name: CI — API
 
 on:
   push:
-    paths: ['classlite-api/**']
+    paths: ['classlite-api/**', '.github/workflows/ci-api.yml']
   pull_request:
-    paths: ['classlite-api/**']
+    paths: ['classlite-api/**', '.github/workflows/ci-api.yml']
 
 jobs:
   test:
