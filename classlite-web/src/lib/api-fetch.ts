@@ -35,6 +35,26 @@ const NETWORK_STATUS = 0
 const UNAUTHORIZED_STATUS = 401
 const NO_CONTENT_STATUS = 204
 
+// Split-origin API base. In production the dashboard (my.classlite.app) and the
+// API (api.classlite.app) live on different subdomains, so `VITE_API_URL` points
+// at the API origin and every request is issued cross-origin WITH credentials —
+// the Go API's CORS_ORIGINS allowlist plus httpOnly cookies scoped to
+// COOKIE_DOMAIN=.classlite.app (same registrable site → SameSite=Lax cookies
+// flow) make the auth cookies ride along. When `VITE_API_URL` is unset (local dev
+// and the test runner) paths stay relative so the Vite dev-server `/api` proxy and
+// fetch mocks keep working unchanged.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+
+/**
+ * Prefix an absolute (`/api/...`) request path with the configured API origin.
+ * No-op when `VITE_API_URL` is unset (relative, same-origin) or when the path is
+ * already absolute (e.g. a full URL).
+ */
+function resolveUrl(path: string): string {
+  if (!API_BASE_URL || !path.startsWith('/')) return path
+  return `${API_BASE_URL}${path}`
+}
+
 // Literal `['auth', 'session']` — duplicates `authKeys.session()` from
 // `src/features/auth/api/authKeys.ts`. Importing `authKeys` here would land a
 // fourth edge on the `query-client ↔ api-fetch ↔ auth-refresh` import cycle;
@@ -272,12 +292,13 @@ async function performFetch(
   // performFetch after the refresh coordinator rotated the cached token)
   // automatically sends the freshly-minted access token, not the stale one.
   const token = currentAccessToken()
+  const url = resolveUrl(path)
   const headers = new Headers(init.headers)
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`)
   }
   try {
-    const response = await fetch(path, {
+    const response = await fetch(url, {
       credentials: 'include',
       ...init,
       headers,
@@ -286,7 +307,7 @@ async function performFetch(
     Sentry.addBreadcrumb({
       category: 'fetch',
       level: response.ok ? 'info' : 'error',
-      data: { method, url: path, status: response.status, requestId },
+      data: { method, url, status: response.status, requestId },
     })
     return response
   } catch (cause) {
