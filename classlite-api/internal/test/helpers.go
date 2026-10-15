@@ -51,6 +51,32 @@ var (
 	poolErr  error
 )
 
+// testPoolMaxConns floors the test connection-pool size INDEPENDENT of
+// GOMAXPROCS / NumCPU. pgxpool defaults MaxConns to max(4, NumCPU); on a 4-core
+// CI runner that is 4, which the DB-integration packages (internal/handler,
+// internal/test) exhaust — their parallel subtests each hold a SetupDB tx
+// connection AND acquire a second from the superuser pool, so with only 4
+// connections Acquire blocks forever and the package HANGS (hits the go-test
+// timeout). It only reproduces where cores are few: forcing `pool_max_conns=4`
+// locally reproduces the hang; unconstrained the same package runs in ~8s. 20 is
+// ample for the parallel fan-out and safe against Postgres max_connections=100
+// (tests run one package at a time, -p 1 → app pool 20 + superuser pool 20 = 40).
+const testPoolMaxConns = 20
+
+// newTestPool builds a pool with MaxConns floored at testPoolMaxConns, so a
+// low-core CI runner is not starved. An explicit higher pool_max_conns in the URL
+// is preserved.
+func newTestPool(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.MaxConns < testPoolMaxConns {
+		cfg.MaxConns = testPoolMaxConns
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
 func getPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	poolOnce.Do(func() {
@@ -59,7 +85,7 @@ func getPool(t *testing.T) *pgxpool.Pool {
 			// Default to non-superuser role so RLS is enforced in tests.
 			databaseURL = "postgres://classlite_app:classlite_dev_password@localhost:5432/classlite_dev?sslmode=disable"
 		}
-		pool, poolErr = pgxpool.New(context.Background(), databaseURL)
+		pool, poolErr = newTestPool(context.Background(), databaseURL)
 	})
 	if poolErr != nil {
 		t.Fatalf("connect to test database: %v", poolErr)

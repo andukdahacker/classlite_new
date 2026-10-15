@@ -389,7 +389,10 @@ func superuserPool(t *testing.T) *pgxpool.Pool {
 			url = "postgres://classlite:classlite_dev_password@localhost:5432/classlite_dev?sslmode=disable"
 		}
 		var err error
-		superuserPoolInstance, err = pgxpool.New(context.Background(), url)
+		// MaxConns floored (see newTestPool) so a low-core CI runner is not starved
+		// — the parallel DB tests acquire from this superuser pool while holding a
+		// SetupDB tx connection, so a 4-conn default deadlocks (CI-only hang).
+		superuserPoolInstance, err = newTestPool(context.Background(), url)
 		if err != nil {
 			t.Fatalf("connect superuser pool: %v", err)
 		}
