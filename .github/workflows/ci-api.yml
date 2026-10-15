@@ -128,7 +128,11 @@ jobs:
             echo "nightly/manual → full -race run"
             go test ./... -race -v -p 1 -timeout 55m
           else
-            go test ./... -v -p 1 -timeout 15m
+            # -p 1 serial over the full DB-integration suite is ~18-22m on the CI
+            # runner even race-free (the 15m default was too low — it timed out on
+            # the trailing fast unit packages). 25m gives headroom; it IS slow, the
+            # price of serial execution for cross-package DB isolation.
+            go test ./... -v -p 1 -timeout 25m
           fi
         env:
           # App role (non-superuser, RLS-enforced) against the migrated test DB.
