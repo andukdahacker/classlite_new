@@ -1,9 +1,19 @@
 # Build stage
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
+# git is needed for `go install` of sqlc (fetches its modules).
+RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
+# The sqlc store (internal/store/generated) is gitignored, so it is absent from a
+# fresh checkout. Generate it at build time — mirrors CI's "Generate sqlc store"
+# step (cd classlite-api && sqlc generate) — so the image is self-contained.
+# Pinned to match the version used in development.
+# GOTOOLCHAIN=auto lets Go fetch the toolchain sqlc requires to build (it needs a
+# newer Go than this builder image pins); only affects building sqlc, not the app.
+RUN GOTOOLCHAIN=auto go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 COPY . .
+RUN sqlc generate
 RUN CGO_ENABLED=0 GOOS=linux go build -o classlite-api ./cmd/api
 
 # ============================================================================
