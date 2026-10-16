@@ -385,21 +385,26 @@ func (s *AuthService) buildAccessToken(ctx context.Context, userID pgtype.UUID) 
 	}
 	claims := AccessClaims{UserID: uid.String()}
 
-	// Single-membership lookup. RLS on center_members would normally hide
-	// rows without an app.current_tenant_id, but this query needs to read
-	// across tenants — it runs from a non-tenant context (login). Story
-	// 1.5 does not add an explicit sqlc helper because the lookup is
-	// transient: Epic 2 introduces a proper membership-select endpoint
-	// that replaces this auto-binding heuristic. Until then, only emit
-	// claims when the user has exactly one membership.
+	// Single-membership lookup. This runs from a NON-tenant context (login /
+	// refresh), so there is no app.current_tenant_id GUC set. center_members is
+	// FORCE RLS, so a PLAIN read by the non-superuser classlite_app role returns
+	// 0 rows — which previously left center_id/role unset for EVERY onboarded user
+	// (no tenant in the JWT → 403 on every scoped route). Both reads must therefore
+	// go through the SECURITY DEFINER functions that bypass RLS for this narrow,
+	// legitimate pre-tenant lookup: count_center_members_for_user (migration
+	// 20260724120000) + single_center_membership_for_user (migration 20261016120000).
+	// Only emit claims when the user has exactly one membership (Epic 2 will add a
+	// proper membership-select endpoint for the multi-membership case).
 	var centerID pgtype.UUID
 	var role string
 	var center *SessionCenter
 	var cnt int
+	// $1::uuid: a set-returning function in FROM does not infer the arg type from
+	// context, so an uncast $1 is `unknown` and no overload matches (42883).
 	if err := s.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM center_members WHERE user_id = $1`, userID).Scan(&cnt); err == nil && cnt == 1 {
+		`SELECT count_center_members_for_user($1::uuid)`, userID).Scan(&cnt); err == nil && cnt == 1 {
 		row := s.db.QueryRow(ctx,
-			`SELECT center_id, role FROM center_members WHERE user_id = $1`, userID)
+			`SELECT center_id, role FROM single_center_membership_for_user($1::uuid)`, userID)
 		if scanErr := row.Scan(&centerID, &role); scanErr == nil && centerID.Valid {
 			claims.CenterID = uuid.UUID(centerID.Bytes).String()
 			claims.Role = role
