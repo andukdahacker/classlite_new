@@ -73,7 +73,7 @@ import {
   readLockoutUntilMs,
   writeLockoutUntilMs,
 } from '@/features/auth/lib/lockoutStorage'
-import { sanitizeNextParam } from '@/features/auth/lib/sanitizeNextParam'
+import { postLoginTarget } from '@/features/auth/lib/sanitizeNextParam'
 import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api-fetch'
 
@@ -198,7 +198,7 @@ export default function LoginPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, session } = useAuth()
   const [emailFormOpen, setEmailFormOpen] = useState(false)
   // Form-level error displayed in <div role="alert"> beneath the
   // submit button. Per-field errors flow through RHF setError +
@@ -328,9 +328,14 @@ export default function LoginPage() {
   useEffect(() => {
     if (isLoading) return
     if (isAuthenticated) {
-      navigate(sanitizeNextParam(searchParams.get('next')), { replace: true })
+      // A not-yet-onboarded session (center == null) routes to the wizard, not the
+      // dashboard — otherwise the boot-probe hydrate lands a no-center user on a broken
+      // dashboard that bounces to /login (the flicker loop).
+      navigate(postLoginTarget(session?.center ?? null, searchParams.get('next')), {
+        replace: true,
+      })
     }
-  }, [isAuthenticated, isLoading, navigate, searchParams])
+  }, [isAuthenticated, isLoading, navigate, searchParams, session])
 
   // URL-clear effect — drops banner-signal params on mount but PRESERVES
   // `next=` (Amelia A6 pin — the post-login consumer reads `next` AT
@@ -371,8 +376,9 @@ export default function LoginPage() {
     // landing alert.
     setBannerKey(null)
     login.mutate(values, {
-      onSuccess: () => {
-        navigate(sanitizeNextParam(searchParams.get('next')), {
+      onSuccess: (result) => {
+        // A user with no center hasn't onboarded → wizard, not the dashboard (flicker fix).
+        navigate(postLoginTarget(result.center, searchParams.get('next')), {
           replace: true,
         })
       },

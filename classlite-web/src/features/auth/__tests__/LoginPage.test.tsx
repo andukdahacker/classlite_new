@@ -138,6 +138,19 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
+// An ONBOARDED user's center summary. Sessions/login responses that assert
+// dashboard / next= navigation represent users who finished onboarding, so they
+// carry a center — without it, postLoginTarget correctly routes them to /welcome
+// (the no-center flicker-loop fix), which is covered by sanitizeNextParam.test.ts.
+const ONBOARDED_CENTER = {
+  id: 'c1',
+  name: 'Test Center',
+  shortCode: 'TC',
+  brandColor: null,
+  logoUrl: null,
+  timezone: 'Asia/Ho_Chi_Minh',
+}
+
 describe('LoginPage (Story 1-8 AC4)', () => {
   test('renders H1 from t("auth.login.title") — preserves the 1-7c bilingual smoke contract', () => {
     renderLogin()
@@ -416,6 +429,7 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
         emailVerified: true,
       },
       accessToken: 'jwt',
+      center: ONBOARDED_CENTER,
     })
     renderLogin({ client })
     await screen.findByTestId('test-route-dashboard')
@@ -431,6 +445,7 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
         emailVerified: true,
       },
       accessToken: 'jwt',
+      center: ONBOARDED_CENTER,
     })
     renderLogin({ client, initialEntries: ['/login?verified=1'] })
     // Either we never paint the banner OR we redirect away before
@@ -589,6 +604,7 @@ describe('LoginPage Story 1-9a — three-part amendment', () => {
         emailVerified: true,
       },
       accessToken: 'jwt',
+      center: ONBOARDED_CENTER,
     })
     void runBootProbe()
     renderLogin({ client })
@@ -979,6 +995,7 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
     client.setQueryData(authKeys.session(), {
       user: { id: 'u1', email: 'a@b.co', fullName: 'A', emailVerified: true },
       accessToken: 'jwt',
+      center: ONBOARDED_CENTER,
     })
     renderLogin({
       client,
@@ -1023,6 +1040,7 @@ describe('LoginPage Story 1-9d — Auth Error & Recovery States', () => {
             emailVerified: true,
           },
           accessToken: 'jwt-sibling',
+          center: ONBOARDED_CENTER,
         },
       })
       channel.close()

@@ -10,7 +10,10 @@
  * Implementation at Task 0.3 flips them GREEN.
  */
 import { describe, expect, test } from 'vitest'
-import { sanitizeNextParam } from '@/features/auth/lib/sanitizeNextParam'
+import {
+  postLoginTarget,
+  sanitizeNextParam,
+} from '@/features/auth/lib/sanitizeNextParam'
 
 describe('sanitizeNextParam (Story 1-9d AC4 — R-NEW=15 discharge)', () => {
   // Happy paths
@@ -82,5 +85,35 @@ describe('sanitizeNextParam (Story 1-9d AC4 — R-NEW=15 discharge)', () => {
 
   test("double-backslash '\\\\evil.example.com' returns /dashboard", () => {
     expect(sanitizeNextParam('\\\\evil.example.com')).toBe('/dashboard')
+  })
+})
+
+describe('postLoginTarget (no-center → onboarding; flicker-loop fix)', () => {
+  test('null center routes to /welcome (not onboarded)', () => {
+    expect(postLoginTarget(null, null)).toBe('/welcome')
+  })
+
+  test('undefined center routes to /welcome', () => {
+    expect(postLoginTarget(undefined, null)).toBe('/welcome')
+  })
+
+  test('null center ignores ?next (cannot use the app without a center)', () => {
+    expect(postLoginTarget(null, '/classes/123')).toBe('/welcome')
+  })
+
+  test('a present center honors the sanitized ?next', () => {
+    expect(postLoginTarget({ id: 'c1', name: 'Acme' }, '/students')).toBe(
+      '/students',
+    )
+  })
+
+  test('a present center with no ?next falls back to /dashboard', () => {
+    expect(postLoginTarget({ id: 'c1', name: 'Acme' }, null)).toBe('/dashboard')
+  })
+
+  test('a present center still rejects an open-redirect ?next', () => {
+    expect(postLoginTarget({ id: 'c1' }, '//evil.example.com')).toBe(
+      '/dashboard',
+    )
   })
 })

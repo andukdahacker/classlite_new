@@ -39,6 +39,19 @@ const MSW_USER: UserSummary = {
   emailVerified: true,
 }
 
+// The default login/refresh handlers model an already-onboarded Owner, so they
+// carry a center — postLoginTarget routes a center-LESS session to /welcome
+// (the no-center flicker fix). Tests needing the pre-onboarding state override
+// the handler with `center: null`.
+const MSW_CENTER = {
+  id: '00000000-0000-0000-0000-0000000mswc1',
+  name: 'MSW Center',
+  shortCode: 'MSW',
+  brandColor: null,
+  logoUrl: null,
+  timezone: 'Asia/Ho_Chi_Minh',
+}
+
 // Story 1-9a — the fresh pollId issued by the default resend handler.
 // Exported so tests assert against the constant instead of a hardcoded
 // literal that would silently drift if the handler is ever updated.
@@ -104,9 +117,9 @@ export const handlers = [
       // Story 2.6 (AC2). MSW default: an already-onboarded Owner. Tests
       // that need to seed a different role override this handler.
       role: 'owner',
-      // LoginResult.center is required (Session.center durability, 5acdb35);
-      // null preserves the prior absent-field behavior. Override where needed.
-      center: null,
+      // An onboarded Owner carries a center (postLoginTarget routes a center-less
+      // session to /welcome). Override with `center: null` for the pre-onboarding state.
+      center: MSW_CENTER,
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },
@@ -128,8 +141,8 @@ export const handlers = [
       // alongside the fresh JWT — matches the api.yaml LoginResult
       // amendment.
       role: 'owner',
-      // LoginResult.center is required (5acdb35); null preserves prior behavior.
-      center: null,
+      // Onboarded Owner → carries a center (silent refresh hydrates Session.center).
+      center: MSW_CENTER,
     }
     return HttpResponse.json<Envelope<LoginResult>>(
       { data: result },

@@ -41,3 +41,22 @@ export function sanitizeNextParam(raw: string | null): string {
   if (/^[\s\x00-\x1f]/.test(decoded.slice(1, 3))) return '/dashboard'
   return decoded
 }
+
+/**
+ * postLoginTarget — where to send a user after login / boot-probe hydrate.
+ *
+ * A user with no center (`center == null`) has not completed onboarding and CANNOT use the
+ * dashboard (no tenant → role-less guest shell + 403 data). Routing them to `/dashboard` (the
+ * sanitizeNextParam default) produced the dashboard↔login flicker loop: a freshly-verified user
+ * who logs in fresh (not via the register flow, which DOES enter the wizard) lands on a broken
+ * dashboard that bounces to /login, where the still-valid session bounces back. Send them into
+ * the onboarding wizard instead. The symmetry is intentional: `OnboardingLayout` already guards
+ * the other direction (`session.center != null` → `/dashboard`), so a user who DOES have a
+ * center that somehow reaches `/welcome` bounces straight back — the two guards can't deadlock.
+ *
+ * Everyone with a center honors their sanitized `?next=` (default `/dashboard`).
+ */
+export function postLoginTarget(center: unknown, nextParam: string | null): string {
+  if (center == null) return '/welcome'
+  return sanitizeNextParam(nextParam)
+}
