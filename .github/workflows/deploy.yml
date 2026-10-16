@@ -1,0 +1,126 @@
+name: Deploy — API migrate gate
+
+# Story 11-8a — the gated deploy pipeline. This workflow owns ONLY the privileged migration
+# gate (+ the fail-closed proof). It does NOT push the image: Railway auto-deploys the pushed
+# commit itself and, with "Wait for CI" enabled on the classlite-api service, HOLDS the traffic
+# cutover until this commit's GitHub check suite concludes green (see docs/deploy-runbook.md and
+# project-context WF-5). Post-cutover smoke + rollback live in a SEPARATE workflow (smoke.yml,
+# triggered on deployment_status) so they never deadlock the gated suite.
+#
+# Gate shape (AC1/AC2/AC4, DF-C):
+#   migrate-gate-test  → fail-closed PROOF on a throwaway DB (runs unconditionally, no approval)
+#   migrate            → the real prod migrate, bound to the `production` Environment (required
+#                        reviewers = the explicit gate). Stays pending until a reviewer approves.
+#   gate-passed        → the SINGLE terminal check context Railway keys on (needs: [migrate]).
+#
+# A red migrate-gate-test, a red migrate, or an un-approved migrate ⇒ gate-passed never
+# concludes green ⇒ Railway never cuts traffic to the new image (fail-closed).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# cancel-in-progress MUST be false: cancelling mid-`migrate` risks a half-applied schema.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  # AC2 / Task 2 (Murat score-9). The behavioral red-phase proof the WF-8 infra exception does
+  # NOT cover. Throwaway Postgres; no prod secrets; runs on every push.
+  migrate-gate-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: classlite
+          POSTGRES_PASSWORD: classlite_dev_password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools (migrate v4.19.1 + psql)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/migrate
+          migrate -version
+      - name: Fail-closed migrate gate (full-from-scratch as migrator + deliberate failure)
+        env:
+          GATE_TEST_ADMIN_URL: postgres://classlite:classlite_dev_password@localhost:5432/postgres?sslmode=disable
+        run: scripts/migrate-gate-test.sh
+
+  # AC1 / AC4 / AC6. The real privileged prod migrate. Bound to the `production` GitHub
+  # Environment (required reviewers) — THIS is the explicit production gate: the job waits on
+  # approval, so the check suite stays pending until a reviewer approves AND migrate goes green.
+  migrate:
+    needs: [migrate-gate-test]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools (migrate v4.19.1 + psql)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/migrate
+      - name: Assemble migration URL (runtime — never a static full-URL secret)
+        id: url
+        env:
+          # Standing Railway Postgres TCP proxy (RAILWAY_TCP_PROXY_DOMAIN/PORT on the Postgres
+          # service). Preferred over a per-run tcpProxyCreate/Delete — no race, no if:always()
+          # teardown, no window where a leaked proxy fails the gate OPEN (Dev Notes §Orchestration
+          # "first check whether the Postgres service already exposes a standing proxy"). The
+          # per-run-proxy fallback is documented in docs/deploy-runbook.md.
+          PROXY_HOST: ${{ secrets.RAILWAY_PG_PROXY_HOST }}
+          PROXY_PORT: ${{ secrets.RAILWAY_PG_PROXY_PORT }}
+          MIGRATOR_USER: ${{ secrets.MIGRATION_DB_USER }}
+          MIGRATOR_PASSWORD: ${{ secrets.MIGRATION_DB_PASSWORD }}
+          MIGRATOR_DBNAME: ${{ secrets.MIGRATION_DB_NAME }}
+        run: |
+          set -euo pipefail
+          for v in PROXY_HOST PROXY_PORT MIGRATOR_USER MIGRATOR_PASSWORD MIGRATOR_DBNAME; do
+            if [ -z "${!v:-}" ]; then echo "::error::missing secret $v"; exit 1; fi
+          done
+          enc() { python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$1"; }
+          # sslmode=require minimum — the proxy is public; creds + a BYPASSRLS role ride it.
+          URL="postgres://$(enc "$MIGRATOR_USER"):$(enc "$MIGRATOR_PASSWORD")@${PROXY_HOST}:${PROXY_PORT}/${MIGRATOR_DBNAME}?sslmode=require"
+          echo "::add-mask::$URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          # The maintenance-DB URL (same server, db=postgres) for the classlite_dev guard (AC6).
+          ADMIN_URL="postgres://$(enc "$MIGRATOR_USER"):$(enc "$MIGRATOR_PASSWORD")@${PROXY_HOST}:${PROXY_PORT}/postgres?sslmode=require"
+          echo "::add-mask::$ADMIN_URL"
+          echo "admin_url=$ADMIN_URL" >> "$GITHUB_OUTPUT"
+      - name: Ensure throwaway classlite_dev exists (AC6 — immutable GRANT replay landmine)
+        env:
+          ADMIN_URL: ${{ steps.url.outputs.admin_url }}
+        run: |
+          set -euo pipefail
+          # No CREATE DATABASE IF NOT EXISTS in Postgres; guard with pg_database. CREATE DATABASE
+          # cannot run inside a tx, so it is its own statement. Requires the migrator to have
+          # CREATEDB (AC6 reconcile — does not breach NOSUPERUSER); if the role lacks CREATEDB,
+          # create classlite_dev out-of-band once (runbook) and this becomes a no-op verify.
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname='classlite_dev'" | grep -q 1 \
+            || psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE classlite_dev"
+      - name: migrate up (privileged migrator — NOT classlite_app, NOT on boot)
+        env:
+          MIGRATION_URL: ${{ steps.url.outputs.url }}
+        run: |
+          set -euo pipefail
+          # First prod run is an idempotent no-op (schema already at 20261012120000 from the manual
+          # 2026-10-15 run) — expected and safe. Non-zero here fails the gate ⇒ no cutover.
+          migrate -path classlite-api/migrations -database "$MIGRATION_URL" up
+
+  # AC4 / DF-C. The single terminal check context Railway "Wait for CI" keys on. It runs ONLY
+  # after migrate concludes green (which is only after approval). One context, never "whole
+  # suite green" ambiguity.
+  gate-passed:
+    needs: [migrate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate passed — cutover authorized
+        run: echo "migrate green + production approval granted → Railway may cut traffic to the new image."

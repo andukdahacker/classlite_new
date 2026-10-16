@@ -36,6 +36,11 @@ jobs:
         with:
           workingDir: classlite-web
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          # This project's Storybook build script is `storybook:build` (not the
+          # chromaui/action default `build-storybook`). Without this the action
+          # aborts: "set the --build-script-name option to the value of the script
+          # name that builds your Storybook."
+          buildScriptName: storybook:build
           # Don't fail the run when stories render with visual changes — those
           # are designer-review state, not CI failures. Build/error failures
           # still exit non-zero.

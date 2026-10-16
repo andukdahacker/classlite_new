@@ -61,7 +61,7 @@ import {
 } from '@/features/auth/hooks/useResendCountdown'
 import { useResendVerification } from '@/features/auth/api/resendVerification'
 import { useVerifyEmail } from '@/features/auth/api/verifyEmail'
-import { ApiError } from '@/lib/api-fetch'
+import { ApiError, toApiUrl } from '@/lib/api-fetch'
 
 export const VERIFY_REDIRECT_DELAY_MS = 1500
 export const POLLING_TIMEOUT_MS = 10 * 60 * 1000
@@ -708,7 +708,7 @@ function PollingView({
               {t('auth.verify.googleFallbackPrompt')}
             </p>
             <a
-              href="/api/auth/google"
+              href={toApiUrl('/api/auth/google')}
               data-testid="verify-google-fallback-link"
               className="text-sm text-[var(--cl-accent)] underline"
             >

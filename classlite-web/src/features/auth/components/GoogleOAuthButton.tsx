@@ -22,6 +22,7 @@
  * `?inviteToken=...` through.
  */
 import { useState, type MouseEvent } from 'react'
+import { toApiUrl } from '@/lib/api-fetch'
 import { cn } from '@/lib/utils'
 
 const GOOGLE_INIT_PATH = '/api/auth/google'
@@ -101,10 +102,13 @@ export default function GoogleOAuthButton({
   testId = 'google-oauth-cta',
 }: GoogleOAuthButtonProps) {
   const [isNavigating, setIsNavigating] = useState(false)
-  const href =
+  // toApiUrl: this is a TOP-LEVEL navigation (the 302 OAuth flow), not an apiFetch XHR, so in
+  // split-origin prod it must target the API origin (api.classlite.app), not the Pages origin.
+  const href = toApiUrl(
     searchParams && Object.keys(searchParams).length > 0
       ? appendQuery(GOOGLE_INIT_PATH, searchParams)
-      : GOOGLE_INIT_PATH
+      : GOOGLE_INIT_PATH,
+  )
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (disabled) {

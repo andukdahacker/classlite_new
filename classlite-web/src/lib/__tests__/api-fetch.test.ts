@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { HttpResponse, http } from 'msw'
 import { server } from '@/test/msw-server'
 import { stubLocation, type StubbedLocation } from '@/test/location-stub'
-import { ApiError, AuthExpiredError, apiFetch } from '@/lib/api-fetch'
+import { ApiError, AuthExpiredError, apiFetch, toApiUrl } from '@/lib/api-fetch'
 import { __resetAuthRefreshStateForTests } from '@/lib/auth-refresh'
 import { queryClient } from '@/lib/query-client'
 
@@ -27,6 +27,40 @@ afterEach(() => {
   locationStub.restore()
   queryClient.clear()
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
+
+// Split-origin top-level navigation (Google OAuth 302, verify-email fallback). These are <a>/
+// window.location navigations, NOT apiFetch XHRs, so they must resolve the API origin themselves
+// — a relative /api/auth/google would hit the Pages origin (my.classlite.app → 404) in prod.
+describe('toApiUrl (split-origin top-level navigation)', () => {
+  test('prefixes the API origin when VITE_API_URL is set (prod)', () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.classlite.app')
+    expect(toApiUrl('/api/auth/google')).toBe(
+      'https://api.classlite.app/api/auth/google',
+    )
+    // query string preserved
+    expect(toApiUrl('/api/auth/google?prompt=select_account')).toBe(
+      'https://api.classlite.app/api/auth/google?prompt=select_account',
+    )
+  })
+
+  test('trailing slash on VITE_API_URL is normalized (no double slash)', () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.classlite.app/')
+    expect(toApiUrl('/api/auth/google')).toBe(
+      'https://api.classlite.app/api/auth/google',
+    )
+  })
+
+  test('stays relative when VITE_API_URL is unset (local dev / Vite proxy)', () => {
+    vi.stubEnv('VITE_API_URL', '')
+    expect(toApiUrl('/api/auth/google')).toBe('/api/auth/google')
+  })
+
+  test('leaves an already-absolute URL untouched', () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.classlite.app')
+    expect(toApiUrl('https://example.com/x')).toBe('https://example.com/x')
+  })
 })
 
 describe('AC5 apiFetch contract', () => {

@@ -55,6 +55,23 @@ function resolveUrl(path: string): string {
   return `${API_BASE_URL}${path}`
 }
 
+/**
+ * Resolve an absolute API path (`/api/...`) to a full URL for a TOP-LEVEL browser navigation
+ * — the split-origin analog of what {@link apiFetch} does for XHR. The Google OAuth 302 flow
+ * and the verify-email fallback are `<a>`/`window.location` navigations, NOT fetches, so they
+ * do NOT pass through `apiFetch`; in prod (`VITE_API_URL` set) a relative `/api/auth/google`
+ * would hit the Pages origin (my.classlite.app → 404) instead of the API. Prefixing the API
+ * origin sends the browser to api.classlite.app. No-op in local dev (relative, Vite proxy).
+ *
+ * Reads `VITE_API_URL` at call time so it is unit-testable via `vi.stubEnv` (unlike the
+ * module-eval'd `API_BASE_URL` above, which the XHR hot path keeps for simplicity).
+ */
+export function toApiUrl(path: string): string {
+  const base = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+  if (!base || !path.startsWith('/')) return path
+  return `${base}${path}`
+}
+
 // Literal `['auth', 'session']` — duplicates `authKeys.session()` from
 // `src/features/auth/api/authKeys.ts`. Importing `authKeys` here would land a
 // fourth edge on the `query-client ↔ api-fetch ↔ auth-refresh` import cycle;

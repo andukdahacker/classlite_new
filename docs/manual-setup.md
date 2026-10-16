@@ -128,6 +128,37 @@ transcode is a 6-3b0 runtime dependency — see the ffmpeg section below.)
 | Confirm migrations ran | — | [ ] | [ ] |
 | Delete v1 Railway service (after 48h zero-traffic) | — | — | [ ] |
 
+Prod stood up manually 2026-10-15 (Railway project `classlite` + Postgres + `classlite-api`
+live & healthy, migrations applied once by hand → DB at `20261012120000`). Deploy automation is
+the **Deploy Pipeline** section below.
+
+---
+
+## Deploy Pipeline — Migrate Gate, Smoke, Rollback (Story 11-8a)
+
+Full procedure + secrets table: **`docs/deploy-runbook.md`**. The gated pipeline is
+`.github/workflows/deploy.yml` + `smoke.yml`. Prerequisites that are console/DB, not code:
+
+Progress as of 2026-10-16 (Amelia, verified live). Railway IDs + per-item evidence in runbook §2.
+
+| Task | Dev | Staging | Prod |
+|---|---|---|---|
+| Enable standing **TCP proxy** on `Postgres` → set `RAILWAY_PG_PROXY_HOST/PORT` | — | [-] | [x] `ballast.proxy.rlwy.net:22354` |
+| Enable Railway **"Wait for CI"** on `classlite-api` | — | [-] | [x] |
+| Create GitHub **`production` Environment** + required reviewers | — | [-] | [x] reviewer `andukdahacker` |
+| Provision prod `classlite_migrator` role (`NOSUPERUSER CREATEDB BYPASSRLS`) + own schema | — | [-] | [x] verified `f/t`, resolvers re-owned, 46/0 tables |
+| Verify `classlite_dev` DB exists (immutable-GRANT replay, AC6) | — | [-] | [x] exists |
+| Set `MIGRATION_DB_*` + `RAILWAY_PG_PROXY_*` secrets + `PROD_API_URL`/`SMOKE_*` vars | — | [-] | [x] |
+| Set `RAILWAY_API_TOKEN` + `RAILWAY_API_SERVICE_ID` + `RAILWAY_ENVIRONMENT_ID` (rollback) | — | [-] | [ ] |
+| Seed synthetic monitor account → `SMOKE_EMAIL`/`SMOKE_PASSWORD` | — | [-] | [ ] |
+| DF-C spike: Wait-for-CI waits on check-runs + pending-approval blocks cutover (runbook §7) | — | [-] | [ ] |
+| Rotate `classlite_app` password off dev default + update `DATABASE_URL` (AC7, runbook §6) | — | [-] | [x] rotated 2026-10-16, `/health` verified on new pw |
+| Rollback exercised once — needs a 2nd SUCCESS deploy first (only 1 exists) (runbook §4) | — | [-] | [ ] |
+| DB restore drill — backups enabled (none scheduled) + one restore verified (AC8, runbook §8) | — | [-] | [ ] |
+
+Staging rows are `[-]` (N/A here) → owned by **Story 11-8b**. Railway GraphQL field names in
+`scripts/railway-lib.sh` need live validation during the DF-C spike.
+
 ---
 
 ## Cloudflare Pages — Frontends

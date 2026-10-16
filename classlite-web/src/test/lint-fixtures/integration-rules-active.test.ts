@@ -26,6 +26,13 @@ import { describe, expect, test } from 'vitest'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = resolve(HERE, '../../../')
 
+// Each test shells out to the FULL-project `npm run lint` / `lint:css` (a real ESLint/
+// Stylelint scan), which takes ~13s locally and longer on a resource-constrained CI runner.
+// The vitest default 30s per-test timeout is too tight for the ESLint ones and timed them out
+// in CI (the stylelint one is faster and passed) — a flake, not a lint regression. Give these
+// subprocess tests ample headroom.
+const LINT_TEST_TIMEOUT_MS = 120_000
+
 const SANDBOX_CSS = resolve(PROJECT_ROOT, 'src/test/__sandbox-bad-hex.css')
 const SANDBOX_TSX = resolve(PROJECT_ROOT, 'src/test/__sandbox-bad-hex.tsx')
 const SANDBOX_FETCH = resolve(
@@ -79,7 +86,7 @@ describe('AC5 lint scripts integration (sandbox)', () => {
       expect(combined, 'color-no-hex rule must surface in the lint output').toMatch(/color-no-hex/)
       expect(combined, 'sandbox file must be named in the diagnostics').toMatch(/__sandbox-bad-hex\.css/)
     })
-  })
+  }, LINT_TEST_TIMEOUT_MS)
 
   test('npm run lint fails AND fires no-restricted-syntax on a real bad-hex TSX file placed in src/', () => {
     withSandbox(SANDBOX_TSX, "export const navy = '#1a1f2e'\n", () => {
@@ -91,7 +98,7 @@ describe('AC5 lint scripts integration (sandbox)', () => {
       )
       expect(combined, 'sandbox file must be named in the diagnostics').toMatch(/__sandbox-bad-hex\.tsx/)
     })
-  })
+  }, LINT_TEST_TIMEOUT_MS)
 
   // Story 1.7b AC8 — extend the integration coverage to the raw-fetch /
   // axios guards. The unit fixtures invoke ESLint directly; this drops a
@@ -120,7 +127,7 @@ describe('AC5 lint scripts integration (sandbox)', () => {
         ).toMatch(/__sandbox-fetch\.tsx/)
       },
     )
-  })
+  }, LINT_TEST_TIMEOUT_MS)
 
   test('npm run lint fails AND fires no-restricted-imports on an axios import in src/features/', () => {
     withSandbox(
@@ -143,5 +150,5 @@ describe('AC5 lint scripts integration (sandbox)', () => {
         ).toMatch(/__sandbox-axios\.tsx/)
       },
     )
-  })
+  }, LINT_TEST_TIMEOUT_MS)
 })
