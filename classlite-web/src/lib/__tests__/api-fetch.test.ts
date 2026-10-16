@@ -63,6 +63,42 @@ describe('toApiUrl (split-origin top-level navigation)', () => {
   })
 })
 
+// A fetch with a string body defaults to text/plain, which the server's
+// requireJSONContent rejects with 415 (the onboarding class-spawn bug). apiFetch
+// must set application/json so mutations that forget the header still work.
+describe('apiFetch Content-Type default (415-class fix)', () => {
+  test('sets Content-Type: application/json for a string body when omitted', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post('/api/ct-default', ({ request }) => {
+        seen = request.headers.get('content-type')
+        return HttpResponse.json({ data: { ok: true } })
+      }),
+    )
+    await apiFetch('/api/ct-default', {
+      method: 'POST',
+      body: JSON.stringify({ a: 1 }),
+    })
+    expect(seen).toBe('application/json')
+  })
+
+  test('does NOT override an explicit Content-Type', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post('/api/ct-explicit', ({ request }) => {
+        seen = request.headers.get('content-type')
+        return HttpResponse.json({ data: { ok: true } })
+      }),
+    )
+    await apiFetch('/api/ct-explicit', {
+      method: 'POST',
+      body: 'raw',
+      headers: { 'Content-Type': 'text/plain' },
+    })
+    expect(seen).toBe('text/plain')
+  })
+})
+
 describe('AC5 apiFetch contract', () => {
   test('200 envelope is unwrapped — components receive bare data', async () => {
     const payload = [{ id: 'alice' }, { id: 'bob' }]

@@ -314,6 +314,16 @@ async function performFetch(
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`)
   }
+  // The API is JSON-only and the server enforces `Content-Type: application/json` on
+  // mutating requests (`requireJSONContent` → 415 otherwise). A `fetch` with a string
+  // body otherwise defaults to `text/plain`, so default the JSON content type whenever a
+  // string body is present and the caller didn't set one. This closes a whole class of
+  // bug — a mutation that forgot the header (e.g. useSpawnClasses) 415s only against the
+  // real server, never against MSW. String-only guard: non-string bodies (FormData/Blob)
+  // keep their browser-set type — though apiFetch bodies are always JSON today.
+  if (typeof init.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   try {
     const response = await fetch(url, {
       credentials: 'include',
